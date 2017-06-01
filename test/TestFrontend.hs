@@ -274,6 +274,21 @@ warnInfos = map (uncurry mkFailTest)
       , "Pattern matches are non-exhaustive"
       ]
     )
+  , ("CaseModeH",
+      [ "Wrong case mode in symbol `B' due to selected case mode `haskell`, try renaming to b instead"
+      , "Wrong case mode in symbol `B' due to selected case mode `haskell`, try renaming to b instead"
+      , "Wrong case mode in symbol `Xs' due to selected case mode `haskell`, try renaming to xs instead"
+      , "Wrong case mode in symbol `c' due to selected case mode `haskell`, try renaming to C instead"
+      , "Wrong case mode in symbol `f' due to selected case mode `haskell`, try renaming to F instead"
+      ]
+    )
+  , ("CaseModeP",
+      [ "Wrong case mode in symbol `a' due to selected case mode `prolog`, try renaming to A instead"
+      , "Wrong case mode in symbol `a' due to selected case mode `prolog`, try renaming to A instead"
+      , "Wrong case mode in symbol `mf' due to selected case mode `prolog`, try renaming to Mf instead"
+      , "Wrong case mode in symbol `E' due to selected case mode `prolog`, try renaming to e instead"
+      ]
+    )
   , ("CheckSignature",
       [ "Top-level binding with no type signature: hw"
       , "Top-level binding with no type signature: f"

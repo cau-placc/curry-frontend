@@ -16,7 +16,7 @@
     help information as well as parsing the command line arguments.
 -}
 module CompilerOpts
-  ( Options (..), PrepOpts (..), WarnOpts (..), DebugOpts (..)
+  ( Options (..), PrepOpts (..), WarnOpts (..), DebugOpts (..), CaseModeOpts (..)
   , CymakeMode (..), Verbosity (..), TargetType (..)
   , WarnFlag (..), KnownExtension (..), DumpLevel (..), dumpLevel
   , defaultOptions, defaultPrepOpts, defaultWarnOpts, defaultDebugOpts
@@ -56,6 +56,7 @@ data Options = Options
   , optTargetTypes  :: [TargetType]     -- ^ what to generate
   , optExtensions   :: [KnownExtension] -- ^ enabled language extensions
   , optDebugOpts    :: DebugOpts        -- ^ debug options
+  , optCaseModeOpts :: CaseModeOpts     -- ^ case mode option
   } deriving Show
 
 -- |Preprocessor options
@@ -64,6 +65,13 @@ data PrepOpts = PrepOpts
   , ppCmd        :: String    -- ^ preprocessor command
   , ppOpts       :: [String]  -- ^ preprocessor options
   } deriving Show
+
+data CaseModeOpts
+  = CaseModeFree
+  | CaseModeHaskell
+  | CaseModeProlog
+  | CaseModeGoedel
+  deriving (Eq, Show)
 
 -- |Warning options
 data WarnOpts = WarnOpts
@@ -98,6 +106,7 @@ defaultOptions = Options
   , optTargetTypes  = []
   , optExtensions   = []
   , optDebugOpts    = defaultDebugOpts
+  , optCaseModeOpts = CaseModeFree
   }
 
 -- | Default preprocessor options
@@ -169,6 +178,7 @@ data WarnFlag
   | WarnMissingSignatures    -- ^ Warn for missing type signatures
   | WarnMissingMethods       -- ^ Warn for missing method implementations
   | WarnOrphanInstances      -- ^ Warn for orphan instances
+  | WarnIrregularCaseMode
     deriving (Eq, Bounded, Enum, Show)
 
 -- |Warning flags enabled by default
@@ -177,6 +187,7 @@ stdWarnFlags =
   [ WarnMultipleImports   , WarnDisjoinedRules   --, WarnUnusedGlobalBindings
   , WarnUnusedBindings    , WarnNameShadowing    , WarnOverlapping
   , WarnIncompletePatterns, WarnMissingSignatures, WarnMissingMethods
+  , WarnIrregularCaseMode
   ]
 
 -- |Description and flag of warnings flags
@@ -202,6 +213,8 @@ warnFlags =
     , "missing method implementations" )
   , ( WarnOrphanInstances     , "orphan-instances"
     , "orphan instances"               )
+  , ( WarnIrregularCaseMode   , "irregular-case-mode"
+    , "irregular case mode")
   ]
 
 -- |Dump level
@@ -412,9 +425,10 @@ options =
       (NoArg (onOpts $ \ opts -> opts { optExtensions =
         nub $ kielExtensions ++ optExtensions opts }))
       "enable extended Curry functionalities"
-  , mkOptDescr onOpts      "X" [] "ext" "language extension" extDescriptions
-  , mkOptDescr onWarnOpts  "W" [] "opt" "warning option"     warnDescriptions
-  , mkOptDescr onDebugOpts "d" [] "opt" "debug option"       debugDescriptions
+  , mkOptDescr onOpts      "c" ["case-mode"] "mode" "case mode"          caseModeDescriptions
+  , mkOptDescr onOpts      "X" []            "ext"  "language extension" extDescriptions
+  , mkOptDescr onWarnOpts  "W" []            "opt"  "warning option"     warnDescriptions
+  , mkOptDescr onDebugOpts "d" []            "opt"  "debug option"       debugDescriptions
   ]
 
 targetOption :: TargetType -> String -> String -> OptDescr (OptErr -> OptErr)
@@ -434,6 +448,19 @@ extDescriptions = map toDescr extensions
   toDescr (flag, name, desc)
     = (name, desc,
         \ opts -> opts { optExtensions = addFlag flag (optExtensions opts)})
+
+
+caseModeDescriptions :: OptErrTable Options
+caseModeDescriptions
+  = [ ( "free"   , "use free case mode"
+        , \ opts -> opts { optCaseModeOpts = CaseModeFree    } )
+    , ( "haskell", "use haskell style case mode"
+        , \ opts -> opts { optCaseModeOpts = CaseModeHaskell } )
+    , ( "prolog" , "use prolog style case mode"
+        , \ opts -> opts { optCaseModeOpts = CaseModeProlog  } )
+    , ( "goedel"  , "use goedel case mode"
+        , \ opts -> opts { optCaseModeOpts = CaseModeGoedel   } )
+    ]
 
 warnDescriptions :: OptErrTable WarnOpts
 warnDescriptions

@@ -26,6 +26,8 @@ import           Data.Maybe
   (catMaybes, fromMaybe, listToMaybe)
 import           Data.List
   ((\\), intersect, intersectBy, nub, sort, unionBy)
+import           Data.Char
+  (isLower, isUpper, toLower, toUpper, isAlpha)
 
 import Curry.Base.Ident
 import Curry.Base.Position
@@ -40,6 +42,7 @@ import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                        , qualModifyNestEnv)
 
 import Base.Types
+import Base.Expr (bv)
 import Base.Utils (findMultiples)
 import Env.ModuleAlias
 import Env.Class (ClassEnv, classMethods, hasDefaultImpl)
@@ -57,15 +60,15 @@ import CompilerOpts
 --   - idle case alternatives
 --   - overlapping case alternatives
 --   - non-adjacent function rules
-warnCheck :: WarnOpts -> AliasEnv -> ValueEnv -> TCEnv -> ClassEnv -> Module a
-          -> [Message]
-warnCheck opts aEnv valEnv tcEnv clsEnv mdl
-  = runOn (initWcState mid aEnv valEnv tcEnv clsEnv (wnWarnFlags opts)) $ do
+warnCheck :: WarnOpts -> CaseModeOpts -> AliasEnv -> ValueEnv -> TCEnv -> ClassEnv -> Module a -> [Message]
+warnCheck wOpts cOpts aEnv valEnv tcEnv clsEnv mdl
+  = runOn (initWcState mid aEnv valEnv tcEnv clsEnv (wnWarnFlags wOpts) cOpts) $ do
       checkImports   is
       checkDeclGroup ds
       checkExports   es
       checkMissingTypeSignatures ds
       checkModuleAlias is
+      checkCaseMode  ds
   where Module _ mid es is ds = fmap (const ()) mdl
 
 type ScopeEnv = NestEnv IdInfo
@@ -79,6 +82,7 @@ data WcState = WcState
   , tyConsEnv   :: TCEnv
   , classEnv    :: ClassEnv
   , warnFlags   :: [WarnFlag]
+  , caseMode    :: CaseModeOpts
   , warnings    :: [Message]
   }
 
@@ -87,9 +91,9 @@ data WcState = WcState
 -- contents.
 type WCM = State WcState
 
-initWcState :: ModuleIdent -> AliasEnv -> ValueEnv -> TCEnv -> ClassEnv
-            -> [WarnFlag] -> WcState
-initWcState mid ae ve te ce wf = WcState mid emptyEnv ae ve te ce wf []
+initWcState :: ModuleIdent -> AliasEnv -> ValueEnv -> TCEnv -> ClassEnv 
+            -> [WarnFlag] -> CaseModeOpts -> WcState
+initWcState mid ae ve te ce wf cm = WcState mid emptyEnv ae ve te ce wf cm []
 
 getModuleIdent :: WCM ModuleIdent
 getModuleIdent = gets moduleId
@@ -1182,9 +1186,178 @@ commonId = qualify . unRenameIdent
 typeId :: Ident -> QualIdent
 typeId = qualify . flip renameIdent 1
 
+
+-- --------------------------------------------------------------------------
+-- Check Case Mode
+-- --------------------------------------------------------------------------
+
+checkCaseMode :: [Decl a] -> WCM ()
+checkCaseMode decls = mapM_ checkCaseModeDecl decls
+
+-- The following functions search the AST for Idents and 
+-- check if their names have the appropriate case mode 
+checkCaseModeDecl :: Decl a -> WCM ()
+checkCaseModeDecl (DataDecl    _ name ids constr _) = do checkCaseModeID isDataDeclName name
+                                                         mapM_ (checkCaseModeID isVarName) ids
+                                                         mapM_ checkCaseModeConstr constr
+checkCaseModeDecl (NewtypeDecl  _   name  ids _ _) = checkCaseModeID isDataDeclName  name  >> mapM_ (checkCaseModeID isVarName) ids
+checkCaseModeDecl (TypeDecl     _   name  ids _)   = checkCaseModeID isDataDeclName  name  >> mapM_ (checkCaseModeID isVarName) ids
+-- other ids in ClassDecl should also occurr in decls
+checkCaseModeDecl (ClassDecl    _ _ id1 _ decls)   = checkCaseModeID isClassDeclName id1   >> mapM_ checkCaseModeDecl decls
+checkCaseModeDecl (FunctionDecl _ _ ident eqs  )   = checkCaseModeID isFuncName      ident >> mapM_ checkCaseModeEquation       eqs
+checkCaseModeDecl (InstanceDecl _ _ _ itype decls) = checkCaseModeTypeExpr           itype >> mapM_ checkCaseModeDecl           decls
+checkCaseModeDecl (PatternDecl  _ pat   r      )   = checkCaseModePattern    pat   >> checkCaseModeRhs r
+checkCaseModeDecl (FreeDecl     _ vars         )   = mapM_ ((checkCaseModeID isVarName ) . getVarIdent) vars
+checkCaseModeDecl (ExternalDecl _ vars         )   = mapM_ ((checkCaseModeID isFuncName) . getVarIdent) vars
+checkCaseModeDecl (TypeSig      _ _ (QualTypeExpr _ texpr)) = checkCaseModeTypeExpr   texpr
+checkCaseModeDecl (DefaultDecl  _ texprs) = mapM_ checkTypeExpr texprs
+checkCaseModeDecl _ = return ()
+
+getVarIdent :: Var a -> Ident
+getVarIdent (Var _ i) = i
+
+checkCaseModeEquation :: Equation a -> WCM ()
+checkCaseModeEquation (Equation _ l r) = mapM_ (checkCaseModeID isVarName) (getLhsVars l) >> checkCaseModeRhs r
+
+checkCaseModeRhs :: Rhs a -> WCM ()
+checkCaseModeRhs (SimpleRhs   _ expr decls) =       checkCaseModeExpr     expr   >> mapM_ checkCaseModeDecl decls
+checkCaseModeRhs (GuardedRhs  cexprs decls) = mapM_ checkCaseModeCondExpr cexprs >> mapM_ checkCaseModeDecl decls
+
+-- I do think the first expr is in the guard and therefore does not have to be checked
+checkCaseModeCondExpr :: CondExpr a -> WCM ()
+checkCaseModeCondExpr (CondExpr _ _ expr) = checkCaseModeExpr expr
+
+checkCaseModeExpr :: Expression a -> WCM ()
+checkCaseModeExpr (Paren            expr) = checkCaseModeExpr expr
+checkCaseModeExpr (UnaryMinus       expr) = checkCaseModeExpr expr
+checkCaseModeExpr (LeftSection  expr   _) = checkCaseModeExpr expr
+checkCaseModeExpr (RightSection _   expr) = checkCaseModeExpr expr
+checkCaseModeExpr (EnumFrom         expr) = checkCaseModeExpr expr
+checkCaseModeExpr (EnumFromThen e1    e2) = checkCaseModeExpr e1 >> checkCaseModeExpr e2
+checkCaseModeExpr (EnumFromTo   e1    e2) = checkCaseModeExpr e1 >> checkCaseModeExpr e2
+checkCaseModeExpr (Apply        e1    e2) = checkCaseModeExpr e1 >> checkCaseModeExpr e2
+checkCaseModeExpr (InfixApply   e1 _  e2) = checkCaseModeExpr e1 >> checkCaseModeExpr e2
+checkCaseModeExpr (Typed        expr (QualTypeExpr _ typed)) = checkCaseModeExpr expr >> checkCaseModeTypeExpr typed
+checkCaseModeExpr (RecordUpdate expr  fields) = mapM_ checkCaseModeFieldExpr fields >> checkCaseModeExpr expr
+checkCaseModeExpr (ListCompr    expr  stats)  = mapM_ checkCaseModeStatement stats  >> checkCaseModeExpr expr
+checkCaseModeExpr (Lambda       pats  expr)   = mapM_ checkCaseModePattern   pats   >> checkCaseModeExpr expr
+checkCaseModeExpr (Let          decls expr)   = mapM_ checkCaseModeDecl      decls  >> checkCaseModeExpr expr
+checkCaseModeExpr (Do           stats expr)   = mapM_ checkCaseModeStatement stats  >> checkCaseModeExpr expr
+checkCaseModeExpr (Case        _ expr alts)   = mapM_ checkCaseModeAlt       alts   >> checkCaseModeExpr expr
+checkCaseModeExpr (Tuple             exprs)   = mapM_ checkCaseModeExpr exprs
+checkCaseModeExpr (List            _ exprs)   = mapM_ checkCaseModeExpr exprs
+checkCaseModeExpr (Record        _ _ fields)  = mapM_ checkCaseModeFieldExpr fields
+checkCaseModeExpr (EnumFromThenTo e1 e2 e3) = checkCaseModeExpr e1 >> checkCaseModeExpr e2 >> checkCaseModeExpr e3
+checkCaseModeExpr (IfThenElse     e1 e2 e3) = checkCaseModeExpr e1 >> checkCaseModeExpr e2 >> checkCaseModeExpr e3
+checkCaseModeExpr _ = return ()
+
+checkCaseModeStatement :: Statement a -> WCM ()
+checkCaseModeStatement (StmtExpr  expr)     =       checkCaseModeExpr expr
+checkCaseModeStatement (StmtDecl  decls)    = mapM_ checkCaseModeDecl decls
+checkCaseModeStatement (StmtBind  pat expr) = checkCaseModePattern pat >> checkCaseModeExpr expr
+
+checkCaseModeAlt :: Alt a -> WCM ()
+checkCaseModeAlt (Alt _ pat r) = checkCaseModePattern pat >> checkCaseModeRhs r
+
+checkCaseModePattern :: Pattern a -> WCM ()
+checkCaseModePattern (VariablePattern _ ident) = checkCaseModeID isVarName ident
+checkCaseModePattern (ParenPattern    pat    ) = checkCaseModePattern pat
+checkCaseModePattern (LazyPattern     pat    ) = checkCaseModePattern pat
+checkCaseModePattern (ConstructorPattern _ _ pats  ) = mapM_ checkCaseModePattern pats
+checkCaseModePattern (RecordPattern      _ _ fields) = mapM_ checkCaseModeFieldPattern fields
+checkCaseModePattern (TuplePattern           pats  ) = mapM_ checkCaseModePattern pats
+checkCaseModePattern (ListPattern        _   pats  ) = mapM_ checkCaseModePattern pats
+checkCaseModePattern (FunctionPattern  _ _   pats  ) = mapM_ checkCaseModePattern pats
+checkCaseModePattern (InfixPattern     _ p1  _ p2  ) = checkCaseModePattern p1 >> checkCaseModePattern p2
+checkCaseModePattern (InfixFuncPattern _ p1  _ p2  ) = checkCaseModePattern p1 >> checkCaseModePattern p2
+checkCaseModePattern (AsPattern          ident pat ) = checkCaseModeID isVarName ident >> checkCaseModePattern pat
+checkCaseModePattern _ = return ()
+
+checkCaseModeFieldPattern :: Field (Pattern a) -> WCM ()
+checkCaseModeFieldPattern (Field _ _ pat) = checkCaseModePattern pat
+
+checkCaseModeFieldExpr :: Field (Expression a) -> WCM ()
+checkCaseModeFieldExpr (Field _ _ expr) = checkCaseModeExpr expr
+
+-- bv = bound variables of a Lhs
+getLhsVars :: Lhs a -> [Ident]
+getLhsVars = bv
+
+checkCaseModeTypeExpr :: TypeExpr -> WCM ()
+checkCaseModeTypeExpr (VariableType      ident ) = checkCaseModeID isVarName ident
+checkCaseModeTypeExpr (ListType          texpr ) = checkCaseModeTypeExpr texpr
+checkCaseModeTypeExpr (ParenType         texpr ) = checkCaseModeTypeExpr texpr
+checkCaseModeTypeExpr (ArrowType  t1     t2    ) = checkCaseModeTypeExpr t1    >> checkCaseModeTypeExpr t2
+checkCaseModeTypeExpr (ApplyType  t1     t2    ) = checkCaseModeTypeExpr t1    >> checkCaseModeTypeExpr t2
+checkCaseModeTypeExpr (TupleType         texprs) = mapM_ checkCaseModeTypeExpr texprs
+checkCaseModeTypeExpr (ForallType idents texpr ) = mapM_ (checkCaseModeID isVarName) idents >> checkCaseModeTypeExpr texpr
+checkCaseModeTypeExpr _ = return ()
+
+checkCaseModeConstr :: ConstrDecl -> WCM ()
+checkCaseModeConstr (ConstrDecl _ _ _   ident _) = checkCaseModeID isConstrName ident
+checkCaseModeConstr (ConOpDecl  _ _ _ _ ident _) = checkCaseModeID isConstrName ident
+checkCaseModeConstr (RecordDecl _ _ _   ident _) = checkCaseModeID isConstrName ident
+
+checkCaseModeNewConstr :: NewConstrDecl -> WCM ()
+checkCaseModeNewConstr (NewConstrDecl _ ident texpr)         = checkCaseModeID isConstrName ident >> checkCaseModeTypeExpr texpr
+checkCaseModeNewConstr (NewRecordDecl _ ident (name, texpr)) = checkCaseModeID isConstrName ident >> checkCaseModeTypeExpr texpr >>
+                                                               checkCaseModeID isVarName    ident
+
+checkCaseModeID :: (CaseModeOpts -> String -> Bool) -> Ident -> WCM ()
+checkCaseModeID f i@(Ident _ n _) = getCaseMode >>= \c -> unless (f c n) (reportCaseMode i) 
+                                      
+isVarName :: CaseModeOpts -> String -> Bool
+isVarName CaseModeProlog  (x:_) | isAlpha x = isUpper x
+isVarName CaseModeGoedel  (x:_) | isAlpha x = isLower x
+isVarName CaseModeHaskell (x:_) | isAlpha x = isLower x
+isVarName _               _     = True
+
+isFuncName :: CaseModeOpts -> String -> Bool
+isFuncName CaseModeHaskell (x:_) | isAlpha x = isLower x
+isFuncName CaseModeGoedel  (x:_) | isAlpha x = isUpper x
+isFuncName CaseModeProlog  (x:_) | isAlpha x = isLower x
+isFuncName _               _     = True
+
+isConstrName :: CaseModeOpts -> String -> Bool
+isConstrName = isDataDeclName
+
+isClassDeclName :: CaseModeOpts -> String -> Bool
+isClassDeclName = isDataDeclName
+
+isDataDeclName :: CaseModeOpts -> String -> Bool
+isDataDeclName CaseModeProlog  (x:_) | isAlpha x = isLower x
+isDataDeclName CaseModeGoedel  (x:_) | isAlpha x = isUpper x
+isDataDeclName CaseModeHaskell (x:_) | isAlpha x = isUpper x
+isDataDeclName _               _     = True
+
+getCaseMode :: WCM CaseModeOpts
+getCaseMode = gets caseMode
+
+reportCaseMode :: Ident -> WCM ()
+reportCaseMode i@(Ident _ n _) = do c <- getCaseMode
+                                    warnFor WarnIrregularCaseMode $ report $ warnCaseModeMessage i c
+
 -- ---------------------------------------------------------------------------
 -- Warnings messages
 -- ---------------------------------------------------------------------------
+
+warnCaseModeMessage :: Ident -> CaseModeOpts -> Message
+warnCaseModeMessage i@(Ident _ name _ ) c 
+    = posMessage i $ 
+      text "Wrong case mode in symbol" <+> text (escName i) <+>
+      text "due to selected case mode" <+> text (escapeCaseMode c) <> comma <+> 
+      text "try renaming to" <+> text (caseSuggestion name) <+> text "instead"
+
+caseSuggestion :: String -> String
+caseSuggestion (x: xs) | isLower x = (toUpper x : xs)
+                       | isUpper x = (toLower x : xs)
+caseSuggestion _ = error ("Identifier starts with illegal Symbol")
+
+escapeCaseMode :: CaseModeOpts -> String
+escapeCaseMode CaseModeFree    = "`free`"
+escapeCaseMode CaseModeHaskell = "`haskell`"
+escapeCaseMode CaseModeProlog  = "`prolog`"
+escapeCaseMode CaseModeGoedel  = "`goedel`"
 
 warnUnrefTypeVar :: Ident -> Message
 warnUnrefTypeVar v = posMessage v $ hsep $ map text

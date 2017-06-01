@@ -158,5 +158,5 @@ expandExports _ (env, Module ps m es is ds)
 
 -- |Check for warnings.
 warnCheck :: Options -> CompilerEnv -> Module a -> [Message]
-warnCheck opts env mdl = WC.warnCheck (optWarnOpts opts) (aliasEnv env)
+warnCheck opts env mdl = WC.warnCheck (optWarnOpts opts) (optCaseModeOpts opts) (aliasEnv env)
   (valueEnv env) (tyConsEnv env) (classEnv env) mdl
