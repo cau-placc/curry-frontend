@@ -519,7 +519,7 @@ tcPDecl ps (i, FunctionDecl p _ f eqs) = do
   vEnv <- getValueEnv
   tcFunctionPDecl i ps (varType f vEnv) p f eqs
 tcPDecl ps (i, d@(PatternDecl p t rhs)) = do
-  (ps', ty', t') <- tcPattern False p t
+  (ps', ty', t') <- tcPattern p t
   (ps'', rhs') <- tcRhs rhs >>-
     unifyDecl p "pattern declaration" (ppDecl d) (ps `Set.union` ps') ty'
   return (ps'', (ty', (i, PatternDecl p t' rhs')))
@@ -958,8 +958,7 @@ tcForeign f ty = do
 -- Patterns and Expressions:
 -- Note that the type attribute associated with a constructor or infix
 -- pattern is the type of the whole pattern and not the type of the
--- constructor itself. Overloaded (numeric) literals are supported in
--- expressions and patterns of case alternatives, but not in other
+-- constructor itself. Overloaded (numeric) literals are not supported in
 -- patterns.
 
 tcLiteral :: Bool -> Literal -> TCM (PredSet, Type)
@@ -974,15 +973,15 @@ tcLiteral _ (String _) = return (emptyPredSet, stringType)
 
 tcLhs :: Position -> Lhs a -> TCM (PredSet, [Type], Lhs PredType)
 tcLhs p (FunLhs f ts) = do
-  (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern False p) ts
+  (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern p) ts
   return (Set.unions pss, tys, FunLhs f ts')
 tcLhs p (OpLhs t1 op t2) = do
-  (ps1, ty1, t1') <- tcPattern False p t1
-  (ps2, ty2, t2') <- tcPattern False p t2
+  (ps1, ty1, t1') <- tcPattern p t1
+  (ps2, ty2, t2') <- tcPattern p t2
   return (ps1 `Set.union` ps2, [ty1, ty2], OpLhs t1' op t2')
 tcLhs p (ApLhs lhs ts) = do
   (ps, tys1, lhs') <- tcLhs p lhs
-  (pss, tys2, ts') <- liftM unzip3 $ mapM (tcPattern False p) ts
+  (pss, tys2, ts') <- liftM unzip3 $ mapM (tcPattern p) ts
   return (Set.unions (ps:pss), tys1 ++ tys2, ApLhs lhs' ts')
 
 -- When computing the type of a variable in a pattern, we ignore the
@@ -992,80 +991,79 @@ tcLhs p (ApLhs lhs ts) = do
 -- checked as constructor and functional patterns, respectively, resulting
 -- in slighty misleading error messages if the type check fails.
 
-tcPattern :: Bool -> Position -> Pattern a
-          -> TCM (PredSet, Type, Pattern PredType)
-tcPattern poly _ (LiteralPattern _ l) = do
-  (ps, ty) <- tcLiteral poly l
+tcPattern :: Position -> Pattern a -> TCM (PredSet, Type, Pattern PredType)
+tcPattern _ (LiteralPattern _ l) = do
+  (ps, ty) <- tcLiteral False l
   return (ps, ty, LiteralPattern (predType ty) l)
-tcPattern poly _ (NegativePattern _ l) = do
-  (ps, ty) <- tcLiteral poly l
+tcPattern _ (NegativePattern _ l) = do
+  (ps, ty) <- tcLiteral False l
   return (ps, ty, NegativePattern (predType ty) l)
-tcPattern _ _ (VariablePattern _ v) = do
+tcPattern _ (VariablePattern _ v) = do
   vEnv <- getValueEnv
   (_, ty) <- inst (varType v vEnv)
   return (emptyPredSet, ty, VariablePattern (predType ty) v)
-tcPattern poly p t@(ConstructorPattern _ c ts) = do
+tcPattern p t@(ConstructorPattern _ c ts) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, (tys, ty')) <- liftM (fmap arrowUnapply) (skol (constrType m c vEnv))
-  (ps', ts') <- mapAccumM (uncurry . tcPatternArg poly p "pattern" (ppPattern 0 t)) ps (zip tys ts)
+  (ps', ts') <- mapAccumM (uncurry . tcPatternArg p "pattern" (ppPattern 0 t)) ps (zip tys ts)
   return (ps', ty', ConstructorPattern (predType ty') c ts')
-tcPattern poly p (InfixPattern a t1 op t2) = do
+tcPattern p (InfixPattern a t1 op t2) = do
   (ps, ty, ConstructorPattern a' op' [t1', t2']) <-
-    tcPattern poly p (ConstructorPattern a op [t1, t2])
+    tcPattern p (ConstructorPattern a op [t1, t2])
   return (ps, ty, InfixPattern a' t1' op' t2')
-tcPattern poly p (ParenPattern t) = do
-  (ps, ty, t') <- tcPattern poly p t
+tcPattern p (ParenPattern t) = do
+  (ps, ty, t') <- tcPattern p t
   return (ps, ty, ParenPattern t')
-tcPattern poly _ t@(RecordPattern _ c fs) = do
+tcPattern _ t@(RecordPattern _ c fs) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- liftM (fmap arrowBase) (skol (constrType m c vEnv))
-  (ps', fs') <- mapAccumM (tcField (tcPattern poly) "pattern" (\t' -> ppPattern 0 t $-$ text "Term:" <+> ppPattern 0 t') ty) ps fs
+  (ps', fs') <- mapAccumM (tcField tcPattern "pattern" (\t' -> ppPattern 0 t $-$ text "Term:" <+> ppPattern 0 t') ty) ps fs
   return (ps', ty, RecordPattern (predType ty) c fs')
-tcPattern poly p (TuplePattern ts) = do
-  (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern poly p) ts
+tcPattern p (TuplePattern ts) = do
+  (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern p) ts
   return (Set.unions pss, tupleType tys, TuplePattern ts')
-tcPattern poly p t@(ListPattern _ ts) = do
+tcPattern p t@(ListPattern _ ts) = do
   ty <- freshTypeVar
-  (ps, ts') <- mapAccumM (flip (tcPatternArg poly p "pattern" (ppPattern 0 t)) ty) emptyPredSet ts
+  (ps, ts') <- mapAccumM (flip (tcPatternArg p "pattern" (ppPattern 0 t)) ty) emptyPredSet ts
   return (ps, listType ty, ListPattern (predType $ listType ty) ts')
-tcPattern poly p t@(AsPattern v t') = do
+tcPattern p t@(AsPattern v t') = do
   vEnv <- getValueEnv
   (_, ty) <- inst (varType v vEnv)
-  (ps, t'') <- tcPattern poly p t' >>-
+  (ps, t'') <- tcPattern p t' >>-
     unify p "pattern" (ppPattern 0 t) emptyPredSet ty
   return (ps, ty, AsPattern v t'')
-tcPattern _ p (LazyPattern t) = do
-  (ps, ty, t') <- tcPattern False p t
+tcPattern p (LazyPattern t) = do
+  (ps, ty, t') <- tcPattern p t
   return (ps, ty, LazyPattern t')
-tcPattern poly p t@(FunctionPattern _ f ts) = do
+tcPattern p t@(FunctionPattern _ f ts) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- inst (funType m f vEnv)
-  tcFuncPattern poly p (ppPattern 0 t) f id ps ty ts
-tcPattern poly p (InfixFuncPattern a t1 op t2) = do
+  tcFuncPattern p (ppPattern 0 t) f id ps ty ts
+tcPattern p (InfixFuncPattern a t1 op t2) = do
   (ps, ty, FunctionPattern a' op' [t1', t2']) <-
-    tcPattern poly p (FunctionPattern a op [t1, t2])
+    tcPattern p (FunctionPattern a op [t1, t2])
   return (ps, ty, InfixFuncPattern a' t1' op' t2')
 
-tcFuncPattern :: Bool -> Position -> Doc -> QualIdent
-               -> ([Pattern PredType] -> [Pattern PredType])
-               -> PredSet -> Type -> [Pattern a]
-               -> TCM (PredSet, Type, Pattern PredType)
-tcFuncPattern _ _ _ f ts ps ty [] =
+tcFuncPattern :: Position -> Doc -> QualIdent
+              -> ([Pattern PredType] -> [Pattern PredType])
+              -> PredSet -> Type -> [Pattern a]
+              -> TCM (PredSet, Type, Pattern PredType)
+tcFuncPattern _ _ f ts ps ty [] =
   return (ps, ty, FunctionPattern (predType ty) f (ts []))
-tcFuncPattern poly p doc f ts ps ty (t':ts') = do
+tcFuncPattern p doc f ts ps ty (t':ts') = do
   (alpha, beta) <-
     tcArrow p "functional pattern" (doc $-$ text "Term:" <+> ppPattern 0 t) ty
-  (ps', t'') <- tcPatternArg poly p "functional pattern" doc ps alpha t'
-  tcFuncPattern poly p doc f (ts . (t'' :)) ps' beta ts'
+  (ps', t'') <- tcPatternArg p "functional pattern" doc ps alpha t'
+  tcFuncPattern p doc f (ts . (t'' :)) ps' beta ts'
   where t = FunctionPattern (predType ty) f (ts [])
 
-tcPatternArg :: Bool -> Position -> String -> Doc -> PredSet -> Type
+tcPatternArg :: Position -> String -> Doc -> PredSet -> Type
              -> Pattern a -> TCM (PredSet, Pattern PredType)
-tcPatternArg poly p what doc ps ty t =
-  tcPattern poly p t >>-
+tcPatternArg p what doc ps ty t =
+  tcPattern p t >>-
     unify p what (doc $-$ text "Term:" <+> ppPattern 0 t) ps ty
 
 tcRhs :: Rhs a -> TCM (PredSet, Type, Rhs PredType)
@@ -1196,7 +1194,7 @@ tcExpr p (Lambda ts e) = do
   fs <- computeFsEnv
   (pss, tys, ts', ps, ty, e')<- withLocalValueEnv $ do
     bindLambdaVars ts
-    (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern False p) ts
+    (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern p) ts
     (ps, ty, e') <- tcExpr p e
     return (pss, tys, ts', ps, ty, e')
   ps' <- reducePredSet p "expression" (ppExpr 0 e') (Set.unions $ ps : pss)
@@ -1228,7 +1226,7 @@ tcExpr p (Case ct e as) = do
   (ps, tyLhs, e') <- tcExpr p e
   tyRhs <- freshTypeVar
   fs <- computeFsEnv
-  (ps', as') <- mapAccumM (tcAlt (ct == Rigid) fs tyLhs tyRhs) ps as
+  (ps', as') <- mapAccumM (tcAlt fs tyLhs tyRhs) ps as
   return (ps', tyRhs, Case ct e' as')
 
 tcArg :: Position -> String -> Doc -> PredSet -> Type -> Expression a
@@ -1236,19 +1234,19 @@ tcArg :: Position -> String -> Doc -> PredSet -> Type -> Expression a
 tcArg p what doc ps ty e =
   tcExpr p e >>- unify p what (doc $-$ text "Term:" <+> ppExpr 0 e) ps ty
 
-tcAlt :: Bool -> Set.Set Int -> Type -> Type -> PredSet -> Alt a
+tcAlt :: Set.Set Int -> Type -> Type -> PredSet -> Alt a
       -> TCM (PredSet, Alt PredType)
-tcAlt poly fs tyLhs tyRhs ps a@(Alt p t rhs) =
-  tcAltern poly fs tyLhs p t rhs >>-
+tcAlt fs tyLhs tyRhs ps a@(Alt p t rhs) =
+  tcAltern fs tyLhs p t rhs >>-
     unify p "case alternative" (ppAlt a) ps tyRhs
 
-tcAltern :: Bool -> Set.Set Int -> Type -> Position -> Pattern a
+tcAltern :: Set.Set Int -> Type -> Position -> Pattern a
          -> Rhs a -> TCM (PredSet, Type, Alt PredType)
-tcAltern poly fs tyLhs p t rhs = do
+tcAltern fs tyLhs p t rhs = do
   (ps, t', ps', ty', rhs') <- withLocalValueEnv $ do
     bindLambdaVars t
     (ps, t') <-
-      tcPatternArg poly p "case pattern" (ppAlt (Alt p t rhs)) emptyPredSet tyLhs t
+      tcPatternArg p "case pattern" (ppAlt (Alt p t rhs)) emptyPredSet tyLhs t
     (ps', ty', rhs') <- tcRhs rhs
     return (ps, t', ps', ty', rhs')
   ps'' <- reducePredSet p "alternative" (ppAlt (Alt p t' rhs')) (ps `Set.union` ps')
@@ -1266,7 +1264,7 @@ tcQual p ps q@(StmtBind t e) = do
   alpha <- freshTypeVar
   (ps', e') <- tcArg p "generator" (ppStmt q) ps (listType alpha) e
   bindLambdaVars t
-  (ps'', t') <- tcPatternArg False p "generator" (ppStmt q) ps' alpha t
+  (ps'', t') <- tcPatternArg p "generator" (ppStmt q) ps' alpha t
   return (ps'', StmtBind t' e')
 
 tcStmt :: Position -> PredSet -> Maybe Type -> Statement a
@@ -1286,7 +1284,7 @@ tcStmt p ps mTy st@(StmtBind t e) = do
   (ps'', e') <-
     tcArg p "statement" (ppStmt st) (ps `Set.union` ps') (applyType ty [alpha]) e
   bindLambdaVars t
-  (ps''', t') <- tcPatternArg False p "statement" (ppStmt st) ps'' alpha t
+  (ps''', t') <- tcPatternArg p "statement" (ppStmt st) ps'' alpha t
   return ((ps''', Just ty), StmtBind t' e')
 
 tcInfixOp :: InfixOp a -> TCM (PredSet, Type, InfixOp PredType)
