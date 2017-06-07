@@ -361,11 +361,15 @@ qualifyLocal currentEnv initEnv = currentEnv
   { opPrecEnv = foldr bindQual   pEnv  $ localBindings $ opPrecEnv currentEnv
   , tyConsEnv = foldr bindQual   tcEnv $ localBindings $ tyConsEnv currentEnv
   , valueEnv  = foldr bindGlobal tyEnv $ localBindings $ valueEnv  currentEnv
+  , classEnv  = clsEnv
+  , instEnv   = iEnv
   }
   where
-    pEnv  = opPrecEnv initEnv
-    tcEnv = tyConsEnv initEnv
-    tyEnv = valueEnv  initEnv
+    pEnv   = opPrecEnv initEnv
+    tcEnv  = tyConsEnv initEnv
+    tyEnv  = valueEnv  initEnv
+    clsEnv = classEnv  initEnv
+    iEnv   = instEnv   initEnv
     bindQual   (_, y) = qualBindTopEnv (origName y) y
     bindGlobal (x, y)
       | hasGlobalScope x = bindQual (x, y)
