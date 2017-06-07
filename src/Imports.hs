@@ -361,8 +361,8 @@ qualifyLocal currentEnv initEnv = currentEnv
   { opPrecEnv = foldr bindQual   pEnv  $ localBindings $ opPrecEnv currentEnv
   , tyConsEnv = foldr bindQual   tcEnv $ localBindings $ tyConsEnv currentEnv
   , valueEnv  = foldr bindGlobal tyEnv $ localBindings $ valueEnv  currentEnv
-  , classEnv  = clsEnv
-  , instEnv   = iEnv
+  , classEnv  = Map.unionWith mergeClassInfo clsEnv $ classEnv currentEnv
+  , instEnv   = Map.union                    iEnv   $ instEnv  currentEnv
   }
   where
     pEnv   = opPrecEnv initEnv

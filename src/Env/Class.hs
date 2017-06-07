@@ -19,7 +19,7 @@
 
 module Env.Class
   ( ClassEnv, initClassEnv
-  , ClassInfo, bindClassInfo, lookupClassInfo
+  , ClassInfo, bindClassInfo, mergeClassInfo, lookupClassInfo
   , superClasses, allSuperClasses, classMethods, hasDefaultImpl
   ) where
 
