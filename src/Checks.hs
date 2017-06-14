@@ -2,7 +2,7 @@
     Module      :  $Header$
     Description :  Different checks on a Curry module
     Copyright   :  (c) 2011 - 2013 Björn Peemöller
-                       2016        Finn Teegen
+                       2016 - 2017 Finn Teegen
     License     :  BSD-3-clause
 
     Maintainer  :  bjp@informatik.uni-kiel.de
@@ -158,5 +158,5 @@ expandExports _ (env, Module ps m es is ds)
 
 -- |Check for warnings.
 warnCheck :: Options -> CompilerEnv -> Module a -> [Message]
-warnCheck opts env mdl = WC.warnCheck (optWarnOpts opts) (optCaseModeOpts opts) (aliasEnv env)
-  (valueEnv env) (tyConsEnv env) (classEnv env) mdl
+warnCheck opts env mdl = WC.warnCheck (optWarnOpts opts) (optCaseMode opts)
+  (aliasEnv env) (valueEnv env) (tyConsEnv env) (classEnv env) mdl

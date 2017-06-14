@@ -4,7 +4,7 @@
     Copyright   :  (c) 2005        Martin Engelke
                        2007        Sebastian Fischer
                        2011 - 2016 Björn Peemöller
-                       2016        Finn Teegen
+                       2016 - 2017 Finn Teegen
     License     :  BSD-3-clause
 
     Maintainer  :  bjp@informatik.uni-kiel.de
@@ -16,7 +16,7 @@
     help information as well as parsing the command line arguments.
 -}
 module CompilerOpts
-  ( Options (..), PrepOpts (..), WarnOpts (..), DebugOpts (..), CaseModeOpts (..)
+  ( Options (..), PrepOpts (..), WarnOpts (..), DebugOpts (..), CaseMode (..)
   , CymakeMode (..), Verbosity (..), TargetType (..)
   , WarnFlag (..), KnownExtension (..), DumpLevel (..), dumpLevel
   , defaultOptions, defaultPrepOpts, defaultWarnOpts, defaultDebugOpts
@@ -56,7 +56,7 @@ data Options = Options
   , optTargetTypes  :: [TargetType]     -- ^ what to generate
   , optExtensions   :: [KnownExtension] -- ^ enabled language extensions
   , optDebugOpts    :: DebugOpts        -- ^ debug options
-  , optCaseModeOpts :: CaseModeOpts     -- ^ case mode option
+  , optCaseMode     :: CaseMode         -- ^ case mode
   } deriving Show
 
 -- |Preprocessor options
@@ -66,7 +66,7 @@ data PrepOpts = PrepOpts
   , ppOpts       :: [String]  -- ^ preprocessor options
   } deriving Show
 
-data CaseModeOpts
+data CaseMode
   = CaseModeFree
   | CaseModeHaskell
   | CaseModeProlog
@@ -106,7 +106,7 @@ defaultOptions = Options
   , optTargetTypes  = []
   , optExtensions   = []
   , optDebugOpts    = defaultDebugOpts
-  , optCaseModeOpts = CaseModeFree
+  , optCaseMode     = CaseModeFree
   }
 
 -- | Default preprocessor options
@@ -453,13 +453,13 @@ extDescriptions = map toDescr extensions
 caseModeDescriptions :: OptErrTable Options
 caseModeDescriptions
   = [ ( "free"   , "use free case mode"
-        , \ opts -> opts { optCaseModeOpts = CaseModeFree    } )
+        , \ opts -> opts { optCaseMode = CaseModeFree    } )
     , ( "haskell", "use haskell style case mode"
-        , \ opts -> opts { optCaseModeOpts = CaseModeHaskell } )
+        , \ opts -> opts { optCaseMode = CaseModeHaskell } )
     , ( "prolog" , "use prolog style case mode"
-        , \ opts -> opts { optCaseModeOpts = CaseModeProlog  } )
+        , \ opts -> opts { optCaseMode = CaseModeProlog  } )
     , ( "goedel"  , "use goedel case mode"
-        , \ opts -> opts { optCaseModeOpts = CaseModeGoedel   } )
+        , \ opts -> opts { optCaseMode = CaseModeGoedel  } )
     ]
 
 warnDescriptions :: OptErrTable WarnOpts
