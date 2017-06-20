@@ -25,6 +25,7 @@ module CompilerOpts
 
 import Data.List             (intercalate, nub)
 import Data.Maybe            (isJust)
+import qualified Data.Map.Strict as Map
 import System.Console.GetOpt
 import System.Environment    (getArgs, getProgName)
 import System.FilePath
@@ -40,23 +41,24 @@ import Curry.Syntax.Extension
 -- |Compiler options
 data Options = Options
   -- general
-  { optMode         :: CymakeMode       -- ^ modus operandi
-  , optVerbosity    :: Verbosity        -- ^ verbosity level
+  { optMode         :: CymakeMode        -- ^ modus operandi
+  , optVerbosity    :: Verbosity         -- ^ verbosity level
   -- compilation
-  , optForce        :: Bool             -- ^ force (re-)compilation of target
-  , optLibraryPaths :: [FilePath]       -- ^ directories to search in
-                                        --   for libraries
-  , optImportPaths  :: [FilePath]       -- ^ directories to search in
-                                        --   for imports
-  , optHtmlDir      :: Maybe FilePath   -- ^ output directory for HTML
-  , optUseSubdir    :: Bool             -- ^ use subdir for output?
-  , optInterface    :: Bool             -- ^ create a FlatCurry interface file?
-  , optPrepOpts     :: PrepOpts         -- ^ preprocessor options
-  , optWarnOpts     :: WarnOpts         -- ^ warning options
-  , optTargetTypes  :: [TargetType]     -- ^ what to generate
-  , optExtensions   :: [KnownExtension] -- ^ enabled language extensions
-  , optDebugOpts    :: DebugOpts        -- ^ debug options
-  , optCaseMode     :: CaseMode         -- ^ case mode
+  , optForce        :: Bool              -- ^ force (re-)compilation of target
+  , optLibraryPaths :: [FilePath]        -- ^ directories to search in
+                                         --   for libraries
+  , optImportPaths  :: [FilePath]        -- ^ directories to search in
+                                         --   for imports
+  , optHtmlDir      :: Maybe FilePath    -- ^ output directory for HTML
+  , optUseSubdir    :: Bool              -- ^ use subdir for output?
+  , optInterface    :: Bool              -- ^ create a FlatCurry interface file?
+  , optPrepOpts     :: PrepOpts          -- ^ preprocessor options
+  , optWarnOpts     :: WarnOpts          -- ^ warning options
+  , optTargetTypes  :: [TargetType]      -- ^ what to generate
+  , optExtensions   :: [KnownExtension]  -- ^ enabled language extensions
+  , optDebugOpts    :: DebugOpts         -- ^ debug options
+  , optCaseMode     :: CaseMode          -- ^ case mode
+  , optCondCompile  :: Map.Map String String -- ^ conditional compile valuess
   } deriving Show
 
 -- |Preprocessor options
@@ -107,6 +109,7 @@ defaultOptions = Options
   , optExtensions   = []
   , optDebugOpts    = defaultDebugOpts
   , optCaseMode     = CaseModeFree
+  , optCondCompile  = Map.empty
   }
 
 -- | Default preprocessor options
@@ -429,12 +432,26 @@ options =
   , mkOptDescr onOpts      "X" []            "ext"  "language extension" extDescriptions
   , mkOptDescr onWarnOpts  "W" []            "opt"  "warning option"     warnDescriptions
   , mkOptDescr onDebugOpts "d" []            "opt"  "debug option"       debugDescriptions
+  , Option []  ["cond-compile"]
+      (ReqArg (withArg onOpts $ \ arg opts -> opts { optCondCompile =
+               insertCondCompileValue (optCondCompile opts) arg})
+      "arg")
+      "set conditional compile flags"
   ]
 
 targetOption :: TargetType -> String -> String -> OptDescr (OptErr -> OptErr)
 targetOption ty flag desc
   = Option "" [flag] (NoArg (onOpts $ \ opts -> opts { optTargetTypes =
       nub $ ty : optTargetTypes opts })) desc
+
+condKV :: String -> (String, String)
+condKV []       = ([], [])
+condKV ('=':xs) = ([], xs)
+condKV (x  :xs) = let (k, v) = condKV xs in (x:k, v)
+
+insertCondCompileValue :: Map.Map String String -> String -> Map.Map String String
+insertCondCompileValue m arg = let (k,v) = condKV arg
+                               in Map.insert k v m
 
 verbDescriptions :: OptErrTable Options
 verbDescriptions = map toDescr verbosities
@@ -534,4 +551,5 @@ getCompilerOpts = do
   args <- getArgs
   prog <- getProgName
   let (opts, files, errs) = parseOpts args
+  print opts --TODO remove debug output of CompilerOpts
   return (prog, opts, files, errs)
