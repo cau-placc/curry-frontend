@@ -672,16 +672,15 @@ tcPattern p t@(FunctionPattern f ts) = do
   unifyArgs (ppPattern 0 t) ts ty
   where
   unifyArgs _   []       ty                  = return ty
-  unifyArgs doc (t1:ts1) ty@(TypeVariable _) = do
-    (a, b) <- tcArrow p "function pattern" doc ty
-    ty'    <- tcPattern p t1
-    unify p "function pattern" (doc $-$ text "Term:" <+> ppPattern 0 t1) ty' a
-    unifyArgs doc ts1 b
   unifyArgs doc (t1:ts1) (TypeArrow ty1 ty2) = do
     ty' <- tcPattern p t1
     unify p "function pattern" (doc $-$ text "Term:" <+> ppPattern 0 t1) ty1 ty'
     unifyArgs doc ts1 ty2
-  unifyArgs _ _ ty = internalError $ "TypeCheck.tcPattern: " ++ show ty
+  unifyArgs doc (t1:ts1) ty                  = do
+    (a, b) <- tcArrow p "function pattern" doc ty
+    ty'    <- tcPattern p t1
+    unify p "function pattern" (doc $-$ text "Term:" <+> ppPattern 0 t1) ty' a
+    unifyArgs doc ts1 b
 tcPattern p (InfixFuncPattern t1 op t2) = tcPattern p
                                         $ FunctionPattern op [t1, t2]
 
