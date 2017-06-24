@@ -25,6 +25,7 @@ module CompilerOpts
 
 import Data.List             (intercalate, nub)
 import Data.Maybe            (isJust)
+import Data.Char             (isDigit)
 import qualified Data.Map.Strict as Map
 import System.Console.GetOpt
 import System.Environment    (getArgs, getProgName)
@@ -433,9 +434,7 @@ options =
   , mkOptDescr onWarnOpts  "W" []            "opt"  "warning option"     warnDescriptions
   , mkOptDescr onDebugOpts "d" []            "opt"  "debug option"       debugDescriptions
   , Option []  ["cond-compile"]
-      (ReqArg (withArg onOpts $ \ arg opts -> opts { optCondCompile =
-               insertCondCompileValue (optCondCompile opts) arg})
-      "arg")
+      (ReqArg parseCondCompileFlag "arg")
       "set conditional compile flags"
   ]
 
@@ -449,9 +448,16 @@ condKV []       = ([], [])
 condKV ('=':xs) = ([], xs)
 condKV (x  :xs) = let (k, v) = condKV xs in (x:k, v)
 
-insertCondCompileValue :: Map.Map String String -> String -> Map.Map String String
-insertCondCompileValue m arg = let (k,v) = condKV arg
-                               in Map.insert k v m
+
+parseCondCompileFlag :: String -> OptErr -> OptErr
+parseCondCompileFlag arg (opts, errs) = if (all isDigit v)
+                                        then (opts', errs)
+                                        else (opts, condCompileErr : errs)
+  where (k, v) = condKV arg
+        opts'  = opts { optCondCompile = Map.insert k v (optCondCompile opts)}
+
+condCompileErr :: String
+condCompileErr = "Invalid format for --cond-compile"
 
 verbDescriptions :: OptErrTable Options
 verbDescriptions = map toDescr verbosities
