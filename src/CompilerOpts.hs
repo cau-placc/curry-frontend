@@ -59,7 +59,7 @@ data Options = Options
   , optExtensions   :: [KnownExtension]  -- ^ enabled language extensions
   , optDebugOpts    :: DebugOpts         -- ^ debug options
   , optCaseMode     :: CaseMode          -- ^ case mode
-  , optCondCompile  :: Map.Map String String -- ^ conditional compile valuess
+  , optCondCompile  :: Map.Map String (Maybe Int) -- ^ conditional compile valuess
   } deriving Show
 
 -- |Preprocessor options
@@ -450,11 +450,11 @@ condKV (x  :xs) = let (k, v) = condKV xs in (x:k, v)
 
 
 parseCondCompileFlag :: String -> OptErr -> OptErr
-parseCondCompileFlag arg (opts, errs) = if (all isDigit v)
+parseCondCompileFlag arg (opts, errs) = if all isDigit v
                                         then (opts', errs)
                                         else (opts, condCompileErr : errs)
   where (k, v) = condKV arg
-        opts'  = opts { optCondCompile = Map.insert k v (optCondCompile opts)}
+        opts'  = opts { optCondCompile = Map.insert k (Just (read v)) (optCondCompile opts)}
 
 condCompileErr :: String
 condCompileErr = "Invalid format for --cond-compile"
