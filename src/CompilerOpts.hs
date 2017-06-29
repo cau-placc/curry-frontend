@@ -42,24 +42,24 @@ import Curry.Syntax.Extension
 -- |Compiler options
 data Options = Options
   -- general
-  { optMode         :: CymakeMode        -- ^ modus operandi
-  , optVerbosity    :: Verbosity         -- ^ verbosity level
+  { optMode         :: CymakeMode         -- ^ modus operandi
+  , optVerbosity    :: Verbosity          -- ^ verbosity level
   -- compilation
-  , optForce        :: Bool              -- ^ force (re-)compilation of target
-  , optLibraryPaths :: [FilePath]        -- ^ directories to search in
-                                         --   for libraries
-  , optImportPaths  :: [FilePath]        -- ^ directories to search in
-                                         --   for imports
-  , optHtmlDir      :: Maybe FilePath    -- ^ output directory for HTML
-  , optUseSubdir    :: Bool              -- ^ use subdir for output?
-  , optInterface    :: Bool              -- ^ create a FlatCurry interface file?
-  , optPrepOpts     :: PrepOpts          -- ^ preprocessor options
-  , optWarnOpts     :: WarnOpts          -- ^ warning options
-  , optTargetTypes  :: [TargetType]      -- ^ what to generate
-  , optExtensions   :: [KnownExtension]  -- ^ enabled language extensions
-  , optDebugOpts    :: DebugOpts         -- ^ debug options
-  , optCaseMode     :: CaseMode          -- ^ case mode
-  , optCondCompile  :: Map.Map String (Maybe Int) -- ^ conditional compile valuess
+  , optForce        :: Bool               -- ^ force (re-)compilation of target
+  , optLibraryPaths :: [FilePath]         -- ^ directories to search in
+                                          --   for libraries
+  , optImportPaths  :: [FilePath]         -- ^ directories to search in
+                                          --   for imports
+  , optHtmlDir      :: Maybe FilePath     -- ^ output directory for HTML
+  , optUseSubdir    :: Bool               -- ^ use subdir for output?
+  , optInterface    :: Bool               -- ^ create a FlatCurry interface file?
+  , optPrepOpts     :: PrepOpts           -- ^ preprocessor options
+  , optWarnOpts     :: WarnOpts           -- ^ warning options
+  , optTargetTypes  :: [TargetType]       -- ^ what to generate
+  , optExtensions   :: [KnownExtension]   -- ^ enabled language extensions
+  , optDebugOpts    :: DebugOpts          -- ^ debug options
+  , optCaseMode     :: CaseMode           -- ^ case mode
+  , optCondCompile  :: Map.Map String Int -- ^ conditional compile valuess
   } deriving Show
 
 -- |Preprocessor options
@@ -454,7 +454,7 @@ parseCondCompileFlag arg (opts, errs) = if all isDigit v
                                         then (opts', errs)
                                         else (opts, condCompileErr : errs)
   where (k, v) = condKV arg
-        opts'  = opts { optCondCompile = Map.insert k (Just (read v)) (optCondCompile opts)}
+        opts'  = opts { optCondCompile = Map.insert k (read v) (optCondCompile opts)}
 
 condCompileErr :: String
 condCompileErr = "Invalid format for --cond-compile"
