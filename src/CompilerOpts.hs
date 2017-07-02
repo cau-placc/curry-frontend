@@ -557,5 +557,4 @@ getCompilerOpts = do
   args <- getArgs
   prog <- getProgName
   let (opts, files, errs) = parseOpts args
-  print opts --TODO remove debug output of CompilerOpts
   return (prog, opts, files, errs)
