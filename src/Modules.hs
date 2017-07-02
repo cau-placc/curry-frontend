@@ -23,7 +23,7 @@ module Modules
 
 import qualified Control.Exception as C   (catch, IOException)
 import           Control.Monad            (liftM, unless, when)
-import           Data.Char                (toUpper)
+import           Data.Char                (toUpper, generalCategory, showLitChar)
 import qualified Data.Map          as Map (elems, lookup)
 import           Data.Maybe               (fromMaybe)
 import           System.Directory         (getTemporaryDirectory, removeFile)
@@ -39,6 +39,7 @@ import Curry.Base.Monad
 import Curry.Base.Position
 import Curry.Base.Pretty
 import Curry.Base.Span
+import Curry.CondCompile.CondTransform
 import Curry.FlatCurry.InterfaceEquivalence (eqInterface)
 import Curry.Files.Filenames
 import Curry.Files.PathUtils
@@ -135,12 +136,17 @@ parseModule opts m fn = do
     Just src -> do
       ul      <- liftCYM $ CS.unlit fn src
       prepd   <- preprocess (optPrepOpts opts) fn ul
+      condC   <- condCompilation (optCondCompile opts) fn prepd
       -- We ignore the warnings issued by the lexer because
       -- they will be issued a second time during parsing.
-      spanToks <- liftCYM $ silent $ CS.lexSource fn prepd
+      spanToks <- liftCYM $ silent $ CS.lexSource fn condC
       ast      <- liftCYM $ CS.parseModule fn prepd
       checked  <- checkModuleHeader opts m fn ast
       return (spanToks, checked)
+
+condCompilation :: CCState -> FilePath -> String -> CYIO String
+condCompilation m f p = do let res = condCompile m f p
+                           either (return . show) return res
 
 preprocess :: PrepOpts -> FilePath -> String -> CYIO String
 preprocess opts fn src
