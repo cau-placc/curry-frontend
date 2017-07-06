@@ -23,16 +23,16 @@ module CompilerOpts
   , getCompilerOpts, updateOpts, usage
   ) where
 
-import Data.List             (intercalate, nub)
-import Data.Maybe            (isJust)
-import Data.Char             (isDigit)
-import qualified Data.Map.Strict as Map
+import           Data.List             (intercalate, nub)
+import           Data.Maybe            (isJust)
+import           Data.Char             (isDigit)
+import qualified Data.Map    as Map
 import System.Console.GetOpt
-import System.Environment    (getArgs, getProgName)
-import System.FilePath
-  (addTrailingPathSeparator, normalise, splitSearchPath)
+import System.Environment              (getArgs, getProgName)
+import System.FilePath                 ( addTrailingPathSeparator, normalise
+                                       , splitSearchPath )
 
-import Curry.Files.Filenames (currySubdir)
+import Curry.Files.Filenames           (currySubdir)
 import Curry.Syntax.Extension
 
 -- -----------------------------------------------------------------------------
@@ -59,7 +59,8 @@ data Options = Options
   , optExtensions   :: [KnownExtension]   -- ^ enabled language extensions
   , optDebugOpts    :: DebugOpts          -- ^ debug options
   , optCaseMode     :: CaseMode           -- ^ case mode
-  , optCondCompile  :: Map.Map String Int -- ^ conditional compile valuess
+  , optCondCompile  :: Map.Map String Int -- ^ definitions for conditional
+                                          --   compiling
   } deriving Show
 
 -- |Preprocessor options

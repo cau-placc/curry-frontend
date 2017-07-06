@@ -23,7 +23,7 @@ module Modules
 
 import qualified Control.Exception as C   (catch, IOException)
 import           Control.Monad            (liftM, unless, when)
-import           Data.Char                (toUpper, generalCategory, showLitChar)
+import           Data.Char                (toUpper)
 import qualified Data.Map          as Map (elems, lookup)
 import           Data.Maybe               (fromMaybe)
 import           System.Directory         (getTemporaryDirectory, removeFile)
@@ -145,8 +145,7 @@ parseModule opts m fn = do
       return (spanToks, checked)
 
 condCompilation :: CCState -> FilePath -> String -> CYIO String
-condCompilation m f p = do let res = condCompile m f p
-                           either (return . show) return res
+condCompilation s fn p = either (failMessages . (: [])) ok (condCompile s fn p)
 
 preprocess :: PrepOpts -> FilePath -> String -> CYIO String
 preprocess opts fn src
