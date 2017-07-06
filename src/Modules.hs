@@ -140,7 +140,7 @@ parseModule opts m fn = do
       -- We ignore the warnings issued by the lexer because
       -- they will be issued a second time during parsing.
       spanToks <- liftCYM $ silent $ CS.lexSource fn condC
-      ast      <- liftCYM $ CS.parseModule fn prepd
+      ast      <- liftCYM $ CS.parseModule fn condC
       checked  <- checkModuleHeader opts m fn ast
       return (spanToks, checked)
 
