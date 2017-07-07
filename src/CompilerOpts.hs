@@ -26,7 +26,7 @@ module CompilerOpts
 import           Data.List             (intercalate, nub)
 import           Data.Maybe            (isJust)
 import           Data.Char             (isDigit)
-import qualified Data.Map    as Map
+import qualified Data.Map    as Map    (Map, empty, insert)
 import System.Console.GetOpt
 import System.Environment              (getArgs, getProgName)
 import System.FilePath                 ( addTrailingPathSeparator, normalise

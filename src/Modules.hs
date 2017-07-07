@@ -24,7 +24,7 @@ module Modules
 import qualified Control.Exception as C   (catch, IOException)
 import           Control.Monad            (liftM, unless, when)
 import           Data.Char                (toUpper)
-import qualified Data.Map          as Map (elems, lookup)
+import qualified Data.Map          as Map (Map, elems, lookup)
 import           Data.Maybe               (fromMaybe)
 import           System.Directory         (getTemporaryDirectory, removeFile)
 import           System.Exit              (ExitCode (..))
