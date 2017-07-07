@@ -39,7 +39,7 @@ import Curry.Base.Monad
 import Curry.Base.Position
 import Curry.Base.Pretty
 import Curry.Base.Span
-import Curry.CondCompile.CondTransform
+import Curry.CondCompile.Transform
 import Curry.FlatCurry.InterfaceEquivalence (eqInterface)
 import Curry.Files.Filenames
 import Curry.Files.PathUtils
@@ -136,16 +136,13 @@ parseModule opts m fn = do
     Just src -> do
       ul      <- liftCYM $ CS.unlit fn src
       prepd   <- preprocess (optPrepOpts opts) fn ul
-      condC   <- condCompilation (optCondCompile opts) fn prepd
+      condC   <- condCompile (optCondCompile opts) fn prepd
       -- We ignore the warnings issued by the lexer because
       -- they will be issued a second time during parsing.
       spanToks <- liftCYM $ silent $ CS.lexSource fn condC
       ast      <- liftCYM $ CS.parseModule fn condC
       checked  <- checkModuleHeader opts m fn ast
       return (spanToks, checked)
-
-condCompilation :: CCState -> FilePath -> String -> CYIO String
-condCompilation s fn p = either (failMessages . (: [])) ok (condCompile s fn p)
 
 preprocess :: PrepOpts -> FilePath -> String -> CYIO String
 preprocess opts fn src
@@ -172,6 +169,9 @@ withTempFile act = do
   hClose hdl
   removeFile fn
   return res
+
+condCompile :: Map.Map String Int -> FilePath -> String -> CYIO String
+condCompile s fn p = either (failMessages . (: [])) ok (condTransform s fn p)
 
 checkModuleHeader :: Monad m => Options -> ModuleIdent -> FilePath
                   -> CS.Module () -> CYT m (CS.Module ())
