@@ -137,6 +137,8 @@ parseModule opts m fn = do
       ul      <- liftCYM $ CS.unlit fn src
       prepd   <- preprocess (optPrepOpts opts) fn ul
       condC   <- condCompile (optCondCompile opts) fn prepd
+      doDump ((optDebugOpts opts) { dbDumpEnv = False })
+             (DumpCondCompiled, undefined, condC)
       -- We ignore the warnings issued by the lexer because
       -- they will be issued a second time during parsing.
       spanToks <- liftCYM $ silent $ CS.lexSource fn condC
