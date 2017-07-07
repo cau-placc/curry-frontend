@@ -23,14 +23,16 @@ module CompilerOpts
   , getCompilerOpts, updateOpts, usage
   ) where
 
-import Data.List             (intercalate, nub)
-import Data.Maybe            (isJust)
+import           Data.List             (intercalate, nub)
+import           Data.Maybe            (isJust)
+import           Data.Char             (isDigit)
+import qualified Data.Map    as Map    (Map, empty, insert)
 import System.Console.GetOpt
-import System.Environment    (getArgs, getProgName)
-import System.FilePath
-  (addTrailingPathSeparator, normalise, splitSearchPath)
+import System.Environment              (getArgs, getProgName)
+import System.FilePath                 ( addTrailingPathSeparator, normalise
+                                       , splitSearchPath )
 
-import Curry.Files.Filenames (currySubdir)
+import Curry.Files.Filenames           (currySubdir)
 import Curry.Syntax.Extension
 
 -- -----------------------------------------------------------------------------
@@ -40,23 +42,25 @@ import Curry.Syntax.Extension
 -- |Compiler options
 data Options = Options
   -- general
-  { optMode         :: CymakeMode       -- ^ modus operandi
-  , optVerbosity    :: Verbosity        -- ^ verbosity level
+  { optMode         :: CymakeMode         -- ^ modus operandi
+  , optVerbosity    :: Verbosity          -- ^ verbosity level
   -- compilation
-  , optForce        :: Bool             -- ^ force (re-)compilation of target
-  , optLibraryPaths :: [FilePath]       -- ^ directories to search in
-                                        --   for libraries
-  , optImportPaths  :: [FilePath]       -- ^ directories to search in
-                                        --   for imports
-  , optHtmlDir      :: Maybe FilePath   -- ^ output directory for HTML
-  , optUseSubdir    :: Bool             -- ^ use subdir for output?
-  , optInterface    :: Bool             -- ^ create a FlatCurry interface file?
-  , optPrepOpts     :: PrepOpts         -- ^ preprocessor options
-  , optWarnOpts     :: WarnOpts         -- ^ warning options
-  , optTargetTypes  :: [TargetType]     -- ^ what to generate
-  , optExtensions   :: [KnownExtension] -- ^ enabled language extensions
-  , optDebugOpts    :: DebugOpts        -- ^ debug options
-  , optCaseMode     :: CaseMode         -- ^ case mode
+  , optForce        :: Bool               -- ^ force (re-)compilation of target
+  , optLibraryPaths :: [FilePath]         -- ^ directories to search in
+                                          --   for libraries
+  , optImportPaths  :: [FilePath]         -- ^ directories to search in
+                                          --   for imports
+  , optHtmlDir      :: Maybe FilePath     -- ^ output directory for HTML
+  , optUseSubdir    :: Bool               -- ^ use subdir for output?
+  , optInterface    :: Bool               -- ^ create a FlatCurry interface file?
+  , optPrepOpts     :: PrepOpts           -- ^ preprocessor options
+  , optWarnOpts     :: WarnOpts           -- ^ warning options
+  , optTargetTypes  :: [TargetType]       -- ^ what to generate
+  , optExtensions   :: [KnownExtension]   -- ^ enabled language extensions
+  , optDebugOpts    :: DebugOpts          -- ^ debug options
+  , optCaseMode     :: CaseMode           -- ^ case mode
+  , optCondCompile  :: Map.Map String Int -- ^ definitions for conditional
+                                          --   compiling
   } deriving Show
 
 -- |Preprocessor options
@@ -107,6 +111,7 @@ defaultOptions = Options
   , optExtensions   = []
   , optDebugOpts    = defaultDebugOpts
   , optCaseMode     = CaseModeFree
+  , optCondCompile  = Map.empty
   }
 
 -- | Default preprocessor options
@@ -219,7 +224,8 @@ warnFlags =
 
 -- |Dump level
 data DumpLevel
-  = DumpParsed            -- ^ dump source code after parsing
+  = DumpCondCompiled      -- ^ dump source code after conditional compiling
+  | DumpParsed            -- ^ dump source code after parsing
   | DumpExtensionChecked  -- ^ dump source code after extension checking
   | DumpTypeSyntaxChecked -- ^ dump source code after type syntax checking
   | DumpKindChecked       -- ^ dump source code after kind checking
@@ -243,7 +249,8 @@ data DumpLevel
 
 -- |Description and flag of dump levels
 dumpLevel :: [(DumpLevel, String, String)]
-dumpLevel = [ (DumpParsed           , "dump-parse", "parsing"                         )
+dumpLevel = [ (DumpCondCompiled     , "dump-cond" , "conditional compiling"           )
+            , (DumpParsed           , "dump-parse", "parsing"                         )
             , (DumpExtensionChecked , "dump-exc"  , "extension checking"              )
             , (DumpTypeSyntaxChecked, "dump-tsc"  , "type syntax checking"            )
             , (DumpKindChecked      , "dump-kc"   , "kind checking"                   )
@@ -429,12 +436,30 @@ options =
   , mkOptDescr onOpts      "X" []            "ext"  "language extension" extDescriptions
   , mkOptDescr onWarnOpts  "W" []            "opt"  "warning option"     warnDescriptions
   , mkOptDescr onDebugOpts "d" []            "opt"  "debug option"       debugDescriptions
+  , Option []  ["cond-compile"]
+      (ReqArg parseCondCompileFlag "var=val")
+      "define a conditional compile flag named 'var' with value 'val'"
   ]
 
 targetOption :: TargetType -> String -> String -> OptDescr (OptErr -> OptErr)
 targetOption ty flag desc
   = Option "" [flag] (NoArg (onOpts $ \ opts -> opts { optTargetTypes =
       nub $ ty : optTargetTypes opts })) desc
+
+condKV :: String -> (String, String)
+condKV []       = ([], [])
+condKV ('=':xs) = ([], xs)
+condKV (x  :xs) = let (k, v) = condKV xs in (x : k, v)
+
+parseCondCompileFlag :: String -> OptErr -> OptErr
+parseCondCompileFlag arg (opts, errs)
+  | not (null v) && all isDigit v = (opts', errs)
+  | otherwise                     = (opts , condCompileErr arg : errs)
+  where (k, v) = condKV arg
+        opts'  = opts { optCondCompile = Map.insert k (read v) (optCondCompile opts)}
+
+condCompileErr :: String -> String
+condCompileErr = ("Invalid format for option '--cond-compile': " ++)
 
 verbDescriptions :: OptErrTable Options
 verbDescriptions = map toDescr verbosities
