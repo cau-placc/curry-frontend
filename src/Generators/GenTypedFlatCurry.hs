@@ -17,6 +17,7 @@ module Generators.GenTypedFlatCurry (genTypedFlatCurry) where
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative        ((<$>), (<*>))
 #endif
+import           Control.Monad              ((<=<))
 import           Control.Monad.Extra        (concatMapM)
 import qualified Control.Monad.State as S   ( State, evalState, get, gets
                                             , modify, put )
@@ -226,8 +227,8 @@ trModule (IL.Module mid is ds) = do
   is' <- getImports is
   sns <- getTypeSynonyms >>= concatMapM trTypeSynonym
   tds <- concatMapM trTypeDecl ds
-  fds <- concatMapM (fmap (map runNormalization) . trAFuncDecl) ds
-  ops <- getFixities     >>= concatMapM trIOpDecl
+  fds <- concatMapM (return . map runNormalization <=< trAFuncDecl) ds
+  ops <- getFixities >>= concatMapM trIOpDecl
   return $ AProg (moduleName mid) is' (sns ++ tds) fds ops
 
 -- Translate a type synonym
