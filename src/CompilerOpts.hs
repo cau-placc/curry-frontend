@@ -437,8 +437,8 @@ options =
   , mkOptDescr onWarnOpts  "W" []            "opt"  "warning option"     warnDescriptions
   , mkOptDescr onDebugOpts "d" []            "opt"  "debug option"       debugDescriptions
   , Option []  ["cond-compile"]
-      (ReqArg parseCondCompileFlag "arg")
-      "set conditional compile flags"
+      (ReqArg parseCondCompileFlag "var=val")
+      "define a conditional compile flag named 'var' with value 'val'"
   ]
 
 targetOption :: TargetType -> String -> String -> OptDescr (OptErr -> OptErr)
@@ -449,18 +449,17 @@ targetOption ty flag desc
 condKV :: String -> (String, String)
 condKV []       = ([], [])
 condKV ('=':xs) = ([], xs)
-condKV (x  :xs) = let (k, v) = condKV xs in (x:k, v)
-
+condKV (x  :xs) = let (k, v) = condKV xs in (x : k, v)
 
 parseCondCompileFlag :: String -> OptErr -> OptErr
-parseCondCompileFlag arg (opts, errs) = if all isDigit v
-                                        then (opts', errs)
-                                        else (opts, condCompileErr : errs)
+parseCondCompileFlag arg (opts, errs)
+  | not (null v) && all isDigit v = (opts', errs)
+  | otherwise                     = (opts , condCompileErr arg : errs)
   where (k, v) = condKV arg
         opts'  = opts { optCondCompile = Map.insert k (read v) (optCondCompile opts)}
 
-condCompileErr :: String
-condCompileErr = "Invalid format for --cond-compile"
+condCompileErr :: String -> String
+condCompileErr = ("Invalid format for option '--cond-compile': " ++)
 
 verbDescriptions :: OptErrTable Options
 verbDescriptions = map toDescr verbosities
