@@ -127,6 +127,7 @@ Library
     , Transformations.Desugar
     , Transformations.Dictionary
     , Transformations.Lift
+    , Transformations.Newtypes
     , Transformations.Qual
     , Transformations.Simplify
   Other-Modules:

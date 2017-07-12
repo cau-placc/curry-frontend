@@ -22,6 +22,7 @@ import Transformations.Derive         as DV (derive)
 import Transformations.Desugar        as DS (desugar)
 import Transformations.Dictionary     as DI (insertDicts)
 import Transformations.Lift           as L  (lift)
+import Transformations.Newtypes       as NT (removeNewtypes)
 import Transformations.Qual           as Q  (qual)
 import Transformations.Simplify       as S  (simplify)
 
@@ -55,6 +56,11 @@ insertDicts (env, mdl) = (env { interfaceEnv = intfEnv'
   where (mdl', intfEnv', tcEnv', vEnv', pEnv') =
           DI.insertDicts (interfaceEnv env) (tyConsEnv env) (valueEnv env)
                          (classEnv env) (instEnv env) (opPrecEnv env) mdl
+
+-- |Remove newtype constructors.
+removeNewtypes :: CompEnv (Module Type) -> CompEnv (Module Type)
+removeNewtypes (env, mdl) = (env, mdl')
+  where mdl' = NT.removeNewtypes (valueEnv env) mdl
 
 -- |Simplify the source code, changes the value environment.
 simplify :: CompEnv (Module Type) -> CompEnv (Module Type)

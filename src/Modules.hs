@@ -261,14 +261,15 @@ checkModule opts mdl = do
 transModule :: Options -> CompEnv (CS.Module PredType)
             -> CYIO (CompEnv IL.Module, CompEnv (CS.Module Type))
 transModule opts mdl = do
-  derived    <- dumpCS DumpDerived       $ derive       mdl
-  desugared  <- dumpCS DumpDesugared     $ desugar      derived
-  dicts      <- dumpCS DumpDictionaries  $ insertDicts  desugared
-  simplified <- dumpCS DumpSimplified    $ simplify     dicts
-  lifted     <- dumpCS DumpLifted        $ lift         simplified
-  il         <- dumpIL DumpTranslated    $ ilTrans      lifted
-  ilCaseComp <- dumpIL DumpCaseCompleted $ completeCase il
-  return (ilCaseComp, dicts)
+  derived    <- dumpCS DumpDerived       $ derive         mdl
+  desugared  <- dumpCS DumpDesugared     $ desugar        derived
+  dicts      <- dumpCS DumpDictionaries  $ insertDicts    desugared
+  newtypes   <- dumpCS DumpNewtypes      $ removeNewtypes dicts
+  simplified <- dumpCS DumpSimplified    $ simplify       newtypes
+  lifted     <- dumpCS DumpLifted        $ lift           simplified
+  il         <- dumpIL DumpTranslated    $ ilTrans        lifted
+  ilCaseComp <- dumpIL DumpCaseCompleted $ completeCase   il
+  return (ilCaseComp, newtypes)
   where
   dumpCS :: Show a => DumpLevel -> CompEnv (CS.Module a)
          -> CYIO (CompEnv (CS.Module a))

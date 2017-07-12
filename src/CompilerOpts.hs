@@ -251,6 +251,7 @@ data DumpLevel
   | DumpDerived           -- ^ dump source  after deriving
   | DumpDesugared         -- ^ dump source  after desugaring
   | DumpDictionaries      -- ^ dump source  after dictionary transformation
+  | DumpNewtypes          -- ^ dump source  after removing newtype constructors
   | DumpSimplified        -- ^ dump source  after simplification
   | DumpLifted            -- ^ dump source  after lambda-lifting
   | DumpTranslated        -- ^ dump IL code after translation
@@ -276,6 +277,7 @@ dumpLevel = [ (DumpCondCompiled     , "dump-cond" , "conditional compiling"     
             , (DumpDerived          , "dump-deriv", "deriving"                        )
             , (DumpDesugared        , "dump-ds"   , "desugaring"                      )
             , (DumpDictionaries     , "dump-dict" , "dictionary insertion"            )
+            , (DumpNewtypes         , "dump-new"  , "removing newtype constructors"   )
             , (DumpLifted           , "dump-lift" , "lifting"                         )
             , (DumpSimplified       , "dump-simpl", "simplification"                  )
             , (DumpTranslated       , "dump-trans", "pattern matching compilation"    )
