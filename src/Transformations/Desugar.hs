@@ -5,7 +5,7 @@
                                  Martin Engelke
                      2011 - 2015 Björn Peemöller
                      2015        Jan Tikovsky
-                     2016        Finn Teegen
+                     2016 - 2017 Finn Teegen
   License     :  BSD-3-clause
 
   Maintainer  :  bjp@informatik.uni-kiel.de
@@ -35,15 +35,6 @@
     - case expressions,
     - let expressions, and
     - expressions with a type signature.
-
-  * Applications 'N x' in patterns and expressions, where 'N' is a
-    newtype constructor, are replaced by a 'x'. Note that neither the
-    newtype declaration itself nor partial applications of newtype
-    constructors are changed.
-    It were possible to replace partial applications of newtype constructor
-    by 'Prelude.id'.
-    However, our solution yields a more accurate output when the result
-    of a computation includes partial applications.
 
   * Functional patterns are replaced by variables and are integrated
     in a guarded right hand side using the (=:<=) operator.
@@ -164,7 +155,7 @@ freshVar prefix t = do
 
 desugarModuleDecls :: [Decl PredType] -> DsM [Decl PredType]
 desugarModuleDecls ds = do
-  ds'   <- concatMapM dsRecordDecl ds -- convert record decls to data decls
+  ds'   <- concatMapM dsRecordDecl ds
   ds''  <- mapM dsClassAndInstanceDecl ds'
   ds''' <- dsDeclGroup ds''
   return $ filter (not . liftM2 (||) isValueDecl isTypeSig) ds'' ++ ds'''
@@ -595,10 +586,6 @@ dsPat p ds (LiteralPattern      pty l) =
   either (dsPat p ds) (return . (,) ds) (dsLiteralPat pty l)
 dsPat p ds (NegativePattern     pty l) =
   dsPat p ds (LiteralPattern pty (negateLiteral l))
-dsPat p ds (ConstructorPattern pty c [t]) = do
-  isNc <- isNewtypeConstr c
-  if isNc then dsPat p ds t else second (constrPat c) <$> dsPat p ds t
-  where constrPat c' t' = ConstructorPattern pty c' [t']
 dsPat p ds (ConstructorPattern pty c ts) =
   second (ConstructorPattern pty c) <$> mapAccumM (dsPat p) ds ts
 dsPat p ds (InfixPattern  pty t1 op t2) =
@@ -720,9 +707,6 @@ dsExpr p (UnaryMinus            e) = do
   return $ case e' of
     Literal pty l | negativeLitsEnabled -> Literal pty $ negateLiteral l
     _                                   -> Apply (prelNegate $ typeOf e') e'
-dsExpr p (Apply (Constructor pty c) e) = do
-  isNc <- isNewtypeConstr c
-  if isNc then dsExpr p e else Apply (Constructor pty c) <$> dsExpr p e
 dsExpr p (Apply e1 e2) = Apply <$> dsExpr p e1 <*> dsExpr p e2
 dsExpr p (InfixApply e1 op e2) = do
   op' <- dsExpr p (infixOp op)
@@ -1037,13 +1021,6 @@ falsePat = ConstructorPattern predBoolType qFalseId []
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions
 -- ---------------------------------------------------------------------------
-
-isNewtypeConstr :: QualIdent -> DsM Bool
-isNewtypeConstr c = getValueEnv >>= \vEnv -> return $
-  case qualLookupValue c vEnv of
-    [NewtypeConstructor _ _ _] -> True
-    [DataConstructor  _ _ _ _] -> False
-    x -> internalError $ "Desugar.isNewtypeConstr: " ++ show c ++ " is " ++ show x
 
 conType :: QualIdent -> ValueEnv -> ([Ident], ExistTypeScheme)
 conType c vEnv = case qualLookupValue c vEnv of
