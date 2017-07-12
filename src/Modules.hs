@@ -136,7 +136,7 @@ parseModule opts m fn = do
     Just src -> do
       ul      <- liftCYM $ CS.unlit fn src
       prepd   <- preprocess (optPrepOpts opts) fn ul
-      condC   <- condCompile (optCondCompile opts) fn prepd
+      condC   <- condCompile (optCppOpts opts) fn prepd
       doDump ((optDebugOpts opts) { dbDumpEnv = False })
              (DumpCondCompiled, undefined, condC)
       -- We ignore the warnings issued by the lexer because
@@ -172,8 +172,12 @@ withTempFile act = do
   removeFile fn
   return res
 
-condCompile :: Map.Map String Int -> FilePath -> String -> CYIO String
-condCompile s fn p = either (failMessages . (: [])) ok (condTransform s fn p)
+condCompile :: CppOpts -> FilePath -> String -> CYIO String
+condCompile opts fn p
+  | not (cppRun opts) = return p
+  | otherwise         = either (failMessages . (: []))
+                               ok
+                               (condTransform (cppDefinitions opts) fn p)
 
 checkModuleHeader :: Monad m => Options -> ModuleIdent -> FilePath
                   -> CS.Module () -> CYT m (CS.Module ())

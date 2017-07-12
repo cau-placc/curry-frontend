@@ -26,12 +26,13 @@ import Curry.Base.Position (Position)
 import Curry.Base.Pretty
 import Curry.Files.Filenames
 import Curry.Files.PathUtils
-import Curry.Syntax (ModulePragma (..), Tool (CYMAKE, FRONTEND))
+import Curry.Syntax ( ModulePragma (..), Extension (KnownExtension)
+                    , KnownExtension (CPP), Tool (CYMAKE, FRONTEND) )
 
 import Base.Messages
 
-import CompilerOpts ( Options (..), DebugOpts (..), TargetType (..)
-                    , defaultDebugOpts, updateOpts)
+import CompilerOpts ( Options (..), CppOpts (..), DebugOpts (..)
+                    , TargetType (..), defaultDebugOpts, updateOpts )
 import CurryDeps    (Source (..), flatDeps)
 import Modules      (compileModule)
 
@@ -108,11 +109,18 @@ adjustOptions final opts
 
 
 processPragmas :: Options -> [ModulePragma] -> CYIO Options
-processPragmas opts0 ps = foldM processPragma opts0 $
-  [ (p, s) | OptionsPragma p (Just FRONTEND) s <- ps ] ++
-    [ (p, s) | OptionsPragma p (Just CYMAKE) s <- ps ]
+processPragmas opts0 ps = do
+  let opts1 = foldl processLanguagePragma opts0
+                [ e | LanguagePragma _ es <- ps, KnownExtension _ e <- es ]
+  foldM processOptionPragma opts1 $
+    [ (p, s) | OptionsPragma p (Just FRONTEND) s <- ps ] ++
+      [ (p, s) | OptionsPragma p (Just CYMAKE) s <- ps ]
   where
-  processPragma opts (p, s)
+  processLanguagePragma opts CPP
+    = opts { optCppOpts = (optCppOpts opts) { cppRun = True } }
+  processLanguagePragma opts _
+    = opts
+  processOptionPragma opts (p, s)
     | not (null unknownFlags)
     = failMessages [errUnknownOptions p unknownFlags]
     | optMode         opts /= optMode         opts'

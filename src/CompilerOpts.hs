@@ -16,8 +16,8 @@
     help information as well as parsing the command line arguments.
 -}
 module CompilerOpts
-  ( Options (..), PrepOpts (..), WarnOpts (..), DebugOpts (..), CaseMode (..)
-  , CymakeMode (..), Verbosity (..), TargetType (..)
+  ( Options (..), CppOpts (..), PrepOpts (..), WarnOpts (..), DebugOpts (..)
+  , CaseMode (..), CymakeMode (..), Verbosity (..), TargetType (..)
   , WarnFlag (..), KnownExtension (..), DumpLevel (..), dumpLevel
   , defaultOptions, defaultPrepOpts, defaultWarnOpts, defaultDebugOpts
   , getCompilerOpts, updateOpts, usage
@@ -59,8 +59,13 @@ data Options = Options
   , optExtensions   :: [KnownExtension]   -- ^ enabled language extensions
   , optDebugOpts    :: DebugOpts          -- ^ debug options
   , optCaseMode     :: CaseMode           -- ^ case mode
-  , optCondCompile  :: Map.Map String Int -- ^ definitions for conditional
-                                          --   compiling
+  , optCppOpts      :: CppOpts            -- ^ C preprocessor options
+  } deriving Show
+
+-- |C preprocessor options
+data CppOpts = CppOpts
+  { cppRun         :: Bool                -- ^ run C preprocessor
+  , cppDefinitions :: Map.Map String Int  -- ^ defintions for the C preprocessor
   } deriving Show
 
 -- |Preprocessor options
@@ -111,7 +116,14 @@ defaultOptions = Options
   , optExtensions   = []
   , optDebugOpts    = defaultDebugOpts
   , optCaseMode     = CaseModeFree
-  , optCondCompile  = Map.empty
+  , optCppOpts      = defaultCppOpts
+  }
+
+-- | Default C preprocessor options
+defaultCppOpts :: CppOpts
+defaultCppOpts = CppOpts
+  { cppRun         = False
+  , cppDefinitions = Map.empty
   }
 
 -- | Default preprocessor options
@@ -275,16 +287,18 @@ dumpLevel = [ (DumpCondCompiled     , "dump-cond" , "conditional compiling"     
 -- |Description and flag of language extensions
 extensions :: [(KnownExtension, String, String)]
 extensions =
-  [ ( AnonFreeVars      , "AnonFreeVars"
-    , "enable anonymous free variables"     )
-  , ( FunctionalPatterns, "FunctionalPatterns"
-    , "enable functional patterns"          )
-  , ( NegativeLiterals  , "NegativeLiterals"
-    , "desugar negated literals as negative literal")
-  , ( NoImplicitPrelude , "NoImplicitPrelude"
-    , "do not implicitly import the Prelude")
-  , ( ExistentialQuantification , "ExistentialQuantification"
-    , "enable existentially quantified types")
+  [ ( AnonFreeVars             , "AnonFreeVars"
+    , "enable anonymous free variables"              )
+  , ( CPP                      , "CPP"
+    , "run C preprocessor"                           )
+  , ( ExistentialQuantification, "ExistentialQuantification"
+    , "enable existentially quantified types"        )
+  , ( FunctionalPatterns       , "FunctionalPatterns"
+    , "enable functional patterns"                   )
+  , ( NegativeLiterals         , "NegativeLiterals"
+    , "desugar negated literals as negative literal" )
+  , ( NoImplicitPrelude        , "NoImplicitPrelude"
+    , "do not implicitly import the Prelude"         )
   ]
 
 -- -----------------------------------------------------------------------------
@@ -308,6 +322,9 @@ type OptErrTable opt = [(String, String, opt -> opt)]
 onOpts :: (Options -> Options) -> OptErr -> OptErr
 onOpts f (opts, errs) = (f opts, errs)
 
+onCppOpts :: (CppOpts -> CppOpts) -> OptErr -> OptErr
+onCppOpts f (opts, errs) = (opts { optCppOpts = f (optCppOpts opts) }, errs)
+
 onPrepOpts :: (PrepOpts -> PrepOpts) -> OptErr -> OptErr
 onPrepOpts f (opts, errs) = (opts { optPrepOpts = f (optPrepOpts opts) }, errs)
 
@@ -318,8 +335,8 @@ onDebugOpts :: (DebugOpts -> DebugOpts) -> OptErr -> OptErr
 onDebugOpts f (opts, errs)
   = (opts { optDebugOpts = f (optDebugOpts opts) }, errs)
 
-withArg :: ((opt -> opt) -> OptErr -> OptErr)
-        -> (String -> opt -> opt) -> String -> OptErr -> OptErr
+withArg :: ((a -> b) -> OptErr -> OptErr)
+        -> (String -> a -> b) -> String -> OptErr -> OptErr
 withArg lift f arg = lift (f arg)
 
 addErr :: String -> OptErr -> OptErr
@@ -383,7 +400,7 @@ options =
               map (normalise . addTrailingPathSeparator) (splitSearchPath arg)
               }) "dir[:dir]")
       "search for imports in dir[:dir]"
-  , Option []  ["htmldir"]
+  , Option []   ["htmldir"]
       (ReqArg (withArg onOpts $ \ arg opts -> opts { optHtmlDir =
         Just arg }) "dir")
       "write HTML documentation into directory `dir'"
@@ -436,30 +453,31 @@ options =
   , mkOptDescr onOpts      "X" []            "ext"  "language extension" extDescriptions
   , mkOptDescr onWarnOpts  "W" []            "opt"  "warning option"     warnDescriptions
   , mkOptDescr onDebugOpts "d" []            "opt"  "debug option"       debugDescriptions
-  , Option []  ["cond-compile"]
-      (ReqArg parseCondCompileFlag "var=val")
-      "define a conditional compile flag named 'var' with value 'val'"
+  , Option ""   ["cpp"]
+      (NoArg (onCppOpts $ \ opts -> opts { cppRun = True }))
+      "run C preprocessor"
+  , Option "D"  []
+      (ReqArg (withArg ($) parseCppDefinition) "s=v")
+      "define symbol `s` with value `v` for the C preprocessor"
   ]
+
+parseCppDefinition :: String -> OptErr -> OptErr
+parseCppDefinition arg optErr
+  | not (null $ s ++ v) && all isDigit v = onCppOpts (addCppDefinition s v) optErr
+  | otherwise                            = addErr (cppDefinitionErr arg) optErr
+  where (s, v) = fmap (drop 1) $ break ('=' ==) arg
+
+addCppDefinition :: String -> String -> CppOpts -> CppOpts
+addCppDefinition s v opts =
+  opts { cppDefinitions = Map.insert s (read v) (cppDefinitions opts) }
+
+cppDefinitionErr :: String -> String
+cppDefinitionErr = (++) "Invalid format for option '-D': "
 
 targetOption :: TargetType -> String -> String -> OptDescr (OptErr -> OptErr)
 targetOption ty flag desc
   = Option "" [flag] (NoArg (onOpts $ \ opts -> opts { optTargetTypes =
       nub $ ty : optTargetTypes opts })) desc
-
-condKV :: String -> (String, String)
-condKV []       = ([], [])
-condKV ('=':xs) = ([], xs)
-condKV (x  :xs) = let (k, v) = condKV xs in (x : k, v)
-
-parseCondCompileFlag :: String -> OptErr -> OptErr
-parseCondCompileFlag arg (opts, errs)
-  | not (null v) && all isDigit v = (opts', errs)
-  | otherwise                     = (opts , condCompileErr arg : errs)
-  where (k, v) = condKV arg
-        opts'  = opts { optCondCompile = Map.insert k (read v) (optCondCompile opts)}
-
-condCompileErr :: String -> String
-condCompileErr = ("Invalid format for option '--cond-compile': " ++)
 
 verbDescriptions :: OptErrTable Options
 verbDescriptions = map toDescr verbosities
