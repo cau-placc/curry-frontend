@@ -146,8 +146,6 @@ declDeriveInfo tcEnv clsEnv (DataDecl p tc tvs cs clss) =
           where tys = [ty | FieldDecl _ ls ty <- fs, _ <- ls]
 declDeriveInfo tcEnv clsEnv (NewtypeDecl p tc tvs nc clss) =
   mkDeriveInfo tcEnv clsEnv p tc tvs [] [nconstrType nc] clss
-  where nconstrType (NewConstrDecl      _ _ ty) = ty
-        nconstrType (NewRecordDecl _ _ (_, ty)) = ty
 declDeriveInfo _ _ _ =
   internalError "InstanceCheck.declDeriveInfo: no data or newtype declaration"
 
