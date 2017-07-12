@@ -108,7 +108,7 @@ data FlatEnv = FlatEnv
   , tcEnv        :: TCEnv            -- type constructor environment
   , tyEnv        :: ValueEnv         -- type environment
   , fixities     :: [CS.IDecl]       -- fixity declarations
-  , typeSynonyms :: [CS.Decl Type]      -- type synonyms
+  , typeSynonyms :: [CS.Decl Type]   -- type synonyms
   , imports      :: [ModuleIdent]    -- module imports
   -- state for mapping identifiers to indexes
   , nextVar      :: Int              -- fresh variable index counter
@@ -250,15 +250,10 @@ trTypeDecl (IL.DataDecl qid a cs) = do
   vis <-getTypeVisibility qid
   cs' <- mapM trConstrDecl cs
   return [Type q' vis [0 .. a - 1] cs']
-trTypeDecl (IL.NewtypeDecl qid a (IL.ConstrDecl _ ty)) = do
-  q'  <- trQualIdent qid
-  vis <- getTypeVisibility qid
-  ty' <- trType ty
-  return [TypeSyn q' vis [0 .. a - 1] ty']
-trTypeDecl _ = return []
+trTypeDecl _                      = return []
 
 -- Translate a constructor declaration
-trConstrDecl :: IL.ConstrDecl [IL.Type] -> FlatState ConsDecl
+trConstrDecl :: IL.ConstrDecl -> FlatState ConsDecl
 trConstrDecl (IL.ConstrDecl qid tys) = flip Cons (length tys)
   <$> trQualIdent qid
   <*> getVisibility qid

@@ -56,9 +56,6 @@ ppDecl (DataDecl                   tc n cs) = sep $
   text "data" <+> ppTypeLhs tc n :
   map (nest dataIndent)
       (zipWith (<+>) (equals : repeat (char '|')) (map ppConstr cs))
-ppDecl (NewtypeDecl tc n (ConstrDecl c ty)) = sep
-  [ text "newtype" <+> ppTypeLhs tc n <+> equals
-  , nest dataIndent (ppConstr (ConstrDecl c [ty]))]
 ppDecl (FunctionDecl             f vs ty e) = ppTypeSig f ty $$ sep
   [ ppQIdent f <+> hsep (map (ppIdent . snd) vs) <+> equals
   , nest bodyIndent (ppExpr 0 e)]
@@ -71,7 +68,7 @@ ppDecl (ExternalDecl f cc ie ty) = sep
 ppTypeLhs :: QualIdent -> Int -> Doc
 ppTypeLhs tc n = ppQIdent tc <+> hsep (map text (take n typeVars))
 
-ppConstr :: ConstrDecl [Type] -> Doc
+ppConstr :: ConstrDecl -> Doc
 ppConstr (ConstrDecl c tys) = ppQIdent c <+> fsep (map (ppType 2) tys)
 
 ppTypeSig :: QualIdent -> Type -> Doc

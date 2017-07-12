@@ -94,7 +94,6 @@ freshIdent = do
 
 ccDecl :: Decl -> CCM Decl
 ccDecl dd@(DataDecl        _ _ _) = return dd
-ccDecl nt@(NewtypeDecl     _ _ _) = return nt
 ccDecl (FunctionDecl qid vs ty e) = FunctionDecl qid vs ty <$> ccExpr e
 ccDecl ed@(ExternalDecl  _ _ _ _) = return ed
 
@@ -369,7 +368,6 @@ getCCFromDecls cs ds = complementary cs cinfos
 
   decl `declares` qid = case decl of
     DataDecl    _ _ cs' -> any (`declaresConstr` qid) cs'
-    NewtypeDecl _ _ nc  -> nc `declaresConstr` qid
     _                   -> False
 
   declaresConstr (ConstrDecl cid _) qid = cid == qid

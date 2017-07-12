@@ -65,7 +65,6 @@ imports m = Set.toList . Set.delete m . foldr mdlsDecl Set.empty
 mdlsDecl :: IL.Decl -> Set.Set ModuleIdent -> Set.Set ModuleIdent
 mdlsDecl (IL.DataDecl       _ _ cs) ms = foldr mdlsConstrsDecl ms cs
   where mdlsConstrsDecl (IL.ConstrDecl _ tys) ms' = foldr mdlsType ms' tys
-mdlsDecl (IL.NewtypeDecl _ _ (IL.ConstrDecl _ ty)) ms = mdlsType ty ms
 mdlsDecl (IL.FunctionDecl _ _ ty e) ms = mdlsType ty (mdlsExpr e ms)
 mdlsDecl (IL.ExternalDecl _ _ _ ty) ms = mdlsType ty ms
 
@@ -144,7 +143,6 @@ constrType c = do
 
 trDecl :: Decl Type -> TransM [IL.Decl]
 trDecl (DataDecl     _ tc tvs cs _) = (:[]) <$> trData     tc tvs cs
-trDecl (NewtypeDecl  _ tc tvs nc _) = (:[]) <$> trNewtype  tc tvs nc
 trDecl (ForeignDecl _ cc ie ty f _) = (:[]) <$> trForeign  f cc ie ty
 trDecl (FunctionDecl    _ ty f eqs) = (:[]) <$> trFunction f ty eqs
 trDecl _                            = return []
@@ -154,7 +152,7 @@ trData tc tvs cs = do
   tc' <- trQualify tc
   IL.DataDecl tc' (length tvs) <$> mapM trConstrDecl cs
 
-trConstrDecl :: ConstrDecl -> TransM (IL.ConstrDecl [IL.Type])
+trConstrDecl :: ConstrDecl -> TransM IL.ConstrDecl
 trConstrDecl d = do
   c' <- trQualify (constr d)
   ty' <- arrowArgs <$> constrType c'
@@ -163,13 +161,6 @@ trConstrDecl d = do
   constr (ConstrDecl    _ _ _ c _) = c
   constr (ConOpDecl  _ _ _ _ op _) = op
   constr (RecordDecl    _ _ _ c _) = c
-
-trNewtype :: Ident -> [Ident] -> NewConstrDecl -> TransM IL.Decl
-trNewtype tc tvs newDecl = do
-  tc' <- trQualify tc
-  c'  <- trQualify (nconstrId newDecl)
-  [ty] <- arrowArgs <$> constrType c'
-  return $ (IL.NewtypeDecl tc' (length tvs) . IL.ConstrDecl c') (transType ty)
 
 trForeign :: Ident -> CallConv -> Maybe String -> Type -> TransM IL.Decl
 trForeign _ _  Nothing   _  = internalError "CurryToIL.trForeign: no target"
