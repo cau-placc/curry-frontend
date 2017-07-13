@@ -472,7 +472,7 @@ checkMissingMethodImplementations p cls ds = warnFor WarnMissingMethods $ do
   let ocls = getOrigName m cls tcEnv
       ms   = classMethods ocls clsEnv
   mapM_ (report . warnMissingMethodImplementation p) $
-    filter (not . flip (hasDefaultImpl ocls) clsEnv) $ ms \\ fs
+    filter ((null fs ||) . not . flip (hasDefaultImpl ocls) clsEnv) $ ms \\ fs
   where fs = map unRenameIdent $ concatMap impls ds
 
 warnMissingMethodImplementation :: Position -> Ident -> Message
