@@ -1,7 +1,7 @@
 {- |
     Module      :  $Header$
     Description :  Checks type kinds
-    Copyright   :  (c)        2016 Finn Teegen
+    Copyright   :  (c) 2016 - 2017 Finn Teegen
     License     :  BSD-3-clause
 
     Maintainer  :  bjp@informatik.uni-kiel.de
@@ -115,6 +115,7 @@ ok = return ()
 
 bt :: Decl a -> [Ident]
 bt (DataDecl     _ tc _ _ _) = [tc]
+bt (ExternalDataDecl _ tc _) = [tc]
 bt (NewtypeDecl  _ tc _ _ _) = [tc]
 bt (TypeDecl       _ tc _ _) = [tc]
 bt (ClassDecl   _ _ cls _ _) = [cls]
@@ -135,6 +136,7 @@ instance HasType a => HasType (Maybe a) where
 instance HasType (Decl a) where
   fts _ (InfixDecl             _ _ _ _) = id
   fts m (DataDecl        _ _ _ cs clss) = fts m cs . fts m clss
+  fts _ (ExternalDataDecl        _ _ _) = id
   fts m (NewtypeDecl     _ _ _ nc clss) = fts m nc . fts m clss
   fts m (TypeDecl             _ _ _ ty) = fts m ty
   fts m (TypeSig                _ _ ty) = fts m ty
@@ -235,6 +237,7 @@ instance HasType QualIdent where
 
 ft' :: ModuleIdent -> Decl a -> [Ident]
 ft' _ (DataDecl     _ _ _ _ _) = []
+ft' _ (ExternalDataDecl _ _ _) = []
 ft' m (NewtypeDecl _ _ _ nc _) = fts m nc []
 ft' m (TypeDecl      _ _ _ ty) = fts m ty []
 ft' _ _                        = []
@@ -248,6 +251,7 @@ checkTypeAndNewtypeDecls :: [Decl a] -> KCM ()
 checkTypeAndNewtypeDecls [] =
   internalError "Checks.KindCheck.checkTypeAndNewtypeDecls: empty list"
 checkTypeAndNewtypeDecls [DataDecl _ _ _ _ _] = ok
+checkTypeAndNewtypeDecls [ExternalDataDecl _ _ _] = ok
 checkTypeAndNewtypeDecls [d] | isTypeOrNewtypeDecl d = do
   m <- getModuleIdent
   let tc = typeConstructor d
@@ -322,6 +326,8 @@ bindKind m tcEnv' clsEnv tcEnv (DataDecl _ tc tvs cs _) = do
             tvs' = tvs ++ evs
             PredType ps ty = expandConstrType m tcEnv' clsEnv qtc tvs' cx tys
             tys' = arrowArgs ty
+bindKind m _     _       tcEnv (ExternalDataDecl _ tc tvs) = do
+  bindTypeConstructor DataType tc tvs (Just KindStar) [] tcEnv
 bindKind m tcEnv' _      tcEnv (NewtypeDecl _ tc tvs nc _) =
   bindTypeConstructor RenamingType tc tvs (Just KindStar) (mkData nc) tcEnv
   where
@@ -430,6 +436,7 @@ kcDecl _     (InfixDecl _ _ _ _) = ok
 kcDecl tcEnv (DataDecl _ tc tvs cs _) = do
   (_, tcEnv') <- bindTypeVars tc tvs tcEnv
   mapM_ (kcConstrDecl tcEnv') cs
+kcDecl _     (ExternalDataDecl _ _ _) = ok
 kcDecl tcEnv (NewtypeDecl _ tc tvs nc _) = do
   (_, tcEnv') <- bindTypeVars tc tvs tcEnv
   kcNewConstrDecl tcEnv' nc
@@ -689,9 +696,10 @@ freshKindVar = fresh KindVariable
 -- ---------------------------------------------------------------------------
 
 typeConstructor :: Decl a -> Ident
-typeConstructor (DataDecl    _ tc _ _ _) = tc
-typeConstructor (NewtypeDecl _ tc _ _ _) = tc
-typeConstructor (TypeDecl    _ tc _ _  ) = tc
+typeConstructor (DataDecl     _ tc _ _ _) = tc
+typeConstructor (ExternalDataDecl _ tc _) = tc
+typeConstructor (NewtypeDecl  _ tc _ _ _) = tc
+typeConstructor (TypeDecl     _ tc _ _  ) = tc
 typeConstructor _                        =
   internalError "Checks.KindCheck.typeConstructor: no type declaration"
 

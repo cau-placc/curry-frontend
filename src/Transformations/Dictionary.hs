@@ -1,7 +1,7 @@
 {- |
   Module      :  $Header$
   Description :  Dictionary insertion
-  Copyright   :  (c) 2016        Finn Teegen
+  Copyright   :  (c) 2016 - 2017 Finn Teegen
   License     :  BSD-3-clause
 
   Maintainer  :  bjp@informatik.uni-kiel.de
@@ -773,6 +773,7 @@ instance DictTrans Decl where
     tcEnv <- getTyConsEnv
     let DataType _ _ cs' = head $ qualLookupTypeInfo (qualifyWith m tc) tcEnv
     return $ DataDecl p tc tvs (zipWith (dictTransConstrDecl tvs) cs cs') []
+  dictTrans (ExternalDataDecl     p tc tvs) = return $ ExternalDataDecl p tc tvs
   dictTrans (NewtypeDecl     p tc tvs nc _) =
     return $ NewtypeDecl p tc tvs nc []
   dictTrans (TypeDecl          p tc tvs ty) = return $ TypeDecl p tc tvs ty

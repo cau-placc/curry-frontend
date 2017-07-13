@@ -65,6 +65,7 @@ imports m = Set.toList . Set.delete m . foldr mdlsDecl Set.empty
 mdlsDecl :: IL.Decl -> Set.Set ModuleIdent -> Set.Set ModuleIdent
 mdlsDecl (IL.DataDecl       _ _ cs) ms = foldr mdlsConstrsDecl ms cs
   where mdlsConstrsDecl (IL.ConstrDecl _ tys) ms' = foldr mdlsType ms' tys
+mdlsDecl (IL.ExternalDataDecl  _ _) ms = ms
 mdlsDecl (IL.FunctionDecl _ _ ty e) ms = mdlsType ty (mdlsExpr e ms)
 mdlsDecl (IL.ExternalDecl _ _ _ ty) ms = mdlsType ty ms
 
@@ -143,6 +144,7 @@ constrType c = do
 
 trDecl :: Decl Type -> TransM [IL.Decl]
 trDecl (DataDecl     _ tc tvs cs _) = (:[]) <$> trData     tc tvs cs
+trDecl (ExternalDataDecl  _ tc tvs) = (:[]) <$> trExternal tc tvs
 trDecl (ForeignDecl _ cc ie ty f _) = (:[]) <$> trForeign  f cc ie ty
 trDecl (FunctionDecl    _ ty f eqs) = (:[]) <$> trFunction f ty eqs
 trDecl _                            = return []
@@ -161,6 +163,9 @@ trConstrDecl d = do
   constr (ConstrDecl    _ _ _ c _) = c
   constr (ConOpDecl  _ _ _ _ op _) = op
   constr (RecordDecl    _ _ _ c _) = c
+
+trExternal :: Ident -> [Ident] -> TransM IL.Decl
+trExternal tc tvs = flip IL.ExternalDataDecl (length tvs) <$> trQualify tc
 
 trForeign :: Ident -> CallConv -> Maybe String -> Type -> TransM IL.Decl
 trForeign _ _  Nothing   _  = internalError "CurryToIL.trForeign: no target"

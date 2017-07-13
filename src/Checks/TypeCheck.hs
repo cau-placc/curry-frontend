@@ -852,6 +852,8 @@ bindArity v n = bindTopEnv v (Value (qualify v) False n undefined)
 tcTopPDecl :: PDecl a -> TCM (PDecl PredType)
 tcTopPDecl (i, DataDecl p tc tvs cs clss) =
   return (i, DataDecl p tc tvs cs clss)
+tcTopPDecl (i, ExternalDataDecl p tc tvs) =
+  return (i, ExternalDataDecl p tc tvs)
 tcTopPDecl (i, NewtypeDecl p tc tvs nc clss) =
   return (i, NewtypeDecl p tc tvs nc clss)
 tcTopPDecl (i, TypeDecl p tc tvs ty) = return (i, TypeDecl p tc tvs ty)

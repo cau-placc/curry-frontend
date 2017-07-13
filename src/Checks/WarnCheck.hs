@@ -976,6 +976,7 @@ insertDecl :: Decl a -> WCM ()
 insertDecl (DataDecl     _ d _ cs _) = do
   insertTypeConsId d
   mapM_ insertConstrDecl cs
+insertDecl (ExternalDataDecl  _ d _) = insertTypeConsId d
 insertDecl (NewtypeDecl  _ d _ nc _) = do
   insertTypeConsId d
   insertNewConstrDecl nc

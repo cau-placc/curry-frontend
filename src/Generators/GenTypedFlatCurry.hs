@@ -243,14 +243,25 @@ trTypeSynonym (CS.TypeDecl _ t tvs ty) = do
   return [TypeSyn t' vis [0 .. length tvs - 1] ty']
 trTypeSynonym _                        = return []
 
--- Translate a data/newtype declaration
+-- Translate a data declaration
+-- For empty data declarations, an additional constructor is generated. This
+-- is due to the fact that external data declarations are translated into data
+-- declarations with zero constructors and without the additional constructor
+-- empty data declarations could not be distinguished from external ones.
 trTypeDecl :: IL.Decl -> FlatState [TypeDecl]
-trTypeDecl (IL.DataDecl qid a cs) = do
+trTypeDecl (IL.DataDecl      qid a []) = do
   q'  <- trQualIdent qid
-  vis <-getTypeVisibility qid
+  vis <- getTypeVisibility qid
+  c   <- trQualIdent $ qualify (mkIdent $ "_Constr#" ++ idName (unqualify qid))
+  let tvs = [0 .. a - 1]
+  return [Type q' vis tvs [Cons c 1 Private [TCons q' $ map TVar tvs]]]
+trTypeDecl (IL.DataDecl      qid a cs) = do
+  q'  <- trQualIdent qid
+  vis <- getTypeVisibility qid
   cs' <- mapM trConstrDecl cs
   return [Type q' vis [0 .. a - 1] cs']
-trTypeDecl _                      = return []
+trTypeDecl (IL.ExternalDataDecl qid a) = trTypeDecl (IL.DataDecl qid a [])
+trTypeDecl _                           = return []
 
 -- Translate a constructor declaration
 trConstrDecl :: IL.ConstrDecl -> FlatState ConsDecl

@@ -39,6 +39,11 @@ showsDecl (DataDecl qident arity constrdecls)
   . shows arity . space
   . showsList showsConstrDecl constrdecls
   . showsString ")"
+showsDecl (ExternalDataDecl qident arity)
+  = showsString "(ExternalDataDecl "
+  . showsQualIdent qident . space
+  . shows arity
+  . showsString ")"
 showsDecl (FunctionDecl qident idents typ expr)
   = showsString "(FunctionDecl "
   . showsQualIdent qident . space

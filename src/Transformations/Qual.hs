@@ -4,7 +4,7 @@
     Copyright   :  (c) 2001 - 2004 Wolfgang Lux
                        2005        Martin Engelke
                        2011 - 2015 Björn Peemöller
-                       2016        Finn Teegen
+                       2016 - 2017 Finn Teegen
     License     :  BSD-3-clause
 
     Maintainer  :  bjp@informatik.uni-kiel.de
@@ -70,6 +70,7 @@ qDecl :: Qual (Decl a)
 qDecl i@(InfixDecl          _ _ _ _) = return i
 qDecl (DataDecl      p n vs cs clss) = DataDecl p n vs <$>
   mapM qConstrDecl cs <*> mapM qClass clss
+qDecl e@(ExternalDataDecl     _ _ _) = return e
 qDecl (NewtypeDecl   p n vs nc clss) = NewtypeDecl p n vs <$>
   qNewConstrDecl nc <*> mapM qClass clss
 qDecl (TypeDecl           p n vs ty) = TypeDecl p n vs <$> qTypeExpr ty

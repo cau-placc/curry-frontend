@@ -56,6 +56,8 @@ ppDecl (DataDecl                   tc n cs) = sep $
   text "data" <+> ppTypeLhs tc n :
   map (nest dataIndent)
       (zipWith (<+>) (equals : repeat (char '|')) (map ppConstr cs))
+ppDecl (ExternalDataDecl              tc n) =
+  text "external data" <+> ppTypeLhs tc n
 ppDecl (FunctionDecl             f vs ty e) = ppTypeSig f ty $$ sep
   [ ppQIdent f <+> hsep (map (ppIdent . snd) vs) <+> equals
   , nest bodyIndent (ppExpr 0 e)]

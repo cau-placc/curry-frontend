@@ -1,9 +1,9 @@
 {- |
     Module      :  $Header$
     Description :  Split module into code fragments
-    Copyright   :  (c)  2014 - 2016, Björn Peemöller
-                        2016       , Jan Tikovsky
-                        2016       , Finn Teegen
+    Copyright   :  (c) 2014 - 2016 Björn Peemöller
+                       2016        Jan Tikovsky
+                       2016 - 2017 Finn Teegen
     License     :  BSD-3-clause
 
     Maintainer  :  bjp@informatik.uni-kiel.de
@@ -245,19 +245,20 @@ pragmaCategories = [PragmaLanguage, PragmaOptions, PragmaEnd]
 -- DECL Position
 
 declPos :: Decl a -> Position
-declPos (InfixDecl    p _ _ _    ) = p
-declPos (DataDecl     p _ _ _ _  ) = p
-declPos (NewtypeDecl  p _ _ _ _  ) = p
-declPos (TypeDecl     p _ _ _    ) = p
-declPos (TypeSig      p _ _      ) = p
-declPos (FunctionDecl p _ _ _    ) = p
-declPos (ForeignDecl  p _ _ _ _ _) = p
-declPos (ExternalDecl p _        ) = p
-declPos (PatternDecl  p _ _      ) = p
-declPos (FreeDecl     p _        ) = p
-declPos (DefaultDecl  p _        ) = p
-declPos (ClassDecl    p _ _ _ _  ) = p
-declPos (InstanceDecl p _ _ _ _  ) = p
+declPos (InfixDecl        p _ _ _    ) = p
+declPos (DataDecl         p _ _ _ _  ) = p
+declPos (ExternalDataDecl p _ _      ) = p
+declPos (NewtypeDecl      p _ _ _ _  ) = p
+declPos (TypeDecl         p _ _ _    ) = p
+declPos (TypeSig          p _ _      ) = p
+declPos (FunctionDecl     p _ _ _    ) = p
+declPos (ForeignDecl      p _ _ _ _ _) = p
+declPos (ExternalDecl     p _        ) = p
+declPos (PatternDecl      p _ _      ) = p
+declPos (FreeDecl         p _        ) = p
+declPos (DefaultDecl      p _        ) = p
+declPos (ClassDecl        p _ _ _ _  ) = p
+declPos (InstanceDecl     p _ _ _ _  ) = p
 
 cmpDecl :: Decl a -> Decl a -> Ordering
 cmpDecl = compare `on` declPos
@@ -321,6 +322,9 @@ idsDecl (DataDecl   _ d vs cds clss) =
   TypeCons TypeDeclare False (qualify d) :
     map (Identifier IdDeclare False . qualify) vs ++
       concatMap idsConstrDecl cds ++ map (TypeCons TypeRefer False) clss
+idsDecl (ExternalDataDecl    _ d vs) =
+  TypeCons TypeDeclare False (qualify d) :
+    map (Identifier IdDeclare False . qualify) vs
 idsDecl (NewtypeDecl _ t vs nc clss) =
   TypeCons TypeDeclare False (qualify t) :
     map (Identifier IdDeclare False . qualify) vs ++ idsNewConstrDecl nc ++

@@ -47,6 +47,7 @@ instance Show a => Newtypes (Module a) where
 instance Show a => Newtypes (Decl a) where
   nt d@(InfixDecl       _ _ _ _) = return d
   nt d@(DataDecl      _ _ _ _ _) = return d
+  nt d@(ExternalDataDecl  _ _ _) = return d
   nt (NewtypeDecl p tc vs nc []) = return $ TypeDecl p tc vs $ nconstrType nc
   nt d@(TypeDecl        _ _ _ _) = return d
   nt (FunctionDecl    p a f eqs) = FunctionDecl p a f <$> nt eqs

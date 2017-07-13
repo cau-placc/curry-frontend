@@ -1,7 +1,7 @@
 {- |
     Module      :  $Header$
     Description :  Checks type syntax
-    Copyright   :  (c)        2016 Finn Teegen
+    Copyright   :  (c) 2016 - 2017 Finn Teegen
     License     :  BSD-3-clause
 
     Maintainer  :  bjp@informatik.uni-kiel.de
@@ -131,6 +131,9 @@ bindType m (DataDecl _ tc _ cs _) = bindTypeKind m tc (Data qtc ids)
   where
     qtc = qualifyWith m tc
     ids = map constrId cs ++ nub (concatMap recordLabels cs)
+bindType m (ExternalDataDecl _ tc _) = bindTypeKind m tc (Data qtc [])
+  where
+    qtc = qualifyWith m tc
 bindType m (NewtypeDecl _ tc _ nc _) = bindTypeKind m tc (Data qtc ids)
   where
     qtc = qualifyWith m tc
@@ -176,6 +179,9 @@ instance Rename (Decl a) where
   rename (DataDecl p tc tvs cs clss) = withLocalEnv $ do
     bindVars tvs
     DataDecl p tc <$> rename tvs <*> rename cs <*> pure clss
+  rename (ExternalDataDecl p tc tvs) = withLocalEnv $ do
+    bindVars tvs
+    ExternalDataDecl p tc <$> rename tvs
   rename (NewtypeDecl p tc tvs nc clss) = withLocalEnv $ do
     bindVars tvs
     NewtypeDecl p tc <$> rename tvs <*> rename nc <*> pure clss
@@ -591,6 +597,7 @@ checkUsedExtension pos msg ext = do
 
 getIdent :: Decl a -> Ident
 getIdent (DataDecl     _ tc _ _ _) = tc
+getIdent (ExternalDataDecl _ tc _) = tc
 getIdent (NewtypeDecl  _ tc _ _ _) = tc
 getIdent (TypeDecl       _ tc _ _) = tc
 getIdent (ClassDecl   _ _ cls _ _) = cls

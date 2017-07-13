@@ -56,9 +56,10 @@ data Module = Module ModuleIdent [ModuleIdent] [Decl]
     deriving (Eq, Show)
 
 data Decl
-  = DataDecl     QualIdent Int [ConstrDecl]
-  | FunctionDecl QualIdent [(Type, Ident)] Type Expression
-  | ExternalDecl QualIdent CallConv String Type
+  = DataDecl         QualIdent Int [ConstrDecl]
+  | ExternalDataDecl QualIdent Int
+  | FunctionDecl     QualIdent [(Type, Ident)] Type Expression
+  | ExternalDecl     QualIdent CallConv String Type
     deriving (Eq, Show)
 
 data ConstrDecl = ConstrDecl QualIdent [Type]
