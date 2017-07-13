@@ -87,7 +87,8 @@ existVars (RecordDecl _ evs _ _ _  ) = evs
 
 errNoAbstractDerive :: HasPosition a => a -> Message
 errNoAbstractDerive p = posMessage p $
-  text "Instances cannot be derived for abstract data types"
+  text "Instances can only be derived for data types with" <+>
+  text "at least one constructor"
 
 errNoExistentialDerive :: HasPosition a => a -> Message
 errNoExistentialDerive p = posMessage p $
