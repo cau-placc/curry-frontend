@@ -91,14 +91,13 @@ bindPrecs ds0 = case findMultiples opFixDecls of
     ops -> mapM_ (report . errUndefinedOperator) ops
   opss -> mapM_ (report . errMultiplePrecedence) opss
   where
-    ds                = concatMap decls ds0
-    (fixDs, nonFixDs) = partition isInfixDecl ds
+    (fixDs, nonFixDs) = partition isInfixDecl ds0
+    innerDs           = [ d | ClassDecl _ _ _ _ ds <- ds0, d <- ds ]
     opFixDecls        = [ op | InfixDecl _ _ _ ops <- fixDs, op <- ops ]
-    -- Unrenaming is necessary here, because operators within class
-    -- declarations have been renamed during syntax checking.
-    bvs               = map unRenameIdent $ concatMap boundValues nonFixDs
-    decls (ClassDecl _ _ _ _ innerDs) = innerDs
-    decls d                           = [d]
+    -- Unrenaming is necessary for inner class declarations, because operators
+    -- within class declarations have been renamed during syntax checking.
+    bvs               = concatMap boundValues nonFixDs ++
+                          map unRenameIdent (concatMap boundValues innerDs)
 
 bindPrec :: ModuleIdent -> Decl a -> OpPrecEnv -> OpPrecEnv
 bindPrec m (InfixDecl _ fix mprec ops) pEnv
