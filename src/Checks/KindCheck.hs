@@ -326,7 +326,7 @@ bindKind m tcEnv' clsEnv tcEnv (DataDecl _ tc tvs cs _) = do
             tvs' = tvs ++ evs
             PredType ps ty = expandConstrType m tcEnv' clsEnv qtc tvs' cx tys
             tys' = arrowArgs ty
-bindKind m _     _       tcEnv (ExternalDataDecl _ tc tvs) = do
+bindKind _ _     _       tcEnv (ExternalDataDecl _ tc tvs) = do
   bindTypeConstructor DataType tc tvs (Just KindStar) [] tcEnv
 bindKind m tcEnv' _      tcEnv (NewtypeDecl _ tc tvs nc _) =
   bindTypeConstructor RenamingType tc tvs (Just KindStar) (mkData nc) tcEnv
