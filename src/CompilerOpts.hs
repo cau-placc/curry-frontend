@@ -465,8 +465,10 @@ options =
 
 parseCppDefinition :: String -> OptErr -> OptErr
 parseCppDefinition arg optErr
-  | not (null $ s ++ v) && all isDigit v = onCppOpts (addCppDefinition s v) optErr
-  | otherwise                            = addErr (cppDefinitionErr arg) optErr
+  | not (null s) && not (null v) && all isDigit v
+  = onCppOpts (addCppDefinition s v) optErr
+  | otherwise
+  = addErr (cppDefinitionErr arg) optErr
   where (s, v) = fmap (drop 1) $ break ('=' ==) arg
 
 addCppDefinition :: String -> String -> CppOpts -> CppOpts
