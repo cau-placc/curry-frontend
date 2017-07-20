@@ -190,8 +190,6 @@ instance Rename (Decl a) where
     TypeDecl p tc <$> rename tvs <*> rename ty
   rename (TypeSig p fs qty) = TypeSig p fs <$> renameTypeSig qty
   rename (FunctionDecl p a f eqs) = FunctionDecl p a f <$> renameReset eqs
-  rename (ForeignDecl p cc ie a f ty) =
-    ForeignDecl p cc ie a f <$> renameTypeSig ty
   rename (ExternalDecl p fs) = return $ ExternalDecl p fs
   rename (PatternDecl p ts rhs) = PatternDecl p ts <$> renameReset rhs
   rename (FreeDecl p fvs) = return $ FreeDecl p fvs
@@ -339,8 +337,6 @@ checkDecl (FunctionDecl a p f eqs) =
   FunctionDecl a p f <$> mapM checkEquation eqs
 checkDecl (PatternDecl p t rhs) =
   PatternDecl p t <$> checkRhs rhs
-checkDecl (ForeignDecl p cc ie a f ty) =
-  ForeignDecl p cc ie a f <$> checkType ty
 checkDecl (DefaultDecl p tys) = DefaultDecl p <$> mapM checkType tys
 checkDecl (ClassDecl p cx cls clsvar ds) = do
   checkTypeVars "class declaration" [clsvar]

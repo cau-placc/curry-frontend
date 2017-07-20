@@ -246,13 +246,14 @@ dsDeclLhs (PatternDecl p t rhs) = do
   (ds', t') <- dsPat p [] t
   dss'      <- mapM dsDeclLhs ds'
   return $ PatternDecl p t' rhs : concat dss'
-dsDeclLhs (ExternalDecl   p vs) = return $ map (genForeignDecl p) vs
+dsDeclLhs (ExternalDecl p vs) = return $ map (ExternalDecl p . (:[])) vs
+--dsDeclLhs (ExternalDecl   p vs) = return $ map (genForeignDecl p) vs
 dsDeclLhs d                     = return [d]
 
-genForeignDecl :: Position -> Var PredType -> Decl PredType
-genForeignDecl p (Var pty v) =
-  ForeignDecl p CallConvPrimitive (Just $ idName v) pty v $
-    fromType identSupply $ typeOf pty
+--genForeignDecl :: Position -> Var PredType -> Decl PredType
+--genForeignDecl p (Var pty v) =
+--  ForeignDecl p CallConvPrimitive (Just $ idName v) pty v $
+--    fromType identSupply $ typeOf pty
 
 -- TODO: Check if obsolete and remove
 -- After desugaring its right hand side, each equation is eta-expanded
@@ -269,10 +270,11 @@ dsDeclRhs :: Decl PredType -> DsM (Decl PredType)
 dsDeclRhs (FunctionDecl     p pty f eqs) =
   FunctionDecl p pty f <$> mapM dsEquation eqs
 dsDeclRhs (PatternDecl          p t rhs) = PatternDecl p t <$> dsRhs p id rhs
-dsDeclRhs (ForeignDecl p cc ie pty f ty) =
-  return $ ForeignDecl p cc ie' pty f ty
-  where ie' = ie `mplus` Just (idName f)
+--dsDeclRhs (ForeignDecl p cc ie pty f ty) =
+--  return $ ForeignDecl p cc ie' pty f ty
+--  where ie' = ie `mplus` Just (idName f)
 dsDeclRhs fs@(FreeDecl              _ _) = return fs
+dsDeclRhs fs@(ExternalDecl          _ _) = return fs
 dsDeclRhs _                              =
   error "Desugar.dsDeclRhs: no pattern match"
 

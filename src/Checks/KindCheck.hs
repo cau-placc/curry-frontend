@@ -141,7 +141,6 @@ instance HasType (Decl a) where
   fts m (TypeDecl             _ _ _ ty) = fts m ty
   fts m (TypeSig                _ _ ty) = fts m ty
   fts m (FunctionDecl        _ _ _ eqs) = fts m eqs
-  fts m (ForeignDecl      _ _ _ _ _ ty) = fts m ty
   fts _ (ExternalDecl              _ _) = id
   fts m (PatternDecl           _ _ rhs) = fts m rhs
   fts _ (FreeDecl                  _ _) = id
@@ -445,7 +444,6 @@ kcDecl tcEnv t@(TypeDecl p tc tvs ty) = do
   kcType tcEnv' p "type declaration" (ppDecl t) k ty
 kcDecl tcEnv (TypeSig p _ qty) = kcTypeSig tcEnv p qty
 kcDecl tcEnv (FunctionDecl _ _ _ eqs) = mapM_ (kcEquation tcEnv) eqs
-kcDecl tcEnv (ForeignDecl p _ _ _ _ ty) = kcTypeSig tcEnv p (QualTypeExpr [] ty)
 kcDecl _     (ExternalDecl _ _) = ok
 kcDecl tcEnv (PatternDecl _ _ rhs) = kcRhs tcEnv rhs
 kcDecl _     (FreeDecl _ _) = ok

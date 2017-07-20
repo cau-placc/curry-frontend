@@ -258,13 +258,24 @@ absFunDecl pre fvs lvs (FunctionDecl p _ f eqs) = do
         addVars (Equation p' (FunLhs _ ts) rhs) =
           Equation p' (FunLhs f' (map (uncurry VariablePattern) fvs ++ ts)) rhs
         addVars _ = error "Lift.absFunDecl.addVars: no pattern match"
-absFunDecl pre _ _ (ForeignDecl p cc ie ty f ty') = do
+--absFunDecl pre _ _ (ForeignDecl p cc ie ty f ty') = do
+--  m <- getModuleIdent
+--  modifyValueEnv $ bindGlobalInfo
+--    (\qf tySc -> Value qf False (arrowArity ty) tySc) m f' $ polyType ty
+--  return $ ForeignDecl p cc ie ty f' ty'
+--  where f' = liftIdent pre f
+absFunDecl pre _ _ (ExternalDecl p vs) = do
+  vs' <- mapM (absVars pre) vs
+  return $ ExternalDecl p vs'
+absFunDecl _ _ _ _ = error "Lift.absFunDecl: no pattern match"
+
+absVars :: String -> Var Type -> LiftM (Var Type)
+absVars pre (Var ty f) = do
   m <- getModuleIdent
   modifyValueEnv $ bindGlobalInfo
     (\qf tySc -> Value qf False (arrowArity ty) tySc) m f' $ polyType ty
-  return $ ForeignDecl p cc ie ty f' ty'
+  return (Var ty f')
   where f' = liftIdent pre f
-absFunDecl _ _ _ _ = error "Lift.absFunDecl: no pattern match"
 
 absExpr :: String -> [Ident] -> Expression Type -> LiftM (Expression Type)
 absExpr _   _   l@(Literal     _ _) = return l
@@ -415,9 +426,9 @@ renameAlt rm (Alt p t rhs) = Alt p t (renameRhs rm rhs)
 -- ---------------------------------------------------------------------------
 
 isFunDecl :: Decl a -> Bool
-isFunDecl (FunctionDecl    _ _ _ _) = True
-isFunDecl (ForeignDecl _ _ _ _ _ _) = True
-isFunDecl _                         = False
+isFunDecl (FunctionDecl _ _ _ _) = True
+isFunDecl (ExternalDecl _ _    ) = True
+isFunDecl _                      = False
 
 mkFun :: ModuleIdent -> String -> a -> Ident -> Expression a
 mkFun m pre a = Variable a . qualifyWith m . liftIdent pre
