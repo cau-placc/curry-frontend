@@ -494,7 +494,11 @@ extDescriptions = map toDescr extensions
   where
   toDescr (flag, name, desc)
     = (name, desc,
-        \ opts -> opts { optExtensions = addFlag flag (optExtensions opts)})
+        \opts -> let cppOpts = optCppOpts opts
+                 in opts { optCppOpts    =
+                             cppOpts { cppRun = cppRun cppOpts || flag == CPP }
+                         , optExtensions = addFlag flag (optExtensions opts)
+                         })
 
 
 caseModeDescriptions :: OptErrTable Options
