@@ -258,23 +258,15 @@ absFunDecl pre fvs lvs (FunctionDecl p _ f eqs) = do
         addVars (Equation p' (FunLhs _ ts) rhs) =
           Equation p' (FunLhs f' (map (uncurry VariablePattern) fvs ++ ts)) rhs
         addVars _ = error "Lift.absFunDecl.addVars: no pattern match"
---absFunDecl pre _ _ (ForeignDecl p cc ie ty f ty') = do
---  m <- getModuleIdent
---  modifyValueEnv $ bindGlobalInfo
---    (\qf tySc -> Value qf False (arrowArity ty) tySc) m f' $ polyType ty
---  return $ ForeignDecl p cc ie ty f' ty'
---  where f' = liftIdent pre f
-absFunDecl pre _ _ (ExternalDecl p vs) = do
-  vs' <- mapM (absVars pre) vs
-  return $ ExternalDecl p vs'
+absFunDecl pre _ _ (ExternalDecl p vs) = ExternalDecl p <$> mapM (absVar pre) vs
 absFunDecl _ _ _ _ = error "Lift.absFunDecl: no pattern match"
 
-absVars :: String -> Var Type -> LiftM (Var Type)
-absVars pre (Var ty f) = do
+absVar :: String -> Var Type -> LiftM (Var Type)
+absVar pre (Var ty f) = do
   m <- getModuleIdent
   modifyValueEnv $ bindGlobalInfo
     (\qf tySc -> Value qf False (arrowArity ty) tySc) m f' $ polyType ty
-  return (Var ty f')
+  return $ Var ty f'
   where f' = liftIdent pre f
 
 absExpr :: String -> [Ident] -> Expression Type -> LiftM (Expression Type)

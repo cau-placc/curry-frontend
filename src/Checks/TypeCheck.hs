@@ -927,33 +927,18 @@ instMethodType qual (PredType ps ty) f = do
   let PredType ps'' ty'' = instanceType ty (PredType (Set.deleteMin ps') ty')
   return $ PredType (ps `Set.union` ps'') ty''
 
--- Foreign and external functions:
--- Argument and result types of foreign functions using the ccall calling
--- convention are restricted to the basic types Bool, Char, Int, and Float.
--- In addition, IO t is a legitimate result type when t is either one of the
--- basic types or ().
-
--- TODO: Extend the set of legitimate types to match the types admitted
--- by the Haskell Foreign Function Interface Addendum.
+-- External functions:
 
 tcExternal :: Ident -> TCM Type
 tcExternal f = do
   sigs <- getSigEnv
   case lookupTypeSig f sigs of
     Nothing -> internalError "TypeCheck.tcExternal: type signature not found"
-    Just (QualTypeExpr _ ty) ->
--- tcForeign f ty
-      do m <- getModuleIdent
-         PredType _ ty' <- expandPoly $ QualTypeExpr [] ty
-         modifyValueEnv $ bindFun m f False (arrowArity ty') (polyType ty')
-         return ty'
-
---tcForeign :: Ident -> TypeExpr -> TCM Type
---tcForeign f ty = do
---  m <- getModuleIdent
---  PredType _ ty' <- expandPoly $ QualTypeExpr [] ty
---  modifyValueEnv $ bindFun m f False (arrowArity ty') (polyType ty')
---  return ty'
+    Just (QualTypeExpr _ ty) -> do
+      m <- getModuleIdent
+      PredType _ ty' <- expandPoly $ QualTypeExpr [] ty
+      modifyValueEnv $ bindFun m f False (arrowArity ty') (polyType ty')
+      return ty'
 
 -- Patterns and Expressions:
 -- Note that the type attribute associated with a constructor or infix

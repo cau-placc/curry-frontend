@@ -297,12 +297,12 @@ trAFuncDecl (IL.FunctionDecl f vs _ e) = do
   r'  <- trARule ty vs e
   return [AFunc f' a vis ty' r']
   where ty = foldr IL.TypeArrow (IL.typeOf e) $ map fst vs
-trAFuncDecl (IL.ExternalDecl  f _ e ty) = do
+trAFuncDecl (IL.ExternalDecl     f ty) = do
   f'   <- trQualIdent f
   a    <- getArity f
   vis  <- getVisibility f
   ty'  <- trType ty
-  r'   <- trAExternal ty e
+  r'   <- trAExternal ty f
   return [AFunc f' a vis ty' r']
 trAFuncDecl _                           = return []
 
@@ -314,10 +314,8 @@ trARule ty vs e = withFreshEnv $ ARule <$> trType ty
                                     <*> mapM (uncurry newVar) vs
                                     <*> trAExpr e
 
-trAExternal :: IL.Type -> String -> FlatState (ARule TypeExpr)
-trAExternal ty e = do mid <- getModuleIdent
-                      ty' <- trType ty
-                      return (AExternal ty' $ moduleName mid ++ "." ++ e)
+trAExternal :: IL.Type -> QualIdent -> FlatState (ARule TypeExpr)
+trAExternal ty f = flip AExternal (qualName f) <$> trType ty
 
 -- Translate an expression
 trAExpr :: IL.Expression -> FlatState (AExpr TypeExpr)

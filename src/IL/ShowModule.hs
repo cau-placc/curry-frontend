@@ -51,11 +51,9 @@ showsDecl (FunctionDecl qident idents typ expr)
   . showsType typ . space
   . showsExpression expr
   . showsString ")"
-showsDecl (ExternalDecl qident cconv str typ)
+showsDecl (ExternalDecl qident typ)
   = showsString "(ExternalDecl "
   . showsQualIdent qident . space
-  . shows cconv . space
-  . shows str . space
   . showsType typ
   . showsString ")"
 

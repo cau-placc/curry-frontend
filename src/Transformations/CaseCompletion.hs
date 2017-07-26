@@ -96,7 +96,7 @@ ccDecl :: Decl -> CCM Decl
 ccDecl dd@(DataDecl        _ _ _) = return dd
 ccDecl edd@(ExternalDataDecl _ _) = return edd
 ccDecl (FunctionDecl qid vs ty e) = FunctionDecl qid vs ty <$> ccExpr e
-ccDecl ed@(ExternalDecl  _ _ _ _) = return ed
+ccDecl ed@(ExternalDecl      _ _) = return ed
 
 ccExpr :: Expression -> CCM Expression
 ccExpr l@(Literal       _ _) = return l

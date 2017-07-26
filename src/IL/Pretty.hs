@@ -61,11 +61,7 @@ ppDecl (ExternalDataDecl              tc n) =
 ppDecl (FunctionDecl             f vs ty e) = ppTypeSig f ty $$ sep
   [ ppQIdent f <+> hsep (map (ppIdent . snd) vs) <+> equals
   , nest bodyIndent (ppExpr 0 e)]
-ppDecl (ExternalDecl f cc ie ty) = sep
-  [ text "external" <+> ppCallConv cc <+> text (show ie)
-  , nest bodyIndent (ppTypeSig f ty)]
-  where ppCallConv Primitive = text "primitive"
-        ppCallConv CCall     = text "ccall"
+ppDecl (ExternalDecl f ty) = text "external" <+> ppTypeSig f ty
 
 ppTypeLhs :: QualIdent -> Int -> Doc
 ppTypeLhs tc n = ppQIdent tc <+> hsep (map text (take n typeVars))

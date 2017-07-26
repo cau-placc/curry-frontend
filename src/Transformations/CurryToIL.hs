@@ -67,7 +67,7 @@ mdlsDecl (IL.DataDecl       _ _ cs) ms = foldr mdlsConstrsDecl ms cs
   where mdlsConstrsDecl (IL.ConstrDecl _ tys) ms' = foldr mdlsType ms' tys
 mdlsDecl (IL.ExternalDataDecl  _ _) ms = ms
 mdlsDecl (IL.FunctionDecl _ _ ty e) ms = mdlsType ty (mdlsExpr e ms)
-mdlsDecl (IL.ExternalDecl _ _ _ ty) ms = mdlsType ty ms
+mdlsDecl (IL.ExternalDecl     _ ty) ms = mdlsType ty ms
 
 mdlsType :: IL.Type -> Set.Set ModuleIdent -> Set.Set ModuleIdent
 mdlsType (IL.TypeConstructor tc tys) ms = modules tc (foldr mdlsType ms tys)
@@ -143,11 +143,10 @@ constrType c = do
 -- alias types.
 
 trDecl :: Decl Type -> TransM [IL.Decl]
-trDecl (DataDecl     _ tc tvs cs _) = (:[]) <$> trData     tc tvs cs
---trDecl (ForeignDecl _ cc ie ty f _) = (:[]) <$> trForeign  f cc ie ty
-trDecl (ExternalDecl          _ vs) = mapM trExternalF vs
-trDecl (ExternalDataDecl  _ tc tvs) = (:[]) <$> trExternal tc tvs
+trDecl (DataDecl     _ tc tvs cs _) = (:[]) <$> trData tc tvs cs
+trDecl (ExternalDataDecl  _ tc tvs) = (:[]) <$> trExternalData tc tvs
 trDecl (FunctionDecl    _ ty f eqs) = (:[]) <$> trFunction f ty eqs
+trDecl (ExternalDecl          _ vs) = mapM trExternal vs
 trDecl _                            = return []
 
 trData :: Ident -> [Ident] -> [ConstrDecl] -> TransM IL.Decl
@@ -165,24 +164,11 @@ trConstrDecl d = do
   constr (ConOpDecl  _ _ _ _ op _) = op
   constr (RecordDecl    _ _ _ c _) = c
 
-trExternal :: Ident -> [Ident] -> TransM IL.Decl
-trExternal tc tvs = flip IL.ExternalDataDecl (length tvs) <$> trQualify tc
+trExternalData :: Ident -> [Ident] -> TransM IL.Decl
+trExternalData tc tvs = flip IL.ExternalDataDecl (length tvs) <$> trQualify tc
 
-trExternalF :: Var Type -> TransM IL.Decl
-trExternalF (Var pty f) = do
-  f' <- trQualify f
-  let ty' = transType pty
-  return $ IL.ExternalDecl f' IL.Primitive (idName f) ty'
-
---trForeign :: Ident -> CallConv -> Maybe String -> Type -> TransM IL.Decl
---trForeign _ _  Nothing   _  = internalError "CurryToIL.trForeign: no target"
---trForeign f cc (Just ie) ty = do
---  f'  <- trQualify f
---  let ty' = transType ty
---  return $ IL.ExternalDecl f' (callConv cc) ie ty'
---  where
---  callConv CallConvPrimitive = IL.Primitive
---  callConv CallConvCCall     = IL.CCall
+trExternal :: Var Type -> TransM IL.Decl
+trExternal (Var ty f) = flip IL.ExternalDecl (transType ty) <$> trQualify f
 
 -- The type representation in the intermediate language does not support
 -- types with higher order kinds. Therefore, the type transformations has
