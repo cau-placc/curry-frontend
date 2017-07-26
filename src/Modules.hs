@@ -39,7 +39,6 @@ import Curry.Base.Monad
 import Curry.Base.Position
 import Curry.Base.Pretty
 import Curry.Base.Span
-import Curry.CondCompile.Transform
 import Curry.FlatCurry.InterfaceEquivalence (eqInterface)
 import Curry.Files.Filenames
 import Curry.Files.PathUtils
@@ -59,6 +58,7 @@ import qualified IL                  as IL
 import Checks
 import CompilerEnv
 import CompilerOpts
+import CondCompile (condCompile)
 import Exports
 import Generators
 import Html.CurryHtml (source2html)
@@ -171,13 +171,6 @@ withTempFile act = do
   hClose hdl
   removeFile fn
   return res
-
-condCompile :: CppOpts -> FilePath -> String -> CYIO String
-condCompile opts fn p
-  | not (cppRun opts) = return p
-  | otherwise         = either (failMessages . (: []))
-                               ok
-                               (condTransform (cppDefinitions opts) fn p)
 
 checkModuleHeader :: Monad m => Options -> ModuleIdent -> FilePath
                   -> CS.Module () -> CYT m (CS.Module ())

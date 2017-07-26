@@ -5,7 +5,7 @@
                        2005        Martin Engelke
                        2007        Sebastian Fischer
                        2011 - 2013 Björn Peemöller
-                       2016        Finn Teegen
+                       2016 - 2017 Finn Teegen
     License     :  BSD-3-clause
 
     Maintainer  :  bjp@informatik.uni-kiel.de
@@ -30,12 +30,13 @@ import Curry.Base.Pretty
 import Curry.Files.Filenames
 import Curry.Files.PathUtils
 import Curry.Syntax
-  ( Module (..), ModulePragma (..), ImportDecl (..), parseHeader, patchModuleId
-  , hasLanguageExtension)
+  ( Module (..), ModulePragma (..), ImportDecl (..), parseHeader, parsePragmas
+  , patchModuleId, hasLanguageExtension)
 
 import Base.Messages
 import Base.SCC (scc)
-import CompilerOpts (Options (..), KnownExtension (..))
+import CompilerOpts (Options (..), CppOpts (..), KnownExtension (..))
+import CondCompile (condCompile)
 
 -- |Different types of source files
 data Source
@@ -91,7 +92,7 @@ targetDeps opts sEnv fn = do
 
 -- |Retrieve the dependencies of a given source file
 sourceDeps :: Options -> SourceEnv -> FilePath -> CYIO SourceEnv
-sourceDeps opts sEnv fn = readHeader fn >>= moduleDeps opts sEnv fn
+sourceDeps opts sEnv fn = readHeader opts fn >>= moduleDeps opts sEnv fn
 
 -- |Retrieve the dependencies of a given module
 moduleDeps :: Options -> SourceEnv -> FilePath -> Module a -> CYIO SourceEnv
@@ -124,17 +125,22 @@ moduleIdentDeps opts sEnv m = case Map.lookup m sEnv of
         | icurryExt `isSuffixOf` fn ->
             return $ Map.insert m (Interface fn) sEnv
         | otherwise                 -> do
-            hdr@(Module _ m' _ _ _) <- readHeader fn
+            hdr@(Module _ m' _ _ _) <- readHeader opts fn
             if (m == m') then moduleDeps opts sEnv fn hdr
                          else failMessages [errWrongModule m m']
 
-readHeader :: FilePath -> CYIO (Module ())
-readHeader fn = do
+readHeader :: Options -> FilePath -> CYIO (Module ())
+readHeader opts fn = do
   mbFile <- liftIO $ readModule fn
   case mbFile of
     Nothing  -> failMessages [errMissingFile fn]
     Just src -> do
-      hdr <- liftCYM $ parseHeader fn src
+      prgs <- liftCYM $ parsePragmas fn src
+      let cppOpts  = optCppOpts opts
+          cppOpts' =
+            cppOpts { cppRun = cppRun cppOpts || hasLanguageExtension prgs CPP }
+      condC <- condCompile cppOpts' fn src
+      hdr <- liftCYM $ parseHeader fn condC
       return $ patchModuleId fn hdr
 
 -- If we want to compile the program instead of generating Makefile

@@ -93,6 +93,7 @@ Library
     , Checks.WarnCheck
     , CompilerEnv
     , CompilerOpts
+    , CondCompile
     , CurryBuilder
     , CurryDeps
     , Env.Class
