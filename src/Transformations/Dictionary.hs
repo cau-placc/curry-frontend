@@ -783,10 +783,8 @@ instance DictTrans Decl where
     VariablePattern pty@(PredType ps _) v | not (Set.null ps) ->
       dictTrans $ FunctionDecl p pty v [Equation p (FunLhs v []) rhs]
     _ -> withLocalDictEnv $ PatternDecl p <$> dictTrans t <*> dictTrans rhs
-  dictTrans (FreeDecl                 p vs) =
-    return $ FreeDecl p $ map (fmap unpredType) vs
-  dictTrans (ExternalDecl             p vs) =
-    return $ ExternalDecl p $ map (fmap unpredType) vs
+  dictTrans d@(FreeDecl                _ _) = return $ fmap unpredType d
+  dictTrans d@(ExternalDecl            _ _) = return $ fmap unpredType d
   dictTrans d                               =
     internalError $ "Dictionary.dictTrans: " ++ show d
 
