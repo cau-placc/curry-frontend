@@ -144,8 +144,9 @@ constrType c = do
 
 trDecl :: Decl Type -> TransM [IL.Decl]
 trDecl (DataDecl     _ tc tvs cs _) = (:[]) <$> trData     tc tvs cs
+--trDecl (ForeignDecl _ cc ie ty f _) = (:[]) <$> trForeign  f cc ie ty
+trDecl (ExternalDecl          _ vs) = mapM trExternalF vs
 trDecl (ExternalDataDecl  _ tc tvs) = (:[]) <$> trExternal tc tvs
-trDecl (ForeignDecl _ cc ie ty f _) = (:[]) <$> trForeign  f cc ie ty
 trDecl (FunctionDecl    _ ty f eqs) = (:[]) <$> trFunction f ty eqs
 trDecl _                            = return []
 
@@ -167,15 +168,21 @@ trConstrDecl d = do
 trExternal :: Ident -> [Ident] -> TransM IL.Decl
 trExternal tc tvs = flip IL.ExternalDataDecl (length tvs) <$> trQualify tc
 
-trForeign :: Ident -> CallConv -> Maybe String -> Type -> TransM IL.Decl
-trForeign _ _  Nothing   _  = internalError "CurryToIL.trForeign: no target"
-trForeign f cc (Just ie) ty = do
-  f'  <- trQualify f
-  let ty' = transType ty
-  return $ IL.ExternalDecl f' (callConv cc) ie ty'
-  where
-  callConv CallConvPrimitive = IL.Primitive
-  callConv CallConvCCall     = IL.CCall
+trExternalF :: Var Type -> TransM IL.Decl
+trExternalF (Var pty f) = do
+  f' <- trQualify f
+  let ty' = transType pty
+  return $ IL.ExternalDecl f' IL.Primitive (idName f) ty'
+
+--trForeign :: Ident -> CallConv -> Maybe String -> Type -> TransM IL.Decl
+--trForeign _ _  Nothing   _  = internalError "CurryToIL.trForeign: no target"
+--trForeign f cc (Just ie) ty = do
+--  f'  <- trQualify f
+--  let ty' = transType ty
+--  return $ IL.ExternalDecl f' (callConv cc) ie ty'
+--  where
+--  callConv CallConvPrimitive = IL.Primitive
+--  callConv CallConvCCall     = IL.CCall
 
 -- The type representation in the intermediate language does not support
 -- types with higher order kinds. Therefore, the type transformations has

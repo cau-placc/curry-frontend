@@ -209,10 +209,6 @@ trFuncDecl global (FunctionDecl  _ pty f eqs)
   =   (\f' a v ty rs -> [CFunc f' a v ty rs])
   <$> trFuncName global f <*> pure (eqnArity $ head eqs) <*> getVisibility f
   <*> getQualType f pty <*> mapM trEquation eqs
-trFuncDecl global (ForeignDecl _ _ _ pty f _)
-  =   (\f' a v ty rs -> [CFunc f' a v ty rs])
-  <$> trFuncName global f <*> pure (arrowArity $ unpredType pty)
-  <*> getVisibility f <*> getQualType f pty <*> return []
 trFuncDecl global (ExternalDecl         _ vs)
   =   T.forM vs $ \(Var pty f) -> CFunc
   <$> trFuncName global f <*> pure (arrowArity $ unpredType pty)
@@ -256,7 +252,6 @@ insertDeclLhs _                          = return ()
 
 trLocalDecl :: Decl PredType -> GAC [CLocalDecl]
 trLocalDecl f@(FunctionDecl    _ _ _ _) = map CLocalFunc <$> trFuncDecl False f
-trLocalDecl f@(ForeignDecl _ _ _ _ _ _) = map CLocalFunc <$> trFuncDecl False f
 trLocalDecl f@(ExternalDecl        _ _) = map CLocalFunc <$> trFuncDecl False f
 trLocalDecl (PatternDecl       _ p rhs) = (\p' rhs' -> [CLocalPat p' rhs'])
                                           <$> trPat p <*> trRhs rhs

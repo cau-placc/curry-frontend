@@ -442,9 +442,6 @@ tcPDeclGroup :: PredSet -> [PDecl a] -> TCM (PredSet, [PDecl PredType])
 tcPDeclGroup ps [(i, ExternalDecl p fs)] = do
   tys <- mapM (tcExternal . varIdent) fs
   return (ps, [(i, ExternalDecl p (zipWith (fmap . const . predType) tys fs))])
-tcPDeclGroup ps [(i, ForeignDecl p cc ie _ f ty)] = do
-  ty' <- tcForeign f ty
-  return (ps, [(i, ForeignDecl p cc ie (predType ty') f ty)])
 tcPDeclGroup ps [(i, FreeDecl p fvs)] = do
   vs <- mapM (tcDeclVar False) (bv fvs)
   m <- getModuleIdent
@@ -730,7 +727,6 @@ instance Binding (Decl a) where
   isNonExpansive (InfixDecl       _ _ _ _) = return True
   isNonExpansive (TypeSig           _ _ _) = return True
   isNonExpansive (FunctionDecl    _ _ _ _) = return True
-  isNonExpansive (ForeignDecl _ _ _ _ _ _) = return True
   isNonExpansive (ExternalDecl        _ _) = return True
   isNonExpansive (PatternDecl       _ _ _) = return False
     -- TODO: Uncomment when polymorphic let declarations are fully supported
@@ -805,9 +801,6 @@ bindDeclArity _ _     _      _    (InfixDecl        _ _ _ _) = id
 bindDeclArity _ _     _      _    (TypeSig            _ _ _) = id
 bindDeclArity _ _     _      _    (FunctionDecl   _ _ f eqs) =
   bindArity f (eqnArity $ head eqs)
-bindDeclArity m tcEnv clsEnv _    (ForeignDecl _ _ _ _ f ty) =
-  bindArity f (arrowArity ty')
-  where ty' = unpredType $ expandPolyType m tcEnv clsEnv $ QualTypeExpr [] ty
 bindDeclArity m tcEnv clsEnv sigs (ExternalDecl        _ fs) =
   flip (foldr $ \(Var _ f) -> bindArity f $ arrowArity $ ty f) fs
   where ty = unpredType . expandPolyType m tcEnv clsEnv . fromJust .
@@ -948,14 +941,19 @@ tcExternal f = do
   sigs <- getSigEnv
   case lookupTypeSig f sigs of
     Nothing -> internalError "TypeCheck.tcExternal: type signature not found"
-    Just (QualTypeExpr _ ty) -> tcForeign f ty
+    Just (QualTypeExpr _ ty) ->
+-- tcForeign f ty
+      do m <- getModuleIdent
+         PredType _ ty' <- expandPoly $ QualTypeExpr [] ty
+         modifyValueEnv $ bindFun m f False (arrowArity ty') (polyType ty')
+         return ty'
 
-tcForeign :: Ident -> TypeExpr -> TCM Type
-tcForeign f ty = do
-  m <- getModuleIdent
-  PredType _ ty' <- expandPoly $ QualTypeExpr [] ty
-  modifyValueEnv $ bindFun m f False (arrowArity ty') (polyType ty')
-  return ty'
+--tcForeign :: Ident -> TypeExpr -> TCM Type
+--tcForeign f ty = do
+--  m <- getModuleIdent
+--  PredType _ ty' <- expandPoly $ QualTypeExpr [] ty
+--  modifyValueEnv $ bindFun m f False (arrowArity ty') (polyType ty')
+--  return ty'
 
 -- Patterns and Expressions:
 -- Note that the type attribute associated with a constructor or infix

@@ -112,7 +112,6 @@ boundValues (DataDecl     _ _ _ cs _) = [ v | c <- cs
 boundValues (NewtypeDecl  _ _ _ nc _) = nconstrId nc : nrecordLabels nc
 boundValues (TypeSig          _ fs _) = fs
 boundValues (FunctionDecl    _ _ f _) = [f]
-boundValues (ForeignDecl _ _ _ _ f _) = [f]
 boundValues (ExternalDecl       _ vs) = bv vs
 boundValues (PatternDecl       _ t _) = bv t
 boundValues (FreeDecl           _ vs) = bv vs

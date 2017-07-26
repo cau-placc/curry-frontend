@@ -66,7 +66,6 @@ instance QualExpr (Decl a) where
 instance QuantExpr (Decl a) where
   bv (TypeSig          _ vs _) = vs
   bv (FunctionDecl    _ _ f _) = [f]
-  bv (ForeignDecl _ _ _ _ f _) = [f]
   bv (ExternalDecl       _ vs) = bv vs
   bv (PatternDecl       _ t _) = bv t
   bv (FreeDecl           _ vs) = bv vs

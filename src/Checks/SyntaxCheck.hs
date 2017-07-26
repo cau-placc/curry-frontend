@@ -366,9 +366,6 @@ bindFuncDecl _   _ (FunctionDecl _ _ _ []) _
 bindFuncDecl tcc m (FunctionDecl _ _ f (eq:_)) env
   = let arty = length $ snd $ getFlatLhs eq
     in  bindGlobal tcc m f (GlobalVar (qualifyWith m f) arty) env
-bindFuncDecl tcc m (ForeignDecl _ _ _ _ f ty) env
-  = let arty = typeArity ty
-    in bindGlobal tcc m f (GlobalVar (qualifyWith m f) arty) env
 bindFuncDecl tcc m (TypeSig _ fs (QualTypeExpr _ ty)) env
   = foldr bindTS env $ map (qualifyWith m) fs
   where
@@ -537,8 +534,6 @@ checkDeclLhs (TypeSig            p vs ty) =
   (\vs' -> TypeSig p vs' ty) <$> mapM (checkVar "type signature") vs
 checkDeclLhs (FunctionDecl     p _ f eqs) =
   inFunc f $ checkEquationsLhs p eqs
-checkDeclLhs (ForeignDecl p cc ie a f ty) =
-  (\f' -> ForeignDecl p cc ie a f' ty) <$> checkVar "foreign declaration" f
 checkDeclLhs (ExternalDecl          p vs) =
   ExternalDecl p <$> mapM (checkVar' "external declaration") vs
 checkDeclLhs (PatternDecl        p t rhs) =
@@ -1107,7 +1102,6 @@ constrs _                        = []
 vars :: Decl a -> [Ident]
 vars (TypeSig          _ fs _) = fs
 vars (FunctionDecl    _ _ f _) = [f]
-vars (ForeignDecl _ _ _ _ f _) = [f]
 vars (ExternalDecl       _ vs) = bv vs
 vars (PatternDecl       _ t _) = bv t
 vars (FreeDecl           _ vs) = bv vs

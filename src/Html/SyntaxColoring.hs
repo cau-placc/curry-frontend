@@ -198,7 +198,7 @@ numCategories = [IntTok, FloatTok]
 keywordCategories :: [Category]
 keywordCategories =
   [ KW_case, KW_class, KW_data, KW_default, KW_deriving, KW_do, KW_else
-  , KW_external, KW_fcase, KW_foreign, KW_free, KW_if, KW_import, KW_in
+  , KW_external, KW_fcase, KW_free, KW_if, KW_import, KW_in
   , KW_infix, KW_infixl, KW_infixr, KW_instance, KW_let, KW_module, KW_newtype
   , KW_of, KW_then, KW_type, KW_where
   ]
@@ -252,7 +252,6 @@ declPos (NewtypeDecl      p _ _ _ _  ) = p
 declPos (TypeDecl         p _ _ _    ) = p
 declPos (TypeSig          p _ _      ) = p
 declPos (FunctionDecl     p _ _ _    ) = p
-declPos (ForeignDecl      p _ _ _ _ _) = p
 declPos (ExternalDecl     p _        ) = p
 declPos (PatternDecl      p _ _      ) = p
 declPos (FreeDecl         p _        ) = p
@@ -335,7 +334,6 @@ idsDecl (TypeDecl         _ t vs ty) =
 idsDecl (TypeSig           _ fs qty) =
   map (Function FuncTypeSig False . qualify) fs ++ idsQualTypeExpr qty
 idsDecl (FunctionDecl     _ _ _ eqs) = concatMap idsEquation eqs
-idsDecl (ForeignDecl    _ _ _ _ _ _) = []
 idsDecl (ExternalDecl          _ fs) =
   map (Function FuncDeclare False . qualify . varIdent) fs
 idsDecl (PatternDecl        _ p rhs) = idsPat p ++ idsRhs rhs
@@ -534,7 +532,6 @@ showToken (Token KW_do              _) = "do"
 showToken (Token KW_else            _) = "else"
 showToken (Token KW_external        _) = "external"
 showToken (Token KW_fcase           _) = "fcase"
-showToken (Token KW_foreign         _) = "foreign"
 showToken (Token KW_free            _) = "free"
 showToken (Token KW_if              _) = "if"
 showToken (Token KW_import          _) = "import"

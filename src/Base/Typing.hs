@@ -166,7 +166,6 @@ declVars :: (Eq t, Typeable t, ValueType t) => Decl t -> [(Ident, Int, t)]
 declVars (InfixDecl        _ _ _ _) = []
 declVars (TypeSig            _ _ _) = []
 declVars (FunctionDecl  _ ty f eqs) = [(f, eqnArity $ head eqs, ty)]
-declVars (ForeignDecl _ _ _ ty f _) = [(f, arrowArity $ typeOf ty, ty)]
 declVars (PatternDecl        _ t _) = patternVars t
 declVars (FreeDecl            _ vs) = [(v, 0, ty) | Var ty v <- vs]
 declVars _                          = internalError "Base.Typing.declVars"

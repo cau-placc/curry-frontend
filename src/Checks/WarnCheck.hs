@@ -986,7 +986,6 @@ insertDecl (TypeDecl       _ t _ ty) = do
 insertDecl (FunctionDecl    _ _ f _) = do
   cons <- isConsId f
   unless cons $ insertVar f
-insertDecl (ForeignDecl _ _ _ _ f _) = insertVar f
 insertDecl (ExternalDecl       _ vs) = mapM_ (insertVar . varIdent) vs
 insertDecl (PatternDecl       _ p _) = insertPattern False p
 insertDecl (FreeDecl           _ vs) = mapM_ (insertVar . varIdent) vs

@@ -76,7 +76,6 @@ qDecl (NewtypeDecl   p n vs nc clss) = NewtypeDecl p n vs <$>
 qDecl (TypeDecl           p n vs ty) = TypeDecl p n vs <$> qTypeExpr ty
 qDecl (TypeSig             p fs qty) = TypeSig p fs <$> qQualTypeExpr qty
 qDecl (FunctionDecl       a p f eqs) = FunctionDecl a p f <$> mapM qEquation eqs
-qDecl (ForeignDecl     p c x a n ty) = ForeignDecl p c x a n <$> qTypeExpr ty
 qDecl e@(ExternalDecl           _ _) = return e
 qDecl (PatternDecl          p t rhs) = PatternDecl p <$> qPattern t <*> qRhs rhs
 qDecl vs@(FreeDecl              _ _) = return vs
