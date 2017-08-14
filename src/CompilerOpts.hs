@@ -247,17 +247,17 @@ data DumpLevel
   | DumpInstanceChecked   -- ^ dump source code after instance checking
   | DumpTypeChecked       -- ^ dump source code after type checking
   | DumpExportChecked     -- ^ dump source code after export checking
-  | DumpQualified         -- ^ dump source  after qualification
-  | DumpDerived           -- ^ dump source  after deriving
-  | DumpDesugared         -- ^ dump source  after desugaring
-  | DumpDictionaries      -- ^ dump source  after dictionary transformation
-  | DumpNewtypes          -- ^ dump source  after removing newtype constructors
-  | DumpSimplified        -- ^ dump source  after simplification
-  | DumpLifted            -- ^ dump source  after lambda-lifting
+  | DumpQualified         -- ^ dump source code after qualification
+  | DumpDerived           -- ^ dump source code after deriving
+  | DumpDesugared         -- ^ dump source code after desugaring
+  | DumpDictionaries      -- ^ dump source code after dictionary transformation
+  | DumpNewtypes          -- ^ dump source code after removing newtype constructors
+  | DumpSimplified        -- ^ dump source code after simplification
+  | DumpLifted            -- ^ dump source code after lambda-lifting
   | DumpTranslated        -- ^ dump IL code after translation
   | DumpCaseCompleted     -- ^ dump IL code after case completion
-  | DumpTypedFlatCurry    -- ^ dump typed FlatCurry code (pretty-printed)
-  | DumpFlatCurry         -- ^ dump FlatCurry code (pretty-printed)
+  | DumpTypedFlatCurry    -- ^ dump typed FlatCurry code
+  | DumpFlatCurry         -- ^ dump FlatCurry code
     deriving (Eq, Bounded, Enum, Show)
 
 -- |Description and flag of dump levels
