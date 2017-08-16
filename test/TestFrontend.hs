@@ -311,8 +311,11 @@ warnInfos = map (uncurry mkFailTest)
       , "Function `k' is non-deterministic due to overlapping rules"
       ]
     )
+  , ("QualRedundant",
+      [ "Redundant context in type signature for function `f': `P.Eq'"]
+    )
   , ("Redundant",
-      [ "Redundant context in function `f': `Eq'"]
+      [ "Redundant context in type signature for function `f': `Eq'"]
     )
   , ("ShadowingSymbols",
       [ "Unused declaration of variable `x'", "Shadowing symbol `x'"])

@@ -22,7 +22,7 @@
     as well as function arguments remain unchanged.
 -}
 {-# LANGUAGE CPP #-}
-module Transformations.Qual (qual, QualEnv(..), Qual, qQualTypeExpr) where
+module Transformations.Qual (qual) where
 
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative       ((<$>), (<*>), pure)

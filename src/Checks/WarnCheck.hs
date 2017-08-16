@@ -28,7 +28,6 @@ import           Data.List
   ((\\), intersect, intersectBy, nub, sort, unionBy)
 import           Data.Char
   (isLower, isUpper, toLower, toUpper, isAlpha)
-import qualified Control.Monad.Reader as R (runReader)
 import qualified Data.Set.Extra as Set
 
 import Curry.Base.Ident
@@ -50,7 +49,6 @@ import Env.Class (ClassEnv, classMethods, hasDefaultImpl)
 import Env.TypeConstructor ( TCEnv, TypeInfo (..), lookupTypeInfo
                            , qualLookupTypeInfo, getOrigName )
 import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
-import qualified Transformations.Qual as Q (QualEnv(..), Qual, qQualTypeExpr)
 
 import CompilerOpts
 
@@ -1454,25 +1452,38 @@ checkRedContext :: [Decl a] -> WCM ()
 checkRedContext = warnFor WarnRedundantContext . mapM_ checkRedContextDecl
 
 checkRedContextDecl :: Decl a -> WCM ()
-checkRedContextDecl (TypeSig p ids ty) = do
+checkRedContextDecl (TypeSig _ ids ty) = do
   m     <- gets moduleId
   cenv  <- gets classEnv
   tcEnv <- gets tyConsEnv
-  tyEnv <- gets valueEnv
-  let PredType ps _ =
-        toPredType [] $ R.runReader (Q.qQualTypeExpr ty) (Q.QualEnv m tcEnv tyEnv)
-  mapM_ (report . warnRedContext p ids) (Set.difference ps (minPredSet cenv ps))
+  let PredType ps _ = toPredType [] ty
+      numberedps  = Set.mapMonotonic (\p -> (p, Set.findIndex p ps)) ps
+      numberedqps = Set.map (\(p,n) -> (qualifyPred m tcEnv p, n)) numberedps
+      qps         = Set.mapMonotonic fst numberedqps
+  mapM_ (report . warnRedContext ids . lookupUsedName numberedqps ps) (Set.difference qps (minPredSet cenv qps))
+  where qualifyPred :: ModuleIdent -> TCEnv -> Pred -> Pred
+        qualifyPred m tcEnv p@(Pred qid ty) = Pred (getOrigName m qid tcEnv) ty
+        lookupUsedName :: Set.Set (Pred, Int) -> Set.Set Pred -> Pred -> Pred
+        lookupUsedName nqps ps p =
+          let (_,n) = Set.elemAt 0 $ Set.filter ((p ==) . fst) nqps
+          in Set.elemAt n ps
 checkRedContextDecl d = return ()
 
 -- ---------------------------------------------------------------------------
 -- Warnings messages
 -- ---------------------------------------------------------------------------
 
-warnRedContext :: Position -> [Ident] -> Pred -> Message
-warnRedContext pos [i] (Pred qid _) = posMessage pos $
-  text "Redundant context in function" <+> text (escName i) <> colon <+>
-  text (escName (unqualify qid))
+warnRedContext :: [Ident] -> Pred -> Message
+warnRedContext is (Pred qid _) = posMessage qid $
+  text "Redundant context in type signature for function" <>
+  (if length is == 1 then empty else char 's') <+>
+  csep (map (text . escName) is) <> colon <+>
+  text (escQualName qid)
 
+csep :: [Doc] -> Doc
+csep []     = empty
+csep [x]    = x
+csep (x:xs) = x <> colon <+> csep xs
 
 warnCaseMode :: Ident -> CaseMode -> Message
 warnCaseMode i@(Ident _ name _ ) c = posMessage i $
