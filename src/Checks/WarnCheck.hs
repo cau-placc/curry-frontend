@@ -28,6 +28,8 @@ import           Data.List
   ((\\), intersect, intersectBy, nub, sort, unionBy)
 import           Data.Char
   (isLower, isUpper, toLower, toUpper, isAlpha)
+import qualified Control.Monad.Reader as R (runReader)
+import qualified Data.Set.Extra as Set
 
 import Curry.Base.Ident
 import Curry.Base.Position
@@ -35,7 +37,7 @@ import Curry.Base.Pretty
 import Curry.Syntax
 import Curry.Syntax.Pretty (ppDecl, ppPattern, ppExpr, ppIdent)
 
-import Base.CurryTypes (ppTypeScheme)
+import Base.CurryTypes (ppTypeScheme, toPredType)
 import Base.Messages   (Message, posMessage, internalError)
 import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                        , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv
@@ -48,6 +50,7 @@ import Env.Class (ClassEnv, classMethods, hasDefaultImpl)
 import Env.TypeConstructor ( TCEnv, TypeInfo (..), lookupTypeInfo
                            , qualLookupTypeInfo, getOrigName )
 import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
+import qualified Transformations.Qual as Q (QualEnv(..), Qual, qQualTypeExpr)
 
 import CompilerOpts
 
@@ -70,6 +73,7 @@ warnCheck wOpts cOpts aEnv valEnv tcEnv clsEnv mdl
       checkMissingTypeSignatures ds
       checkModuleAlias is
       checkCaseMode  ds
+      checkRedContext ds
   where Module _ mid es is ds = fmap (const ()) mdl
 
 type ScopeEnv = NestEnv IdInfo
@@ -1443,8 +1447,32 @@ isDataDeclName CaseModeHaskell (x:_) | isAlpha x = isUpper x
 isDataDeclName _               _     = True
 
 -- ---------------------------------------------------------------------------
+-- Warn for redundant context
+-- ---------------------------------------------------------------------------
+
+checkRedContext :: [Decl a] -> WCM ()
+checkRedContext = warnFor WarnRedundantContext . mapM_ checkRedContextDecl
+
+checkRedContextDecl :: Decl a -> WCM ()
+checkRedContextDecl (TypeSig p ids ty) = do
+  m     <- gets moduleId
+  cenv  <- gets classEnv
+  tcEnv <- gets tyConsEnv
+  tyEnv <- gets valueEnv
+  let PredType ps _ =
+        toPredType [] $ R.runReader (Q.qQualTypeExpr ty) (Q.QualEnv m tcEnv tyEnv)
+  mapM_ (report . warnRedContext p ids) (Set.difference ps (minPredSet cenv ps))
+checkRedContextDecl d = return ()
+
+-- ---------------------------------------------------------------------------
 -- Warnings messages
 -- ---------------------------------------------------------------------------
+
+warnRedContext :: Position -> [Ident] -> Pred -> Message
+warnRedContext pos [i] (Pred qid _) = posMessage pos $
+  text "Redundant context in function" <+> text (escName i) <> colon <+>
+  text (escName (unqualify qid))
+
 
 warnCaseMode :: Ident -> CaseMode -> Message
 warnCaseMode i@(Ident _ name _ ) c = posMessage i $

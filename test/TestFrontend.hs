@@ -302,6 +302,7 @@ warnInfos = map (uncurry mkFailTest)
       , "In an equation for `tuple'", "In an equation for `tuple2'"
       , "In an equation for `g'", "In an equation for `rec'"]
     )
+  , ("NoRedundant", [])
   , ("OverlappingPatterns",
       [ "Pattern matches are unreachable", "In a case alternative"
       , "An fcase expression is non-deterministic due to overlapping rules"
@@ -309,6 +310,9 @@ warnInfos = map (uncurry mkFailTest)
       , "Function `j' is non-deterministic due to overlapping rules"
       , "Function `k' is non-deterministic due to overlapping rules"
       ]
+    )
+  , ("Redundant",
+      [ "Redundant context in function `f': `Eq'"]
     )
   , ("ShadowingSymbols",
       [ "Unused declaration of variable `x'", "Shadowing symbol `x'"])
