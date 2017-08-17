@@ -21,7 +21,7 @@ import           Control.Monad
 import           Control.Monad.State.Strict    (State, execState, gets, modify)
 import qualified Data.IntSet         as IntSet
   (IntSet, empty, insert, notMember, singleton, union, unions)
-import qualified Data.Map            as Map    (empty, insert, lookup)
+import qualified Data.Map            as Map    (empty, insert, lookup, (!))
 import           Data.Maybe
   (catMaybes, fromMaybe, listToMaybe)
 import           Data.List
@@ -34,15 +34,17 @@ import Curry.Base.Ident
 import Curry.Base.Position
 import Curry.Base.Pretty
 import Curry.Syntax
-import Curry.Syntax.Pretty (ppDecl, ppPattern, ppExpr, ppIdent)
+import Curry.Syntax.Utils  (typeVariables)
+import Curry.Syntax.Pretty (ppDecl, ppPattern, ppExpr, ppIdent, ppConstraint)
 
-import Base.CurryTypes (ppTypeScheme, toPredType)
+import Base.CurryTypes (ppTypeScheme, toPredType, fromPred, toPredSet)
 import Base.Messages   (Message, posMessage, internalError)
 import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                        , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv
                        , qualModifyNestEnv)
 
 import Base.Types
+import Base.PrettyTypes
 import Base.Utils (findMultiples)
 import Env.ModuleAlias
 import Env.Class (ClassEnv, classMethods, hasDefaultImpl)
@@ -1448,42 +1450,143 @@ isDataDeclName _               _     = True
 -- Warn for redundant context
 -- ---------------------------------------------------------------------------
 
+--traverse the AST for QualTypeExpr/Context and check for redundancy
 checkRedContext :: [Decl a] -> WCM ()
 checkRedContext = warnFor WarnRedundantContext . mapM_ checkRedContextDecl
 
-checkRedContextDecl :: Decl a -> WCM ()
-checkRedContextDecl (TypeSig _ ids ty) = do
+getRedPredSet :: ModuleIdent -> ClassEnv -> TCEnv -> PredSet -> PredSet
+getRedPredSet m cenv tcEnv ps =
+  Set.map (pm Map.!) $ Set.difference qps $ minPredSet cenv qps --or fromJust $ Map.lookup
+  where (qps, pm) = Set.foldr qualifyPred (Set.empty, Map.empty) ps
+        qualifyPred p@(Pred qid ty) (ps, pm) =
+          let qp = Pred (getOrigName m qid tcEnv) ty
+          in (Set.insert qp ps, Map.insert qp p pm)
+
+checkRedContext' :: (Pred -> Message) -> PredSet -> WCM ()
+checkRedContext' f ps = do
   m     <- gets moduleId
   cenv  <- gets classEnv
   tcEnv <- gets tyConsEnv
-  let PredType ps _ = toPredType [] ty
-      numberedps  = Set.mapMonotonic (\p -> (p, Set.findIndex p ps)) ps
-      numberedqps = Set.map (\(p,n) -> (qualifyPred m tcEnv p, n)) numberedps
-      qps         = Set.mapMonotonic fst numberedqps
-  mapM_ (report . warnRedContext ids . lookupUsedName numberedqps ps) (Set.difference qps (minPredSet cenv qps))
-  where qualifyPred :: ModuleIdent -> TCEnv -> Pred -> Pred
-        qualifyPred m tcEnv p@(Pred qid ty) = Pred (getOrigName m qid tcEnv) ty
-        lookupUsedName :: Set.Set (Pred, Int) -> Set.Set Pred -> Pred -> Pred
-        lookupUsedName nqps ps p =
-          let (_,n) = Set.elemAt 0 $ Set.filter ((p ==) . fst) nqps
-          in Set.elemAt n ps
+  mapM_ (report . f) (getRedPredSet m cenv tcEnv ps)
+
+checkRedContextDecl :: Decl a -> WCM ()
+checkRedContextDecl (TypeSig _ ids ty@(QualTypeExpr _ ty')) =
+  checkRedContext' (warnRedContext (warnRedFuncString ids) vs) ps
+  where vs = typeVariables ty'
+        PredType ps _ = toPredType vs ty
+checkRedContextDecl (FunctionDecl _ _ _ eqs) = mapM_ checkRedContextEq eqs
+checkRedContextDecl (PatternDecl _ _ rhs) = checkRedContextRhs rhs
+checkRedContextDecl (ClassDecl _ cx i _ ds) = do
+  checkRedContext'
+    (warnRedContext (text ("class declaration " ++ escName i)) vs)
+    ps
+  mapM_ checkRedContextDecl ds
+  where vs = concatMap (\(Constraint _ ty) -> typeVariables ty) cx
+        ps = toPredSet vs cx
+checkRedContextDecl (InstanceDecl _ cx qid _ ds) = do
+  checkRedContext'
+    (warnRedContext (text ("instance declaration " ++ escQualName qid)) vs)
+    ps
+  mapM_ checkRedContextDecl ds
+  where vs = concatMap (\(Constraint _ ty) -> typeVariables ty) cx
+        ps = toPredSet vs cx
 checkRedContextDecl d = return ()
+
+checkRedContextEq :: Equation a -> WCM ()
+checkRedContextEq (Equation _ _ rhs) = checkRedContextRhs rhs
+
+checkRedContextRhs :: Rhs a -> WCM ()
+checkRedContextRhs (SimpleRhs _ e ds) = do
+  checkRedContextExpr e
+  mapM_ checkRedContextDecl ds
+checkRedContextRhs (GuardedRhs cs ds) = do
+  mapM_ checkRedContextCond cs
+  mapM_ checkRedContextDecl ds
+
+checkRedContextCond :: CondExpr a -> WCM ()
+checkRedContextCond (CondExpr _ e1 e2) = do
+  checkRedContextExpr e1
+  checkRedContextExpr e2
+
+checkRedContextExpr :: Expression a -> WCM ()
+checkRedContextExpr (Paren e) = checkRedContextExpr e
+checkRedContextExpr (Typed e ty@(QualTypeExpr _ ty')) =
+  checkRedContext' (warnRedContext (text "type signature") vs) ps
+  where vs = typeVariables ty'
+        PredType ps _ = toPredType vs ty
+checkRedContextExpr (Record _ _ fs) = mapM_ checkRedContextFieldExpr fs
+checkRedContextExpr (RecordUpdate e fs) = do
+  checkRedContextExpr e
+  mapM_ checkRedContextFieldExpr fs
+checkRedContextExpr (Tuple  es) = mapM_ checkRedContextExpr es
+checkRedContextExpr (List _ es) = mapM_ checkRedContextExpr es
+checkRedContextExpr (ListCompr e sts) = do
+  checkRedContextExpr e
+  mapM_ checkRedContextStmt sts
+checkRedContextExpr (EnumFrom e) = checkRedContextExpr e
+checkRedContextExpr (EnumFromThen e1 e2) = do
+  checkRedContextExpr e1
+  checkRedContextExpr e2
+checkRedContextExpr (EnumFromTo e1 e2) = do
+  checkRedContextExpr e1
+  checkRedContextExpr e2
+checkRedContextExpr (EnumFromThenTo e1 e2 e3) = do
+  checkRedContextExpr e1
+  checkRedContextExpr e2
+  checkRedContextExpr e3
+checkRedContextExpr (UnaryMinus e) = checkRedContextExpr e
+checkRedContextExpr (Apply e1 e2) = do
+  checkRedContextExpr e1
+  checkRedContextExpr e2
+checkRedContextExpr (InfixApply e1 _ e2) = do
+  checkRedContextExpr e1
+  checkRedContextExpr e2
+checkRedContextExpr (LeftSection  e _) = checkRedContextExpr e
+checkRedContextExpr (RightSection _ e) = checkRedContextExpr e
+checkRedContextExpr (Lambda _ e) = checkRedContextExpr e
+checkRedContextExpr (Let ds e) = do
+  mapM_ checkRedContextDecl ds
+  checkRedContextExpr e
+checkRedContextExpr (IfThenElse e1 e2 e3) = do
+  checkRedContextExpr e1
+  checkRedContextExpr e2
+  checkRedContextExpr e3
+checkRedContextExpr (Case _ e as) = do
+  checkRedContextExpr e
+  mapM_ checkRedContextAlt as
+checkRedContextExpr x = return ()
+
+checkRedContextStmt :: Statement a -> WCM ()
+checkRedContextStmt (StmtExpr   e) = checkRedContextExpr e
+checkRedContextStmt (StmtDecl  ds) = mapM_ checkRedContextDecl ds
+checkRedContextStmt (StmtBind _ e) = checkRedContextExpr e
+
+checkRedContextAlt :: Alt a -> WCM ()
+checkRedContextAlt (Alt _ _ rhs) = checkRedContextRhs rhs
+
+checkRedContextFieldExpr :: Field (Expression a) -> WCM ()
+checkRedContextFieldExpr (Field _ _ e) = checkRedContextExpr e
 
 -- ---------------------------------------------------------------------------
 -- Warnings messages
 -- ---------------------------------------------------------------------------
 
-warnRedContext :: [Ident] -> Pred -> Message
-warnRedContext is (Pred qid _) = posMessage qid $
-  text "Redundant context in type signature for function" <>
-  (if length is == 1 then empty else char 's') <+>
-  csep (map (text . escName) is) <> colon <+>
-  text (escQualName qid)
+warnRedFuncString :: [Ident] -> Doc
+warnRedFuncString is = text "type signature for function" <>
+                       text (if length is == 1 then [] else "s") <+>
+                       csep (map (text . escName) is)
 
+-- Doc description -> TypeVars -> Pred -> Warning
+warnRedContext :: Doc -> [Ident] -> Pred -> Message
+warnRedContext d vs p@(Pred qid _) = posMessage qid $
+  text "Redundant context in" <+> d <> colon <+>
+  quotes (ppConstraint $ fromPred vs p) -- idents use ` ' as quotes not ' '
+
+-- seperate a list by ', '
 csep :: [Doc] -> Doc
 csep []     = empty
 csep [x]    = x
-csep (x:xs) = x <> colon <+> csep xs
+csep (x:xs) = x <> comma <+> csep xs
 
 warnCaseMode :: Ident -> CaseMode -> Message
 warnCaseMode i@(Ident _ name _ ) c = posMessage i $

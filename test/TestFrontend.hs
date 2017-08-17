@@ -312,10 +312,10 @@ warnInfos = map (uncurry mkFailTest)
       ]
     )
   , ("QualRedundant",
-      [ "Redundant context in type signature for function `f': `P.Eq'"]
+      [ "Redundant context in type signature for function `f': 'P.Eq a'"]
     )
   , ("Redundant",
-      [ "Redundant context in type signature for function `f': `Eq'"]
+      [ "Redundant context in type signature for function `f': 'Eq a'"]
     )
   , ("ShadowingSymbols",
       [ "Unused declaration of variable `x'", "Shadowing symbol `x'"])
