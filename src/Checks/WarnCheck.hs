@@ -44,7 +44,6 @@ import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                        , qualModifyNestEnv)
 
 import Base.Types
-import Base.PrettyTypes
 import Base.Utils (findMultiples)
 import Env.ModuleAlias
 import Env.Class (ClassEnv, classMethods, hasDefaultImpl)
@@ -1458,10 +1457,10 @@ checkRedContext = warnFor WarnRedundantContext . mapM_ checkRedContextDecl
 getRedPredSet :: ModuleIdent -> ClassEnv -> TCEnv -> PredSet -> PredSet
 getRedPredSet m cenv tcEnv ps =
   Set.map (pm Map.!) $ Set.difference qps $ minPredSet cenv qps --or fromJust $ Map.lookup
-  where (qps, pm) = Set.foldr qualifyPred (Set.empty, Map.empty) ps
-        qualifyPred p@(Pred qid ty) (ps, pm) =
+  where (qps, pm) = Set.foldr qualifyAndAddPred (Set.empty, Map.empty) ps
+        qualifyAndAddPred p@(Pred qid ty) (ps', pm') =
           let qp = Pred (getOrigName m qid tcEnv) ty
-          in (Set.insert qp ps, Map.insert qp p pm)
+          in (Set.insert qp ps', Map.insert qp p pm')
 
 getPredFromContext :: Context -> ([Ident], PredSet)
 getPredFromContext cx =
@@ -1494,7 +1493,7 @@ checkRedContextDecl (InstanceDecl _ cx qid _ ds) = do
   mapM_ checkRedContextDecl ds
   where (vs, ps) = getPredFromContext cx
 checkRedContextDecl (DataDecl _ _ _ cs _) = mapM_ checkRedContextConstrDecl cs
-checkRedContextDecl d = return ()
+checkRedContextDecl _ = return ()
 
 checkRedContextConstrDecl :: ConstrDecl -> WCM ()
 checkRedContextConstrDecl (ConstrDecl _ _ cx idt _  ) =
@@ -1575,7 +1574,7 @@ checkRedContextExpr (IfThenElse e1 e2 e3) = do
 checkRedContextExpr (Case _ e as) = do
   checkRedContextExpr e
   mapM_ checkRedContextAlt as
-checkRedContextExpr x = return ()
+checkRedContextExpr _ = return ()
 
 checkRedContextStmt :: Statement a -> WCM ()
 checkRedContextStmt (StmtExpr   e) = checkRedContextExpr e
