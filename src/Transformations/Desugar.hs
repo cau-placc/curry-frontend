@@ -665,18 +665,20 @@ dsExpr p (RecordUpdate e fs) = do
   dsExpr p $ Case Flex e (map (uncurry (caseAlt p)) alts)
   where ty = typeOf e
         pty = predType ty
-        TypeConstructor tc = arrowBase ty
-        updateAlt (RecordConstr c _ _ ls tys)
-          | all (`elem` qls) (map fieldLabel fs)= do
-            vs <- mapM (freshVar "_#rec") tys
+        tc = rootOfType (arrowBase ty)
+        updateAlt (RecordConstr c _ _ ls _)
+          | all (`elem` qls2) (map fieldLabel fs)= do
             let qc = qualifyLike tc c
-                pat = constrPattern pty qc vs
+            vEnv <- getValueEnv
+            let (qls, tys) = argumentTypes ty qc vEnv
+            vs <- mapM (freshVar "_#rec") tys
+            let pat = constrPattern pty qc vs
                 esMap = map field2Tuple fs
                 originalEs = map (uncurry mkVar) vs
                 maybeEs = map (flip lookup esMap) qls
                 es = zipWith fromMaybe originalEs maybeEs
             return [(pat, applyConstr pty qc tys es)]
-          where qls = map (qualifyLike tc) ls
+          where qls2 = map (qualifyLike tc) ls
         updateAlt _ = return []
 dsExpr p (Tuple      es) = apply (Constructor pty $ qTupleId $ length es) <$> mapM (dsExpr p) es
   where pty = predType (foldr TypeArrow (tupleType tys) tys)
