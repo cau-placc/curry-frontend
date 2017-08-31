@@ -260,7 +260,10 @@ trTypeDecl (IL.DataDecl      qid a cs) = do
   vis <- getTypeVisibility qid
   cs' <- mapM trConstrDecl cs
   return [Type q' vis [0 .. a - 1] cs']
-trTypeDecl (IL.ExternalDataDecl qid a) = trTypeDecl (IL.DataDecl qid a [])
+trTypeDecl (IL.ExternalDataDecl qid a) = do
+  q'  <- trQualIdent qid
+  vis <- getTypeVisibility qid
+  return [Type q' vis [0 .. a - 1] []]
 trTypeDecl _                           = return []
 
 -- Translate a constructor declaration
