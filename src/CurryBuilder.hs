@@ -100,8 +100,7 @@ makeCurry opts srcs = mapM_ process' (zip [1 ..] srcs)
 adjustOptions :: Bool -> Options -> Options
 adjustOptions final opts
   | final      = opts { optForce = optForce opts || isDump }
-  | otherwise  = opts { optTargetTypes = [FlatCurry]
-                      , optForce       = False
+  | otherwise  = opts { optForce       = False
                       , optDebugOpts   = defaultDebugOpts
                       }
   where
