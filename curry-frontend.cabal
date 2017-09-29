@@ -1,5 +1,5 @@
 Name:          curry-frontend
-Version:       0.4.2
+Version:       0.9.9
 Cabal-Version: >= 1.10
 Synopsis:      Compile the functional logic language Curry to several
                intermediate formats
@@ -18,9 +18,9 @@ Category:      Language
 License:       BSD3
 License-File:  LICENSE
 Author:        Wolfgang Lux, Martin Engelke, Bernd Brassel, Holger Siegel,
-               Bjoern Peemoeller
-Maintainer:    Bjoern Peemoeller
-Bug-Reports:   mailto:bjp@informatik.uni-kiel.de
+               Bjoern Peemoeller, Finn Teegen
+Maintainer:    fte@informatik.uni-kiel.de
+Bug-Reports:   mailto:fte@informatik.uni-kiel.de
 Homepage:      http://curry-language.org
 Build-Type:    Simple
 Stability:     experimental
@@ -32,7 +32,7 @@ Data-Files: currysource.css
 
 source-repository head
   type:     git
-  location: https://git.ps.informatik.uni-kiel.de/curry/curry-frontend.git
+  location: https://git.ps.informatik.uni-kiel.de/fte/curry-frontend.git
 
 Flag network-uri
    description: Get Network.URI from the network-uri package
@@ -44,7 +44,7 @@ Library
   Build-Depends:
       base == 4.*
     , containers
-    , curry-base == 0.4.2
+    , curry-base == 0.9.9
     , directory
     , extra >= 1.4.6
     , filepath
@@ -142,7 +142,7 @@ Executable curry-frontend
   Build-Depends:
       base == 4.*
     , containers
-    , curry-base == 0.4.2
+    , curry-base == 0.9.9
     , curry-frontend
     , directory
     , extra >= 1.4.6
