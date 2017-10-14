@@ -120,7 +120,7 @@ Executable curry-frontend
   Build-Depends:
       base == 4.*
     , containers
-    , curry-base == 0.4.2
+    , curry-base == 0.4.3
     , curry-frontend
     , directory
     , filepath
