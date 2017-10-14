@@ -1,0 +1,6 @@
+curry-frontend (0.4.3-0~0deb+1) UNRELEASED; urgency=medium
+
+  * Upstream-provided Debian package for curry-frontend.
+    See upstream CHANGELOG.md for recent changes.
+
+ -- Mike Gabriel <mga@informatik.uni-kiel.de>  Sat, 14 Oct 2017 23:39:30 +0200
