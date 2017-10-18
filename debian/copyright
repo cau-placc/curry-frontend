@@ -1,0 +1,424 @@
+Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: curry-frontend
+Upstream-Contact: Michael Hanus <mh@informatik.uni-kiel.de>
+Source: https://git.ps.informatik.uni-kiel.de/curry/curry-frontend
+
+Files: src/Base/CurryTypes.hs
+Copyright: Wolfgang Lux
+  2011 - 2012, Björn Peemöller
+  2015, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Base/Expr.hs
+Copyright: Wolfgang Lux
+  2011 - 2015, Björn Peemöller
+  2015, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Base/Messages.hs
+Copyright: 2011 - 2016, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Base/NestEnv.hs
+Copyright: 1999 - 2003, Wolfgang Lux
+  2011 - 2015, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Base/SCC.hs
+Copyright: 2000, 2002 - 2003, Wolfgang Lux
+License: BSD-3-clause
+
+Files: src/Base/Subst.hs
+Copyright: 2002, Wolfgang Lux
+License: BSD-3-clause
+
+Files: src/Base/TopEnv.hs
+Copyright: 1999 - 2003, Wolfgang Lux
+  2005, Martin Engelke
+  2011 - 2012, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Base/TypeSubst.hs
+Copyright: 2003, Wolfgang Lux
+License: BSD-3-clause
+
+Files: src/Base/Types.hs
+Copyright: 2002 - 2004, Wolfgang Lux
+  Martin Engelke
+  2015, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Base/Typing.hs
+Copyright: 2003 - 2006, Wolfgang Lux
+  2014 - 2015, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Base/Utils.hs
+Copyright: 2001 - 2003, Wolfgang Lux
+  2011 - 2015, Björn Peemöler
+License: BSD-3-clause
+
+Files: src/Checks.hs
+Copyright: 2011 - 2013, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Checks/ExportCheck.hs
+Copyright: 1999 - 2004, Wolfgang Lux
+  2011 - 2016, Björn Peemöller
+  2015 - 2016, Yannik Potdevin
+License: BSD-3-clause
+
+Files: src/Checks/ImportSyntaxCheck.hs
+Copyright: 2016, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Checks/InterfaceCheck.hs
+Copyright: 2000 - 2007, Wolfgang Lux
+  2015, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Checks/InterfaceSyntaxCheck.hs
+Copyright: 2000 - 2007, Wolfgang Lux
+  2011 - 2015, Björn Peemöller
+  2015, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Checks/KindCheck.hs
+Copyright: 2000 - 2007, Wolfgang Lux
+  Martin Engelke
+  Björn Peemöller
+  2014 - 2015, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Checks/PrecCheck.hs
+Copyright: 2001 - 2004, Wolfgang Lux
+  Martin Engelke
+  Björn Peemöller
+  2015, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Checks/SyntaxCheck.hs
+Copyright: 1999 - 2004, Wolfgang Lux
+  Martin Engelke
+  Björn Peemöller
+  2015, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Checks/TypeCheck.hs
+Copyright: 1999 - 2004, Wolfgang Lux
+  Martin Engelke
+  2011 - 2015, Björn Peemöller
+  2014 - 2015, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Checks/WarnCheck.hs
+Copyright: 2006, Martin Engelke
+  2011 - 2014, Björn Peemöller
+  2014 - 2015, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/CompilerEnv.hs
+Copyright: 2011 - 2015, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/CompilerOpts.hs
+Copyright: 2005, Martin Engelke
+  2007, Sebastian Fischer
+  2011 - 2016, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/CurryBuilder.hs
+Copyright: 2005, Martin Engelke
+  2007, Sebastian Fischer
+  2011 - 2015, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/CurryDeps.hs
+Copyright: 2002 - 2004, Wolfgang Lux
+  2005, Martin Engelke
+  2007, Sebastian Fischer
+  2011 - 2013, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Env/Interface.hs
+Copyright: 2002 - 2004, Wolfgang Lux
+  2011 - 20113, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Env/ModuleAlias.hs
+Copyright: 2002 - 2004, Wolfgang Lux
+  2011 - 2013, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Env/OpPrec.hs
+Copyright: 2002 - 2004, Wolfgang Lux
+  2011 - 2013, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Env/TypeConstructor.hs
+Copyright: 2002 - 2004, Wolfgang Lux
+  2011, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Env/Value.hs
+Copyright: 2001 - 2004, Wolfgang Lux
+  2011, Björn Peemöller
+  2015, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Exports.hs
+Copyright: 2000 - 2004, Wolfgang Lux
+  2005, Martin Engelke
+  2011 - 2016, Björn Peemöller
+  2015, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Files/CymakePath.hs
+Copyright: 2011, Björn Peemöller (bjp@informatik.uni-kiel.de)
+License: BSD-3-clause
+
+Files: src/Generators.hs
+Copyright: 2011, Björn Peemöller (bjp@informatik.uni-kiel.de)
+License: BSD-3-clause
+
+Files: src/Generators/GenAbstractCurry.hs
+Copyright: 2005, Martin Engelke
+  2011 - 2015, Björn Peemöller
+  2015, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Generators/GenFlatCurry.hs
+Copyright: 2005, Martin Engelke
+  2011 - 2016, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Html/CurryHtml.hs
+Copyright: 2011 - 2016, Björn Peemöller
+  2016, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Html/SyntaxColoring.hs
+Copyright: 2014 - 2016, Björn Peemöller
+  2016, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/IL.hs
+Copyright: 2014, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/IL/Pretty.hs
+Copyright: 1999 - 2003, Wolfgang Lux
+  Martin Engelke
+  2011 - 2015, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/IL/ShowModule.hs
+Copyright: 2015, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/IL/Type.hs
+Copyright: 1999 - 2003, Wolfgang Lux
+  Martin Engelke
+License: BSD-3-clause
+
+Files: src/Imports.hs
+Copyright: 2000 - 2003, Wolfgang Lux
+  2011, Björn Peemöller
+  2016, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Interfaces.hs
+Copyright: 2000 - 2004, Wolfgang Lux
+  2011 - 2013, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Modules.hs
+Copyright: 1999 - 2004, Wolfgang Lux
+  2005, Martin Engelke
+  2007, Sebastian Fischer
+  2011 - 2015, Björn Peemöller
+  2016, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/TokenStream.hs
+Copyright: 2015 - 2016, Katharina Rahf
+  2015 - 2016, Björn Peemöller
+  2015 - 2016, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Transformations.hs
+Copyright: 2011, Björn Peemöller (bjp@informatik.uni-kiel.de)
+License: BSD-3-clause
+
+Files: src/Transformations/CaseCompletion.hs
+Copyright: 2005, Martin Engelke
+  2011 - 2015, Björn Peemöller
+  2016, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Transformations/CurryToIL.hs
+Copyright: 1999 - 2003, Wolfgang Lux
+  Martin Engelke
+  2011 - 2015, Björn Peemöller
+  2015, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Transformations/Desugar.hs
+Copyright: 2001 - 2004, Wolfgang Lux
+  Martin Engelke
+  2011 - 2015, Björn Peemöller
+  2015, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Transformations/Lift.hs
+Copyright: 2001 - 2003, Wolfgang Lux
+  2011 - 2015, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Transformations/Qual.hs
+Copyright: 2001 - 2004, Wolfgang Lux
+  2005, Martin Engelke
+  2011 - 2015, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Transformations/Simplify.hs
+Copyright: 2003, Wolfgang Lux
+  Martin Engelke
+  2011 - 2015, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/cymake.hs
+Copyright: 2005, Martin Engelke
+  2011 - 2016, Björn Peemöller
+License: BSD-3-clause
+
+Files: data/currysource.css
+ test/TestFrontend.hs
+ test/fail/Bool.curry
+ test/fail/ErrorMultipleSignature.curry
+ test/fail/ExportCheck/AmbiguousName.curry
+ test/fail/ExportCheck/AmbiguousType.curry
+ test/fail/ExportCheck/ModuleNotImported.curry
+ test/fail/ExportCheck/MultipleName.curry
+ test/fail/ExportCheck/MultipleType.curry
+ test/fail/ExportCheck/NoDataType.curry
+ test/fail/ExportCheck/OutsideTypeConstructor.curry
+ test/fail/ExportCheck/OutsideTypeLabel.curry
+ test/fail/ExportCheck/UndefinedElement.curry
+ test/fail/ExportCheck/UndefinedName.curry
+ test/fail/ExportCheck/UndefinedType.curry
+ test/fail/FP_Cyclic.curry
+ test/fail/FP_NonGlobal.curry
+ test/fail/FP_Restrictions.curry
+ test/fail/ImportError.curry
+ test/fail/KindCheck.curry
+ test/fail/MultipleArities.curry
+ test/fail/MultipleDefinitions.curry
+ test/fail/MultiplePrecedence.curry
+ test/fail/PatternRestrictions.curry
+ test/fail/PragmaError.curry
+ test/fail/PrecedenceRange.curry
+ test/fail/Prelude.curry
+ test/fail/RecordLabelIDs.curry
+ test/fail/RecursiveTypeSyn.curry
+ test/fail/SyntaxError.curry
+ test/fail/TypeError1.curry
+ test/fail/TypeError2.curry
+ test/fail/TypedFreeVariables.curry
+ test/pass/ACVisibility.curry
+ test/pass/AbstractCurryBug.curry
+ test/pass/AnonymVar.curry
+ test/pass/B/C.curry
+ test/pass/CaseComplete.curry
+ test/pass/DefaultPrecedence.curry
+ test/pass/Dequeue.curry
+ test/pass/ExplicitLayout.curry
+ test/pass/FCase.curry
+ test/pass/FP_Lifting.curry
+ test/pass/FP_NonCyclic.curry
+ test/pass/FP_NonLinearity.curry
+ test/pass/FunctionalPatterns.curry
+ test/pass/HaskellRecords.curry
+ test/pass/Hierarchical.curry
+ test/pass/Infix.curry
+ test/pass/Inline.curry
+ test/pass/Lambda.curry
+ test/pass/List.curry
+ test/pass/Maybe.curry
+ test/pass/NegLit.curry
+ test/pass/Newtype1.curry
+ test/pass/Newtype2.curry
+ test/pass/NonLinearLHS.curry
+ test/pass/OperatorDefinition.curry
+ test/pass/PatDecl.curry
+ test/pass/Prelude.curry
+ test/pass/Pretty.curry
+ test/pass/RecordTest1.curry
+ test/pass/RecordTest2.curry
+ test/pass/RecordTest3.curry
+ test/pass/RecordsPolymorphism.curry
+ test/pass/ReexportTest.curry
+ test/pass/SelfExport.curry
+ test/pass/Set.curry
+ test/pass/SpaceLeak.curry
+ test/pass/StringGap.curry
+ test/pass/TyConsTest.curry
+ test/pass/TypedExpr.curry
+ test/pass/UntypedAcy.curry
+ test/pass/Unzip.curry
+ test/warning/AliasClash.curry
+ test/warning/Case1.curry
+ test/warning/Case2.curry
+ test/warning/CheckSignature.curry
+ test/warning/List.curry
+ test/warning/Maybe.curry
+ test/warning/NonExhaustivePattern.curry
+ test/warning/OverlappingPatterns.curry
+ test/warning/Prelude.curry
+ test/warning/ShadowingSymbols.curry
+ test/warning/TabCharacter.curry
+ test/warning/UnexportedFunction.curry
+ .gitignore
+ CHANGELOG.md
+ LIESMICH
+ Setup.hs
+ curry-frontend.cabal
+ overview.md
+Copyright:
+ 1998-2004, Wolfgang Lux
+ 2005-2016, Michael Hanus
+License: BSD-3-clause
+Comment:
+ Assuming license and copyright holders as found in LICENSE file.
+
+Files: debian/*
+Copyright: 2016, Mike Gabriel <sunweaver@debian.org>
+License: BSD-3-clause
+
+License: BSD-3-clause
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are
+ met:
+ .
+ - Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+ .
+ - Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+ .
+ - None of the names of the copyright holders and contributors may be
+   used to endorse or promote products derived from this software without
+   specific prior written permission.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

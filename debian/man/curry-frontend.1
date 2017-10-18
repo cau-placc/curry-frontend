@@ -1,0 +1,185 @@
+.TH CURRY-FRONTEND "1" "December 2016" "0.4.2" "User Commands"
+.SH NAME
+curry\-frontend \- Lexer, parser, type checker, etc. for the Curry programming language
+.SH SYNOPSIS
+curry\-frontend [OPTIONS] ... MODULES ...
+
+.SH DESCRIPTION
+The Curry Frontend consists of the executable program
+"curry\-frontend". It is used by various backends to
+compile programs written in the functional logic language
+Curry to various intermediate representations.
+.PP
+For further information, please check
+http://currry-language.org
+
+.SH OPTIONS
+.TP
+\fB\-h\fR, \-?, \fB\-\-help\fR
+display this help and exit
+.TP
+\fB\-V\fR, \fB\-\-version\fR
+show the version number and exit
+.TP
+\fB\-\-numeric\-version\fR
+show the numeric version number and exit
+.TP
+\fB\-v\fR \fI<n>\fR, \fB\-\-verbosity\fR=\fI\,<n>\/\fR
+set verbosity level \fI<n>\fR, where \fI<n>\fR is one of
+0: quiet
+1: status
+.TP
+\fB\-q\fR, \fB\-\-no\-verb\fR
+set verbosity level to quiet
+.TP
+\fB\-f\fR, \fB\-\-force\fR
+force compilation of target file
+.TP
+\fB\-P\fR dir[:dir], \fB\-\-lib\-dir\fR=\fI\,<dir1>[\/:<dir2>]\fR
+search for libraries in \fI<dir1>[:<dir2>]\fR
+.TP
+\fB\-i\fR dir[:dir], \fB\-\-import\-dir\fR=\fI\,<dir>[\/:<dir2>]\fR
+search for imports in \fI<dir1>[:<dir2>]\fR
+.TP
+\fB\-\-htmldir\fR=\fI\,<dir>\/\fR
+write HTML documentation into directory \fI<dir>\fR
+.TP
+\fB\-\-no\-subdir\fR
+disable writing to `.curry' subdirectory
+.TP
+\fB\-\-no\-intf\fR
+do not create an interface file
+.TP
+\fB\-\-no\-warn\fR
+do not print warnings
+.TP
+\fB\-\-no\-overlap\-warn\fR
+do not print warnings for overlapping rules
+.TP
+\fB\-\-tokens\fR
+generate token stream
+.TP
+\fB\-\-parse\-only\fR
+generate source representation
+.TP
+\fB\-\-flat\fR
+generate FlatCurry code
+.TP
+\fB\-\-extended\-flat\fR
+generate FlatCurry code with source references
+.TP
+\fB\-\-acy\fR
+generate typed AbstractCurry
+.TP
+\fB\-\-uacy\fR
+generate untyped AbstractCurry
+.TP
+\fB\-\-html\fR
+generate html documentation
+.TP
+\fB\-F\fR
+use custom preprocessor
+.TP
+\fB\-\-pgmF\fR=\fI\,<cmd>\/\fR
+execute preprocessor command <cmd>
+.TP
+\fB\-\-optF\fR=\fI\,<option>\/\fR
+execute preprocessor with option <option>
+.TP
+\fB\-e\fR, \fB\-\-extended\fR
+enable extended Curry functionalities
+.TP
+\fB\-X\fR ext
+set language extension `ext', where `ext' is one of
+AnonFreeVars      : enable anonymous free variables
+FunctionalPatterns: enable functional patterns
+NegativeLiterals  : desugar negated literals as negative literal
+NoImplicitPrelude : do not implicitly import the Prelude
+.TP
+\fB\-W\fR \fI<opt>\fR
+set warning option `opt', where `opt' is one of:
+.IP 
+all                       : turn on all warnings
+.IP
+none                      : turn off all warnings
+.IP
+error                     : treat warnings as errors
+.IP
+multiple\-imports          : warn for multiple imports
+.IP
+disjoined\-rules           : warn for disjoined function rules
+.IP
+unused\-global\-bindings    : warn for unused bindings
+.IP
+unused\-bindings           : warn for unused bindings
+.IP
+name\-shadowing            : warn for name shadowing
+.IP
+overlapping               : warn for overlapping function rules
+.IP
+incomplete\-patterns       : warn for incomplete pattern matching
+.IP
+missing\-signatures        : warn for missing type signatures
+.IP
+no\-multiple\-imports       : do not warn for multiple imports
+.IP
+no\-disjoined\-rules        : don't warn for disjoined function
+                            rules
+.IP
+no\-unused\-global\-bindings : do not warn for unused bindings
+.IP
+no\-unused\-bindings        : do not warn for unused bindings
+.IP
+no\-name\-shadowing         : do not warn for name shadowing
+.IP
+no\-overlapping            : do not warn for overlapping function
+                            rules
+.IP
+no\-incomplete\-patterns    : do not warn for incomplete pattern
+                            matching
+.IP
+no\-missing\-signatures     : do not warn for missing type
+                            signatures
+.TP
+\fB\-d\fR \fI<opt>\fR
+set debug option `opt', where `opt' is one of:
+.IP
+dump\-all     : dump everything
+.IP
+dump\-none    : dump nothing
+.IP
+dump\-env     : additionally dump compiler environment
+.IP
+dump\-raw     : dump as raw AST (instead of pretty printing)
+.IP
+dump\-parse   : dump code after parsing
+.IP
+dump\-kc      : dump code after kind checking
+.IP
+dump\-sc      : dump code after syntax checking
+.IP
+dump\-pc      : dump code after precedence checking
+.IP
+dump\-tc      : dump code after type checking
+.IP
+dump\-ec      : dump code after export checking
+.IP
+dump\-qual    : dump code after qualification
+.IP
+dump\-ds      : dump code after desugaring
+.IP
+dump\-lift    : dump code after lifting
+.IP
+dump\-simpl   : dump code after simplification
+.IP
+dump\-trans   : dump code after pattern matching compilation
+.IP
+dump\-cc      : dump code after case completion
+.IP
+dump\-flat    : dump code after translation into FlatCurry
+
+.SH "AUTHOR"
+This manual page has been created using the help2man tool (version
+1.47.4) and edited afterwards by Mike Gabriel
+<mike.gabriel@das-netzwerkteam.de>. This man page has been written for
+the Debian project initially, but may also be used by others.

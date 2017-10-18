@@ -2,12 +2,12 @@ Change log for curry-frontend
 =============================
 
 Under development (0.9.9)
-===============
+=========================
 
   * Add support for typeclasses as known from Haskell.
 
-Version (0.4.2)
-=================
+Version 0.4.2
+=============
 
   * Improved readability of environment information in dumps
     (option dump-simple)

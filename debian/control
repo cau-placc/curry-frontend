@@ -1,0 +1,111 @@
+Source: curry-frontend
+Maintainer: Debian Curry Maintainers <pkg-curry-maintainers@lists.alioth.debian.org>
+Uploaders:
+ Mike Gabriel <sunweaver@debian.org>,
+ Michael Hanus <mh@informatik.uni-kiel.de>,
+Priority: extra
+Section: haskell
+Build-Depends: debhelper (>= 9),
+ haskell-devscripts (>= 0.8),
+ cdbs,
+ devscripts (>= 1.16.1.1~),
+ ghc,
+ ghc-prof,
+ libghc-containers-dev,
+ libghc-containers-prof,
+ libghc-curry-base-dev (>= 0.4.3~),
+ libghc-curry-base-dev (<< 0.4.4~),
+ libghc-curry-base-prof (>= 0.4.3~),
+ libghc-curry-base-prof (<< 0.4.4~),
+ libghc-directory-dev,
+ libghc-directory-prof,
+ libghc-filepath-dev,
+ libghc-filepath-prof,
+ libghc-mtl-dev,
+ libghc-mtl-prof,
+ libghc-network-uri-dev (>= 2.6),
+ libghc-network-uri-prof (>= 2.6),
+ libghc-process-dev,
+ libghc-process-prof,
+ libghc-syb-dev,
+ libghc-syb-prof,
+ libghc-transformers-dev,
+ libghc-transformers-prof,
+Build-Depends-Indep: ghc-doc,
+ libghc-base-doc,
+ libghc-containers-doc,
+ libghc-curry-base-doc,
+ libghc-directory-doc,
+ libghc-filepath-doc,
+ libghc-mtl-doc,
+ libghc-network-uri-doc,
+ libghc-process-doc,
+ libghc-syb-doc,
+ libghc-transformers-doc,
+Standards-Version: 4.1.0
+Homepage: http://curry-language.org
+Vcs-Browser: https://anonscm.debian.org/git/pkg-curry/curry-frontend.git
+Vcs-Git: https://anonscm.debian.org/git/pkg-curry/curry-frontend.git
+X-Description: Lexer, parser, type checker, etc. for Curry
+ The Curry Frontend consists of the executable program
+ "curry-frontend". It is used by various backends to
+ compile programs written in the functional logic language
+ Curry to various intermediate representations.
+ .
+ For further information, please check
+ http://curry-language.org
+
+Package: libghc-curry-frontend-dev
+Architecture: any
+Depends: ${haskell:Depends},
+ ${misc:Depends},
+ ${shlibs:Depends},
+Recommends: ${haskell:Recommends},
+Suggests: ${haskell:Suggests},
+Conflicts: ${haskell:Conflicts},
+Provides: ${haskell:Provides},
+Description: ${haskell:ShortDescription}${haskell:ShortBlurb}
+ ${haskell:LongDescription}
+ .
+ ${haskell:Blurb}
+
+Package: libghc-curry-frontend-prof
+Architecture: any
+Depends: ${haskell:Depends},
+ ${misc:Depends},
+Recommends: ${haskell:Recommends},
+Suggests: ${haskell:Suggests},
+Conflicts: ${haskell:Conflicts},
+Provides: ${haskell:Provides},
+Description: ${haskell:ShortDescription}${haskell:ShortBlurb}
+ ${haskell:LongDescription}
+ .
+ ${haskell:Blurb}
+
+Package: libghc-curry-frontend-doc
+Architecture: all
+Section: doc
+Depends: ${haskell:Depends},
+ ${misc:Depends},
+Recommends: ${haskell:Recommends},
+Suggests: ${haskell:Suggests},
+Conflicts: ${haskell:Conflicts},
+Description: ${haskell:ShortDescription}${haskell:ShortBlurb}
+ ${haskell:LongDescription}
+ .
+ ${haskell:Blurb}
+
+Package: curry-frontend
+Architecture: any
+Section: misc
+Depends: ${haskell:Depends},
+ ${shlibs:Depends},
+ ${misc:Depends},
+Recommends: ${haskell:Recommends},
+Suggests: ${haskell:Suggests},
+Conflicts: ${haskell:Conflicts},
+Provides: ${haskell:Provides},
+Description: ${haskell:ShortDescription}${haskell:ShortBlurb}; executable
+ ${haskell:LongDescription}
+ .
+ ${haskell:Blurb}
