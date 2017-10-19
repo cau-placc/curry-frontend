@@ -1,4 +1,4 @@
-curry-frontend (0.4.3-0~0deb+1) UNRELEASED; urgency=medium
+curry-frontend (0.99.0-0~0deb+1) UNRELEASED; urgency=medium
 
   * Upstream-provided Debian package for curry-frontend.
     See upstream CHANGELOG.md for recent changes.
