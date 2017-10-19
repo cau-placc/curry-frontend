@@ -7,12 +7,14 @@ Files: src/Base/CurryTypes.hs
 Copyright: Wolfgang Lux
   2011 - 2012, Björn Peemöller
   2015, Jan Tikovsky
+  2016, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Base/Expr.hs
 Copyright: Wolfgang Lux
   2011 - 2015, Björn Peemöller
   2015, Jan Tikovsky
+  2016, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Base/Messages.hs
@@ -36,58 +38,65 @@ Files: src/Base/TopEnv.hs
 Copyright: 1999 - 2003, Wolfgang Lux
   2005, Martin Engelke
   2011 - 2012, Björn Peemöller
+  2016, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Base/TypeSubst.hs
 Copyright: 2003, Wolfgang Lux
+  2016, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Base/Types.hs
 Copyright: 2002 - 2004, Wolfgang Lux
   Martin Engelke
   2015, Jan Tikovsky
+  2016, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Base/Typing.hs
 Copyright: 2003 - 2006, Wolfgang Lux
   2014 - 2015, Jan Tikovsky
+  2016, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Base/Utils.hs
 Copyright: 2001 - 2003, Wolfgang Lux
   2011 - 2015, Björn Peemöler
+  2016, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Checks.hs
 Copyright: 2011 - 2013, Björn Peemöller
+  2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Checks/ExportCheck.hs
 Copyright: 1999 - 2004, Wolfgang Lux
   2011 - 2016, Björn Peemöller
   2015 - 2016, Yannik Potdevin
+  2016, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Checks/ImportSyntaxCheck.hs
 Copyright: 2016, Jan Tikovsky
+  2016, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Checks/InterfaceCheck.hs
 Copyright: 2000 - 2007, Wolfgang Lux
   2015, Jan Tikovsky
+  2016, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Checks/InterfaceSyntaxCheck.hs
 Copyright: 2000 - 2007, Wolfgang Lux
   2011 - 2015, Björn Peemöller
   2015, Jan Tikovsky
+  2016, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Checks/KindCheck.hs
-Copyright: 2000 - 2007, Wolfgang Lux
-  Martin Engelke
-  Björn Peemöller
-  2014 - 2015, Jan Tikovsky
+Copyright: 2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Checks/PrecCheck.hs
@@ -115,6 +124,7 @@ Files: src/Checks/WarnCheck.hs
 Copyright: 2006, Martin Engelke
   2011 - 2014, Björn Peemöller
   2014 - 2015, Jan Tikovsky
+  2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
 Files: src/CompilerEnv.hs
@@ -125,6 +135,7 @@ Files: src/CompilerOpts.hs
 Copyright: 2005, Martin Engelke
   2007, Sebastian Fischer
   2011 - 2016, Björn Peemöller
+  2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
 Files: src/CurryBuilder.hs
@@ -158,12 +169,14 @@ License: BSD-3-clause
 Files: src/Env/TypeConstructor.hs
 Copyright: 2002 - 2004, Wolfgang Lux
   2011, Björn Peemöller
+  2016, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Env/Value.hs
 Copyright: 2001 - 2004, Wolfgang Lux
   2011, Björn Peemöller
   2015, Jan Tikovsky
+  2016, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Exports.hs
@@ -171,6 +184,7 @@ Copyright: 2000 - 2004, Wolfgang Lux
   2005, Martin Engelke
   2011 - 2016, Björn Peemöller
   2015, Jan Tikovsky
+  2016, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Files/CymakePath.hs
@@ -179,17 +193,20 @@ License: BSD-3-clause
 
 Files: src/Generators.hs
 Copyright: 2011, Björn Peemöller (bjp@informatik.uni-kiel.de)
+  2017, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Generators/GenAbstractCurry.hs
 Copyright: 2005, Martin Engelke
   2011 - 2015, Björn Peemöller
   2015, Jan Tikovsky
+  2016, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Generators/GenFlatCurry.hs
 Copyright: 2005, Martin Engelke
   2011 - 2016, Björn Peemöller
+  2017, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Html/CurryHtml.hs
@@ -200,6 +217,7 @@ License: BSD-3-clause
 Files: src/Html/SyntaxColoring.hs
 Copyright: 2014 - 2016, Björn Peemöller
   2016, Jan Tikovsky
+  2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
 Files: src/IL.hs
@@ -210,21 +228,25 @@ Files: src/IL/Pretty.hs
 Copyright: 1999 - 2003, Wolfgang Lux
   Martin Engelke
   2011 - 2015, Björn Peemöller
+  2017, Finn Teegen
 License: BSD-3-clause
 
 Files: src/IL/ShowModule.hs
 Copyright: 2015, Björn Peemöller
+  2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
 Files: src/IL/Type.hs
 Copyright: 1999 - 2003, Wolfgang Lux
   Martin Engelke
+  2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Imports.hs
 Copyright: 2000 - 2003, Wolfgang Lux
   2011, Björn Peemöller
   2016, Jan Tikovsky
+  2016, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Interfaces.hs
@@ -254,6 +276,7 @@ Files: src/Transformations/CaseCompletion.hs
 Copyright: 2005, Martin Engelke
   2011 - 2015, Björn Peemöller
   2016, Jan Tikovsky
+  2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Transformations/CurryToIL.hs
@@ -273,23 +296,57 @@ License: BSD-3-clause
 Files: src/Transformations/Lift.hs
 Copyright: 2001 - 2003, Wolfgang Lux
   2011 - 2015, Björn Peemöller
+  2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Transformations/Qual.hs
 Copyright: 2001 - 2004, Wolfgang Lux
   2005, Martin Engelke
   2011 - 2015, Björn Peemöller
+  2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
 Files: src/Transformations/Simplify.hs
 Copyright: 2003, Wolfgang Lux
   Martin Engelke
   2011 - 2015, Björn Peemöller
+  2016, Finn Teegen
 License: BSD-3-clause
 
 Files: src/cymake.hs
 Copyright: 2005, Martin Engelke
   2011 - 2016, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Base/AnnotExpr.hs
+ src/Base/CurryKinds.hs
+ src/Base/KindSubst.hs
+ src/Base/Kinds.hs
+ src/Base/PrettyKinds.hs
+ src/Base/PrettyTypes.hs
+ src/Base/TypeExpansion.hs
+ src/Checks/DeriveCheck.hs
+ src/Checks/ExtensionCheck.hs
+ src/Checks/TypeSyntaxCheck.hs
+ src/CondCompile.hs
+ src/Env/Class.hs
+ src/Env/Instance.hs
+ src/Env/Type.hs
+ src/Generators/GenTypedFlatCurry.hs
+ src/IL/Typing.hs
+ src/Transformations/Derive.hs
+ src/Transformations/Dictionary.hs
+ src/Transformations/Newtypes.hs
+Copyright: 2017, Finn Teegen
+  2016 - 2017, Finn Teegen
+  2016, Finn Teegen
+License: BSD-3-clause
+
+Files: src/Checks/InstanceCheck.hs
+Copyright: 2000-2007, Wolfgang Lux
+  2011-2015, Björn Peemöller
+  2015, Jan Tikovsky
+  2016, Finn Teegen
 License: BSD-3-clause
 
 Files: data/currysource.css
@@ -369,6 +426,8 @@ Files: data/currysource.css
  test/warning/AliasClash.curry
  test/warning/Case1.curry
  test/warning/Case2.curry
+ test/warning/CaseModeH.curry
+ test/warning/CaseModeP.curry
  test/warning/CheckSignature.curry
  test/warning/List.curry
  test/warning/Maybe.curry
