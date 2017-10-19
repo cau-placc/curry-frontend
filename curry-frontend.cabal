@@ -1,5 +1,5 @@
 Name:          curry-frontend
-Version:       0.9.9
+Version:       0.99
 Cabal-Version: >= 1.10
 Synopsis:      Compile the functional logic language Curry to several
                intermediate formats
@@ -44,7 +44,7 @@ Library
   Build-Depends:
       base == 4.*
     , containers
-    , curry-base == 0.9.9
+    , curry-base == 0.99.0
     , directory
     , extra >= 1.4.6
     , filepath
@@ -142,7 +142,7 @@ Executable curry-frontend
   Build-Depends:
       base == 4.*
     , containers
-    , curry-base == 0.9.9
+    , curry-base == 0.99.0
     , curry-frontend
     , directory
     , extra >= 1.4.6
