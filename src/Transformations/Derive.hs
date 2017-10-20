@@ -16,7 +16,6 @@ module Transformations.Derive (derive) where
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative      ((<$>))
 #endif
-import           Control.Monad.ListM      (mapAccumM)
 import qualified Control.Monad.State as S (State, evalState, gets, modify)
 import           Data.List         (intercalate, intersperse)
 import           Data.Maybe        (fromJust, isJust)
@@ -31,7 +30,7 @@ import Base.Messages (internalError)
 import Base.Types
 import Base.TypeSubst (instanceType)
 import Base.Typing (typeOf)
-import Base.Utils (snd3)
+import Base.Utils (snd3, mapAccumM)
 
 import Env.Instance
 import Env.OpPrec

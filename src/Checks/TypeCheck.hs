@@ -42,7 +42,6 @@ import           Control.Applicative        ((<$>), (<*>))
 import           Control.Monad.Extra        ( (&&^), allM, filterM, foldM
                                             , liftM, notM, replicateM, unless
                                             , unlessM )
-import           Control.Monad.ListM        (mapAccumM)
 import qualified Control.Monad.State as S   (State, runState, gets, modify)
 import           Data.List                  (nub, nubBy, partition, sortBy)
 import           Data.Function              (on)
@@ -68,7 +67,7 @@ import Base.TopEnv
 import Base.TypeExpansion
 import Base.Types
 import Base.TypeSubst
-import Base.Utils (foldr2, fst3, snd3, thd3, uncurry3)
+import Base.Utils (foldr2, fst3, snd3, thd3, uncurry3, mapAccumM)
 
 import Env.Class
 import Env.Instance

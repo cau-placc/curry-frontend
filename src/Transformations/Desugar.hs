@@ -61,7 +61,6 @@ import           Control.Applicative        ((<$>), (<*>))
 import           Control.Arrow              (first, second)
 import           Control.Monad              (liftM2)
 import           Control.Monad.Extra        (concatMapM)
-import           Control.Monad.ListM        (mapAccumM)
 import qualified Control.Monad.State as S   (State, runState, gets, modify)
 import           Data.Foldable              (foldrM)
 import           Data.List                  ( (\\), elemIndex, nub, partition
@@ -80,7 +79,7 @@ import Base.TypeExpansion
 import Base.Types
 import Base.TypeSubst
 import Base.Typing
-import Base.Utils (fst3)
+import Base.Utils (fst3, mapAccumM)
 
 import Env.TypeConstructor (TCEnv, TypeInfo (..), qualLookupTypeInfo)
 import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)

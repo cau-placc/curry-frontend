@@ -3,10 +3,10 @@
     Description :  Auxiliary functions
     Copyright   :  (c) 2001 - 2003 Wolfgang Lux
                        2011 - 2015 Björn Peemöler
-                       2016        Finn Teegen
+                       2016 - 2017 Finn Teegen
     License     :  BSD-3-clause
 
-    Maintainer  :  bjp@informatik.uni-kiel.de
+    Maintainer  :  fte@informatik.uni-kiel.de
     Stability   :  experimental
     Portability :  portable
 
@@ -17,10 +17,12 @@
 
 module Base.Utils
   ( fst3, snd3, thd3, curry3, uncurry3
-  , (++!), foldr2, findDouble, findMultiples
+  , (++!), foldr2, mapAccumM, findDouble, findMultiples
   ) where
 
-import Data.List (partition)
+import Control.Monad (MonadPlus, mzero, mplus)
+
+import Data.List     (partition)
 
 infixr 5 ++!
 
@@ -64,6 +66,14 @@ foldr2 :: (a -> b -> c -> c) -> c -> [a] -> [b] -> c
 foldr2 _ z []       _        = z
 foldr2 _ z _        []       = z
 foldr2 f z (x : xs) (y : ys) = f x y (foldr2 f z xs ys)
+
+mapAccumM :: (Monad m, MonadPlus p) => (acc -> x -> m (acc, y)) -> acc -> [x]
+          -> m (acc, p y)
+mapAccumM _ z [] = return (z, mzero)
+mapAccumM f z (x:xs) = do
+  (z', y) <- f z x
+  (z'', ys) <- mapAccumM f z' xs
+  return (z'', return y `mplus` ys)
 
 -- The function 'findDouble' checks whether a list of entities is linear,
 -- i.e., if every entity in the list occurs only once. If it is non-linear,
