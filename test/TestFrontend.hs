@@ -203,7 +203,7 @@ failInfos = map (uncurry mkFailTest)
   , ("ExportCheck/OutsideTypeLabel", ["Label `value' outside type export in export list"])
   , ("ExportCheck/UndefinedElement", ["`foo' is not a constructor or label of type `Bool'"])
   , ("ExportCheck/UndefinedName", ["Undefined name `foo' in export list"])
-  , ("ExportCheck/UndefinedType", ["Undefined type `Foo' in export list"])
+  , ("ExportCheck/UndefinedType", ["Undefined type or class `Foo' in export list"])
   , ("FP_Cyclic", ["Function `g' used in functional pattern depends on `f'  causing a cyclic dependency"])
   , ("FP_Restrictions",
       [ "Functional patterns are not supported inside a case expression"
@@ -219,8 +219,8 @@ failInfos = map (uncurry mkFailTest)
       ]
     )
   , ("KindCheck",
-      [ "Type variable a occurs more than once on left hand side of type declaration"
-      , "Type variable b occurs more than once on left hand side of type declaration"
+      [ "Type variable a occurs more than once in left hand side of type declaration"
+      , "Type variable b occurs more than once in left hand side of type declaration"
       ]
     )
   , ("MultipleArities", ["Equations for `test' have different arities"])
@@ -236,17 +236,13 @@ failInfos = map (uncurry mkFailTest)
   , ("PragmaError", ["Unknown language extension"])
   , ("PrecedenceRange", ["Precedence out of range"])
   , ("RecordLabelIDs", ["Multiple declarations of `RecordLabelIDs.id'"])
-  , ("RecursiveTypeSyn", ["Recursive synonym types A and B"])
+  , ("RecursiveTypeSyn", ["Mutually recursive synonym and/or renaming types A and B (line 12.6)"])
   , ("SyntaxError", ["Type error in application"])
   , ("TypedFreeVariables",
-      ["Free variable x has a polymorphic type", "Type signature too general"]
+      ["Variable x has a polymorphic type", "Type error in equation"]
     )
-  , ("TypeError1",
-      [ "Type error in explicitly typed expression"
-      , "Type signature too general"
-      ]
-    )
-  , ("TypeError2", ["Type error in infix application"])
+  , ("TypeError1", ["Type error in explicitly typed expression"])
+  , ("TypeError2", ["Missing instance for Prelude.Num Prelude.Bool"])
   ]
 
 --------------------------------------------------------------------------------
@@ -266,11 +262,11 @@ warnInfos = map (uncurry mkFailTest)
     )
   , ("Case1", ["Pattern matches are non-exhaustive", "In an equation for `h'"])
   , ("Case2",
-      [ "An fcase expression is non-deterministic due to overlapping rules"
+      [ "An fcase expression is potentially non-deterministic due to overlapping rules"
       , "Pattern matches are non-exhaustive", "In an fcase alternative"
       , "In a case alternative", "In an equation for `fp'"
       , "Pattern matches are unreachable"
-      , "Function `fp' is non-deterministic due to overlapping rules"
+      , "Function `fp' is potentially non-deterministic due to overlapping rules"
       , "Pattern matches are non-exhaustive"
       ]
     )
@@ -304,10 +300,10 @@ warnInfos = map (uncurry mkFailTest)
     )
   , ("OverlappingPatterns",
       [ "Pattern matches are unreachable", "In a case alternative"
-      , "An fcase expression is non-deterministic due to overlapping rules"
-      , "Function `i' is non-deterministic due to overlapping rules"
-      , "Function `j' is non-deterministic due to overlapping rules"
-      , "Function `k' is non-deterministic due to overlapping rules"
+      , "An fcase expression is potentially non-deterministic due to overlapping rules"
+      , "Function `i' is potentially non-deterministic due to overlapping rules"
+      , "Function `j' is potentially non-deterministic due to overlapping rules"
+      , "Function `k' is potentially non-deterministic due to overlapping rules"
       ]
     )
   , ("ShadowingSymbols",
