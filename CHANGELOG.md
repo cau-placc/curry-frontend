@@ -1,8 +1,8 @@
 Change log for curry-frontend
 =============================
 
-Under development (0.9.9)
-=========================
+Version 1.0.0
+=============
 
   * Add support for typeclasses as known from Haskell.
 
