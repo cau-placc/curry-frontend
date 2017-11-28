@@ -140,6 +140,8 @@ matchType' (TypeArrow ty11 ty12) (TypeApply ty21 ty22) =
   fmap (. matchType ty12 ty22)
        (matchType' (TypeApply (TypeConstructor qArrowId) ty11) ty21)
 matchType' (TypeForall _ ty1) (TypeForall _ ty2) = matchType' ty1 ty2
+matchType' (TypeForall _ ty1) ty2 = matchType' ty1 ty2
+matchType' ty1 (TypeForall _ ty2) = matchType' ty1 ty2
 matchType' _ _ = Nothing
 
 -- The functions 'bindDecls', 'bindDecl', 'bindPatterns' and 'bindPattern'
