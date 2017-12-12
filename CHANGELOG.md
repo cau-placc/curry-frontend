@@ -4,6 +4,8 @@ Change log for curry-frontend
 Under development (1.0.1)
 =============
 
+  * Changed desugaring of numeric literals. It now generates calls to the
+    functions `Prelude.fromInt` and `Prelude.fromFloat`.
   * Fixed bug with wrong original names of imported record labels
   * Fixed bug when compiling type constructor classes with super classes
 

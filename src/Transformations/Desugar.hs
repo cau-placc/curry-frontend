@@ -913,13 +913,13 @@ dsLiteral pty (Int i) = Right $ fixLiteral (unpredType pty)
         fixLiteral ty
           | ty == intType = Literal pty $ Int i
           | ty == floatType = Literal pty $ Float $ fromInteger i
-          | otherwise = Apply (prelFromInteger $ unpredType pty) $
+          | otherwise = Apply (prelFromInt $ unpredType pty) $
                           Literal predIntType $ Int i
 dsLiteral pty f@(Float _) = Right $ fixLiteral (unpredType pty)
   where fixLiteral (TypeConstrained tys _) = fixLiteral (head tys)
         fixLiteral ty
           | ty == floatType = Literal pty f
-          | otherwise = Apply (prelFromRational $ unpredType pty) $
+          | otherwise = Apply (prelFromFloat $ unpredType pty) $
                           Literal predFloatType f
 dsLiteral pty (String cs) =
   Left $ List pty $ map (Literal pty' . Char) cs
@@ -949,11 +949,11 @@ prelBind_ ma mb = preludeFun [ma, mb] mb ">>"
 prelFlip :: Type -> Type -> Type -> Expression PredType
 prelFlip a b c = preludeFun [TypeArrow a (TypeArrow b c), b, a] c "flip"
 
-prelFromInteger :: Type -> Expression PredType
-prelFromInteger a = preludeFun [intType] a "fromInteger"
+prelFromInt :: Type -> Expression PredType
+prelFromInt a = preludeFun [intType] a "fromInt"
 
-prelFromRational :: Type -> Expression PredType
-prelFromRational a = preludeFun [floatType] a "fromRational"
+prelFromFloat :: Type -> Expression PredType
+prelFromFloat a = preludeFun [floatType] a "fromFloat"
 
 prelEnumFrom :: Type -> Expression PredType
 prelEnumFrom a = preludeFun [a] (listType a) "enumFrom"
