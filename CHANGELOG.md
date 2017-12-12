@@ -1,10 +1,16 @@
 Change log for curry-frontend
 =============================
 
+Under development (1.0.1)
+=============
+
+  * Fixed bug with wrong original names of imported record labels
+  * Fixed bug when compiling type constructor classes with super classes
+
 Version 1.0.0
 =============
 
-  * Add support for typeclasses as known from Haskell.
+  * Added support for typeclasses as known from Haskell
 
 Version 0.4.2
 =============
