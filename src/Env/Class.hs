@@ -23,7 +23,7 @@ module Env.Class
   , superClasses, allSuperClasses, classMethods, hasDefaultImpl
   ) where
 
-import           Data.List       (nub)
+import           Data.List       (nub, sort)
 import qualified Data.Map as Map (Map, empty, insertWith, lookup)
 
 import Curry.Base.Ident
@@ -38,7 +38,8 @@ initClassEnv :: ClassEnv
 initClassEnv = Map.empty
 
 bindClassInfo :: QualIdent -> ClassInfo -> ClassEnv -> ClassEnv
-bindClassInfo = Map.insertWith mergeClassInfo
+bindClassInfo cls (sclss, ms) =
+  Map.insertWith mergeClassInfo cls (sort sclss, ms)
 
 -- We have to be careful when merging two class infos into one as hidden class
 -- declarations in interfaces provide no information about class methods. If
