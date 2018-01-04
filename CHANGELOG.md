@@ -10,6 +10,7 @@ Under development (1.0.1)
     functions `Prelude.fromInt` and `Prelude.fromFloat`.
   * Fixed bug with wrong original names of imported record labels
   * Fixed bug when compiling type constructor classes with super classes
+  * Adjusted warning message for potentially unreachable pattern matches
 
 Version 1.0.0
 =============

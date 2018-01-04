@@ -923,7 +923,7 @@ warnMissingPattern p loc pats = posMessage p
 -- additional pattern are abbreviated by dots.
 warnUnreachablePattern :: Position  -> [[Pattern a]] -> Message
 warnUnreachablePattern p pats = posMessage p
-  $   text "Pattern matches are unreachable"
+  $   text "Pattern matches are potentially unreachable"
   $+$ text "In a case alternative:"
   $+$ nest 2 (vcat (ppExPats pats) <+> text "->" <+> text "...")
   where

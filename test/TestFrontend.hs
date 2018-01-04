@@ -265,7 +265,7 @@ warnInfos = map (uncurry mkFailTest)
       [ "An fcase expression is potentially non-deterministic due to overlapping rules"
       , "Pattern matches are non-exhaustive", "In an fcase alternative"
       , "In a case alternative", "In an equation for `fp'"
-      , "Pattern matches are unreachable"
+      , "Pattern matches are potentially unreachable"
       , "Function `fp' is potentially non-deterministic due to overlapping rules"
       , "Pattern matches are non-exhaustive"
       ]
@@ -299,7 +299,7 @@ warnInfos = map (uncurry mkFailTest)
       , "In an equation for `g'", "In an equation for `rec'"]
     )
   , ("OverlappingPatterns",
-      [ "Pattern matches are unreachable", "In a case alternative"
+      [ "Pattern matches are potentially unreachable", "In a case alternative"
       , "An fcase expression is potentially non-deterministic due to overlapping rules"
       , "Function `i' is potentially non-deterministic due to overlapping rules"
       , "Function `j' is potentially non-deterministic due to overlapping rules"
