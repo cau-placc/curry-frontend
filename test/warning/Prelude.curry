@@ -1645,7 +1645,7 @@ class Num a where
   abs :: a -> a
   signum :: a -> a
 
-  fromInteger :: Int -> a
+  fromInt :: Int -> a
 
   x - y = x + negate y
   negate x = 0 - x
@@ -1664,7 +1664,7 @@ instance Num Int where
            | x == 0    = 0
            | otherwise = -1
 
-  fromInteger x = x
+  fromInt x = x
 
 instance Num Float where
   x + y = x +. y
@@ -1681,9 +1681,9 @@ instance Num Float where
            | x == 0    = 0
            | otherwise = -1
 
-  fromInteger x = i2f x
+  fromInt x = i2f x
 
--- minimal definition: fromRational and (recip or (/))
+-- minimal definition: fromFloat and (recip or (/))
 class Num a => Fractional a where
 
   (/) :: a -> a -> a
@@ -1692,13 +1692,13 @@ class Num a => Fractional a where
   recip x = 1/x
   x / y = x * recip y
 
-  fromRational :: Float -> a -- since we have no type Rational
+  fromFloat :: Float -> a -- since we have no type Rational
 
 instance Fractional Float where
   x / y = x /. y
   recip x = 1.0/x
 
-  fromRational x = x
+  fromFloat x = x
 
 class (Num a, Ord a) => Real a where
   -- toRational :: a -> Rational
