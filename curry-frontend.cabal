@@ -150,7 +150,6 @@ Executable curry-frontend
     , pretty
     , process
     , set-extra
-    , syb
     , transformers
   if flag(network-uri)
     build-depends: network-uri >= 2.6
