@@ -20,19 +20,18 @@ License-File:  LICENSE
 Author:        Wolfgang Lux, Martin Engelke, Bernd Brassel, Holger Siegel,
                Bjoern Peemoeller, Finn Teegen
 Maintainer:    fte@informatik.uni-kiel.de
-Bug-Reports:   mailto:fte@informatik.uni-kiel.de
 Homepage:      http://curry-language.org
 Build-Type:    Simple
 Stability:     experimental
 
-Extra-Source-Files: LIESMICH
+Extra-Source-Files: LIESMICH CHANGELOG.md
 
 Data-Dir:   data
 Data-Files: currysource.css
 
 source-repository head
   type:     git
-  location: https://git.ps.informatik.uni-kiel.de/fte/curry-frontend.git
+  location: https://git.ps.informatik.uni-kiel.de/curry/curry-frontend.git
 
 Flag network-uri
    description: Get Network.URI from the network-uri package
@@ -162,5 +161,4 @@ Test-Suite test-frontend
   hs-source-dirs: test
   default-language:  Haskell2010
   test-module:    TestFrontend
-  build-depends:  base == 4.*, Cabal >= 1.20, curry-base == 1.0.0
-    , curry-frontend == 1.0.1, filepath
+  build-depends:  base == 4.*, Cabal >= 1.20, curry-base == 1.0.0, filepath
