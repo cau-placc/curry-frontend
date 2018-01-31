@@ -1,7 +1,7 @@
 Change log for curry-frontend
 =============================
 
-Under development (1.0.1)
+Version 1.0.1
 =============
 
   * Fixed bug with wrong order of super classes in selector functions
