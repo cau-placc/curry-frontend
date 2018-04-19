@@ -85,7 +85,7 @@ mdlsExpr (IL.Case       _ e as) ms = mdlsExpr e (foldr mdlsAlt ms as)
   mdlsPattern (IL.ConstructorPattern _ c _) = modules c
   mdlsPattern _                             = id
 mdlsExpr (IL.Or          e1 e2) ms = mdlsExpr e1 (mdlsExpr e2 ms)
-mdlsExpr (IL.Exist         _ e) ms = mdlsExpr e ms
+mdlsExpr (IL.Exist       _ _ e) ms = mdlsExpr e ms
 mdlsExpr (IL.Let           b e) ms = mdlsBinding b (mdlsExpr e ms)
 mdlsExpr (IL.Letrec       bs e) ms = foldr mdlsBinding (mdlsExpr e ms) bs
 mdlsExpr _                      ms = ms
@@ -286,7 +286,7 @@ trExpr vs env (Let        ds e) = do
   e' <- trExpr vs env' e
   case ds of
     [FreeDecl _ vs']
-       -> return $ foldr IL.Exist e' $ map varIdent vs'
+       -> return $ foldr (\ (Var ty v) -> IL.Exist v (transType ty)) e' vs'
     [d] | all (`notElem` bv d) (qfv emptyMIdent d)
       -> flip IL.Let    e' <$>      trBinding d
     _ -> flip IL.Letrec e' <$> mapM trBinding ds

@@ -109,7 +109,7 @@ ccExpr (Case        ea e bs) = do
   bs' <- mapM ccAlt bs
   ccCase ea e' bs'
 ccExpr (Or            e1 e2) = Or <$> ccExpr e1 <*> ccExpr e2
-ccExpr (Exist           v e) = Exist v <$> ccExpr e
+ccExpr (Exist        v ty e) = Exist v ty <$> ccExpr e
 ccExpr (Let             b e) = Let <$> ccBinding b <*> ccExpr e
 ccExpr (Letrec         bs e) = Letrec <$> mapM ccBinding bs <*> ccExpr e
 ccExpr (Typed          e ty) = flip Typed ty <$> ccExpr e
@@ -278,9 +278,9 @@ replaceVar v e (Case   ev e' bs)
   = Case ev (replaceVar v e e') (map (replaceVarInAlt v e) bs)
 replaceVar v e (Or        e1 e2)
   = Or (replaceVar v e e1) (replaceVar v e e2)
-replaceVar v e (Exist      w e')
-   | v == w                     = Exist w e'
-   | otherwise                  = Exist w (replaceVar v e e')
+replaceVar v e (Exist   w ty e')
+   | v == w                     = Exist w ty e'
+   | otherwise                  = Exist w ty (replaceVar v e e')
 replaceVar v e (Let        b e')
    | v `occursInBinding` b      = Let b e'
    | otherwise                  = Let (replaceVarInBinding v e b)

@@ -156,9 +156,10 @@ showsExpression (Or exp1 exp2)
   . showsExpression exp1 . space
   . showsExpression exp2
   . showsString ")"
-showsExpression (Exist ident expr)
+showsExpression (Exist ident ty expr)
   = showsString "(Exist "
   . showsIdent ident . space
+  . showsType ty . space
   . showsExpression expr
   . showsString ")"
 showsExpression (Let bind expr)

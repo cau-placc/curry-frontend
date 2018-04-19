@@ -1,6 +1,11 @@
 Change log for curry-frontend
 =============================
 
+Version 1.0.2 (under development)
+=============
+
+  * Fixed bug with wrong type of free variables in the intermediate language.
+
 Version 1.0.1
 =============
 

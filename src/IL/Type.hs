@@ -102,7 +102,7 @@ data Expression
     -- |non-deterministic or
   | Or Expression Expression
     -- |exist binding (introduction of a free variable)
-  | Exist Ident Expression
+  | Exist Ident Type Expression
     -- |let binding
   | Let Binding Expression
     -- |letrec binding
@@ -127,7 +127,7 @@ instance Expr Expression where
   fv (Apply           e1 e2) = fv e1 ++ fv e2
   fv (Case         _ e alts) = fv e  ++ fv alts
   fv (Or              e1 e2) = fv e1 ++ fv e2
-  fv (Exist             v e) = filter (/= v) (fv e)
+  fv (Exist           v _ e) = filter (/= v) (fv e)
   fv (Let (Binding v e1) e2) = fv e1 ++ filter (/= v) (fv e2)
   fv (Letrec          bds e) = filter (`notElem` vs) (fv es ++ fv e)
     where (vs, es) = unzip [(v, e') | Binding v e' <- bds]

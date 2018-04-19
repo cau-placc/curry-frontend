@@ -139,7 +139,7 @@ ppExpr p (Case    ev e alts) = parenIf (p > 0) $
         ppEval Flex  = text "flex"
 ppExpr p (Or          e1 e2) = parenIf (p > 0) $ sep
   [nest orIndent (ppExpr 0 e1), char '|', nest orIndent (ppExpr 0 e2)]
-ppExpr p (Exist         v e) = parenIf (p > 0) $ sep
+ppExpr p (Exist       v _ e) = parenIf (p > 0) $ sep
   [text "let" <+> ppIdent v <+> text "free" <+> text "in", ppExpr 0 e]
 ppExpr p (Let           b e) = parenIf (p > 0) $ sep
   [text "let" <+> ppBinding b <+> text "in",ppExpr 0 e]

@@ -35,7 +35,7 @@ instance Typeable Expression where
     _ -> internalError "IL.Typing.typeOf: application"
   typeOf (Case _ _ as) = typeOf $ head as
   typeOf (Or e _) = typeOf e
-  typeOf (Exist _ e) = typeOf e
+  typeOf (Exist _ _ e) = typeOf e
   typeOf (Let _ e) = typeOf e
   typeOf (Letrec _ e) = typeOf e
   typeOf (Typed e _) = typeOf e

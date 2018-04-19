@@ -330,8 +330,8 @@ trAExpr (IL.Apply        e1 e2) = trApply e1 e2
 trAExpr c@(IL.Case      t e bs) = flip ACase (cvEval t) <$> trType (IL.typeOf c) <*> trAExpr e
                                   <*> mapM (inNestedEnv . trAlt) bs
 trAExpr (IL.Or           e1 e2) = AOr <$> trType (IL.typeOf e1) <*> trAExpr e1 <*> trAExpr e2
-trAExpr (IL.Exist          v e) = inNestedEnv $ do
-  v' <- newVar (IL.typeOf e) v
+trAExpr (IL.Exist       v ty e) = inNestedEnv $ do
+  v' <- newVar ty v
   e' <- trAExpr e
   ty' <- trType (IL.typeOf e)
   return $ case e' of AFree ty'' vs e'' -> AFree ty'' (v' : vs) e''
