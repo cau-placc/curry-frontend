@@ -62,7 +62,7 @@ genAbstractCurry uacy env mdl
 -- ---------------------------------------------------------------------------
 
 trModule :: Module PredType -> GAC CurryProg
-trModule (Module _ mid _ is ds) = do
+trModule (Module _ _ mid _ is ds) = do
   CurryProg mid' is' <$> dflt' <*> cds' <*> ids' <*> ts' <*> fs' <*> os'
   where
   mid'  = moduleName mid
@@ -408,7 +408,7 @@ data AbstractEnv = AbstractEnv
 
 -- |Initialize the AbstractCurry generator environment
 abstractEnv :: Bool -> CompilerEnv -> Module a -> AbstractEnv
-abstractEnv uacy env (Module _ mid es _ ds) = AbstractEnv
+abstractEnv uacy env (Module _ _ mid es _ ds) = AbstractEnv
   { moduleId   = mid
   , typeEnv    = valueEnv env
   , tyExports  = foldr (buildTypeExports  mid) Set.empty es'

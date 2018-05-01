@@ -42,7 +42,7 @@ instance Newtypes a => Newtypes [a] where
   nt = mapM nt
 
 instance Show a => Newtypes (Module a) where
-  nt (Module ps m es is ds) = Module ps m es is <$> mapM nt ds
+  nt (Module spi ps m es is ds) = Module spi ps m es is <$> mapM nt ds
 
 instance Show a => Newtypes (Decl a) where
   nt d@(InfixDecl       _ _ _ _) = return d

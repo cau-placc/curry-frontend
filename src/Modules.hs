@@ -180,7 +180,7 @@ checkModuleHeader opts m fn = checkModuleId m
 
 -- |Check whether the 'ModuleIdent' and the 'FilePath' fit together
 checkModuleId :: Monad m => ModuleIdent -> CS.Module () -> CYT m (CS.Module ())
-checkModuleId mid m@(CS.Module _ mid' _ _ _)
+checkModuleId mid m@(CS.Module _ _ mid' _ _ _)
   | mid == mid' = ok m
   | otherwise   = failMessages [errModuleFileMismatch mid']
 
@@ -190,7 +190,7 @@ checkModuleId mid m@(CS.Module _ mid' _ _ _)
 -- the prelude is imported unqualified, otherwise a qualified import is added.
 
 importPrelude :: Options -> CS.Module () -> CS.Module ()
-importPrelude opts m@(CS.Module ps mid es is ds)
+importPrelude opts m@(CS.Module spi ps mid es is ds)
     -- the Prelude itself
   | mid == preludeMIdent          = m
     -- disabled by compiler option
@@ -198,7 +198,7 @@ importPrelude opts m@(CS.Module ps mid es is ds)
     -- already imported
   | preludeMIdent `elem` imported = m
     -- let's add it!
-  | otherwise                     = CS.Module ps mid es (preludeImp : is) ds
+  | otherwise                     = CS.Module spi ps mid es (preludeImp : is) ds
   where
   noImpPrelude = NoImplicitPrelude `elem` optExtensions opts
                  || m `CS.hasLanguageExtension` NoImplicitPrelude
@@ -216,7 +216,7 @@ checkInterfaces opts iEnv = mapM_ checkInterface (Map.elems iEnv)
     interfaceCheck opts (env, intf)
 
 importSyntaxCheck :: Monad m => InterfaceEnv -> CS.Module a -> CYT m [CS.ImportDecl]
-importSyntaxCheck iEnv (CS.Module _ _ _ imps _) = mapM checkImportDecl imps
+importSyntaxCheck iEnv (CS.Module _ _ _ _ imps _) = mapM checkImportDecl imps
   where
   checkImportDecl (CS.ImportDecl p m q asM is) = case Map.lookup m iEnv of
     Just intf -> CS.ImportDecl p m q asM `liftM` importCheck intf is

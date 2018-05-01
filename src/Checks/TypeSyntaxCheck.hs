@@ -31,6 +31,7 @@ import           Data.Maybe               (fromMaybe, isNothing)
 
 import Curry.Base.Ident
 import Curry.Base.Position
+import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
 import Curry.Syntax.Pretty
@@ -54,7 +55,7 @@ import Env.Type
 
 typeSyntaxCheck :: [KnownExtension] -> TCEnv -> Module a
                 -> ((Module a, [KnownExtension]), [Message])
-typeSyntaxCheck exts tcEnv mdl@(Module _ m _ _ ds) =
+typeSyntaxCheck exts tcEnv mdl@(Module _ _ m _ _ ds) =
   case findMultiples $ map getIdent tcds of
     [] -> if length dfds <= 1
             then runTSCM (checkModule mdl) state
@@ -63,7 +64,7 @@ typeSyntaxCheck exts tcEnv mdl@(Module _ m _ _ ds) =
   where
     tcds = filter isTypeOrClassDecl ds
     dfds = filter isDefaultDecl ds
-    dfps = map (\(DefaultDecl p _) -> p) dfds
+    dfps = map (\(DefaultDecl p _) -> spanInfo2Pos p) dfds
     tEnv = foldr (bindType m) (fmap toTypeKind tcEnv) tcds
     state = TSCState m tEnv exts Map.empty 1 []
 
@@ -310,11 +311,11 @@ lookupVar tv = do
 -- traversed because they can contain local type signatures.
 
 checkModule :: Module a -> TSCM (Module a, [KnownExtension])
-checkModule (Module ps m es is ds) = do
+checkModule (Module spi ps m es is ds) = do
   ds' <- mapM checkDecl ds
   ds'' <- rename ds'
   exts <- getExtensions
-  return (Module ps m es is ds'', exts)
+  return (Module spi ps m es is ds'', exts)
 
 checkDecl :: Decl a -> TSCM (Decl a)
 checkDecl (DataDecl p tc tvs cs clss) = do
@@ -394,20 +395,22 @@ checkSimpleConstraint c@(Constraint _ ty) =
 -- context must not contain any additional constraints for that class variable.
 
 checkClassMethod :: Ident -> Decl a -> TSCM ()
-checkClassMethod tv (TypeSig p _ qty) = do
+checkClassMethod tv (TypeSig spi _ qty) = do
   unless (tv `elem` fv qty) $ report $ errAmbiguousType p tv
   let QualTypeExpr cx _ = qty
   when (tv `elem` fv cx) $ report $ errConstrainedClassVariable p tv
+  where p = spanInfo2Pos spi
 checkClassMethod _ _ = ok
 
-checkInstanceType :: Position -> InstanceType -> TSCM ()
+-- TODO Use span info for err messages
+checkInstanceType :: SpanInfo -> InstanceType -> TSCM ()
 checkInstanceType p inst = do
   tEnv <- getTypeEnv
   unless (isSimpleType inst &&
     not (isTypeSyn (typeConstr inst) tEnv) &&
-    null (filter isAnonId $ typeVariables inst) &&
+    not (any isAnonId $ typeVariables inst) &&
     isNothing (findDouble $ fv inst)) $
-      report $ errIllegalInstanceType p inst
+      report $ errIllegalInstanceType (spanInfo2Pos p) inst
 
 checkTypeLhs :: [Ident] -> TSCM ()
 checkTypeLhs = checkTypeVars "left hand side of type declaration"

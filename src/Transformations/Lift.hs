@@ -45,11 +45,11 @@ import Base.Utils
 import Env.Value
 
 lift :: ValueEnv -> Module Type -> (Module Type, ValueEnv)
-lift vEnv (Module ps m es is ds) = (lifted, valueEnv s')
+lift vEnv (Module spi ps m es is ds) = (lifted, valueEnv s')
   where
   (ds', s') = S.runState (mapM (absDecl "" []) ds) initState
   initState = LiftState m vEnv Map.empty
-  lifted    = Module ps m es is $ concatMap liftFunDecl ds'
+  lifted    = Module spi ps m es is $ concatMap liftFunDecl ds'
 
 -- -----------------------------------------------------------------------------
 -- Abstraction

@@ -37,6 +37,7 @@ import qualified Data.Map            as Map (Map, empty, insert, lookup)
 
 import Curry.Base.Position
 import Curry.Base.Ident
+import Curry.Base.SpanInfo
 import Curry.Syntax
 
 import Base.Expr
@@ -53,7 +54,7 @@ import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 -- -----------------------------------------------------------------------------
 
 simplify :: ValueEnv -> Module Type -> (Module Type, ValueEnv)
-simplify vEnv mdl@(Module _ m _ _ _) = (mdl', valueEnv s')
+simplify vEnv mdl@(Module _ _ m _ _ _) = (mdl', valueEnv s')
   where (mdl', s') = S.runState (simModule mdl) (SimplifyState m vEnv 1)
 
 -- -----------------------------------------------------------------------------
@@ -96,8 +97,8 @@ freshIdent f = f <$> getNextId
 -- -----------------------------------------------------------------------------
 
 simModule :: Module Type -> SIM (Module Type)
-simModule (Module ps m es is ds) = Module ps m es is
-                                   <$> mapM (simDecl Map.empty) ds
+simModule (Module spi ps m es is ds) = Module spi ps m es is
+                                         <$> mapM (simDecl Map.empty) ds
 
 -- Inline an expression for a variable
 type InlineEnv = Map.Map Ident (Expression Type)
@@ -147,7 +148,7 @@ simRhs _   (GuardedRhs  _ _) = error "Simplify.simRhs: guarded rhs"
 -- because it would require to represent the pattern matching code
 -- explicitly in a Curry expression.
 
-inlineFun :: InlineEnv -> Position -> Lhs Type -> Rhs Type
+inlineFun :: InlineEnv -> SpanInfo -> Lhs Type -> Rhs Type
           -> SIM [Equation Type]
 inlineFun env p lhs rhs = do
   m <- getModuleIdent
@@ -175,7 +176,7 @@ inlineFun env p lhs rhs = do
   mergeEqns p1 vs (Equation _ (FunLhs _ ts2) (SimpleRhs p2 e _))
     = Equation p1 lhs <$> simRhs env (simpleRhs p2 (Let ds e))
       where
-      ds = zipWith (\t v -> PatternDecl p2 t (simpleRhs p2 (uncurry mkVar v)))
+      ds = zipWith (\t v -> PatternDecl NoSpanInfo t (simpleRhs p2 (uncurry mkVar v)))
                    ts2
                    vs
   mergeEqns _ _ _ = error "Simplify.inlineFun.mergeEqns: no pattern match"
@@ -245,7 +246,7 @@ sharePatternRhs (PatternDecl p t rhs) = case t of
   _                   -> do
     let ty = typeOf t
     v  <- freshIdent patternId
-    return [ PatternDecl p t                      (simpleRhs p (mkVar ty v))
+    return [ PatternDecl p t                      (simpleRhs (spanInfo2Pos p) (mkVar ty v))
            , PatternDecl p (VariablePattern ty v) rhs
            ]
   where patternId n = mkIdent ("_#pat" ++ show n)

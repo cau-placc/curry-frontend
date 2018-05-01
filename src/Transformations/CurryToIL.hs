@@ -49,7 +49,7 @@ import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 import qualified IL as IL
 
 ilTrans :: ValueEnv -> Module Type -> IL.Module
-ilTrans vEnv (Module _ m _ _ ds) = IL.Module m (imports m ds') ds'
+ilTrans vEnv (Module _ _ m _ _ ds) = IL.Module m (imports m ds') ds'
   where ds' = R.runReader (concatMapM trDecl ds) (TransEnv m vEnv)
 
 -- -----------------------------------------------------------------------------

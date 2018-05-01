@@ -48,7 +48,7 @@ import CompilerEnv
 
 importModules :: Monad m => Module a -> InterfaceEnv -> [ImportDecl]
               -> CYT m CompilerEnv
-importModules mdl@(Module _ mid _ _ _) iEnv expImps
+importModules mdl@(Module _ _ mid _ _ _) iEnv expImps
   = ok $ foldl importModule initEnv expImps
   where
     initEnv = (initCompilerEnv mid)

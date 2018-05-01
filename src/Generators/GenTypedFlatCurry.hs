@@ -28,6 +28,7 @@ import qualified Data.Map            as Map (Map, empty, insert, lookup)
 import qualified Data.Set            as Set (Set, empty, insert, member)
 
 import           Curry.Base.Ident
+import           Curry.Base.SpanInfo
 import           Curry.FlatCurry.Annotated.Goodies (typeName)
 import           Curry.FlatCurry.Annotated.Type
 import           Curry.FlatCurry.Annotated.Typing
@@ -117,7 +118,7 @@ data FlatEnv = FlatEnv
 
 -- Runs a 'FlatState' action and returns the result
 run :: CompilerEnv -> CS.Module Type -> FlatState a -> a
-run env (CS.Module _ mid es is ds) act = S.evalState act env0
+run env (CS.Module _ _ mid es is ds) act = S.evalState act env0
   where
   es'  = case es of Just (CS.Exporting _ e) -> e
                     _                       -> []
@@ -132,7 +133,7 @@ run env (CS.Module _ mid es is ds) act = S.evalState act env0
     , tyEnv        = valueEnv env
     , tcEnv        = tyConsEnv env
     -- Fixity declarations
-    , fixities     = [ CS.IInfixDecl p fix (mkPrec mPrec) (qualifyWith mid o)
+    , fixities     = [ CS.IInfixDecl (spanInfo2Pos p) fix (mkPrec mPrec) (qualifyWith mid o)
                      | CS.InfixDecl p fix mPrec os <- ds, o <- os
                      ]
     -- Type synonyms in the module

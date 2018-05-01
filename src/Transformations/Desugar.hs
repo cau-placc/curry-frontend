@@ -70,6 +70,7 @@ import qualified Data.Set            as Set (Set, empty, member, insert)
 
 import Curry.Base.Ident
 import Curry.Base.Position hiding (first)
+import Curry.Base.SpanInfo
 import Curry.Syntax
 
 import Base.Expr
@@ -94,8 +95,8 @@ import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 
 desugar :: [KnownExtension] -> ValueEnv -> TCEnv -> Module PredType
         -> (Module PredType, ValueEnv)
-desugar xs vEnv tcEnv (Module ps m es is ds)
-  = (Module ps m es is ds', valueEnv s')
+desugar xs vEnv tcEnv (Module spi ps m es is ds)
+  = (Module spi ps m es is ds', valueEnv s')
   where (ds', s') = S.runState (desugarModuleDecls ds)
                                (DesugarState m xs tcEnv vEnv 1)
 
@@ -197,7 +198,7 @@ dsRecordDecl (NewtypeDecl p tc tvs nc clss) = do
 dsRecordDecl d = return [d]
 
 -- Generate a selector function for a single record label
-genSelFun :: Position -> [QualIdent] -> Ident -> DsM (Decl PredType)
+genSelFun :: SpanInfo -> [QualIdent] -> Ident -> DsM (Decl PredType)
 genSelFun p qcs l = do
   m <- getModuleIdent
   vEnv <- getValueEnv
@@ -206,7 +207,7 @@ genSelFun p qcs l = do
 
 -- Generate a selector equation for a label and a constructor if the label
 -- is applicable, otherwise the empty list is returned.
-genSelEqn :: Position -> Ident -> QualIdent -> DsM [Equation PredType]
+genSelEqn :: SpanInfo -> Ident -> QualIdent -> DsM [Equation PredType]
 genSelEqn p l qc = do
   vEnv <- getValueEnv
   let (ls, ty) = conType qc vEnv
@@ -296,13 +297,13 @@ constrain cs e = if null cs then e else foldr1 (&) cs &> e
 -- type 'Bool' of the guard because the guard's type defaults to
 -- 'Success' if it is not restricted by the guard expression.
 
-dsRhs :: Position -> (Expression PredType -> Expression PredType)
+dsRhs :: HasPosition p => p-> (Expression PredType -> Expression PredType)
       -> Rhs PredType -> DsM (Rhs PredType)
 dsRhs p f rhs =     expandRhs (prelFailed (typeOf rhs)) f rhs
                 >>= dsExpr pRhs
                 >>= return . simpleRhs pRhs
   where
-  pRhs = fromMaybe p (getRhsPosition rhs)
+  pRhs = fromMaybe (getPosition p) (getRhsPosition rhs)
 
 expandRhs :: Expression PredType -> (Expression PredType -> Expression PredType)
           -> Rhs PredType -> DsM (Expression PredType)
@@ -440,7 +441,7 @@ substPat s (InfixFuncPattern a p1 op p2) = InfixFuncPattern a (substPat s p1) op
 --     such that the patterns are evaluated from left to right.
 
 dsFunctionalPatterns
-  :: Position -> [Pattern PredType]
+  :: SpanInfo -> [Pattern PredType]
   -> DsM ([Decl PredType], [Expression PredType], [Pattern PredType])
 dsFunctionalPatterns p ts = do
   -- extract functional patterns
@@ -479,7 +480,7 @@ elimFP bs p@(InfixFuncPattern  _ _ _ _) = do
  (pty, v) <- freshVar "_#funpatt" p
  return ((p, (pty, v)) : bs, VariablePattern pty v)
 
-genFPExpr :: Position -> [(Ident, Int, PredType)] -> [LazyBinding]
+genFPExpr :: SpanInfo -> [(Ident, Int, PredType)] -> [LazyBinding]
           -> ([Decl PredType], [Expression PredType])
 genFPExpr p vs bs
   | null bs   = ([]               , [])
@@ -570,7 +571,7 @@ dsLiteralPat pty (String cs) =
   Left $ ListPattern pty $ map (LiteralPattern pty' . Char) cs
   where pty' = predType $ elemType $ unpredType pty
 
-dsPat :: Position -> [Decl PredType] -> Pattern PredType
+dsPat :: HasPosition p => p-> [Decl PredType] -> Pattern PredType
       -> DsM ([Decl PredType], Pattern PredType)
 dsPat _ ds v@(VariablePattern     _ _) = return (ds, v)
 dsPat p ds (LiteralPattern      pty l) =
@@ -605,15 +606,16 @@ dsPat p ds (FunctionPattern    pty f ts) = second (FunctionPattern pty f)
 dsPat p ds (InfixFuncPattern pty t1 f t2) =
   dsPat p ds (FunctionPattern pty f [t1, t2])
 
-dsAs :: Position -> Ident -> ([Decl PredType], Pattern PredType)
+--todo replace SpanInfo
+dsAs :: HasPosition p => p-> Ident -> ([Decl PredType], Pattern PredType)
      -> ([Decl PredType], Pattern PredType)
 dsAs p v (ds, t) = case t of
-  VariablePattern pty v' -> (varDecl p pty v (mkVar pty v') : ds, t)
-  AsPattern        v' t' -> (varDecl p pty' v (mkVar pty' v') : ds, t)
+  VariablePattern pty v' -> (varDecl NoSpanInfo pty v (mkVar pty v') : ds, t)
+  AsPattern        v' t' -> (varDecl NoSpanInfo pty' v (mkVar pty' v') : ds, t)
     where pty' = predType $ typeOf t'
   _                      -> (ds, AsPattern v t)
 
-dsLazy :: Position -> [Decl PredType] -> Pattern PredType
+dsLazy :: HasPosition p => p-> [Decl PredType] -> Pattern PredType
        -> DsM ([Decl PredType], Pattern PredType)
 dsLazy p ds t = case t of
   VariablePattern _ _ -> return (ds, t)
@@ -622,7 +624,7 @@ dsLazy p ds t = case t of
   LazyPattern    t' -> dsLazy p ds t'
   _                 -> do
     (pty, v') <- freshVar "_#lazy" t
-    return (patDecl p t (mkVar pty v') : ds, VariablePattern pty v')
+    return (patDecl NoSpanInfo t (mkVar pty v') : ds, VariablePattern pty v')
 
 {-
 -- -----------------------------------------------------------------------------
@@ -641,7 +643,7 @@ dsLazy p ds t = case t of
 -- field labels @l_1,...,l_k@. In contrast to Haskell, we do not report
 -- an error if this is not the case, but call failed instead.
 -}
-dsExpr :: Position -> Expression PredType -> DsM (Expression PredType)
+dsExpr :: HasPosition p => p-> Expression PredType -> DsM (Expression PredType)
 dsExpr p (Literal     pty l) =
   either (dsExpr p) return (dsLiteral pty l)
 dsExpr _ var@(Variable pty v)
@@ -661,7 +663,7 @@ dsExpr p (Record   pty c fs) = do
   dsExpr p (applyConstr pty c tys es)
 dsExpr p (RecordUpdate e fs) = do
   alts  <- constructors tc >>= concatMapM updateAlt
-  dsExpr p $ Case Flex e (map (uncurry (caseAlt p)) alts)
+  dsExpr p $ Case Flex e (map (uncurry (caseAlt (getPosition p))) alts)
   where ty = typeOf e
         pty = predType ty
         tc = rootOfType (arrowBase ty)
@@ -714,7 +716,7 @@ dsExpr p (RightSection op e) = do
   where TypeArrow ty1 (TypeArrow ty2 ty3) = typeOf (infixOp op)
 dsExpr p expr@(Lambda ts e) = do
   (pty, f) <- freshVar "_#lambda" expr
-  dsExpr p $ Let [funDecl NoPos pty f ts e] $ mkVar pty f
+  dsExpr p $ Let [funDecl NoSpanInfo pty f ts e] $ mkVar pty f
 dsExpr p (Let ds e) = do
   ds' <- dsDeclGroup ds
   e'  <- dsExpr p e
@@ -724,7 +726,7 @@ dsExpr p (IfThenElse e1 e2 e3) = do
   e1' <- dsExpr p e1
   e2' <- dsExpr p e2
   e3' <- dsExpr p e3
-  return $ Case Rigid e1' [caseAlt p truePat e2', caseAlt p falsePat e3']
+  return $ Case Rigid e1' [caseAlt (getPosition p) truePat e2', caseAlt (getPosition p) falsePat e3']
 dsExpr p (Case ct e alts) = dsCase p ct e alts
 
 -- We ignore the context in the type signature of a typed expression, since
@@ -753,7 +755,7 @@ dsTypeExpr ty = do
 -- such that it evaluates a case expression with the remaining cases that
 -- are compatible with the matched pattern when the guards fail.
 
-dsCase :: Position -> CaseType -> Expression PredType -> [Alt PredType]
+dsCase :: HasPosition p => p-> CaseType -> Expression PredType -> [Alt PredType]
        -> DsM (Expression PredType)
 dsCase p ct e alts
   | null alts = internalError "Desugar.dsCase: empty list of alternatives"
@@ -766,7 +768,7 @@ dsCase p ct e alts
     return (mkCase m v e' alts'')
   where
   mkCase m (pty, v) e' bs
-    | v `elem` qfv m bs = Let [varDecl p pty v e'] (Case ct (mkVar pty v) bs)
+    | v `elem` qfv m bs = Let [varDecl NoSpanInfo pty v e'] (Case ct (mkVar pty v) bs) -- TODO
     | otherwise         = Case ct e' bs
 
 dsAltLhs :: Alt PredType -> DsM (Alt PredType)
@@ -859,13 +861,13 @@ dsStmt (StmtDecl   ds) e' = return $ Let ds e'
 -- avoid the construction of the singleton list by calling '(:)'
 -- instead of '(++)' and 'map' in place of 'concatMap', respectively.
 
-dsListComp :: Position -> Expression PredType -> [Statement PredType]
+dsListComp :: HasPosition p => p-> Expression PredType -> [Statement PredType]
            -> DsM (Expression PredType)
 dsListComp p e []     =
   dsExpr p (List (predType $ listType $ typeOf e) [e])
 dsListComp p e (q:qs) = dsQual p q (ListCompr e qs)
 
-dsQual :: Position -> Statement PredType -> Expression PredType
+dsQual :: HasPosition p => p-> Statement PredType -> Expression PredType
        -> DsM (Expression PredType)
 dsQual p (StmtExpr   b) e =
   dsExpr p (IfThenElse b e (List (predType $ typeOf e) []))
@@ -885,8 +887,8 @@ dsQual p (StmtBind t l) e
   foldFunct v l1 e1
     = Lambda (map (uncurry VariablePattern) [v, l1])
        (Case Rigid (uncurry mkVar v)
-          [ caseAlt p t (append e1 (uncurry mkVar l1))
-          , caseAlt p (uncurry VariablePattern v) (uncurry mkVar l1)])
+          [ caseAlt (getPosition p) t (append e1 (uncurry mkVar l1))
+          , caseAlt (getPosition p) (uncurry VariablePattern v) (uncurry mkVar l1)])
 
   append (ListCompr e1 []) l1 = apply (prelCons (typeOf e1)) [e1, l1]
   append e1                l1 = apply (prelAppend (elemType $ typeOf e1)) [e1, l1]

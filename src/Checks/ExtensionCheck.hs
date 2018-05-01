@@ -53,7 +53,7 @@ ok = return ()
 -- if an extension is unkown.
 
 checkModule :: Module a -> EXCM ()
-checkModule (Module ps _ _ _ _) = mapM_ checkPragma ps
+checkModule (Module _ ps _ _ _ _) = mapM_ checkPragma ps
 
 checkPragma :: ModulePragma -> EXCM ()
 checkPragma (LanguagePragma _ exts) = mapM_ checkExtension exts

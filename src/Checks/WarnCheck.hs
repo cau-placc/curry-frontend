@@ -32,6 +32,7 @@ import           Data.Char
 import Curry.Base.Ident
 import Curry.Base.Position
 import Curry.Base.Pretty
+import Curry.Base.SpanInfo
 import Curry.Syntax
 import Curry.Syntax.Pretty (ppDecl, ppPattern, ppExpr, ppIdent)
 
@@ -70,7 +71,7 @@ warnCheck wOpts cOpts aEnv valEnv tcEnv clsEnv mdl
       checkMissingTypeSignatures ds
       checkModuleAlias is
       checkCaseMode  ds
-  where Module _ mid es is ds = fmap (const ()) mdl
+  where Module _ _ mid es is ds = fmap (const ()) mdl
 
 type ScopeEnv = NestEnv IdInfo
 
@@ -233,7 +234,7 @@ checkRuleAdjacency decls = warnFor WarnDisjoinedRules
       else case Map.lookup f env of
         Nothing -> return (f, Map.insert f p env)
         Just p' -> do
-          report $ warnDisjoinedFunctionRules f p'
+          report $ warnDisjoinedFunctionRules f (spanInfo2Pos p')
           return (f, env)
   check (_    , env) _                     = return (mkIdent "", env)
 
@@ -316,20 +317,21 @@ checkLocalDecl (FreeDecl        _ vs) = mapM_ (checkShadowing . varIdent) vs
 checkLocalDecl (PatternDecl    _ p _) = checkPattern p
 checkLocalDecl _                      = ok
 
-checkFunctionDecl :: Position -> Ident -> [Equation ()] -> WCM ()
+checkFunctionDecl :: SpanInfo -> Ident -> [Equation ()] -> WCM ()
 checkFunctionDecl _ _ []  = ok
 checkFunctionDecl p f eqs = inNestedScope $ do
   mapM_ checkEquation eqs
   checkFunctionPatternMatch p f eqs
 
-checkFunctionPatternMatch :: Position -> Ident -> [Equation ()] -> WCM ()
-checkFunctionPatternMatch p f eqs = do
+checkFunctionPatternMatch :: SpanInfo -> Ident -> [Equation ()] -> WCM ()
+checkFunctionPatternMatch spi f eqs = do
   let pats = map (\(Equation _ lhs _) -> snd (flatLhs lhs)) eqs
   (nonExhaustive, overlapped, nondet) <- checkPatternMatching pats
   unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
     warnMissingPattern p ("an equation for " ++ escName f) nonExhaustive
   when (nondet || not (null overlapped)) $ warnFor WarnOverlapping $ report $
     warnNondetOverlapping p ("Function " ++ escName f)
+  where p = spanInfo2Pos spi
 
 -- Check an equation for warnings.
 -- This is done in a seperate scope as the left-hand-side may introduce
@@ -447,14 +449,14 @@ checkField check (Field _ _ x) = check x
 -- Check for orphan instances
 -- -----------------------------------------------------------------------------
 
-checkOrphanInstance :: Position -> Context -> QualIdent -> TypeExpr -> WCM ()
+checkOrphanInstance :: SpanInfo -> Context -> QualIdent -> TypeExpr -> WCM ()
 checkOrphanInstance p cx cls ty = warnFor WarnOrphanInstances $ do
   m <- getModuleIdent
   tcEnv <- gets tyConsEnv
   let ocls = getOrigName m cls tcEnv
       otc  = getOrigName m tc  tcEnv
   unless (isLocalIdent m ocls || isLocalIdent m otc) $ report $
-    warnOrphanInstance p $ ppDecl $ InstanceDecl p cx cls ty []
+    warnOrphanInstance (spanInfo2Pos p) $ ppDecl $ InstanceDecl p cx cls ty []
   where tc = typeConstr ty
 
 warnOrphanInstance :: Position -> Doc -> Message
@@ -464,14 +466,14 @@ warnOrphanInstance p doc = posMessage p $ text "Orphan instance:" <+> doc
 -- Check for missing method implementations
 -- -----------------------------------------------------------------------------
 
-checkMissingMethodImplementations :: Position -> QualIdent -> [Decl a] -> WCM ()
+checkMissingMethodImplementations :: SpanInfo -> QualIdent -> [Decl a] -> WCM ()
 checkMissingMethodImplementations p cls ds = warnFor WarnMissingMethods $ do
   m <- getModuleIdent
   tcEnv <- gets tyConsEnv
   clsEnv <- gets classEnv
   let ocls = getOrigName m cls tcEnv
       ms   = classMethods ocls clsEnv
-  mapM_ (report . warnMissingMethodImplementation p) $
+  mapM_ (report . warnMissingMethodImplementation (spanInfo2Pos p)) $
     filter ((null fs ||) . not . flip (hasDefaultImpl ocls) clsEnv) $ ms \\ fs
   where fs = map unRenameIdent $ concatMap impls ds
 

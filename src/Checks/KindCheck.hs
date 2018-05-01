@@ -26,6 +26,7 @@ import           Data.List                (partition, nub)
 
 import Curry.Base.Ident
 import Curry.Base.Position
+import Curry.Base.SpanInfo ()
 import Curry.Base.Pretty
 import Curry.Syntax
 import Curry.Syntax.Pretty
@@ -53,7 +54,7 @@ import Env.TypeConstructor
 -- synonyms into the type constructor environment.
 
 kindCheck :: TCEnv -> ClassEnv -> Module a -> ((TCEnv, ClassEnv), [Message])
-kindCheck tcEnv clsEnv (Module _ m _ _ ds) = runKCM check initState
+kindCheck tcEnv clsEnv (Module _ _ m _ _ ds) = runKCM check initState
   where
     check = do
       checkNonRecursiveTypes tds &&> checkAcyclicSuperClasses cds
@@ -510,7 +511,7 @@ kcRhs tcEnv (GuardedRhs es ds) = do
 kcCondExpr :: TCEnv -> CondExpr a -> KCM ()
 kcCondExpr tcEnv (CondExpr p g e) = kcExpr tcEnv p g >> kcExpr tcEnv p e
 
-kcExpr :: TCEnv -> Position -> Expression a -> KCM ()
+kcExpr :: HasPosition p => TCEnv -> p -> Expression a -> KCM ()
 kcExpr _     _ (Literal _ _) = ok
 kcExpr _     _ (Variable _ _) = ok
 kcExpr _     _ (Constructor _ _) = ok
@@ -562,7 +563,7 @@ kcExpr tcEnv p (Case _ e alts) = do
   kcExpr tcEnv p e
   mapM_ (kcAlt tcEnv) alts
 
-kcStmt :: TCEnv -> Position -> Statement a -> KCM ()
+kcStmt :: HasPosition p => TCEnv -> p -> Statement a -> KCM ()
 kcStmt tcEnv p (StmtExpr e) = kcExpr tcEnv p e
 kcStmt tcEnv _ (StmtDecl ds) = mapM_ (kcDecl tcEnv) ds
 kcStmt tcEnv p (StmtBind _ e) = kcExpr tcEnv p e
@@ -570,20 +571,20 @@ kcStmt tcEnv p (StmtBind _ e) = kcExpr tcEnv p e
 kcAlt :: TCEnv -> Alt a -> KCM ()
 kcAlt tcEnv (Alt _ _ rhs) = kcRhs tcEnv rhs
 
-kcField :: TCEnv -> Position -> Field (Expression a) -> KCM ()
+kcField :: HasPosition p => TCEnv -> p -> Field (Expression a) -> KCM ()
 kcField tcEnv p (Field _ _ e) = kcExpr tcEnv p e
 
-kcContext :: TCEnv -> Position -> Context -> KCM ()
+kcContext :: HasPosition p => TCEnv -> p -> Context -> KCM ()
 kcContext tcEnv p = mapM_ (kcConstraint tcEnv p)
 
-kcConstraint :: TCEnv -> Position -> Constraint -> KCM ()
+kcConstraint :: HasPosition p => TCEnv -> p -> Constraint -> KCM ()
 kcConstraint tcEnv p sc@(Constraint qcls ty) = do
   m <- getModuleIdent
   kcType tcEnv p "class constraint" doc (clsKind m qcls tcEnv) ty
   where
     doc = ppConstraint sc
 
-kcTypeSig :: TCEnv -> Position -> QualTypeExpr -> KCM ()
+kcTypeSig :: HasPosition p => TCEnv -> p -> QualTypeExpr -> KCM ()
 kcTypeSig tcEnv p (QualTypeExpr cx ty) = do
   tcEnv' <- foldM bindFreshKind tcEnv free
   kcContext tcEnv' p cx
@@ -592,17 +593,17 @@ kcTypeSig tcEnv p (QualTypeExpr cx ty) = do
     free = filter (null . flip lookupTypeInfo tcEnv) $ nub $ fv ty
     doc = ppTypeExpr 0 ty
 
-kcValueType :: TCEnv -> Position -> String -> Doc -> TypeExpr -> KCM ()
+kcValueType :: HasPosition p => TCEnv -> p -> String -> Doc -> TypeExpr -> KCM ()
 kcValueType tcEnv p what doc = kcType tcEnv p what doc KindStar
 
-kcType :: TCEnv -> Position -> String -> Doc -> Kind -> TypeExpr -> KCM ()
+kcType :: HasPosition p => TCEnv -> p -> String -> Doc -> Kind -> TypeExpr -> KCM ()
 kcType tcEnv p what doc k ty = do
   k' <- kcTypeExpr tcEnv p "type expression" doc' 0 ty
   unify p what (doc $-$ text "Type:" <+> doc') k k'
   where
     doc' = ppTypeExpr 0 ty
 
-kcTypeExpr :: TCEnv -> Position -> String -> Doc -> Int -> TypeExpr -> KCM Kind
+kcTypeExpr :: HasPosition p => TCEnv -> p -> String -> Doc -> Int -> TypeExpr -> KCM Kind
 kcTypeExpr tcEnv p _ _ n (ConstructorType tc) = do
   m <- getModuleIdent
   case qualLookupTypeInfo tc tcEnv of
@@ -634,7 +635,7 @@ kcTypeExpr tcEnv p what doc n (ForallType vs ty) = do
   tcEnv' <- foldM bindFreshKind tcEnv $ vs
   kcTypeExpr tcEnv' p what doc n ty
 
-kcArrow :: Position -> String -> Doc -> Kind -> KCM (Kind, Kind)
+kcArrow :: HasPosition p => p -> String -> Doc -> Kind -> KCM (Kind, Kind)
 kcArrow p what doc k = do
   theta <- getKindSubst
   case subst theta k of
@@ -653,7 +654,7 @@ kcArrow p what doc k = do
 -- ---------------------------------------------------------------------------
 
 -- The unification uses Robinson's algorithm.
-unify :: Position -> String -> Doc -> Kind -> Kind -> KCM ()
+unify :: HasPosition p => p -> String -> Doc -> Kind -> Kind -> KCM ()
 unify p what doc k1 k2 = do
   theta <- getKindSubst
   let k1' = subst theta k1
@@ -740,14 +741,14 @@ errRecursiveClasses (cls:clss) = posMessage cls $
     classPos cls' =
       text (idName cls') <+> parens (text $ showLine $ idPosition cls')
 
-errNonArrowKind :: Position -> String -> Doc -> Kind -> Message
+errNonArrowKind :: HasPosition p => p -> String -> Doc -> Kind -> Message
 errNonArrowKind p what doc k = posMessage p $ vcat
   [ text "Kind error in" <+> text what, doc
   , text "Kind:" <+> ppKind k
   , text "Cannot be applied"
   ]
 
-errPartialAlias :: Position -> QualIdent -> Int -> Int -> Message
+errPartialAlias :: HasPosition p => p -> QualIdent -> Int -> Int -> Message
 errPartialAlias p tc arity argc = posMessage p $ hsep
   [ text "Type synonym", ppQIdent tc
   , text "requires at least"
@@ -757,7 +758,7 @@ errPartialAlias p tc arity argc = posMessage p $ hsep
   where
     plural n x = if n == 1 then x else x ++ "s"
 
-errKindMismatch :: Position -> String -> Doc -> Kind -> Kind -> Message
+errKindMismatch ::  HasPosition p => p -> String -> Doc -> Kind -> Kind -> Message
 errKindMismatch p what doc k1 k2 = posMessage p $ vcat
   [ text "Kind error in"  <+> text what, doc
   , text "Inferred kind:" <+> ppKind k2

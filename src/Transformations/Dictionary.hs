@@ -36,6 +36,7 @@ import qualified Data.Set   as Set ( deleteMin, fromList, null, size, toAscList
 
 import Curry.Base.Ident
 import Curry.Base.Position
+import Curry.Base.SpanInfo
 import Curry.Syntax
 
 import Base.CurryTypes
@@ -72,7 +73,7 @@ type DTM = S.State DTState
 insertDicts :: InterfaceEnv -> TCEnv -> ValueEnv -> ClassEnv -> InstEnv
             -> OpPrecEnv -> Module PredType
             -> (Module Type, InterfaceEnv, TCEnv, ValueEnv, OpPrecEnv)
-insertDicts intfEnv tcEnv vEnv clsEnv inEnv pEnv mdl@(Module _ m _ _ _) =
+insertDicts intfEnv tcEnv vEnv clsEnv inEnv pEnv mdl@(Module _ _ m _ _ _) =
   (mdl', intfEnv', tcEnv', vEnv', pEnv')
   where initState =
           DTState m tcEnv vEnv clsEnv inEnv pEnv emptyAugEnv emptyDictEnv emptySpEnv 1
@@ -212,13 +213,13 @@ class Augment a where
   augment :: a PredType -> DTM (a PredType)
 
 instance Augment Module where
-  augment (Module ps m es is ds) = do
+  augment (Module spi ps m es is ds) = do
     augEnv <- initAugEnv <$> getValueEnv
     setAugEnv augEnv
     modifyValueEnv $ augmentValues
     modifyTyConsEnv $ augmentTypes
     modifyInstEnv $ augmentInstances augEnv
-    Module ps m es is <$> mapM (augmentDecl Nothing) ds
+    Module spi ps m es is <$> mapM (augmentDecl Nothing) ds
 
 -- The first parameter of the functions 'augmentDecl', 'augmentEquation' and
 -- 'augmentLhs' determines whether we have to unrename the function identifiers
@@ -364,7 +365,7 @@ methodMap ds = [(unRenameIdent f, d) | d@(FunctionDecl _ _ f _) <- ds]
 createClassDictDecl :: QualIdent -> Ident -> [Decl a] -> DTM (Decl a)
 createClassDictDecl cls tv ds = do
   c <- createClassDictConstrDecl cls tv ds
-  return $ DataDecl NoPos (dictTypeId cls) [tv] [c] []
+  return $ DataDecl NoSpanInfo (dictTypeId cls) [tv] [c] []
 
 createClassDictConstrDecl :: QualIdent -> Ident -> [Decl a] -> DTM ConstrDecl
 createClassDictConstrDecl cls tv ds = do
@@ -388,7 +389,7 @@ classDictConstrPredType vEnv clsEnv cls = PredType ps $ foldr TypeArrow ty mtys
 createInstDictDecl :: PredSet -> QualIdent -> Type -> DTM (Decl PredType)
 createInstDictDecl ps cls ty = do
   pty <- PredType ps . arrowBase <$> getInstDictConstrType cls ty
-  funDecl NoPos pty (instFunId cls ty) [] <$> createInstDictExpr cls ty
+  funDecl NoSpanInfo pty (instFunId cls ty) [] <$> createInstDictExpr cls ty
 
 createInstDictExpr :: QualIdent -> Type -> DTM (Expression PredType)
 createInstDictExpr cls ty = do
@@ -416,7 +417,7 @@ defaultClassMethodDecl cls f = do
   let pats = if isAugmented augEnv (qualifyLike cls f)
                then [ConstructorPattern predUnitType qUnitId []]
                else []
-  return $ funDecl NoPos pty f pats $ preludeError (instType ty) $
+  return $ funDecl NoSpanInfo pty f pats $ preludeError (instType ty) $
     "No instance or default method for class operation " ++ escName f
 
 getClassMethodType :: QualIdent -> Ident -> DTM PredType
@@ -438,7 +439,7 @@ defaultInstMethodDecl :: PredSet -> QualIdent -> Type -> Ident
 defaultInstMethodDecl ps cls ty f = do
   vEnv <- getValueEnv
   let pty@(PredType _ ty') = instMethodType vEnv ps cls ty f
-  return $ funDecl NoPos pty f [] $
+  return $ funDecl NoSpanInfo pty f [] $
     Variable (predType $ instType ty') (qDefaultMethodId cls f)
 
 -- Returns the type for a given instance's method of a given class. To this
@@ -528,12 +529,12 @@ createMethodStubDecl = createStubDecl
 
 createStubDecl :: Pattern a -> a -> Ident -> (a, Ident) -> [(a, Ident)]
                -> Decl a
-createStubDecl t a f v us = FunctionDecl NoPos a f [createStubEquation t f v us]
+createStubDecl t a f v us = FunctionDecl NoSpanInfo a f [createStubEquation t f v us]
 
 createStubEquation :: Pattern a -> Ident -> (a, Ident) -> [(a, Ident)]
                    -> Equation a
 createStubEquation t f v us =
-  mkEquation NoPos f (t : map (uncurry VariablePattern) us) $
+  mkEquation NoSpanInfo f (t : map (uncurry VariablePattern) us) $
     apply (uncurry mkVar v) (map (uncurry mkVar) us)
 
 superDictStubType :: QualIdent -> QualIdent -> Type -> Type
@@ -742,7 +743,7 @@ class DictTrans a where
   dictTrans :: a PredType -> DTM (a Type)
 
 instance DictTrans Module where
-  dictTrans (Module ps m es is ds) = do
+  dictTrans (Module spi ps m es is ds) = do
     liftedDs <- concatMapM liftDecls ds
     stubDs <- concatMapM createStubs ds
     tcEnv <- getTyConsEnv
@@ -755,7 +756,7 @@ instance DictTrans Module where
     modifyValueEnv $ dictTransValues
     modifyTyConsEnv $ dictTransTypes
     dictEs <- addExports es <$> concatMapM dictExports ds
-    return $ Module ps m dictEs is $ transDs ++ stubDs
+    return $ Module spi ps m dictEs is $ transDs ++ stubDs
 
 -- We use and transform the type from the type constructor environment for
 -- transforming a constructor declaration as it contains the reduced and
@@ -978,11 +979,11 @@ class Specialize a where
   specialize :: a Type -> DTM (a Type)
 
 instance Specialize Module where
-  specialize (Module ps m es is ds) = do
+  specialize (Module spi ps m es is ds) = do
     clsEnv <- getClassEnv
     inEnv <- getInstEnv
     setSpEnv $ initSpEnv clsEnv inEnv
-    Module ps m es is <$> mapM specialize ds
+    Module spi ps m es is <$> mapM specialize ds
 
 instance Specialize Decl where
   specialize (FunctionDecl p ty f eqs) =
@@ -1047,12 +1048,12 @@ instance Specialize Alt where
 -- transformation.
 
 cleanup :: Module a -> DTM (Module a)
-cleanup (Module ps m es is ds) = do
+cleanup (Module spi ps m es is ds) = do
   cleanedEs <- traverse cleanupExportSpec es
   cleanedDs <- concatMapM cleanupInfixDecl ds
   cleanupTyConsEnv
   cleanupPrecEnv
-  return $ Module ps m cleanedEs is cleanedDs
+  return $ Module spi ps m cleanedEs is cleanedDs
 
 cleanupExportSpec :: ExportSpec -> DTM ExportSpec
 cleanupExportSpec (Exporting p es) = Exporting p <$> concatMapM cleanupExport es

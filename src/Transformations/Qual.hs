@@ -51,10 +51,10 @@ qual :: ModuleIdent -> TCEnv -> ValueEnv -> Module a -> Module a
 qual m tcEnv tyEnv mdl = R.runReader (qModule mdl) (QualEnv m tcEnv tyEnv)
 
 qModule :: Qual (Module a)
-qModule (Module ps m es is ds) = do
+qModule (Module spi ps m es is ds) = do
   es' <- qExportSpec es
   ds' <- mapM qDecl  ds
-  return (Module ps m es' is ds')
+  return (Module spi ps m es' is ds')
 
 qExportSpec :: Qual (Maybe ExportSpec)
 qExportSpec Nothing                 = return Nothing

@@ -22,7 +22,7 @@ import           Data.Maybe        (fromJust, isJust)
 import qualified Data.Set   as Set (deleteMin, union)
 
 import Curry.Base.Ident
-import Curry.Base.Position
+import Curry.Base.SpanInfo
 import Curry.Syntax
 
 import Base.CurryTypes (fromPredType)
@@ -50,7 +50,7 @@ type DVM = S.State DVState
 
 derive :: TCEnv -> ValueEnv -> InstEnv -> OpPrecEnv -> Module PredType
        -> Module PredType
-derive tcEnv vEnv inEnv pEnv (Module ps m es is ds) = Module ps m es is $
+derive tcEnv vEnv inEnv pEnv (Module spi ps m es is ds) = Module spi ps m es is $
   ds ++ concat (S.evalState (mapM deriveInstances tds) initState)
   where tds = filter isTypeDecl ds
         initState = DVState m tcEnv vEnv inEnv pEnv 1
@@ -103,7 +103,7 @@ deriveInstance tc tvs cis cls = do
              take (length tvs) $ map TypeVariable [0 ..]
       QualTypeExpr cx inst = fromPredType tvs $ PredType ps ty
   ds <- deriveMethods cls ty cis ps
-  return $ InstanceDecl NoPos cx cls inst ds
+  return $ InstanceDecl NoSpanInfo cx cls inst ds
 
 -- Note: The methods and arities of the generated instance declarations have to
 -- correspond to the methods and arities entered previously into the instance
@@ -133,7 +133,7 @@ deriveBinOp :: QualIdent -> Ident -> BinOpExpr -> Type -> [ConstrInfo]
 deriveBinOp cls op expr ty cis ps = do
   pty <- getInstMethodType ps cls ty op
   eqs <- mapM (deriveBinOpEquation op expr ty) $ sequence [cis, cis]
-  return $ FunctionDecl NoPos pty op eqs
+  return $ FunctionDecl NoSpanInfo pty op eqs
 
 deriveBinOpEquation :: Ident -> BinOpExpr -> Type -> [ConstrInfo]
                     -> DVM (Equation PredType)
@@ -144,7 +144,7 @@ deriveBinOpEquation op expr ty [(i1, c1, _, tys1), (i2, c2, _, tys2)] = do
       pat2 = constrPattern pty c2 vs2
       es1 = map (uncurry mkVar) vs1
       es2 = map (uncurry mkVar) vs2
-  return $ mkEquation NoPos op [pat1, pat2] $ expr i1 es1 i2 es2
+  return $ mkEquation NoSpanInfo op [pat1, pat2] $ expr i1 es1 i2 es2
   where pty = predType $ instType ty
 deriveBinOpEquation _ _ _ _ = internalError "Derive.deriveBinOpEquation"
 
@@ -194,7 +194,7 @@ deriveSuccOrPred :: Ident -> Type -> [ConstrInfo] -> [ConstrInfo] -> PredSet
                  -> DVM (Decl PredType)
 deriveSuccOrPred f ty cis1 cis2 ps = do
   pty <- getInstMethodType ps qEnumId ty f
-  FunctionDecl NoPos pty f <$> if null eqs
+  FunctionDecl NoSpanInfo pty f <$> if null eqs
                                  then do
                                         v <- freshArgument $ instType ty
                                         return [failedEquation f ty v]
@@ -204,33 +204,33 @@ deriveSuccOrPred f ty cis1 cis2 ps = do
 succOrPredEquation :: Ident -> Type -> ConstrInfo -> ConstrInfo
                    -> Equation PredType
 succOrPredEquation f ty (_, c1, _, _) (_, c2, _, _) =
-  mkEquation NoPos f [ConstructorPattern pty c1 []] $ Constructor pty c2
+  mkEquation NoSpanInfo f [ConstructorPattern pty c1 []] $ Constructor pty c2
   where pty = predType $ instType ty
 
 failedEquation :: Ident -> Type -> (PredType, Ident) -> Equation PredType
 failedEquation f ty v =
-  mkEquation NoPos f [uncurry VariablePattern v] $ preludeFailed $ instType ty
+  mkEquation NoSpanInfo f [uncurry VariablePattern v] $ preludeFailed $ instType ty
 
 deriveToEnum :: Type -> [ConstrInfo] -> PredSet -> DVM (Decl PredType)
 deriveToEnum ty cis ps = do
   pty <- getInstMethodType ps qEnumId ty toEnumId
-  return $ FunctionDecl NoPos pty toEnumId eqs
+  return $ FunctionDecl NoSpanInfo pty toEnumId eqs
   where eqs = zipWith (toEnumEquation ty) [0 ..] cis
 
 toEnumEquation :: Type -> Integer -> ConstrInfo -> Equation PredType
 toEnumEquation ty i (_, c, _, _) =
-  mkEquation NoPos toEnumId [LiteralPattern (predType intType) (Int i)] $
+  mkEquation NoSpanInfo toEnumId [LiteralPattern (predType intType) (Int i)] $
     Constructor (predType $ instType ty) c
 
 deriveFromEnum :: Type -> [ConstrInfo] -> PredSet -> DVM (Decl PredType)
 deriveFromEnum ty cis ps = do
   pty <- getInstMethodType ps qEnumId ty fromEnumId
-  return $ FunctionDecl NoPos pty fromEnumId eqs
+  return $ FunctionDecl NoSpanInfo pty fromEnumId eqs
   where eqs = zipWith (fromEnumEquation ty) cis [0 ..]
 
 fromEnumEquation :: Type -> ConstrInfo -> Integer -> Equation PredType
 fromEnumEquation ty (_, c, _, _) i =
-  mkEquation NoPos fromEnumId [ConstructorPattern pty c []] $
+  mkEquation NoSpanInfo fromEnumId [ConstructorPattern pty c []] $
     Literal (predType intType) $ Int i
   where pty = predType $ instType ty
 
@@ -238,7 +238,7 @@ deriveEnumFrom :: Type -> ConstrInfo -> PredSet -> DVM (Decl PredType)
 deriveEnumFrom ty (_, c, _, _) ps = do
   pty <- getInstMethodType ps qEnumId ty enumFromId
   v <- freshArgument $ instType ty
-  return $ funDecl NoPos pty enumFromId [uncurry VariablePattern v] $
+  return $ funDecl NoSpanInfo pty enumFromId [uncurry VariablePattern v] $
     enumFromExpr v c
 
 enumFromExpr :: (PredType, Ident) -> QualIdent -> Expression PredType
@@ -249,7 +249,7 @@ deriveEnumFromThen :: Type -> ConstrInfo -> ConstrInfo -> PredSet
 deriveEnumFromThen ty (_, c1, _, _) (_, c2, _, _) ps = do
   pty <- getInstMethodType ps qEnumId ty enumFromId
   vs@[v1, v2] <- mapM (freshArgument . instType) $ replicate 2 ty
-  return $ funDecl NoPos pty enumFromThenId (map (uncurry VariablePattern) vs) $
+  return $ funDecl NoSpanInfo pty enumFromThenId (map (uncurry VariablePattern) vs) $
     enumFromThenExpr v1 v2 c1 c2
 
 enumFromThenExpr :: (PredType, Ident) -> (PredType, Ident) -> QualIdent
@@ -274,7 +274,7 @@ deriveMaxOrMinBound :: QualIdent -> Type -> ConstrInfo -> PredSet
                     -> DVM (Decl PredType)
 deriveMaxOrMinBound f ty (_, c, _, tys) ps = do
   pty <- getInstMethodType ps qBoundedId ty $ unqualify f
-  return $ funDecl NoPos pty (unqualify f) [] $ maxOrMinBoundExpr f c ty tys
+  return $ funDecl NoSpanInfo pty (unqualify f) [] $ maxOrMinBoundExpr f c ty tys
 
 maxOrMinBoundExpr :: QualIdent -> QualIdent -> Type -> [Type]
                   -> Expression PredType
@@ -294,7 +294,7 @@ deriveReadsPrec ty cis ps = do
   d <- freshArgument intType
   r <- freshArgument stringType
   let pats = map (uncurry VariablePattern) [d, r]
-  funDecl NoPos pty readsPrecId pats <$>
+  funDecl NoSpanInfo pty readsPrecId pats <$>
     deriveReadsPrecExpr ty cis (uncurry mkVar d) (uncurry mkVar r)
 
 deriveReadsPrecExpr :: Type -> [ConstrInfo] -> Expression PredType
@@ -417,7 +417,7 @@ deriveShowsPrec :: Type -> [ConstrInfo] -> PredSet -> DVM (Decl PredType)
 deriveShowsPrec ty cis ps = do
   pty <- getInstMethodType ps qShowId ty $ showsPrecId
   eqs <- mapM (deriveShowsPrecEquation ty) cis
-  return $ FunctionDecl NoPos pty showsPrecId eqs
+  return $ FunctionDecl NoSpanInfo pty showsPrecId eqs
 
 deriveShowsPrecEquation :: Type -> ConstrInfo -> DVM (Equation PredType)
 deriveShowsPrecEquation ty (_, c, ls, tys) = do
@@ -425,7 +425,7 @@ deriveShowsPrecEquation ty (_, c, ls, tys) = do
   vs <- mapM (freshArgument . instType) tys
   let pats = [uncurry VariablePattern d, constrPattern pty c vs]
   pEnv <- getPrecEnv
-  return $ mkEquation NoPos showsPrecId pats $ showsPrecExpr (unqualify c)
+  return $ mkEquation NoSpanInfo showsPrecId pats $ showsPrecExpr (unqualify c)
     (precedence c pEnv) ls (uncurry mkVar d) $ map (uncurry mkVar) vs
   where pty = predType $ instType ty
 

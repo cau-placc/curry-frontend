@@ -40,6 +40,7 @@ import Data.List     (sortBy)
 
 import Curry.Base.Ident
 import Curry.Base.Position
+import Curry.Base.SpanInfo ()
 import Curry.Syntax
 
 import Base.Messages
@@ -242,25 +243,8 @@ whiteSpaceCategories = [EOF, VSemicolon, VRightBrace]
 pragmaCategories :: [Category]
 pragmaCategories = [PragmaLanguage, PragmaOptions, PragmaEnd]
 
--- DECL Position
-
-declPos :: Decl a -> Position
-declPos (InfixDecl        p _ _ _    ) = p
-declPos (DataDecl         p _ _ _ _  ) = p
-declPos (ExternalDataDecl p _ _      ) = p
-declPos (NewtypeDecl      p _ _ _ _  ) = p
-declPos (TypeDecl         p _ _ _    ) = p
-declPos (TypeSig          p _ _      ) = p
-declPos (FunctionDecl     p _ _ _    ) = p
-declPos (ExternalDecl     p _        ) = p
-declPos (PatternDecl      p _ _      ) = p
-declPos (FreeDecl         p _        ) = p
-declPos (DefaultDecl      p _        ) = p
-declPos (ClassDecl        p _ _ _ _  ) = p
-declPos (InstanceDecl     p _ _ _ _  ) = p
-
 cmpDecl :: Decl a -> Decl a -> Ordering
-cmpDecl = compare `on` declPos
+cmpDecl = compare `on` getPosition
 
 cmpImportDecl :: ImportDecl -> ImportDecl -> Ordering
 cmpImportDecl = compare `on` (\ (ImportDecl p _ _ _ _) -> p)
@@ -273,7 +257,7 @@ cmpImportDecl = compare `on` (\ (ImportDecl p _ _ _ _) -> p)
 -- -----------------------------------------------------------------------------
 
 idsModule :: Module a -> [Code]
-idsModule (Module _ mid es is ds) =
+idsModule (Module _ _ mid es is ds) =
   let hdrCodes = ModuleName mid : idsExportSpec es
       impCodes = concatMap idsImportDecl (sortBy cmpImportDecl is)
       dclCodes = concatMap idsDecl       (sortBy cmpDecl ds)
