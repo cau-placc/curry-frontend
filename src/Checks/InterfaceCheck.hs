@@ -55,6 +55,7 @@ import           Data.Maybe               (fromMaybe)
 
 import Curry.Base.Ident
 import Curry.Base.Position
+import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
 
@@ -150,20 +151,20 @@ checkImport (ITypeDecl p tc k tvs ty) = do
 checkImport (IFunctionDecl p f (Just tv) n ty) = do
   m <- getModuleIdent
   let check (Value f' cm' n' (ForAll _ ty')) =
-        f == f' && True == cm' && n' == n && toQualPredType m [tv] ty == ty'
+        f == f' && cm' && n' == n && toQualPredType m [tv] ty == ty'
       check _ = False
   checkValueInfo "method" check p f
 checkImport (IFunctionDecl p f Nothing n ty) = do
   m <- getModuleIdent
   let check (Value f' cm' n' (ForAll _ ty')) =
-        f == f' && False == cm' && n' == n && toQualPredType m [] ty == ty'
+        f == f' && not cm' && n' == n && toQualPredType m [] ty == ty'
       check _ = False
   checkValueInfo "function" check p f
 checkImport (HidingClassDecl p cx cls k _) = do
   clsEnv <- getClassEnv
   let check (TypeClass cls' k' _)
         | cls == cls' && toKind' k 0 == k' &&
-          [cls'' | Constraint cls'' _ <- cx] == superClasses cls' clsEnv
+          [cls'' | Constraint _ cls'' _ <- cx] == superClasses cls' clsEnv
         = Just ok
       check _ = Nothing
   checkTypeInfo "hidden type class" check p cls
@@ -171,15 +172,15 @@ checkImport (IClassDecl p cx cls k clsvar ms _) = do
   clsEnv <- getClassEnv
   let check (TypeClass cls' k' fs)
         | cls == cls' && toKind' k 0 == k' &&
-          [cls'' | Constraint cls'' _ <- cx] == superClasses cls' clsEnv &&
+          [cls'' | Constraint _ cls'' _ <- cx] == superClasses cls' clsEnv &&
           map (\m -> (imethod m, imethodArity m)) ms ==
             map (\f -> (methodName f, methodArity f)) fs
         = Just $ mapM_ (checkMethodImport cls clsvar) ms
       check _ = Nothing
   checkTypeInfo "type class" check p cls
-checkImport (IInstanceDecl p cx cls ty is m) = do
+checkImport (IInstanceDecl p cx cls ty is m) =
   checkInstInfo check p (cls, typeConstr ty) m
-  where PredType ps _ = toPredType [] $ QualTypeExpr cx ty
+  where PredType ps _ = toPredType [] $ QualTypeExpr NoSpanInfo cx ty
         check ps' is' = ps == ps' && sort is == sort is'
 
 checkConstrImport :: QualIdent -> [Ident] -> ConstrDecl -> IC ()
@@ -231,7 +232,7 @@ checkMethodImport qcls clsvar (IMethodDecl p f _ qty) =
   checkValueInfo "method" check p qf
   where qf = qualifyLike qcls f
         check (Value f' cm' _ (ForAll _ pty)) =
-          qf == f' && cm' == True && toMethodType qcls clsvar qty == pty
+          qf == f' && cm' && toMethodType qcls clsvar qty == pty
         check _ = False
 
 checkPrecInfo :: (PrecInfo -> Bool) -> Position -> QualIdent -> IC ()
@@ -266,15 +267,17 @@ checkInstInfo check p i mm = do
         Nothing -> report $ errNoInstance p m i
   checkImported checkInfo (maybe qualify qualifyWith mm anonId)
 
-checkValueInfo :: String -> (ValueInfo -> Bool) -> Position
+checkValueInfo :: HasPosition a => String -> (ValueInfo -> Bool) -> a
                -> QualIdent -> IC ()
 checkValueInfo what check p x = do
   tyEnv <- getValueEnv
   let checkInfo m x' = case qualLookupTopEnv x tyEnv of
-        []   -> report $ errNotExported p what m x'
-        [vi] -> unless (check vi) (report $ errImportConflict p what m x')
+        []   -> report $ errNotExported p' what m x'
+        [vi] -> unless (check vi)
+                  (report $ errImportConflict p' what m x')
         _    -> internalError "checkValueInfo"
   checkImported checkInfo x
+  where p' = getPosition p
 
 checkImported :: (ModuleIdent -> Ident -> IC ()) -> QualIdent -> IC ()
 checkImported _ (QualIdent Nothing  _) = ok

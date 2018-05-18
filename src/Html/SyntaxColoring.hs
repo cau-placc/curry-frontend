@@ -247,7 +247,7 @@ cmpDecl :: Decl a -> Decl a -> Ordering
 cmpDecl = compare `on` getPosition
 
 cmpImportDecl :: ImportDecl -> ImportDecl -> Ordering
-cmpImportDecl = compare `on` (\ (ImportDecl p _ _ _ _) -> p)
+cmpImportDecl = compare `on` getPosition
 
 -- -----------------------------------------------------------------------------
 -- Extract all identifiers mentioned in the source code as a Code entity
@@ -270,11 +270,11 @@ idsExportSpec Nothing                 = []
 idsExportSpec (Just (Exporting _ es)) = concatMap idsExport es
 
 idsExport :: Export -> [Code]
-idsExport (Export            qid) = [Function FuncExport False qid]
-idsExport (ExportTypeWith qid cs) = TypeCons TypeExport False qid :
+idsExport (Export            _ qid) = [Function FuncExport False qid]
+idsExport (ExportTypeWith _ qid cs) = TypeCons TypeExport False qid :
   map (DataCons ConsExport False . qualify) cs
-idsExport (ExportTypeAll     qid) = [TypeCons TypeExport False qid]
-idsExport (ExportModule      mid) = [ModuleName mid]
+idsExport (ExportTypeAll     _ qid) = [TypeCons TypeExport False qid]
+idsExport (ExportModule      _ mid) = [ModuleName mid]
 
 -- Imports
 
@@ -288,12 +288,12 @@ idsImportSpec mid (Importing _ is) = concatMap (idsImport mid) is
 idsImportSpec mid (Hiding    _ is) = concatMap (idsImport mid) is
 
 idsImport :: ModuleIdent -> Import -> [Code]
-idsImport mid (Import            i) =
+idsImport mid (Import            _ i) =
   [Function FuncImport False $ qualifyWith mid i]
-idsImport mid (ImportTypeWith t cs) =
+idsImport mid (ImportTypeWith _ t cs) =
   TypeCons TypeImport False (qualifyWith mid t) :
     map (DataCons ConsImport False . qualifyWith mid) cs
-idsImport mid (ImportTypeAll     t) =
+idsImport mid (ImportTypeAll     _ t) =
   [TypeCons TypeImport False $ qualifyWith mid t]
 
 -- Declarations
@@ -361,24 +361,24 @@ idsInstanceDecl _                        =
   internalError "SyntaxColoring.idsInstanceDecl"
 
 idsQualTypeExpr :: QualTypeExpr -> [Code]
-idsQualTypeExpr (QualTypeExpr cx ty) = idsContext cx ++ idsTypeExpr ty
+idsQualTypeExpr (QualTypeExpr _ cx ty) = idsContext cx ++ idsTypeExpr ty
 
 idsContext :: Context -> [Code]
 idsContext = concatMap idsConstraint
 
 idsConstraint :: Constraint -> [Code]
-idsConstraint (Constraint qcls ty) =
+idsConstraint (Constraint _ qcls ty) =
   TypeCons TypeRefer False qcls : idsTypeExpr ty
 
 idsTypeExpr :: TypeExpr -> [Code]
-idsTypeExpr (ConstructorType qid) = [TypeCons TypeRefer False qid]
-idsTypeExpr (ApplyType   ty1 ty2) = concatMap idsTypeExpr [ty1, ty2]
-idsTypeExpr (VariableType      v) = [Identifier IdRefer False (qualify v)]
-idsTypeExpr (TupleType       tys) = concatMap idsTypeExpr tys
-idsTypeExpr (ListType         ty) = idsTypeExpr ty
-idsTypeExpr (ArrowType   ty1 ty2) = concatMap idsTypeExpr [ty1, ty2]
-idsTypeExpr (ParenType        ty) = idsTypeExpr ty
-idsTypeExpr (ForallType    vs ty) =
+idsTypeExpr (ConstructorType _ qid) = [TypeCons TypeRefer False qid]
+idsTypeExpr (ApplyType   _ ty1 ty2) = concatMap idsTypeExpr [ty1, ty2]
+idsTypeExpr (VariableType      _ v) = [Identifier IdRefer False (qualify v)]
+idsTypeExpr (TupleType       _ tys) = concatMap idsTypeExpr tys
+idsTypeExpr (ListType         _ ty) = idsTypeExpr ty
+idsTypeExpr (ArrowType   _ ty1 ty2) = concatMap idsTypeExpr [ty1, ty2]
+idsTypeExpr (ParenType        _ ty) = idsTypeExpr ty
+idsTypeExpr (ForallType    _ vs ty) =
   map (Identifier IdDeclare False . qualify) vs ++ idsTypeExpr ty
 
 idsFieldDecl :: FieldDecl -> [Code]
@@ -389,69 +389,70 @@ idsEquation :: Equation a -> [Code]
 idsEquation (Equation _ lhs rhs) = idsLhs lhs ++ idsRhs rhs
 
 idsLhs :: Lhs a -> [Code]
-idsLhs (FunLhs    f ps) = Function FuncDeclare False (qualify f) : concatMap idsPat ps
-idsLhs (OpLhs p1 op p2) = idsPat p1 ++ [Function FuncDeclare False $ qualify op]
-                                    ++ idsPat p2
-idsLhs (ApLhs   lhs ps) = idsLhs lhs ++ concatMap idsPat ps
+idsLhs (FunLhs    _ f ps) =
+  Function FuncDeclare False (qualify f) : concatMap idsPat ps
+idsLhs (OpLhs _ p1 op p2) =
+  idsPat p1 ++ [Function FuncDeclare False $ qualify op] ++ idsPat p2
+idsLhs (ApLhs   _ lhs ps) = idsLhs lhs ++ concatMap idsPat ps
 
 idsRhs :: Rhs a -> [Code]
-idsRhs (SimpleRhs _ e ds) = idsExpr e ++ concatMap idsDecl ds
-idsRhs (GuardedRhs ce ds) = concatMap idsCondExpr ce ++ concatMap idsDecl ds
+idsRhs (SimpleRhs  _ e  ds) = idsExpr e ++ concatMap idsDecl ds
+idsRhs (GuardedRhs _ ce ds) = concatMap idsCondExpr ce ++ concatMap idsDecl ds
 
 idsCondExpr :: CondExpr a -> [Code]
 idsCondExpr (CondExpr _ e1 e2) = idsExpr e1 ++ idsExpr e2
 
 idsPat :: Pattern a -> [Code]
-idsPat (LiteralPattern          _ _) = []
-idsPat (NegativePattern         _ _) = []
-idsPat (VariablePattern         _ v) = [Identifier IdDeclare False (qualify v)]
-idsPat (ConstructorPattern _ qid ps) =
+idsPat (LiteralPattern          _ _ _) = []
+idsPat (NegativePattern         _ _ _) = []
+idsPat (VariablePattern         _ _ v) = [Identifier IdDeclare False (qualify v)]
+idsPat (ConstructorPattern _ _ qid ps) =
   DataCons ConsPattern False qid : concatMap idsPat ps
-idsPat (InfixPattern    _ p1 qid p2) =
+idsPat (InfixPattern    _ _ p1 qid p2) =
   idsPat p1 ++ DataCons ConsPattern False qid : idsPat p2
-idsPat (ParenPattern              p) = idsPat p
-idsPat (RecordPattern      _ qid fs) =
+idsPat (ParenPattern              _ p) = idsPat p
+idsPat (RecordPattern      _ _ qid fs) =
   DataCons ConsPattern False qid : concatMap (idsField idsPat) fs
-idsPat (TuplePattern            ps) = concatMap idsPat ps
-idsPat (ListPattern            _ ps) = concatMap idsPat ps
-idsPat (AsPattern               v p) =
+idsPat (TuplePattern            _ ps) = concatMap idsPat ps
+idsPat (ListPattern            _ _ ps) = concatMap idsPat ps
+idsPat (AsPattern               _ v p) =
   Identifier IdDeclare False (qualify v) : idsPat p
-idsPat (LazyPattern               p) = idsPat p
-idsPat (FunctionPattern    _ qid ps) =
+idsPat (LazyPattern               _ p) = idsPat p
+idsPat (FunctionPattern    _ _ qid ps) =
   Function FuncCall False qid : concatMap idsPat ps
-idsPat (InfixFuncPattern  _ p1 f p2) =
+idsPat (InfixFuncPattern  _ _ p1 f p2) =
   idsPat p1 ++ Function FuncInfix False f : idsPat p2
 
 idsExpr :: Expression a -> [Code]
-idsExpr (Literal              _ _) = []
-idsExpr (Variable           _ qid)
+idsExpr (Literal              _ _ _) = []
+idsExpr (Variable           _ _ qid)
   | isQualified qid                = [Function FuncCall False qid]
   | hasGlobalScope (unqualify qid) = [Function FuncCall False qid]
   | otherwise                      = [Identifier IdRefer False qid]
-idsExpr (Constructor        _ qid) = [DataCons ConsCall False qid]
-idsExpr (Paren                  e) = idsExpr e
-idsExpr (Typed              e qty) = idsExpr e ++ idsQualTypeExpr qty
-idsExpr (Record          _ qid fs) =
+idsExpr (Constructor        _ _ qid) = [DataCons ConsCall False qid]
+idsExpr (Paren                  _ e) = idsExpr e
+idsExpr (Typed              _ e qty) = idsExpr e ++ idsQualTypeExpr qty
+idsExpr (Record          _ _ qid fs) =
   DataCons ConsCall False qid : concatMap (idsField idsExpr) fs
-idsExpr (RecordUpdate        e fs) =
+idsExpr (RecordUpdate        _ e fs) =
   idsExpr e ++ concatMap (idsField idsExpr) fs
-idsExpr (Tuple                 es) = concatMap idsExpr es
-idsExpr (List                _ es) = concatMap idsExpr es
-idsExpr (ListCompr        e stmts) = idsExpr e ++ concatMap idsStmt stmts
-idsExpr (EnumFrom               e) = idsExpr e
-idsExpr (EnumFromThen       e1 e2) = concatMap idsExpr [e1, e2]
-idsExpr (EnumFromTo         e1 e2) = concatMap idsExpr [e1, e2]
-idsExpr (EnumFromThenTo  e1 e2 e3) = concatMap idsExpr [e1, e2, e3]
-idsExpr (UnaryMinus             e) = Symbol "-" : idsExpr e
-idsExpr (Apply              e1 e2) = idsExpr e1 ++ idsExpr e2
-idsExpr (InfixApply      e1 op e2) = idsExpr e1 ++ idsInfix op ++ idsExpr e2
-idsExpr (LeftSection         e op) = idsExpr e ++ idsInfix op
-idsExpr (RightSection        op e) = idsInfix op ++ idsExpr e
-idsExpr (Lambda              ps e) = concatMap idsPat ps ++ idsExpr e
-idsExpr (Let                 ds e) = concatMap idsDecl ds ++ idsExpr e
-idsExpr (Do               stmts e) = concatMap idsStmt stmts ++ idsExpr e
-idsExpr (IfThenElse      e1 e2 e3) = concatMap idsExpr [e1, e2, e3]
-idsExpr (Case            _ e alts) = idsExpr e ++ concatMap idsAlt alts
+idsExpr (Tuple                 _ es) = concatMap idsExpr es
+idsExpr (List                _ _ es) = concatMap idsExpr es
+idsExpr (ListCompr        _ e stmts) = idsExpr e ++ concatMap idsStmt stmts
+idsExpr (EnumFrom               _ e) = idsExpr e
+idsExpr (EnumFromThen       _ e1 e2) = concatMap idsExpr [e1, e2]
+idsExpr (EnumFromTo         _ e1 e2) = concatMap idsExpr [e1, e2]
+idsExpr (EnumFromThenTo  _ e1 e2 e3) = concatMap idsExpr [e1, e2, e3]
+idsExpr (UnaryMinus             _ e) = Symbol "-" : idsExpr e
+idsExpr (Apply              _ e1 e2) = idsExpr e1 ++ idsExpr e2
+idsExpr (InfixApply      _ e1 op e2) = idsExpr e1 ++ idsInfix op ++ idsExpr e2
+idsExpr (LeftSection         _ e op) = idsExpr e ++ idsInfix op
+idsExpr (RightSection        _ op e) = idsInfix op ++ idsExpr e
+idsExpr (Lambda              _ ps e) = concatMap idsPat ps ++ idsExpr e
+idsExpr (Let                 _ ds e) = concatMap idsDecl ds ++ idsExpr e
+idsExpr (Do               _ stmts e) = concatMap idsStmt stmts ++ idsExpr e
+idsExpr (IfThenElse      _ e1 e2 e3) = concatMap idsExpr [e1, e2, e3]
+idsExpr (Case            _ _ e alts) = idsExpr e ++ concatMap idsAlt alts
 
 idsField :: (a -> [Code]) -> Field a -> [Code]
 idsField f (Field _ l x) = Function FuncCall False l : f x
@@ -461,9 +462,9 @@ idsInfix (InfixOp     _ qid) = [Function FuncInfix False qid]
 idsInfix (InfixConstr _ qid) = [DataCons ConsInfix False qid]
 
 idsStmt :: Statement a -> [Code]
-idsStmt (StmtExpr   e) = idsExpr e
-idsStmt (StmtDecl  ds) = concatMap idsDecl ds
-idsStmt (StmtBind p e) = idsPat p ++ idsExpr e
+idsStmt (StmtExpr   _ e) = idsExpr e
+idsStmt (StmtDecl  _ ds) = concatMap idsDecl ds
+idsStmt (StmtBind _ p e) = idsPat p ++ idsExpr e
 
 idsAlt :: Alt a -> [Code]
 idsAlt (Alt _ p rhs) = idsPat p ++ idsRhs rhs

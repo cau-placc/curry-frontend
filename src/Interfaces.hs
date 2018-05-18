@@ -86,8 +86,9 @@ loadInterfaces paths (Module _ _ m _ is _) = do
 -- Otherwise, the compiler checks whether the module has already been imported.
 -- If so, nothing needs to be done, otherwise the interface will be searched
 -- for in the import paths and compiled.
-loadInterface :: [ModuleIdent] -> (Position, ModuleIdent) -> IntfLoader ()
-loadInterface ctxt imp@(p, m)
+loadInterface :: HasPosition a => [ModuleIdent] -> (a, ModuleIdent)
+              -> IntfLoader ()
+loadInterface ctxt imp@(pp, m)
   | m `elem` ctxt = report [errCyclicImport p (m : takeWhile (/= m) ctxt)]
   | otherwise     = do
     isLoaded <- loaded m
@@ -97,6 +98,7 @@ loadInterface ctxt imp@(p, m)
       case mbIntf of
         Nothing -> report [errInterfaceNotFound p m]
         Just fn -> compileInterface ctxt imp fn
+  where p = getPosition pp
 
 -- |Compile an interface by recursively loading its dependencies.
 --

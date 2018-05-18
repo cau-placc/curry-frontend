@@ -21,11 +21,12 @@ module Exports (exportInterface) where
 
 import           Data.List         (nub)
 import qualified Data.Map   as Map (foldrWithKey, toList)
-import           Data.Maybe        (catMaybes)
+import           Data.Maybe        (mapMaybe)
 import qualified Data.Set   as Set ( Set, empty, insert, deleteMin, fromList
                                    , member, toList )
 
 import Curry.Base.Position
+import Curry.Base.SpanInfo
 import Curry.Base.Ident
 import Curry.Syntax
 
@@ -73,7 +74,7 @@ exportInterface' :: ModuleIdent -> [Export] -> OpPrecEnv -> TCEnv -> ValueEnv
 exportInterface' m es pEnv tcEnv vEnv clsEnv inEnv = Interface m imports decls'
   where
   tvs     = filter (`notElem` tcs) identSupply
-  tcs     = catMaybes $ map (localIdent m) $ definedTypes decls'
+  tcs     = mapMaybe (localIdent m) $ definedTypes decls'
   imports = map (IImportDecl NoPos) $ usedModules decls'
   precs   = foldr (infixDecl m pEnv) [] es
   types   = foldr (typeDecl m tcEnv clsEnv tvs) [] es
@@ -83,8 +84,8 @@ exportInterface' m es pEnv tcEnv vEnv clsEnv inEnv = Interface m imports decls'
   decls'  = closeInterface m tcEnv clsEnv inEnv tvs Set.empty decls
 
 infixDecl :: ModuleIdent -> OpPrecEnv -> Export -> [IDecl] -> [IDecl]
-infixDecl m pEnv (Export             f) ds = iInfixDecl m pEnv f ds
-infixDecl m pEnv (ExportTypeWith tc cs) ds =
+infixDecl m pEnv (Export             _ f) ds = iInfixDecl m pEnv f ds
+infixDecl m pEnv (ExportTypeWith _ tc cs) ds =
   foldr (iInfixDecl m pEnv . qualifyLike tc) ds cs
 infixDecl _ _ _ _ = internalError "Exports.infixDecl: no pattern match"
 
@@ -103,8 +104,8 @@ iInfixDecl m pEnv op ds = case qualLookupP op pEnv of
 
 typeDecl :: ModuleIdent -> TCEnv -> ClassEnv -> [Ident] -> Export -> [IDecl]
          -> [IDecl]
-typeDecl _ _     _      _   (Export             _) ds = ds
-typeDecl m tcEnv clsEnv tvs (ExportTypeWith tc xs) ds =
+typeDecl _ _     _      _   (Export             _ _) ds = ds
+typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
   case qualLookupTypeInfo tc tcEnv of
     [DataType tc' k cs]
       | null xs   -> iTypeDecl IDataDecl m tvs tc' k []  [] : ds
@@ -128,7 +129,8 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith tc xs) ds =
             ty'  = fromQualType m tvs' ty
     [TypeClass qcls k ms] -> IClassDecl NoPos cx qcls' k' tv ms' hs : ds
       where qcls' = qualUnqualify m qcls
-            cx    = [ Constraint (qualUnqualify m scls) (VariableType tv)
+            cx    = [ Constraint NoSpanInfo (qualUnqualify m scls)
+                        (VariableType NoSpanInfo tv)
                     | scls <- superClasses qcls clsEnv ]
             k'    = fromKind' k 0
             tv    = head tvs
@@ -146,26 +148,28 @@ iTypeDecl f m tvs tc k x hs = f NoPos (qualUnqualify m tc) k' (take n tvs) x hs
 
 constrDecl :: ModuleIdent -> Int -> [Ident] -> DataConstr -> ConstrDecl
 constrDecl m n tvs (DataConstr c n' ps [ty1, ty2])
-  | isInfixOp c = ConOpDecl NoPos evs cx ty1' c ty2'
+  | isInfixOp c = ConOpDecl NoSpanInfo evs cx ty1' c ty2'
   where evs          = take n' $ drop n tvs
         cx           = fromQualPredSet m tvs ps
         [ty1', ty2'] = map (fromQualType m tvs) [ty1, ty2]
-constrDecl m n tvs (DataConstr c n' ps tys) = ConstrDecl NoPos evs cx c tys'
+constrDecl m n tvs (DataConstr c n' ps tys) =
+  ConstrDecl NoSpanInfo evs cx c tys'
   where evs  = take n' $ drop n tvs
         cx   = fromQualPredSet m tvs ps
         tys' = map (fromQualType m tvs) tys
-constrDecl m n tvs (RecordConstr c n' ps ls tys) = RecordDecl NoPos evs cx c fs
+constrDecl m n tvs (RecordConstr c n' ps ls tys) =
+  RecordDecl NoSpanInfo evs cx c fs
   where
     evs  = take n' $ drop n tvs
     cx   = fromQualPredSet m tvs ps
     tys' = map (fromQualType m tvs) tys
-    fs   = zipWith (FieldDecl NoPos . return) ls tys'
+    fs   = zipWith (FieldDecl NoSpanInfo . return) ls tys'
 
 newConstrDecl :: ModuleIdent -> [Ident] -> DataConstr -> NewConstrDecl
 newConstrDecl m tvs (DataConstr c _ _ tys)
-  = NewConstrDecl NoPos c (fromQualType m tvs (head tys))
+  = NewConstrDecl NoSpanInfo c (fromQualType m tvs (head tys))
 newConstrDecl m tvs (RecordConstr c _ _ ls tys)
-  = NewRecordDecl NoPos c (head ls, fromQualType m tvs (head tys))
+  = NewRecordDecl NoSpanInfo c (head ls, fromQualType m tvs (head tys))
 
 -- When exporting a class method, we have to remove the implicit class context.
 -- Due to the sorting of the predicate set, this is fortunatly very easy. The
@@ -177,12 +181,12 @@ methodDecl m tvs (ClassMethod f a (PredType ps ty)) = IMethodDecl NoPos f a $
   fromQualPredType m tvs $ PredType (Set.deleteMin ps) ty
 
 valueDecl :: ModuleIdent -> ValueEnv -> [Ident] -> Export -> [IDecl] -> [IDecl]
-valueDecl m vEnv tvs (Export      f) ds = case qualLookupValue f vEnv of
+valueDecl m vEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
   [Value _ cm a (ForAll _ pty)] ->
     IFunctionDecl NoPos (qualUnqualify m f)
       (if cm then Just (head tvs) else Nothing) a (fromQualPredType m tvs pty) : ds
   _ -> internalError $ "Exports.valueDecl: " ++ show f
-valueDecl _ _ _ (ExportTypeWith _ _) ds = ds
+valueDecl _ _ _ (ExportTypeWith _ _ _) ds = ds
 valueDecl _ _ _ _ _ = internalError "Exports.valueDecl: no pattern match"
 
 instDecl :: ModuleIdent -> TCEnv -> [Ident] -> InstIdent -> InstInfo -> [IDecl]
@@ -197,7 +201,7 @@ iInstDecl m tcEnv tvs (cls, tc) (m', ps, is) =
   IInstanceDecl NoPos cx (qualUnqualify m cls) ty is mm
   where pty = PredType ps $ applyType (TypeConstructor tc) $
                 map TypeVariable [0 .. n-1]
-        QualTypeExpr cx ty = fromQualPredType m tvs pty
+        QualTypeExpr _ cx ty = fromQualPredType m tvs pty
         n = kindArity (tcKind m tc tcEnv) - kindArity (clsKind m cls tcEnv)
         mm = if m == m' then Nothing else Just m'
 
@@ -261,20 +265,20 @@ instance HasModule IMethodDecl where
   modules (IMethodDecl _ _ _ qty) = modules qty
 
 instance HasModule Constraint where
-  modules (Constraint cls ty) = modules cls . modules ty
+  modules (Constraint _ cls ty) = modules cls . modules ty
 
 instance HasModule TypeExpr where
-  modules (ConstructorType tc) = modules tc
-  modules (ApplyType  ty1 ty2) = modules ty1 . modules ty2
-  modules (VariableType     _) = id
-  modules (TupleType      tys) = modules tys
-  modules (ListType        ty) = modules ty
-  modules (ArrowType  ty1 ty2) = modules ty1 . modules ty2
-  modules (ParenType       ty) = modules ty
-  modules (ForallType    _ ty) = modules ty
+  modules (ConstructorType _ tc) = modules tc
+  modules (ApplyType  _ ty1 ty2) = modules ty1 . modules ty2
+  modules (VariableType     _ _) = id
+  modules (TupleType      _ tys) = modules tys
+  modules (ListType        _ ty) = modules ty
+  modules (ArrowType  _ ty1 ty2) = modules ty1 . modules ty2
+  modules (ParenType       _ ty) = modules ty
+  modules (ForallType    _ _ ty) = modules ty
 
 instance HasModule QualTypeExpr where
-  modules (QualTypeExpr cx ty) = modules cx . modules ty
+  modules (QualTypeExpr _ cx ty) = modules cx . modules ty
 
 instance HasModule QualIdent where
   modules = modules . qidModule
@@ -334,7 +338,8 @@ hiddenTypes m tcEnv clsEnv tvs d =
                       k' = fromKind' k n
                   in  HidingDataDecl NoPos tc k' $ take n tvs
                 hidingClassDecl k sclss =
-                  let cx = [ Constraint (qualUnqualify m scls) (VariableType tv)
+                  let cx = [ Constraint NoSpanInfo (qualUnqualify m scls)
+                               (VariableType NoSpanInfo tv)
                            | scls <- sclss ]
                       tv = head tvs
                       k' = fromKind' k 0
@@ -409,17 +414,17 @@ instance HasType IMethodDecl where
   usedTypes (IMethodDecl _ _ _ qty) = usedTypes qty
 
 instance HasType Constraint where
-  usedTypes (Constraint cls ty) = (cls :) . usedTypes ty
+  usedTypes (Constraint _ cls ty) = (cls :) . usedTypes ty
 
 instance HasType TypeExpr where
-  usedTypes (ConstructorType tc) = (tc :)
-  usedTypes (ApplyType ty1 ty2) = usedTypes ty1 . usedTypes ty2
-  usedTypes (VariableType     _) = id
-  usedTypes (TupleType      tys) = usedTypes tys
-  usedTypes (ListType        ty) = usedTypes ty
-  usedTypes (ArrowType  ty1 ty2) = usedTypes ty1 . usedTypes ty2
-  usedTypes (ParenType       ty) = usedTypes ty
-  usedTypes (ForallType    _ ty) = usedTypes ty
+  usedTypes (ConstructorType _ tc) = (tc :)
+  usedTypes (ApplyType _ ty1 ty2) = usedTypes ty1 . usedTypes ty2
+  usedTypes (VariableType     _ _) = id
+  usedTypes (TupleType      _ tys) = usedTypes tys
+  usedTypes (ListType        _ ty) = usedTypes ty
+  usedTypes (ArrowType  _ ty1 ty2) = usedTypes ty1 . usedTypes ty2
+  usedTypes (ParenType       _ ty) = usedTypes ty
+  usedTypes (ForallType    _ _ ty) = usedTypes ty
 
 instance HasType QualTypeExpr where
-  usedTypes (QualTypeExpr cx ty) = usedTypes cx . usedTypes ty
+  usedTypes (QualTypeExpr _ cx ty) = usedTypes cx . usedTypes ty

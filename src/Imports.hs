@@ -23,6 +23,7 @@ import           Data.Maybe                 (catMaybes, fromMaybe, isJust)
 import qualified Data.Set            as Set
 
 import Curry.Base.Ident
+import Curry.Base.SpanInfo
 import Curry.Base.Monad
 import Curry.Syntax
 
@@ -113,14 +114,14 @@ importInterface m q is (Interface mid _ ds) env = env'
   vs = isVisible addValue is
 
 addType :: Import -> [Ident] -> [Ident]
-addType (Import            _) tcs = tcs
-addType (ImportTypeWith tc _) tcs = tc : tcs
-addType (ImportTypeAll     _) _   = internalError "Imports.addType"
+addType (Import            _ _) tcs = tcs
+addType (ImportTypeWith _ tc _) tcs = tc : tcs
+addType (ImportTypeAll     _ _) _   = internalError "Imports.addType"
 
 addValue :: Import -> [Ident] -> [Ident]
-addValue (Import            f) fs = f : fs
-addValue (ImportTypeWith _ cs) fs = cs ++ fs
-addValue (ImportTypeAll     _) _  = internalError "Imports.addValue"
+addValue (Import            _ f) fs = f : fs
+addValue (ImportTypeWith _ _ cs) fs = cs ++ fs
+addValue (ImportTypeAll     _ _) _  = internalError "Imports.addValue"
 
 isVisible :: (Import -> [Ident] -> [Ident]) -> Maybe ImportSpec
           -> Ident -> Bool
@@ -165,7 +166,7 @@ bindClass m (HidingClassDecl p cx cls k tv) =
   bindClass m (IClassDecl p cx cls k tv [] [])
 bindClass m (IClassDecl _ cx cls _ _ ds _) =
   bindClassInfo (qualQualify m cls) (sclss, ms)
-  where sclss = map (\(Constraint scls _) -> qualQualify m scls) cx
+  where sclss = map (\(Constraint _ scls _) -> qualQualify m scls) cx
         ms = map (\d -> (imethod d, isJust $ imethodArity d)) ds
 bindClass _ _ = id
 
@@ -175,7 +176,7 @@ importInstances m = flip $ foldr (bindInstance m)
 bindInstance :: ModuleIdent -> IDecl -> InstEnv -> InstEnv
 bindInstance m (IInstanceDecl _ cx qcls ty is mm) = bindInstInfo
   (qualQualify m qcls, qualifyTC m $ typeConstr ty) (fromMaybe m mm, ps, is)
-  where PredType ps _ = toQualPredType m [] $ QualTypeExpr cx ty
+  where PredType ps _ = toQualPredType m [] $ QualTypeExpr NoSpanInfo cx ty
 bindInstance _ _ = id
 
 -- ---------------------------------------------------------------------------
@@ -305,7 +306,7 @@ recLabel :: ModuleIdent -> QualIdent -> [Ident] -> TypeExpr
 recLabel m tc tvs ty0 (l, cs, lty) = Label ql qcs tySc
   where ql   = qualifyLike tc l
         qcs  = map (qualifyLike tc) cs
-        tySc = polyType (toQualType m tvs (ArrowType ty0 lty))
+        tySc = polyType (toQualType m tvs (ArrowType NoSpanInfo ty0 lty))
 
 constrType' :: ModuleIdent -> QualIdent -> [Ident] -> [Ident] -> Context
             -> [TypeExpr] -> ExistTypeScheme
@@ -314,7 +315,8 @@ constrType' m tc tvs evs cx tys = ForAllExist (length tvs) (length evs) pty
         pty  = qualifyPredType m $ toConstrType tc tvs' cx tys
 
 constrType :: QualIdent -> [Ident] -> TypeExpr
-constrType tc tvs = foldl ApplyType (ConstructorType tc) $ map VariableType tvs
+constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)
+                      $ map (VariableType NoSpanInfo) tvs
 
 -- We always enter class methods with an arity of 0 into the value environment
 -- because there may be different implementations with different arities.

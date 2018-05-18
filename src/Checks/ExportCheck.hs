@@ -40,6 +40,7 @@ import qualified Data.Set            as Set ( Set, empty, fromList, insert
 
 import Curry.Base.Ident
 import Curry.Base.Position
+import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
 
@@ -64,10 +65,10 @@ currentModuleName = "Checks.ExportCheck"
 
 expandExports :: ModuleIdent -> AliasEnv -> TCEnv -> ValueEnv
               -> Maybe ExportSpec -> ExportSpec
-expandExports m aEnv tcEnv tyEnv spec = Exporting (exportPos spec) es
+expandExports m aEnv tcEnv tyEnv spec = Exporting (exportSpan spec) es
   where
-  exportPos (Just (Exporting p _)) = p
-  exportPos Nothing                = NoPos
+  exportSpan (Just (Exporting spi _)) = spi
+  exportSpan Nothing                  = NoSpanInfo
 
   es = expand m aEnv tcEnv tyEnv spec
 
@@ -131,10 +132,10 @@ checkSpec Nothing                 = ok
 
 -- |Check single export.
 checkExport :: Export -> ECM ()
-checkExport (Export         x    ) = checkThing x
-checkExport (ExportTypeWith tc cs) = checkTypeWith tc cs
-checkExport (ExportTypeAll  tc   ) = checkTypeAll tc
-checkExport (ExportModule   em   ) = checkModule em
+checkExport (Export         _ x    ) = checkThing x
+checkExport (ExportTypeWith _ tc cs) = checkTypeWith tc cs
+checkExport (ExportTypeAll  _ tc   ) = checkTypeAll tc
+checkExport (ExportModule   _ em   ) = checkModule em
 
 -- |Check export of type constructor / function
 checkThing :: QualIdent -> ECM ()
@@ -143,7 +144,7 @@ checkThing tc = do
   tcEnv <- getTyConsEnv
   case qualLookupTypeInfoUnique m tc tcEnv of
     []  -> checkThing' tc Nothing
-    [t] -> checkThing' tc (Just [ExportTypeWith (origName t) []])
+    [t] -> checkThing' tc (Just [ExportTypeWith NoSpanInfo (origName t) []])
     ts  -> report (errAmbiguousType tc ts)
 
 -- |Expand export of data cons / function
@@ -226,9 +227,9 @@ checkNonUniqueness :: [Export] -> [Message]
 checkNonUniqueness es = map errMultipleType (findMultiples types )
                      ++ map errMultipleName (findMultiples values)
   where
-  types  = [ unqualify tc | ExportTypeWith tc _  <- es ]
-  values = [ c            | ExportTypeWith _  cs <- es, c <- cs ]
-        ++ [ unqualify f  | Export f <- es ]
+  types  = [ unqualify tc | ExportTypeWith _ tc _  <- es ]
+  values = [ c            | ExportTypeWith _ _  cs <- es, c <- cs ]
+        ++ [ unqualify f  | Export _ f <- es ]
 
 -- -----------------------------------------------------------------------------
 -- Expansion
@@ -262,10 +263,10 @@ expandSpec Nothing                 = expandLocalModule
 
 -- |Expand single export
 expandExport :: Export -> ECM [Export]
-expandExport (Export             x) = expandThing x
-expandExport (ExportTypeWith tc cs) = expandTypeWith tc cs
-expandExport (ExportTypeAll     tc) = expandTypeAll tc
-expandExport (ExportModule      em) = expandModule em
+expandExport (Export             _ x) = expandThing x
+expandExport (ExportTypeWith _ tc cs) = expandTypeWith tc cs
+expandExport (ExportTypeAll     _ tc) = expandTypeAll tc
+expandExport (ExportModule      _ em) = expandModule em
 
 -- |Expand export of type constructor / function
 expandThing :: QualIdent -> ECM [Export]
@@ -274,7 +275,8 @@ expandThing tc = do
   tcEnv <- getTyConsEnv
   case qualLookupTypeInfoUnique m tc tcEnv of
     []  -> expandThing' tc Nothing
-    [t] -> expandThing' tc (Just [ExportTypeWith (origName t @> tc) []])
+    [t] -> expandThing' tc
+             (Just [ExportTypeWith NoSpanInfo (origName t @> tc) []])
     err -> internalError $ currentModuleName ++ ".expandThing: " ++ show err
 
 -- |Expand export of data cons / function
@@ -283,8 +285,10 @@ expandThing' f tcExport = do
   m     <- getModuleIdent
   tyEnv <- getValueEnv
   case qualLookupValueUnique m f tyEnv of
-    [Value f' _ _ _] -> return $ Export (f' @> f) : fromMaybe [] tcExport
-    _                -> return $ fromMaybe [] tcExport
+    [Value f' _ _ _]
+      -> return $ Export NoSpanInfo (f' @> f) : fromMaybe [] tcExport
+    _
+      -> return $ fromMaybe [] tcExport
 
 -- |Expand type constructor with explicit data constructors and record labels
 expandTypeWith :: QualIdent -> [Ident] -> ECM [Export]
@@ -292,7 +296,7 @@ expandTypeWith tc xs = do
   m     <- getModuleIdent
   tcEnv <- getTyConsEnv
   case qualLookupTypeInfoUnique m tc tcEnv of
-    [t] -> return [ExportTypeWith (origName t @> tc) $ nub xs]
+    [t] -> return [ExportTypeWith NoSpanInfo (origName t @> tc) $ nub xs]
     err -> internalError $ currentModuleName ++ ".expandTypeWith: " ++ show err
 
 -- |Expand type constructor with all data constructors and record labels
@@ -318,8 +322,10 @@ expandLocalModule = do
   tyEnv <- getValueEnv
   return $
        [ exportType t | (_, t) <- localBindings tcEnv ]
-    ++ [ Export f' | (f, Value f' _ _ _) <- localBindings tyEnv, hasGlobalScope f ]
-    ++ [ Export l' | (l, Label l' _ _) <- localBindings tyEnv, hasGlobalScope l ]
+    ++ [ Export NoSpanInfo f'
+         | (f, Value f' _ _ _) <- localBindings tyEnv, hasGlobalScope f ]
+    ++ [ Export NoSpanInfo l'
+         | (l, Label l' _ _)   <- localBindings tyEnv, hasGlobalScope l ]
 
 -- |Expand a module export
 expandImportedModule :: ModuleIdent -> ECM [Export]
@@ -327,11 +333,11 @@ expandImportedModule m = do
   tcEnv <- getTyConsEnv
   tyEnv <- getValueEnv
   return $ [exportType t |       (_, t) <- moduleImports m tcEnv]
-        ++ [Export f | (_, Value f _ _ _) <- moduleImports m tyEnv]
-        ++ [Export l | (_, Label l _ _) <- moduleImports m tyEnv]
+        ++ [Export NoSpanInfo f | (_, Value f _ _ _) <- moduleImports m tyEnv]
+        ++ [Export NoSpanInfo l | (_, Label l _ _)   <- moduleImports m tyEnv]
 
 exportType :: TypeInfo -> Export
-exportType t = ExportTypeWith tc xs
+exportType t = ExportTypeWith NoSpanInfo tc xs
   where tc = origName t
         xs = elements t
 
@@ -353,21 +359,23 @@ canonExports :: TCEnv -> [Export] -> [Export]
 canonExports tcEnv es = map (canonExport (canonLabels tcEnv es)) es
 
 canonExport :: Map.Map QualIdent Export -> Export -> Export
-canonExport ls (Export x)             = fromMaybe (Export x) (Map.lookup x ls)
-canonExport _  (ExportTypeWith tc xs) = ExportTypeWith tc xs
-canonExport _  e                      = internalError $
+canonExport ls (Export spi x)             =
+  fromMaybe (Export spi x) (Map.lookup x ls)
+canonExport _  (ExportTypeWith spi tc xs) = ExportTypeWith spi tc xs
+canonExport _  e                          = internalError $
   currentModuleName ++ ".canonExport: " ++ show e
 
 canonLabels :: TCEnv -> [Export] -> Map.Map QualIdent Export
 canonLabels tcEnv es = foldr bindLabels Map.empty (allEntities tcEnv)
   where
-  tcs = [tc | ExportTypeWith tc _ <- es]
+  tcs = [tc | ExportTypeWith _ tc _ <- es]
   bindLabels t ls
     | tc' `elem` tcs = foldr (bindLabel tc') ls (elements t)
     | otherwise     = ls
       where
         tc'            = origName t
-        bindLabel tc x = Map.insert (qualifyLike tc x) (ExportTypeWith tc [x])
+        bindLabel tc x =
+          Map.insert (qualifyLike tc x) (ExportTypeWith NoSpanInfo tc [x])
 
 -- The expanded list of exported entities may contain duplicates. These
 -- are removed by the function joinExports. In particular, this
@@ -375,21 +383,21 @@ canonLabels tcEnv es = foldr bindLabels Map.empty (allEntities tcEnv)
 -- which are also exported along with their types.
 
 joinExports :: [Export] -> [Export]
-joinExports es =  [ExportTypeWith tc cs | (tc, cs) <- joinedTypes]
-               ++ [Export f             | f        <- joinedFuncs]
+joinExports es =  [ExportTypeWith NoSpanInfo tc cs | (tc, cs) <- joinedTypes]
+               ++ [Export NoSpanInfo f             | f        <- joinedFuncs]
   where joinedTypes = Map.toList $ foldr joinType Map.empty es
         joinedFuncs = Set.toList $ foldr joinFun  Set.empty es
 
 joinType :: Export -> Map.Map QualIdent [Ident] -> Map.Map QualIdent [Ident]
-joinType (Export             _) tcs = tcs
-joinType (ExportTypeWith tc cs) tcs = Map.insertWith union tc cs tcs
-joinType export                   _ = internalError $
+joinType (Export             _ _) tcs = tcs
+joinType (ExportTypeWith _ tc cs) tcs = Map.insertWith union tc cs tcs
+joinType export                     _ = internalError $
   currentModuleName ++ ".joinType: " ++ show export
 
 joinFun :: Export -> Set.Set QualIdent -> Set.Set QualIdent
-joinFun (Export           f) fs = f `Set.insert` fs
-joinFun (ExportTypeWith _ _) fs = fs
-joinFun export                _ = internalError $
+joinFun (Export           _ f) fs = f `Set.insert` fs
+joinFun (ExportTypeWith _ _ _) fs = fs
+joinFun export                  _ = internalError $
   currentModuleName ++ ".joinFun: " ++ show export
 
 -- ---------------------------------------------------------------------------

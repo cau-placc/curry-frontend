@@ -85,7 +85,7 @@ data KCState = KCState
 (&&>) :: KCM () -> KCM () -> KCM ()
 pre &&> suf = do
   errs <- pre >> S.gets errors
-  if null errs then suf else return ()
+  when (null errs) suf
 
 runKCM :: KCM a -> KCState -> (a, [Message])
 runKCM kcm s = let (a, s') = S.runState kcm s in (a, reverse $ errors s')
@@ -163,61 +163,61 @@ instance HasType NewConstrDecl where
   fts m (NewRecordDecl _ _ (_, ty)) = fts m ty
 
 instance HasType Constraint where
-  fts m (Constraint qcls _) = fts m qcls
+  fts m (Constraint _ qcls _) = fts m qcls
 
 instance HasType QualTypeExpr where
-  fts m (QualTypeExpr cx ty) = fts m cx . fts m ty
+  fts m (QualTypeExpr _ cx ty) = fts m cx . fts m ty
 
 instance HasType TypeExpr where
-  fts m (ConstructorType      tc) = fts m tc
-  fts m (ApplyType       ty1 ty2) = fts m ty1 . fts m ty2
-  fts _ (VariableType          _) = id
-  fts m (TupleType           tys) = (tupleId (length tys) :) . fts m tys
-  fts m (ListType             ty) = (listId :) . fts m ty
-  fts m (ArrowType       ty1 ty2) = (arrowId :) . fts m ty1 . fts m ty2
-  fts m (ParenType            ty) = fts m ty
-  fts m (ForallType         _ ty) = fts m ty
+  fts m (ConstructorType     _ tc) = fts m tc
+  fts m (ApplyType      _ ty1 ty2) = fts m ty1 . fts m ty2
+  fts _ (VariableType         _ _) = id
+  fts m (TupleType          _ tys) = (tupleId (length tys) :) . fts m tys
+  fts m (ListType            _ ty) = (listId :) . fts m ty
+  fts m (ArrowType      _ ty1 ty2) = (arrowId :) . fts m ty1 . fts m ty2
+  fts m (ParenType           _ ty) = fts m ty
+  fts m (ForallType        _ _ ty) = fts m ty
 
 instance HasType (Equation a) where
   fts m (Equation _ _ rhs) = fts m rhs
 
 instance HasType (Rhs a) where
-  fts m (SimpleRhs  _ e ds) = fts m e . fts m ds
-  fts m (GuardedRhs  es ds) = fts m es . fts m ds
+  fts m (SimpleRhs  _ e  ds) = fts m e . fts m ds
+  fts m (GuardedRhs _ es ds) = fts m es . fts m ds
 
 instance HasType (CondExpr a) where
   fts m (CondExpr _ g e) = fts m g . fts m e
 
 instance HasType (Expression a) where
-  fts _ (Literal             _ _) = id
-  fts _ (Variable            _ _) = id
-  fts _ (Constructor         _ _) = id
-  fts m (Paren                 e) = fts m e
-  fts m (Typed              e ty) = fts m e . fts m ty
-  fts m (Record           _ _ fs) = fts m fs
-  fts m (RecordUpdate       e fs) = fts m e . fts m fs
-  fts m (Tuple                es) = fts m es
-  fts m (List               _ es) = fts m es
-  fts m (ListCompr        e stms) = fts m e . fts m stms
-  fts m (EnumFrom              e) = fts m e
-  fts m (EnumFromThen      e1 e2) = fts m e1 . fts m e2
-  fts m (EnumFromTo        e1 e2) = fts m e1 . fts m e2
-  fts m (EnumFromThenTo e1 e2 e3) = fts m e1 . fts m e2 . fts m e3
-  fts m (UnaryMinus            e) = fts m e
-  fts m (Apply             e1 e2) = fts m e1 . fts m e2
-  fts m (InfixApply      e1 _ e2) = fts m e1 . fts m e2
-  fts m (LeftSection         e _) = fts m e
-  fts m (RightSection        _ e) = fts m e
-  fts m (Lambda              _ e) = fts m e
-  fts m (Let                ds e) = fts m ds . fts m e
-  fts m (Do               stms e) = fts m stms . fts m e
-  fts m (IfThenElse     e1 e2 e3) = fts m e1 . fts m e2 . fts m e3
-  fts m (Case             _ e as) = fts m e . fts m as
+  fts _ (Literal             _ _ _) = id
+  fts _ (Variable            _ _ _) = id
+  fts _ (Constructor         _ _ _) = id
+  fts m (Paren                 _ e) = fts m e
+  fts m (Typed              _ e ty) = fts m e . fts m ty
+  fts m (Record           _ _ _ fs) = fts m fs
+  fts m (RecordUpdate       _ e fs) = fts m e . fts m fs
+  fts m (Tuple                _ es) = fts m es
+  fts m (List               _ _ es) = fts m es
+  fts m (ListCompr        _ e stms) = fts m e . fts m stms
+  fts m (EnumFrom              _ e) = fts m e
+  fts m (EnumFromThen      _ e1 e2) = fts m e1 . fts m e2
+  fts m (EnumFromTo        _ e1 e2) = fts m e1 . fts m e2
+  fts m (EnumFromThenTo _ e1 e2 e3) = fts m e1 . fts m e2 . fts m e3
+  fts m (UnaryMinus            _ e) = fts m e
+  fts m (Apply             _ e1 e2) = fts m e1 . fts m e2
+  fts m (InfixApply      _ e1 _ e2) = fts m e1 . fts m e2
+  fts m (LeftSection         _ e _) = fts m e
+  fts m (RightSection        _ _ e) = fts m e
+  fts m (Lambda              _ _ e) = fts m e
+  fts m (Let                _ ds e) = fts m ds . fts m e
+  fts m (Do               _ stms e) = fts m stms . fts m e
+  fts m (IfThenElse     _ e1 e2 e3) = fts m e1 . fts m e2 . fts m e3
+  fts m (Case             _ _ e as) = fts m e . fts m as
 
 instance HasType (Statement a) where
-  fts m (StmtExpr   e) = fts m e
-  fts m (StmtDecl  ds) = fts m ds
-  fts m (StmtBind _ e) = fts m e
+  fts m (StmtExpr _   e) = fts m e
+  fts m (StmtDecl _  ds) = fts m ds
+  fts m (StmtBind _ _ e) = fts m e
 
 instance HasType (Alt a) where
   fts m (Alt _ _ rhs) = fts m rhs
@@ -268,7 +268,7 @@ checkTypeAndNewtypeDecls _ = internalError
 fc :: ModuleIdent -> Context -> [Ident]
 fc m = foldr fc' []
   where
-    fc' (Constraint qcls _) = maybe id (:) (localIdent m qcls)
+    fc' (Constraint _ qcls _) = maybe id (:) (localIdent m qcls)
 
 checkAcyclicSuperClasses :: [Decl a] -> KCM ()
 checkAcyclicSuperClasses ds = do
@@ -307,7 +307,7 @@ checkClassDecl _ =
 -- from the 'MonadFix' type class.
 
 bindKind :: ModuleIdent -> TCEnv -> ClassEnv -> TCEnv -> Decl a -> KCM TCEnv
-bindKind m tcEnv' clsEnv tcEnv (DataDecl _ tc tvs cs _) = do
+bindKind m tcEnv' clsEnv tcEnv (DataDecl _ tc tvs cs _) =
   bindTypeConstructor DataType tc tvs (Just KindStar) (map mkData cs) tcEnv
   where
     mkData (ConstrDecl _ evs cx     c  tys) = mkData' evs cx c  tys
@@ -326,7 +326,7 @@ bindKind m tcEnv' clsEnv tcEnv (DataDecl _ tc tvs cs _) = do
             tvs' = tvs ++ evs
             PredType ps ty = expandConstrType m tcEnv' clsEnv qtc tvs' cx tys
             tys' = arrowArgs ty
-bindKind _ _     _       tcEnv (ExternalDataDecl _ tc tvs) = do
+bindKind _ _     _       tcEnv (ExternalDataDecl _ tc tvs) =
   bindTypeConstructor DataType tc tvs (Just KindStar) [] tcEnv
 bindKind m tcEnv' _      tcEnv (NewtypeDecl _ tc tvs nc _) =
   bindTypeConstructor RenamingType tc tvs (Just KindStar) (mkData nc) tcEnv
@@ -393,7 +393,7 @@ bindClass m tcEnv clsEnv (ClassDecl _  cx cls _ ds) =
   where qcls = qualifyWith m cls
         ms = map (\f -> (f, f `elem` fs)) $ concatMap methods ds
         fs = concatMap impls ds
-        sclss = nub $ map (\(Constraint cls' _) -> getOrigName m cls' tcEnv) cx
+        sclss = nub $ map (\(Constraint _ cls' _) -> getOrigName m cls' tcEnv) cx
 bindClass _ _ clsEnv _ = clsEnv
 
 instantiateWithDefaultKind :: TypeInfo -> TypeInfo
@@ -504,7 +504,7 @@ kcRhs :: TCEnv -> Rhs a -> KCM ()
 kcRhs tcEnv (SimpleRhs p e ds) = do
   kcExpr tcEnv p e
   mapM_ (kcDecl tcEnv) ds
-kcRhs tcEnv (GuardedRhs es ds) = do
+kcRhs tcEnv (GuardedRhs _ es ds) = do
   mapM_ (kcCondExpr tcEnv) es
   mapM_ (kcDecl tcEnv) ds
 
@@ -512,61 +512,61 @@ kcCondExpr :: TCEnv -> CondExpr a -> KCM ()
 kcCondExpr tcEnv (CondExpr p g e) = kcExpr tcEnv p g >> kcExpr tcEnv p e
 
 kcExpr :: HasPosition p => TCEnv -> p -> Expression a -> KCM ()
-kcExpr _     _ (Literal _ _) = ok
-kcExpr _     _ (Variable _ _) = ok
-kcExpr _     _ (Constructor _ _) = ok
-kcExpr tcEnv p (Paren e) = kcExpr tcEnv p e
-kcExpr tcEnv p (Typed e qty) = do
+kcExpr _     _ (Literal _ _ _) = ok
+kcExpr _     _ (Variable _ _ _) = ok
+kcExpr _     _ (Constructor _ _ _) = ok
+kcExpr tcEnv p (Paren _ e) = kcExpr tcEnv p e
+kcExpr tcEnv p (Typed _ e qty) = do
   kcExpr tcEnv p e
   kcTypeSig tcEnv p qty
-kcExpr tcEnv p (Record _ _ fs) = mapM_ (kcField tcEnv p) fs
-kcExpr tcEnv p (RecordUpdate e fs) = do
+kcExpr tcEnv p (Record _ _ _ fs) = mapM_ (kcField tcEnv p) fs
+kcExpr tcEnv p (RecordUpdate _ e fs) = do
   kcExpr tcEnv p e
   mapM_ (kcField tcEnv p) fs
-kcExpr tcEnv p (Tuple es) = mapM_ (kcExpr tcEnv p) es
-kcExpr tcEnv p (List _ es) = mapM_ (kcExpr tcEnv p) es
-kcExpr tcEnv p (ListCompr e stms) = do
+kcExpr tcEnv p (Tuple _ es) = mapM_ (kcExpr tcEnv p) es
+kcExpr tcEnv p (List _ _ es) = mapM_ (kcExpr tcEnv p) es
+kcExpr tcEnv p (ListCompr _ e stms) = do
   kcExpr tcEnv p e
   mapM_ (kcStmt tcEnv p) stms
-kcExpr tcEnv p (EnumFrom e) = kcExpr tcEnv p e
-kcExpr tcEnv p (EnumFromThen e1 e2) = do
+kcExpr tcEnv p (EnumFrom _ e) = kcExpr tcEnv p e
+kcExpr tcEnv p (EnumFromThen _ e1 e2) = do
   kcExpr tcEnv p e1
   kcExpr tcEnv p e2
-kcExpr tcEnv p (EnumFromTo e1 e2) = do
+kcExpr tcEnv p (EnumFromTo _ e1 e2) = do
   kcExpr tcEnv p e1
   kcExpr tcEnv p e2
-kcExpr tcEnv p (EnumFromThenTo e1 e2 e3) = do
+kcExpr tcEnv p (EnumFromThenTo _ e1 e2 e3) = do
   kcExpr tcEnv p e1
   kcExpr tcEnv p e2
   kcExpr tcEnv p e3
-kcExpr tcEnv p (UnaryMinus e) = kcExpr tcEnv p e
-kcExpr tcEnv p (Apply e1 e2) = do
+kcExpr tcEnv p (UnaryMinus _ e) = kcExpr tcEnv p e
+kcExpr tcEnv p (Apply _ e1 e2) = do
   kcExpr tcEnv p e1
   kcExpr tcEnv p e2
-kcExpr tcEnv p (InfixApply e1 _ e2) = do
+kcExpr tcEnv p (InfixApply _ e1 _ e2) = do
   kcExpr tcEnv p e1
   kcExpr tcEnv p e2
-kcExpr tcEnv p (LeftSection e _) = kcExpr tcEnv p e
-kcExpr tcEnv p (RightSection _ e) = kcExpr tcEnv p e
-kcExpr tcEnv p (Lambda _ e) = kcExpr tcEnv p e
-kcExpr tcEnv p (Let ds e) = do
+kcExpr tcEnv p (LeftSection _ e _) = kcExpr tcEnv p e
+kcExpr tcEnv p (RightSection _ _ e) = kcExpr tcEnv p e
+kcExpr tcEnv p (Lambda _ _ e) = kcExpr tcEnv p e
+kcExpr tcEnv p (Let _ ds e) = do
   mapM_ (kcDecl tcEnv) ds
   kcExpr tcEnv p e
-kcExpr tcEnv p (Do stms e) = do
+kcExpr tcEnv p (Do _ stms e) = do
   mapM_ (kcStmt tcEnv p) stms
   kcExpr tcEnv p e
-kcExpr tcEnv p (IfThenElse e1 e2 e3) = do
+kcExpr tcEnv p (IfThenElse _ e1 e2 e3) = do
   kcExpr tcEnv p e1
   kcExpr tcEnv p e2
   kcExpr tcEnv p e3
-kcExpr tcEnv p (Case _ e alts) = do
+kcExpr tcEnv p (Case _ _ e alts) = do
   kcExpr tcEnv p e
   mapM_ (kcAlt tcEnv) alts
 
 kcStmt :: HasPosition p => TCEnv -> p -> Statement a -> KCM ()
-kcStmt tcEnv p (StmtExpr e) = kcExpr tcEnv p e
-kcStmt tcEnv _ (StmtDecl ds) = mapM_ (kcDecl tcEnv) ds
-kcStmt tcEnv p (StmtBind _ e) = kcExpr tcEnv p e
+kcStmt tcEnv p (StmtExpr _ e) = kcExpr tcEnv p e
+kcStmt tcEnv _ (StmtDecl _ ds) = mapM_ (kcDecl tcEnv) ds
+kcStmt tcEnv p (StmtBind _ _ e) = kcExpr tcEnv p e
 
 kcAlt :: TCEnv -> Alt a -> KCM ()
 kcAlt tcEnv (Alt _ _ rhs) = kcRhs tcEnv rhs
@@ -578,14 +578,14 @@ kcContext :: HasPosition p => TCEnv -> p -> Context -> KCM ()
 kcContext tcEnv p = mapM_ (kcConstraint tcEnv p)
 
 kcConstraint :: HasPosition p => TCEnv -> p -> Constraint -> KCM ()
-kcConstraint tcEnv p sc@(Constraint qcls ty) = do
+kcConstraint tcEnv p sc@(Constraint _ qcls ty) = do
   m <- getModuleIdent
   kcType tcEnv p "class constraint" doc (clsKind m qcls tcEnv) ty
   where
     doc = ppConstraint sc
 
 kcTypeSig :: HasPosition p => TCEnv -> p -> QualTypeExpr -> KCM ()
-kcTypeSig tcEnv p (QualTypeExpr cx ty) = do
+kcTypeSig tcEnv p (QualTypeExpr _ cx ty) = do
   tcEnv' <- foldM bindFreshKind tcEnv free
   kcContext tcEnv' p cx
   kcValueType tcEnv' p "type signature" doc ty
@@ -604,7 +604,7 @@ kcType tcEnv p what doc k ty = do
     doc' = ppTypeExpr 0 ty
 
 kcTypeExpr :: HasPosition p => TCEnv -> p -> String -> Doc -> Int -> TypeExpr -> KCM Kind
-kcTypeExpr tcEnv p _ _ n (ConstructorType tc) = do
+kcTypeExpr tcEnv p _ _ n (ConstructorType _ tc) = do
   m <- getModuleIdent
   case qualLookupTypeInfo tc tcEnv of
     [AliasType _ _ n' _] -> case n >= n' of
@@ -613,26 +613,26 @@ kcTypeExpr tcEnv p _ _ n (ConstructorType tc) = do
         report $ errPartialAlias p tc n' n
         freshKindVar
     _ -> return $ tcKind m tc tcEnv
-kcTypeExpr tcEnv p what doc n (ApplyType ty1 ty2) = do
+kcTypeExpr tcEnv p what doc n (ApplyType _ ty1 ty2) = do
   (alpha, beta) <- kcTypeExpr tcEnv p what doc (n + 1) ty1 >>=
     kcArrow p what (doc $-$ text "Type:" <+> ppTypeExpr 0 ty1)
   kcTypeExpr tcEnv p what doc 0 ty2 >>=
     unify p what (doc $-$ text "Type:" <+> ppTypeExpr 0 ty2) alpha
   return beta
-kcTypeExpr tcEnv _ _ _ _ (VariableType tv) = return (varKind tv tcEnv)
-kcTypeExpr tcEnv p what doc _ (TupleType tys) = do
+kcTypeExpr tcEnv _ _ _ _ (VariableType _ tv) = return (varKind tv tcEnv)
+kcTypeExpr tcEnv p what doc _ (TupleType _ tys) = do
   mapM_ (kcValueType tcEnv p what doc) tys
   return KindStar
-kcTypeExpr tcEnv p what doc _ (ListType ty) = do
+kcTypeExpr tcEnv p what doc _ (ListType _ ty) = do
   kcValueType tcEnv p what doc ty
   return KindStar
-kcTypeExpr tcEnv p what doc _ (ArrowType ty1 ty2) = do
+kcTypeExpr tcEnv p what doc _ (ArrowType _ ty1 ty2) = do
   kcValueType tcEnv p what doc ty1
   kcValueType tcEnv p what doc ty2
   return KindStar
-kcTypeExpr tcEnv p what doc n (ParenType ty) = kcTypeExpr tcEnv p what doc n ty
-kcTypeExpr tcEnv p what doc n (ForallType vs ty) = do
-  tcEnv' <- foldM bindFreshKind tcEnv $ vs
+kcTypeExpr tcEnv p what doc n (ParenType _ ty) = kcTypeExpr tcEnv p what doc n ty
+kcTypeExpr tcEnv p what doc n (ForallType _ vs ty) = do
+  tcEnv' <- foldM bindFreshKind tcEnv vs
   kcTypeExpr tcEnv' p what doc n ty
 
 kcArrow :: HasPosition p => p -> String -> Doc -> Kind -> KCM (Kind, Kind)

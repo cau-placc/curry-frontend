@@ -101,7 +101,7 @@ deriveInstance tc tvs cis cls = do
   let ps = snd3 $ fromJust $ lookupInstInfo (cls, tc) inEnv
       ty = applyType (TypeConstructor tc) $
              take (length tvs) $ map TypeVariable [0 ..]
-      QualTypeExpr cx inst = fromPredType tvs $ PredType ps ty
+      QualTypeExpr _ cx inst = fromPredType tvs $ PredType ps ty
   ds <- deriveMethods cls ty cis ps
   return $ InstanceDecl NoSpanInfo cx cls inst ds
 
@@ -204,12 +204,14 @@ deriveSuccOrPred f ty cis1 cis2 ps = do
 succOrPredEquation :: Ident -> Type -> ConstrInfo -> ConstrInfo
                    -> Equation PredType
 succOrPredEquation f ty (_, c1, _, _) (_, c2, _, _) =
-  mkEquation NoSpanInfo f [ConstructorPattern pty c1 []] $ Constructor pty c2
+  mkEquation NoSpanInfo f [ConstructorPattern NoSpanInfo pty c1 []] $
+    Constructor NoSpanInfo pty c2
   where pty = predType $ instType ty
 
 failedEquation :: Ident -> Type -> (PredType, Ident) -> Equation PredType
 failedEquation f ty v =
-  mkEquation NoSpanInfo f [uncurry VariablePattern v] $ preludeFailed $ instType ty
+  mkEquation NoSpanInfo f [uncurry (VariablePattern NoSpanInfo) v] $
+    preludeFailed $ instType ty
 
 deriveToEnum :: Type -> [ConstrInfo] -> PredSet -> DVM (Decl PredType)
 deriveToEnum ty cis ps = do
@@ -219,8 +221,9 @@ deriveToEnum ty cis ps = do
 
 toEnumEquation :: Type -> Integer -> ConstrInfo -> Equation PredType
 toEnumEquation ty i (_, c, _, _) =
-  mkEquation NoSpanInfo toEnumId [LiteralPattern (predType intType) (Int i)] $
-    Constructor (predType $ instType ty) c
+  mkEquation NoSpanInfo toEnumId
+    [LiteralPattern NoSpanInfo (predType intType) (Int i)] $
+    Constructor NoSpanInfo (predType $ instType ty) c
 
 deriveFromEnum :: Type -> [ConstrInfo] -> PredSet -> DVM (Decl PredType)
 deriveFromEnum ty cis ps = do
@@ -230,37 +233,41 @@ deriveFromEnum ty cis ps = do
 
 fromEnumEquation :: Type -> ConstrInfo -> Integer -> Equation PredType
 fromEnumEquation ty (_, c, _, _) i =
-  mkEquation NoSpanInfo fromEnumId [ConstructorPattern pty c []] $
-    Literal (predType intType) $ Int i
+  mkEquation NoSpanInfo fromEnumId [ConstructorPattern NoSpanInfo pty c []] $
+    Literal NoSpanInfo (predType intType) $ Int i
   where pty = predType $ instType ty
 
 deriveEnumFrom :: Type -> ConstrInfo -> PredSet -> DVM (Decl PredType)
 deriveEnumFrom ty (_, c, _, _) ps = do
   pty <- getInstMethodType ps qEnumId ty enumFromId
   v <- freshArgument $ instType ty
-  return $ funDecl NoSpanInfo pty enumFromId [uncurry VariablePattern v] $
+  return $ funDecl NoSpanInfo pty enumFromId
+    [uncurry (VariablePattern NoSpanInfo) v] $
     enumFromExpr v c
 
 enumFromExpr :: (PredType, Ident) -> QualIdent -> Expression PredType
-enumFromExpr v c = prelEnumFromTo (uncurry mkVar v) $ Constructor (fst v) c
+enumFromExpr v c = prelEnumFromTo (uncurry mkVar v) $
+  Constructor NoSpanInfo (fst v) c
 
 deriveEnumFromThen :: Type -> ConstrInfo -> ConstrInfo -> PredSet
                    -> DVM (Decl PredType)
 deriveEnumFromThen ty (_, c1, _, _) (_, c2, _, _) ps = do
   pty <- getInstMethodType ps qEnumId ty enumFromId
   vs@[v1, v2] <- mapM (freshArgument . instType) $ replicate 2 ty
-  return $ funDecl NoSpanInfo pty enumFromThenId (map (uncurry VariablePattern) vs) $
+  return $ funDecl NoSpanInfo pty enumFromThenId
+    (map (uncurry (VariablePattern NoSpanInfo)) vs) $
     enumFromThenExpr v1 v2 c1 c2
 
 enumFromThenExpr :: (PredType, Ident) -> (PredType, Ident) -> QualIdent
                  -> QualIdent -> Expression PredType
 enumFromThenExpr v1 v2 c1 c2 =
   prelEnumFromThenTo (uncurry mkVar v1) (uncurry mkVar v2) $ boundedExpr
-  where boundedExpr = IfThenElse (prelLeq
+  where boundedExpr = IfThenElse NoSpanInfo
+                                 (prelLeq
                                    (prelFromEnum $ uncurry mkVar v1)
                                    (prelFromEnum $ uncurry mkVar v2))
-                                 (Constructor (fst v1) c2)
-                                 (Constructor (fst v1) c1)
+                                 (Constructor NoSpanInfo (fst v1) c2)
+                                 (Constructor NoSpanInfo (fst v1) c1)
 
 -- Upper and Lower Bounds:
 
@@ -279,7 +286,8 @@ deriveMaxOrMinBound f ty (_, c, _, tys) ps = do
 maxOrMinBoundExpr :: QualIdent -> QualIdent -> Type -> [Type]
                   -> Expression PredType
 maxOrMinBoundExpr f c ty tys =
-  apply (Constructor pty c) $ map (flip Variable f . predType) instTys
+  apply (Constructor NoSpanInfo pty c) $
+  map (flip (Variable NoSpanInfo) f . predType) instTys
   where instTy:instTys = map instType $ ty : tys
         pty = predType $ foldr TypeArrow instTy instTys
 
@@ -293,7 +301,7 @@ deriveReadsPrec ty cis ps = do
   pty <- getInstMethodType ps qReadId ty $ readsPrecId
   d <- freshArgument intType
   r <- freshArgument stringType
-  let pats = map (uncurry VariablePattern) [d, r]
+  let pats = map (uncurry (VariablePattern NoSpanInfo)) [d, r]
   funDecl NoSpanInfo pty readsPrecId pats <$>
     deriveReadsPrecExpr ty cis (uncurry mkVar d) (uncurry mkVar r)
 
@@ -301,7 +309,7 @@ deriveReadsPrecExpr :: Type -> [ConstrInfo] -> Expression PredType
                     -> Expression PredType -> DVM (Expression PredType)
 deriveReadsPrecExpr ty cis d r = do
   es <- mapM (deriveReadsPrecReadParenExpr ty d) cis
-  return $ foldr1 prelAppend $ map (flip Apply r) $ es
+  return $ foldr1 prelAppend $ map (flip (Apply NoSpanInfo) r) $ es
 
 deriveReadsPrecReadParenExpr :: Type -> Expression PredType -> ConstrInfo
                              -> DVM (Expression PredType)
@@ -316,9 +324,9 @@ readsPrecReadParenCondExpr :: ConstrInfo -> Expression PredType -> Precedence
 readsPrecReadParenCondExpr (_, c, _, tys) d p
   | null tys                        = prelFalse
   | isQInfixOp c && length tys == 2 =
-    prelLt (Literal predIntType $ Int p) d
+    prelLt (Literal NoSpanInfo predIntType $ Int p) d
   | otherwise                       =
-    prelLt (Literal predIntType $ Int 10) d
+    prelLt (Literal NoSpanInfo predIntType $ Int 10) d
 
 deriveReadsPrecLambdaExpr :: Type -> ConstrInfo -> Precedence
                       -> DVM (Expression PredType)
@@ -326,10 +334,12 @@ deriveReadsPrecLambdaExpr ty (_, c, ls, tys) p = do
   r <- freshArgument stringType
   (stmts, vs, s) <- deriveReadsPrecStmts (unqualify c) (p + 1) r ls tys
   let pty = predType $ foldr TypeArrow (instType ty) $ map instType tys
-      e = Tuple [ apply (Constructor pty c) $ map (uncurry mkVar) vs
+      e = Tuple NoSpanInfo
+                [ apply (Constructor NoSpanInfo pty c) $ map (uncurry mkVar) vs
                 , uncurry mkVar s
                 ]
-  return $ Lambda [uncurry VariablePattern r] $ ListCompr e stmts
+  return $ Lambda NoSpanInfo [uncurry (VariablePattern NoSpanInfo) r]
+         $ ListCompr NoSpanInfo e stmts
 
 deriveReadsPrecStmts
   :: Ident -> Precedence -> (PredType, Ident) -> Maybe [Ident] -> [Type]
@@ -391,11 +401,11 @@ deriveReadsPrecLexStmt :: String -> (PredType, Ident)
                       -> DVM ((PredType, Ident), Statement PredType)
 deriveReadsPrecLexStmt str r = do
   s <- freshArgument $ stringType
-  let pat  = TuplePattern
-               [ LiteralPattern predStringType $ String str
-               , uncurry VariablePattern s
+  let pat  = TuplePattern NoSpanInfo
+               [ LiteralPattern NoSpanInfo predStringType $ String str
+               , uncurry (VariablePattern NoSpanInfo) s
                ]
-      stmt = StmtBind pat $ preludeLex $ uncurry mkVar r
+      stmt = StmtBind NoSpanInfo pat $ preludeLex $ uncurry mkVar r
   return (s, stmt)
 
 deriveReadsPrecReadsPrecStmt  :: Precedence -> (PredType, Ident) -> Type
@@ -403,8 +413,9 @@ deriveReadsPrecReadsPrecStmt  :: Precedence -> (PredType, Ident) -> Type
 deriveReadsPrecReadsPrecStmt p r ty = do
   v <- freshArgument $ instType ty
   s <- freshArgument $ stringType
-  let pat  = TuplePattern $ map (uncurry VariablePattern) [v, s]
-      stmt = StmtBind pat $ preludeReadsPrec (instType ty) p $
+  let pat  = TuplePattern NoSpanInfo $
+               map (uncurry (VariablePattern NoSpanInfo)) [v, s]
+      stmt = StmtBind NoSpanInfo pat $ preludeReadsPrec (instType ty) p $
                uncurry mkVar r
   return (s, (stmt, v))
 
@@ -423,7 +434,7 @@ deriveShowsPrecEquation :: Type -> ConstrInfo -> DVM (Equation PredType)
 deriveShowsPrecEquation ty (_, c, ls, tys) = do
   d <- freshArgument intType
   vs <- mapM (freshArgument . instType) tys
-  let pats = [uncurry VariablePattern d, constrPattern pty c vs]
+  let pats = [uncurry (VariablePattern NoSpanInfo) d, constrPattern pty c vs]
   pEnv <- getPrecEnv
   return $ mkEquation NoSpanInfo showsPrecId pats $ showsPrecExpr (unqualify c)
     (precedence c pEnv) ls (uncurry mkVar d) $ map (uncurry mkVar) vs
@@ -446,7 +457,7 @@ showsPrecNullaryConstrExpr c = preludeShowString $ showsConstr c ""
 showsPrecShowParenExpr :: Expression PredType -> Precedence
                        -> Expression PredType -> Expression PredType
 showsPrecShowParenExpr d p =
-  prelShowParen $ prelLt (Literal predIntType $ Int p) d
+  prelShowParen $ prelLt (Literal NoSpanInfo predIntType $ Int p) d
 
 showsPrecRecordConstrExpr :: Ident -> [Ident] -> [Expression PredType]
                           -> Expression PredType
@@ -537,84 +548,92 @@ instMethodType vEnv ps cls ty f = PredType (ps `Set.union` ps'') ty''
 -- -----------------------------------------------------------------------------
 
 prelTrue :: Expression PredType
-prelTrue = Constructor predBoolType qTrueId
+prelTrue = Constructor NoSpanInfo predBoolType qTrueId
 
 prelFalse :: Expression PredType
-prelFalse = Constructor predBoolType qFalseId
+prelFalse = Constructor NoSpanInfo predBoolType qFalseId
 
 prelAppend :: Expression PredType -> Expression PredType -> Expression PredType
-prelAppend e1 e2 = foldl1 Apply [Variable pty qAppendOpId, e1, e2]
+prelAppend e1 e2 = foldl1 (Apply NoSpanInfo)
+  [Variable NoSpanInfo pty qAppendOpId, e1, e2]
   where pty = predType $ foldr1 TypeArrow $ replicate 3 $ typeOf e1
 
 prelDot :: Expression PredType -> Expression PredType -> Expression PredType
-prelDot e1 e2 = foldl1 Apply [Variable pty qDotOpId, e1, e2]
+prelDot e1 e2 = foldl1 (Apply NoSpanInfo)
+  [Variable NoSpanInfo pty qDotOpId, e1, e2]
   where ty1@(TypeArrow _    ty12) = typeOf e1
         ty2@(TypeArrow ty21 _   ) = typeOf e2
         pty = predType $ foldr1 TypeArrow [ty1, ty2, ty21, ty12]
 
 prelAnd :: Expression PredType -> Expression PredType -> Expression PredType
-prelAnd e1 e2 = foldl1 Apply [Variable pty qAndOpId, e1, e2]
+prelAnd e1 e2 = foldl1 (Apply NoSpanInfo)
+  [Variable NoSpanInfo pty qAndOpId, e1, e2]
   where pty = predType $ foldr1 TypeArrow $ replicate 3 boolType
 
 prelEq :: Expression PredType -> Expression PredType -> Expression PredType
-prelEq e1 e2 = foldl1 Apply [Variable pty qEqOpId, e1, e2]
+prelEq e1 e2 = foldl1 (Apply NoSpanInfo)
+  [Variable NoSpanInfo pty qEqOpId, e1, e2]
   where ty = typeOf e1
         pty = predType $ foldr1 TypeArrow [ty, ty, boolType]
 
 prelLeq :: Expression PredType -> Expression PredType -> Expression PredType
-prelLeq e1 e2 = foldl1 Apply [Variable pty qLeqOpId, e1, e2]
+prelLeq e1 e2 = foldl1 (Apply NoSpanInfo)
+  [Variable NoSpanInfo pty qLeqOpId, e1, e2]
   where ty = typeOf e1
         pty = predType $ foldr1 TypeArrow [ty, ty, boolType]
 
 prelLt :: Expression PredType -> Expression PredType -> Expression PredType
-prelLt e1 e2 = foldl1 Apply [Variable pty qLtOpId, e1, e2]
+prelLt e1 e2 = foldl1 (Apply NoSpanInfo)
+  [Variable NoSpanInfo pty qLtOpId, e1, e2]
   where ty = typeOf e1
         pty = predType $ foldr1 TypeArrow [ty, ty, boolType]
 
 prelOr :: Expression PredType -> Expression PredType -> Expression PredType
-prelOr e1 e2 = foldl1 Apply [Variable pty qOrOpId, e1, e2]
+prelOr e1 e2 = foldl1 (Apply NoSpanInfo)
+  [Variable NoSpanInfo pty qOrOpId, e1, e2]
   where pty = predType $ foldr1 TypeArrow $ replicate 3 boolType
 
 prelFromEnum :: Expression PredType -> Expression PredType
-prelFromEnum e = Apply (Variable pty qFromEnumId) e
+prelFromEnum e = Apply NoSpanInfo (Variable NoSpanInfo pty qFromEnumId) e
   where pty = predType $ TypeArrow (typeOf e) intType
 
 prelEnumFromTo :: Expression PredType -> Expression PredType
                -> Expression PredType
-prelEnumFromTo e1 e2 = apply (Variable pty qEnumFromToId) [e1, e2]
+prelEnumFromTo e1 e2 = apply (Variable NoSpanInfo pty qEnumFromToId) [e1, e2]
   where ty = typeOf e1
         pty = predType $ foldr1 TypeArrow [ty, ty, listType ty]
 
 prelEnumFromThenTo :: Expression PredType -> Expression PredType
                    -> Expression PredType -> Expression PredType
 prelEnumFromThenTo e1 e2 e3 =
-  apply (Variable pty qEnumFromThenToId) [e1, e2, e3]
+  apply (Variable NoSpanInfo pty qEnumFromThenToId) [e1, e2, e3]
   where ty = typeOf e1
         pty = predType $ foldr1 TypeArrow [ty, ty, ty, listType ty]
 
 prelReadParen :: Expression PredType -> Expression PredType
               -> Expression PredType
-prelReadParen e1 e2 = apply (Variable pty qReadParenId) [e1, e2]
+prelReadParen e1 e2 = apply (Variable NoSpanInfo pty qReadParenId) [e1, e2]
   where ty = typeOf e2
         pty = predType $ foldr1 TypeArrow [boolType, ty, ty]
 
 prelShowParen :: Expression PredType -> Expression PredType
               -> Expression PredType
-prelShowParen e1 e2 = apply (Variable pty qShowParenId) [e1, e2]
+prelShowParen e1 e2 = apply (Variable NoSpanInfo pty qShowParenId) [e1, e2]
   where pty = predType $ foldr1 TypeArrow [ boolType
                                           , TypeArrow stringType stringType
                                           , stringType, stringType
                                           ]
 
 preludeLex :: Expression PredType -> Expression PredType
-preludeLex e = Apply (Variable pty qLexId) e
+preludeLex e = Apply NoSpanInfo (Variable NoSpanInfo pty qLexId) e
   where pty = predType $ TypeArrow stringType $
                 listType $ tupleType [stringType, stringType]
 
 preludeReadsPrec :: Type -> Integer -> Expression PredType
                  -> Expression PredType
-preludeReadsPrec ty p e = flip Apply e $
-  Apply (Variable pty qReadsPrecId) $ Literal predIntType $ Int p
+preludeReadsPrec ty p e = flip (Apply NoSpanInfo) e $
+  Apply NoSpanInfo (Variable NoSpanInfo pty qReadsPrecId) $
+  Literal NoSpanInfo predIntType $ Int p
   where pty = predType $ foldr1 TypeArrow [ intType, stringType
                                           , listType $ tupleType [ ty
                                                                  , stringType
@@ -622,16 +641,17 @@ preludeReadsPrec ty p e = flip Apply e $
                                           ]
 
 preludeShowsPrec :: Integer -> Expression PredType -> Expression PredType
-preludeShowsPrec p e = flip Apply e $
-  Apply (Variable pty qShowsPrecId) $ Literal predIntType $ Int p
+preludeShowsPrec p e = flip (Apply NoSpanInfo) e $
+  Apply NoSpanInfo (Variable NoSpanInfo pty qShowsPrecId) $
+  Literal NoSpanInfo predIntType $ Int p
   where pty = predType $ foldr1 TypeArrow [ intType, typeOf e
                                           , stringType, stringType
                                           ]
 
 preludeShowString :: String -> Expression PredType
-preludeShowString s = Apply (Variable pty qShowStringId) $
-  Literal predStringType $ String s
+preludeShowString s = Apply NoSpanInfo (Variable NoSpanInfo pty qShowStringId) $
+  Literal NoSpanInfo predStringType $ String s
   where pty = predType $ foldr1 TypeArrow $ replicate 3 stringType
 
 preludeFailed :: Type -> Expression PredType
-preludeFailed ty = Variable (predType ty) qFailedId
+preludeFailed ty = Variable NoSpanInfo (predType ty) qFailedId

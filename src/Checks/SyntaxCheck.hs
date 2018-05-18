@@ -29,7 +29,7 @@ module Checks.SyntaxCheck (syntaxCheck) where
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative        ((<$>), (<*>))
 #endif
--- <<<<<<< HEAD
+
 import Control.Monad                      (unless, when)
 import qualified Control.Monad.State as S ( State, runState, gets, modify
                                           , withState )
@@ -69,6 +69,8 @@ import Env.Value           (ValueEnv, ValueInfo (..))
 -- resulting environment. In addition, this process will also rename the
 -- local variables.
 
+-- TODO: use SpanInfos for errors and then stop passing down SpanInfo from the decls to the checks
+
 syntaxCheck :: [KnownExtension] -> TCEnv -> ValueEnv -> Module ()
             -> ((Module (), [KnownExtension]), [Message])
 syntaxCheck exts tcEnv vEnv mdl@(Module _ _ m _ _ ds) =
@@ -83,7 +85,7 @@ syntaxCheck exts tcEnv vEnv mdl@(Module _ _ m _ _ ds) =
     cds   = filter isClassDecl ds
     ls    = nub $ concatMap recLabels tds
     fs    = nub $ concatMap vars vds
-    cs    = concatMap (concatMap methods) $ [ds' | ClassDecl _ _ _ _ ds' <- cds]
+    cs    = concatMap (concatMap methods) [ds' | ClassDecl _ _ _ _ ds' <- cds]
     rEnv  = globalEnv $ fmap renameInfo vEnv
     state = initState exts m tcEnv rEnv
 
@@ -242,7 +244,7 @@ addGlobalDep dep = do
   case maybeF of
     Nothing -> internalError "SyntaxCheck.addFuncPat: no global function set"
     Just  f -> modifyFuncDeps $ \ fd -> fd
-                { globalDeps = Map.insertWith (Set.union) f
+                { globalDeps = Map.insertWith Set.union f
                               (Set.singleton dep) (globalDeps fd) }
 
 -- |Add a functional pattern to `curGlobalFunction'
@@ -368,7 +370,7 @@ bindFuncDecl _   _ (FunctionDecl _ _ _ []) _
 bindFuncDecl tcc m (FunctionDecl _ _ f (eq:_)) env
   = let arty = length $ snd $ getFlatLhs eq
     in  bindGlobal tcc m f (GlobalVar (qualifyWith m f) arty) env
-bindFuncDecl tcc m (TypeSig _ fs (QualTypeExpr _ ty)) env
+bindFuncDecl tcc m (TypeSig _ fs (QualTypeExpr _ _ ty)) env
   = foldr bindTS env $ map (qualifyWith m) fs
   where
     bindTS qf env'
@@ -578,12 +580,12 @@ checkEquationsLhs p [Equation p' lhs rhs] = do
 checkEquationsLhs _ _ = internalError "SyntaxCheck.checkEquationsLhs"
 
 checkEqLhs :: SpanInfo -> Lhs () -> SCM (Either (Ident, Lhs ()) (Pattern ()))
-checkEqLhs spi toplhs = do
+checkEqLhs pspi toplhs = do
   m   <- getModuleIdent
   k   <- getScopeId
   env <- getRenameEnv
   case toplhs of
-    FunLhs f ts
+    FunLhs spi f ts
       | not $ isDataConstr f env -> return left
       | k /= globalScopeId       -> return right
       | null infos               -> return left
@@ -591,9 +593,10 @@ checkEqLhs spi toplhs = do
                                        return right
       where f'    = renameIdent f k
             infos = qualLookupVar (qualifyWith m f) env
-            left  = Left  (f', FunLhs f' ts)
-            right = Right $ ConstructorPattern () (qualify f) ts
-    OpLhs t1 op t2
+            left  = Left  (f', FunLhs spi f' ts)
+            right = Right $  -- use start from the parsed FunLhs and compute end
+              updateEndPos $ ConstructorPattern spi () (qualify f) ts
+    OpLhs spi t1 op t2
       | not $ isDataConstr op env -> return left
       | k /= globalScopeId        -> return right
       | null infos                -> return left
@@ -601,29 +604,34 @@ checkEqLhs spi toplhs = do
                                         return right
       where op'   = renameIdent op k
             infos = qualLookupVar (qualifyWith m op) env
-            left  = Left (op', OpLhs t1 op' t2)
+            left  = Left (op', OpLhs spi t1 op' t2)
             right = checkOpLhs k env (infixPattern t1 (qualify op)) t2
-            infixPattern (InfixPattern a' t1' op1 t2') op2 t3 =
-              InfixPattern a' t1' op1 (infixPattern t2' op2 t3)
-            infixPattern t1' op1 t2' = InfixPattern () t1' op1 t2'
-    ApLhs lhs ts -> do
-      checked <- checkEqLhs spi lhs
+            infixPattern (InfixPattern _ a' t1' op1 t2') op2 t3 =
+              let t2'' = infixPattern t2' op2 t3
+                  sp = combineSpans (getSrcSpan t1') (getSrcSpan t2'')
+              in InfixPattern (fromSrcSpan sp) a' t1' op1 t2''
+            infixPattern t1' op1 t2' =
+              let sp = combineSpans (getSrcSpan t1') (getSrcSpan t2')
+              in InfixPattern (fromSrcSpan sp) () t1' op1 t2'
+    ApLhs spi lhs ts -> do
+      checked <- checkEqLhs pspi lhs
       case checked of
-        Left (f', lhs') -> return $ Left (f', ApLhs lhs' ts)
+        Left (f', lhs') -> return $ Left (f', updateEndPos $ ApLhs spi lhs' ts)
         r               -> do report $ errNonVariable "curried definition" f
                               return $ r
         where (f, _) = flatLhs lhs
-  where p = spanInfo2Pos spi
+  where p = spanInfo2Pos pspi
 
 checkOpLhs :: Integer -> RenameEnv -> (Pattern a -> Pattern a)
            -> Pattern a -> Either (Ident, Lhs a) (Pattern a)
-checkOpLhs k env f (InfixPattern a t1 op t2)
+checkOpLhs k env f (InfixPattern spi a t1 op t2)
   | isJust m || isDataConstr op' env
-  = checkOpLhs k env (f . InfixPattern a t1 op) t2
+  = checkOpLhs k env (f . InfixPattern spi a t1 op) t2
   | otherwise
-  = Left (op'', OpLhs (f t1) op'' t2)
+  = Left (op'', OpLhs (getSpanInfo t1') t1' op'' t2)
   where (m,op') = (qidModule op, qidIdent op)
         op''    = renameIdent op' k
+        t1'     = f t1
 checkOpLhs _ _ f t = Right (f t)
 
 -- -- ---------------------------------------------------------------------------
@@ -633,7 +641,7 @@ joinEquations [] = return []
 joinEquations (FunctionDecl a p f eqs : FunctionDecl _ _ f' [eq] : ds)
   | f == f' = do
     when (getArity (head eqs) /= getArity eq) $ report $ errDifferentArity [f, f']
-    joinEquations (FunctionDecl a p f (eqs ++ [eq]) : ds)
+    joinEquations (updateEndPos (FunctionDecl a p f (eqs ++ [eq])) : ds)
   where getArity = length . snd . getFlatLhs
 joinEquations (d : ds) = (d :) <$> joinEquations ds
 
@@ -692,14 +700,14 @@ checkEquation (Equation p lhs rhs) = inNestedScope $ do
   return $ Equation p lhs' rhs'
 
 checkLhs :: SpanInfo -> Lhs () -> SCM (Lhs ())
-checkLhs p (FunLhs    f ts) = FunLhs f <$> mapM (checkPattern p) ts
-checkLhs p (OpLhs t1 op t2) = do
+checkLhs p (FunLhs    spi f ts) = FunLhs spi f <$> mapM (checkPattern p) ts
+checkLhs p (OpLhs spi t1 op t2) = do
   let wrongCalls = concatMap (checkParenPattern (Just $ qualify op)) [t1,t2]
   unless (null wrongCalls) $ report $ errInfixWithoutParens
     (idPosition op) wrongCalls
-  flip OpLhs op <$> checkPattern p t1 <*> checkPattern p t2
-checkLhs p (ApLhs   lhs ts) =
-  ApLhs <$> checkLhs p lhs <*> mapM (checkPattern p) ts
+  flip (OpLhs spi) op <$> checkPattern p t1 <*> checkPattern p t2
+checkLhs p (ApLhs   spi lhs ts) =
+  ApLhs spi <$> checkLhs p lhs <*> mapM (checkPattern p) ts
 
 -- checkParen
 -- @param Aufrufende InfixFunktion
@@ -707,66 +715,66 @@ checkLhs p (ApLhs   lhs ts) =
 -- @return Liste mit fehlerhaften Funktionsaufrufen
 
 checkParenPattern :: Maybe QualIdent -> Pattern a -> [(QualIdent, QualIdent)]
-checkParenPattern _ (LiteralPattern          _ _) = []
-checkParenPattern _ (NegativePattern         _ _) = []
-checkParenPattern _ (VariablePattern         _ _) = []
-checkParenPattern _ (ConstructorPattern   _ _ cs) =
+checkParenPattern _ (LiteralPattern          _ _ _) = []
+checkParenPattern _ (NegativePattern         _ _ _) = []
+checkParenPattern _ (VariablePattern         _ _ _) = []
+checkParenPattern _ (ConstructorPattern   _ _ _ cs) =
   concatMap (checkParenPattern Nothing) cs
-checkParenPattern o (InfixPattern     _ t1 op t2) =
+checkParenPattern o (InfixPattern     _ _ t1 op t2) =
   maybe [] (\c -> [(c, op)]) o
   ++ checkParenPattern Nothing t1 ++ checkParenPattern Nothing t2
-checkParenPattern _ (ParenPattern              t) =
+checkParenPattern _ (ParenPattern              _ t) =
   checkParenPattern Nothing t
-checkParenPattern _ (RecordPattern        _ _ fs) =
+checkParenPattern _ (RecordPattern        _ _ _ fs) =
   concatMap (\(Field _ _ t) -> checkParenPattern Nothing t) fs
-checkParenPattern _ (TuplePattern             ts) =
+checkParenPattern _ (TuplePattern             _ ts) =
   concatMap (checkParenPattern Nothing) ts
-checkParenPattern _ (ListPattern            _ ts) =
+checkParenPattern _ (ListPattern            _ _ ts) =
   concatMap (checkParenPattern Nothing) ts
-checkParenPattern o (AsPattern               _ t) =
+checkParenPattern o (AsPattern               _ _ t) =
   checkParenPattern o t
-checkParenPattern o (LazyPattern               t) =
+checkParenPattern o (LazyPattern               _ t) =
   checkParenPattern o t
-checkParenPattern _ (FunctionPattern      _ _ ts) =
+checkParenPattern _ (FunctionPattern      _ _ _ ts) =
   concatMap (checkParenPattern Nothing) ts
-checkParenPattern o (InfixFuncPattern _ t1 op t2) =
+checkParenPattern o (InfixFuncPattern _ _ t1 op t2) =
   maybe [] (\c -> [(c, op)]) o
   ++ checkParenPattern Nothing t1 ++ checkParenPattern Nothing t2
 
 checkPattern :: SpanInfo -> Pattern () -> SCM (Pattern ())
-checkPattern _ (LiteralPattern        a l) =
-  return $ LiteralPattern a l
-checkPattern _ (NegativePattern       a l) =
-  return $ NegativePattern a l
-checkPattern p (VariablePattern       a v)
-  | isAnonId v = (VariablePattern a . renameIdent v) <$> newId
-  | otherwise  = checkConstructorPattern p (qualify v) []
-checkPattern p (ConstructorPattern _ c ts) =
-  checkConstructorPattern p c ts
-checkPattern p (InfixPattern   _ t1 op t2) =
-  checkInfixPattern p t1 op t2
-checkPattern p (ParenPattern            t) =
-  ParenPattern <$> checkPattern p t
-checkPattern p (RecordPattern      _ c fs) =
-  checkRecordPattern p c fs
-checkPattern p (TuplePattern           ts) =
-  TuplePattern <$> mapM (checkPattern p) ts
-checkPattern p (ListPattern          a ts) =
-  ListPattern a <$> mapM (checkPattern p) ts
-checkPattern p (AsPattern             v t) = do
-  AsPattern <$> checkVar "@ pattern" v <*> checkPattern p t
-checkPattern p (LazyPattern             t) = do
+checkPattern _ (LiteralPattern        spi a l) =
+  return $ LiteralPattern spi a l
+checkPattern _ (NegativePattern       spi a l) =
+  return $ NegativePattern spi a l
+checkPattern p (VariablePattern       spi a v)
+  | isAnonId v = (VariablePattern spi a . renameIdent v) <$> newId
+  | otherwise  = checkConstructorPattern p spi (qualify v) []
+checkPattern p (ConstructorPattern spi _ c ts) =
+  checkConstructorPattern p spi c ts
+checkPattern p (InfixPattern   spi _ t1 op t2) =
+  checkInfixPattern p spi t1 op t2
+checkPattern p (ParenPattern            spi t) =
+  ParenPattern spi <$> checkPattern p t
+checkPattern p (RecordPattern      spi _ c fs) =
+  checkRecordPattern p spi c fs
+checkPattern p (TuplePattern           spi ts) =
+  TuplePattern spi <$> mapM (checkPattern p) ts
+checkPattern p (ListPattern          spi a ts) =
+  ListPattern spi a <$> mapM (checkPattern p) ts
+checkPattern p (AsPattern             spi v t) =
+  AsPattern spi <$> checkVar "@ pattern" v <*> checkPattern p t
+checkPattern p (LazyPattern             spi t) = do
   t' <- checkPattern p t
   banFPTerm "lazy pattern" p t'
-  return (LazyPattern t')
-checkPattern _ (FunctionPattern     _ _ _) = internalError $
+  return (LazyPattern spi t')
+checkPattern _ (FunctionPattern     _ _ _ _) = internalError $
   "SyntaxCheck.checkPattern: function pattern not defined"
-checkPattern _ (InfixFuncPattern  _ _ _ _) = internalError $
+checkPattern _ (InfixFuncPattern  _ _ _ _ _) = internalError $
   "SyntaxCheck.checkPattern: infix function pattern not defined"
 
-checkConstructorPattern :: SpanInfo -> QualIdent -> [Pattern ()]
+checkConstructorPattern :: SpanInfo -> SpanInfo -> QualIdent -> [Pattern ()]
                         -> SCM (Pattern ())
-checkConstructorPattern p c ts = do
+checkConstructorPattern p spi c ts = do
   env <- getRenameEnv
   m <- getModuleIdent
   k <- getScopeId
@@ -778,22 +786,22 @@ checkConstructorPattern p c ts = do
       [r]          -> processVarFun r k
       []
         | null ts && not (isQualified c) ->
-            return $ VariablePattern () $ renameIdent (unqualify c) k
+            return $ VariablePattern spi () $ renameIdent (unqualify c) k
         | null rs -> do
             ts' <- mapM (checkPattern p) ts
             report $ errUndefinedData c
-            return $ ConstructorPattern () c ts'
+            return $ ConstructorPattern spi () c ts'
       _ -> do ts' <- mapM (checkPattern p) ts
               report $ errAmbiguousData rs c
-              return $ ConstructorPattern () c ts'
+              return $ ConstructorPattern spi () c ts'
   where
   n' = length ts
   processCons qc n = do
     when (n /= n') $ report $ errWrongArity c n n'
-    ConstructorPattern () qc <$> mapM (checkPattern p) ts
+    ConstructorPattern spi () qc <$> mapM (checkPattern p) ts
   processVarFun r k
     | null ts && not (isQualified c)
-    = return $ VariablePattern () $ renameIdent (unqualify c) k -- (varIdent r) k
+    = return $ VariablePattern spi () $ renameIdent (unqualify c) k -- (varIdent r) k
     | otherwise = do
       let n = arity r
       checkFuncPatsExtension (spanInfo2Pos p)
@@ -803,12 +811,12 @@ checkConstructorPattern p c ts = do
       return $ if n' > n
                  then let (ts1, ts2) = splitAt n ts'
                       in  genFuncPattAppl
-                          (FunctionPattern () (qualVarIdent r) ts1) ts2
-                 else FunctionPattern () (qualVarIdent r) ts'
+                          (FunctionPattern spi () (qualVarIdent r) ts1) ts2
+                 else FunctionPattern spi () (qualVarIdent r) ts'
 
-checkInfixPattern :: SpanInfo -> Pattern () -> QualIdent -> Pattern ()
+checkInfixPattern :: SpanInfo -> SpanInfo -> Pattern () -> QualIdent -> Pattern ()
                   -> SCM (Pattern ())
-checkInfixPattern p t1 op t2 = do
+checkInfixPattern p spi t1 op t2 = do
   m <- getModuleIdent
   env <- getRenameEnv
   case qualLookupVar op env of
@@ -817,32 +825,32 @@ checkInfixPattern p t1 op t2 = do
     rs           -> case qualLookupVar (qualQualify m op) env of
       [Constr _ n] -> infixPattern (qualQualify m op) n
       [r]          -> funcPattern r (qualQualify m op)
-      rs'          -> do if (null rs && null rs')
+      rs'          -> do if null rs && null rs'
                             then report $ errUndefinedData op
                             else report $ errAmbiguousData rs op
-                         flip (InfixPattern ()) op <$> checkPattern p t1
+                         flip (InfixPattern spi ()) op <$> checkPattern p t1
                                                   <*> checkPattern p t2
   where
   infixPattern qop n = do
     when (n /= 2) $ report $ errWrongArity op n 2
-    flip (InfixPattern ()) qop <$> checkPattern p t1 <*> checkPattern p t2
+    flip (InfixPattern spi ()) qop <$> checkPattern p t1 <*> checkPattern p t2
   funcPattern r qop = do
     checkFuncPatsExtension (spanInfo2Pos p)
     checkFuncPatCall r qop
     ts'@[t1',t2'] <- mapM (checkPattern p) [t1,t2]
     mapM_ (checkFPTerm p) ts'
-    return $ InfixFuncPattern () t1' qop t2'
+    return $ InfixFuncPattern spi () t1' qop t2'
 
-checkRecordPattern :: SpanInfo -> QualIdent -> [Field (Pattern ())]
+checkRecordPattern :: SpanInfo -> SpanInfo -> QualIdent -> [Field (Pattern ())]
                    -> SCM (Pattern ())
-checkRecordPattern p c fs = do
+checkRecordPattern p spi c fs = do
   env <- getRenameEnv
   m   <- getModuleIdent
   case qualLookupVar c env of
     [Constr c' _] -> processRecPat (Just c') fs
     rs            -> case qualLookupVar (qualQualify m c) env of
       [Constr c' _] -> processRecPat (Just c') fs
-      rs'           -> if (null rs && null rs')
+      rs'           -> if null rs && null rs'
                           then do report $ errUndefinedData c
                                   processRecPat Nothing fs
                           else do report $ errAmbiguousData rs c
@@ -851,7 +859,7 @@ checkRecordPattern p c fs = do
   processRecPat mcon fields = do
     fs' <- mapM (checkField (checkPattern p)) fields
     checkFieldLabels "pattern" p mcon fs'
-    return $ RecordPattern () c fs'
+    return $ RecordPattern spi () c fs'
 
 checkFuncPatCall :: RenameInfo -> QualIdent -> SCM ()
 checkFuncPatCall r f = case r of
@@ -862,134 +870,135 @@ checkFuncPatCall r f = case r of
 
 -- Note: process decls first
 checkRhs :: Rhs () -> SCM (Rhs ())
-checkRhs (SimpleRhs p e ds) = inNestedScope $
-  flip (SimpleRhs p) <$> checkDeclGroup bindVarDecl ds <*> checkExpr sp e
-  where sp = SpanInfo (Span "" p p) [] -- TODO
-checkRhs (GuardedRhs es ds) = inNestedScope $
-  flip GuardedRhs <$> checkDeclGroup bindVarDecl ds <*> mapM checkCondExpr es
+checkRhs (SimpleRhs spi e ds) = inNestedScope $
+  flip (SimpleRhs spi) <$> checkDeclGroup bindVarDecl ds <*> checkExpr spi e
+checkRhs (GuardedRhs spi es ds) = inNestedScope $
+  flip (GuardedRhs spi) <$> checkDeclGroup bindVarDecl ds <*> mapM checkCondExpr es
 
 checkCondExpr :: CondExpr () -> SCM (CondExpr ())
-checkCondExpr (CondExpr p g e) =  CondExpr p <$> checkExpr sp g <*> checkExpr sp e
-  where sp = SpanInfo (Span "" p p) [] -- TODO
+checkCondExpr (CondExpr spi g e) =  CondExpr spi <$> checkExpr spi g <*> checkExpr spi e
 
 checkExpr :: SpanInfo -> Expression () -> SCM (Expression ())
-checkExpr _ (Literal       a l) = return $ Literal a l
-checkExpr _ (Variable      a v) = checkVariable a v
-checkExpr _ (Constructor   a c) = checkVariable a c
-checkExpr p (Paren           e) = Paren         <$> checkExpr p e
-checkExpr p (Typed        e ty) = flip Typed ty <$> checkExpr p e
-checkExpr p (Record     _ c fs) = checkRecordExpr p c fs
-checkExpr p (RecordUpdate e fs) = checkRecordUpdExpr p e fs
-checkExpr p (Tuple          es) = Tuple <$> mapM (checkExpr p) es
-checkExpr p (List         a es) = List a <$> mapM (checkExpr p) es
-checkExpr p (ListCompr    e qs) = withLocalEnv $ flip ListCompr <$>
+checkExpr _ (Literal       spi a l) = return $ Literal spi a l
+checkExpr _ (Variable      spi a v) = checkVariable spi a v
+checkExpr _ (Constructor   spi a c) = checkVariable spi a c
+checkExpr p (Paren         spi   e) = Paren spi           <$> checkExpr p e
+checkExpr p (Typed        spi e ty) = flip (Typed spi) ty <$> checkExpr p e
+checkExpr p (Record     spi _ c fs) = checkRecordExpr p spi c fs
+checkExpr p (RecordUpdate spi e fs) = checkRecordUpdExpr p spi e fs
+checkExpr p (Tuple        spi   es) = Tuple spi <$> mapM (checkExpr p) es
+checkExpr p (List         spi a es) = List spi a <$> mapM (checkExpr p) es
+checkExpr p (ListCompr    spi e qs) = withLocalEnv $ flip (ListCompr spi) <$>
   -- Note: must be flipped to insert qs into RenameEnv first
   mapM (checkStatement "list comprehension" p) qs <*> checkExpr p e
-checkExpr p (EnumFrom              e) = EnumFrom <$> checkExpr p e
-checkExpr p (EnumFromThen      e1 e2) =
-  EnumFromThen <$> checkExpr p e1 <*> checkExpr p e2
-checkExpr p (EnumFromTo        e1 e2) =
-  EnumFromTo <$> checkExpr p e1 <*> checkExpr p e2
-checkExpr p (EnumFromThenTo e1 e2 e3) =
-  EnumFromThenTo <$> checkExpr p e1 <*> checkExpr p e2 <*> checkExpr p e3
-checkExpr p (UnaryMinus            e) = UnaryMinus <$> checkExpr p e
-checkExpr p (Apply             e1 e2) =
-  Apply <$> checkExpr p e1 <*> checkExpr p e2
-checkExpr p (InfixApply     e1 op e2) =
-  InfixApply <$> checkExpr p e1 <*> checkOp op <*> checkExpr p e2
-checkExpr p (LeftSection        e op) =
-  LeftSection <$> checkExpr p e <*> checkOp op
-checkExpr p (RightSection       op e) =
-  RightSection <$> checkOp op <*> checkExpr p e
-checkExpr p (Lambda             ts e) = inNestedScope $ checkLambda p ts e
-checkExpr p (Let                ds e) = inNestedScope $
-  Let <$> checkDeclGroup bindVarDecl ds <*> checkExpr p e
-checkExpr p (Do                sts e) = withLocalEnv $
-  Do <$> mapM (checkStatement "do sequence" p) sts <*> checkExpr p e
-checkExpr p (IfThenElse     e1 e2 e3) =
-  IfThenElse <$> checkExpr p e1 <*> checkExpr p e2 <*> checkExpr p e3
-checkExpr p (Case          ct e alts) =
-  Case ct <$> checkExpr p e <*> mapM checkAlt alts
+checkExpr p (EnumFrom              spi e) = EnumFrom spi <$> checkExpr p e
+checkExpr p (EnumFromThen      spi e1 e2) =
+  EnumFromThen spi <$> checkExpr p e1 <*> checkExpr p e2
+checkExpr p (EnumFromTo        spi e1 e2) =
+  EnumFromTo spi <$> checkExpr p e1 <*> checkExpr p e2
+checkExpr p (EnumFromThenTo spi e1 e2 e3) =
+  EnumFromThenTo spi <$> checkExpr p e1 <*> checkExpr p e2 <*> checkExpr p e3
+checkExpr p (UnaryMinus            spi e) = UnaryMinus spi <$> checkExpr p e
+checkExpr p (Apply             spi e1 e2) =
+  Apply spi <$> checkExpr p e1 <*> checkExpr p e2
+checkExpr p (InfixApply     spi e1 op e2) =
+  InfixApply spi <$> checkExpr p e1 <*> checkOp op <*> checkExpr p e2
+checkExpr p (LeftSection        spi e op) =
+  LeftSection spi <$> checkExpr p e <*> checkOp op
+checkExpr p (RightSection       spi op e) =
+  RightSection spi <$> checkOp op <*> checkExpr p e
+checkExpr p (Lambda             spi ts e) = inNestedScope $ checkLambda p spi ts e
+checkExpr p (Let                spi ds e) = inNestedScope $
+  Let spi <$> checkDeclGroup bindVarDecl ds <*> checkExpr p e
+checkExpr p (Do                spi sts e) = withLocalEnv $
+  Do spi <$> mapM (checkStatement "do sequence" p) sts <*> checkExpr p e
+checkExpr p (IfThenElse     spi e1 e2 e3) =
+  IfThenElse spi <$> checkExpr p e1 <*> checkExpr p e2 <*> checkExpr p e3
+checkExpr p (Case          spi ct e alts) =
+  Case spi ct <$> checkExpr p e <*> mapM checkAlt alts
 
-checkLambda :: SpanInfo -> [Pattern ()] -> Expression () -> SCM (Expression ())
-checkLambda p ts e = case findMultiples (bvNoAnon ts) of
+checkLambda :: SpanInfo -> SpanInfo -> [Pattern ()] -> Expression ()
+            -> SCM (Expression ())
+checkLambda p spi ts e = case findMultiples (bvNoAnon ts) of
   []      -> do
     ts' <- mapM (bindPattern "lambda expression" p) ts
-    Lambda ts' <$> checkExpr p e
+    Lambda spi ts' <$> checkExpr p e
   errVars -> do
     mapM_ (report . errDuplicateVariables) errVars
     let nubTs = nubBy (\t1 t2 -> (not . null) (on intersect bvNoAnon t1 t2)) ts
     mapM_ (bindPattern "lambda expression" p) nubTs
-    Lambda ts <$> checkExpr p e
+    Lambda spi ts <$> checkExpr p e
   where
     bvNoAnon t = filter (not . isAnonId) $ bv t
 
-checkVariable :: a -> QualIdent -> SCM (Expression a)
-checkVariable a v
+checkVariable :: SpanInfo -> a -> QualIdent -> SCM (Expression a)
+checkVariable spi a v
     -- anonymous free variable
   | isAnonId (unqualify v) = do
     checkAnonFreeVarsExtension $ qidPosition v
-    (\n -> Variable a $ updQualIdent id (flip renameIdent n) v) <$> newId
+    (\n -> Variable spi a $ updQualIdent id (flip renameIdent n) v) <$> newId
     -- return $ Variable v
     -- normal variable
   | otherwise             = do
     env <- getRenameEnv
     case qualLookupVar v env of
       []              -> do report $ errUndefinedVariable v
-                            return $ Variable a v
-      [Constr    _ _]   -> return $ Constructor a v
-      [GlobalVar f _]   -> addGlobalDep f >> return (Variable a v)
-      [LocalVar v' _]   -> return $ Variable a $ qualify v' @> v
-      [RecordLabel _ _] -> return $ Variable a v
+                            return $ Variable spi a v
+      [Constr    _ _]   -> return $ Constructor spi a v
+      [GlobalVar f _]   -> addGlobalDep f >> return (Variable spi a v)
+      [LocalVar v' _]   -> return $ Variable spi a $ qualify v' @> v
+      [RecordLabel _ _] -> return $ Variable spi a v
       rs -> do
         m <- getModuleIdent
         case qualLookupVar (qualQualify m v) env of
           []              -> do report $ errAmbiguousIdent rs v
-                                return $ Variable a v
-          [Constr    _ _]   -> return $ Constructor a v
-          [GlobalVar f _]   -> addGlobalDep f >> return (Variable a v)
-          [LocalVar v' _]   -> return $ Variable a $ qualify v' @> v
-          [RecordLabel _ _] -> return $ Variable a v
+                                return $ Variable spi a v
+          [Constr    _ _]   -> return $ Constructor spi a v
+          [GlobalVar f _]   -> addGlobalDep f >> return (Variable spi a v)
+          [LocalVar v' _]   -> return $ Variable spi a $ qualify v' @> v
+          [RecordLabel _ _] -> return $ Variable spi a v
           rs'               -> do report $ errAmbiguousIdent rs' v
-                                  return $ Variable a v
+                                  return $ Variable spi a v
 
-checkRecordExpr :: SpanInfo -> QualIdent -> [Field (Expression ())]
+checkRecordExpr :: SpanInfo -> SpanInfo -> QualIdent -> [Field (Expression ())]
                 -> SCM (Expression ())
-checkRecordExpr _ c [] = do
+checkRecordExpr _ spi c [] = do
   m   <- getModuleIdent
   env <- getRenameEnv
   case qualLookupVar c env of
-    [Constr _ _] -> return $ Record () c []
+    [Constr _ _] -> return $ Record spi () c []
     rs           -> case qualLookupVar (qualQualify m c) env of
-      [Constr _ _] -> return $ Record () c []
-      rs'          -> if (null rs && null rs')
+      [Constr _ _] -> return $ Record spi () c []
+      rs'          -> if null rs && null rs'
                          then do report $ errUndefinedData c
-                                 return $ Record () c []
+                                 return $ Record spi () c []
                          else do report $ errAmbiguousData rs c
-                                 return $ Record () c []
-checkRecordExpr p c fs = checkExpr p (RecordUpdate (Constructor () c) fs)
+                                 return $ Record spi () c []
+checkRecordExpr p spi c fs =
+  checkExpr p (RecordUpdate spi (Constructor (fromSrcSpan (qIdent2Span c)) () c)
+                fs)
 
-checkRecordUpdExpr :: SpanInfo -> Expression () -> [Field (Expression ())]
-                   -> SCM (Expression ())
-checkRecordUpdExpr p e fs = do
+checkRecordUpdExpr :: SpanInfo -> SpanInfo -> Expression ()
+                   -> [Field (Expression ())] -> SCM (Expression ())
+checkRecordUpdExpr p spi e fs = do
   e'  <- checkExpr p e
   fs' <- mapM (checkField (checkExpr p)) fs
   case e' of
-    Constructor a c -> do checkFieldLabels "construction" p (Just c) fs'
-                          return $ Record a c fs'
-    _               -> do checkFieldLabels "update" p Nothing fs'
-                          return $ RecordUpdate e' fs'
+    Constructor _ a c -> do checkFieldLabels "construction" p (Just c) fs'
+                            return $ Record spi a c fs'
+    _                 -> do checkFieldLabels "update" p Nothing fs'
+                            return $ RecordUpdate spi e' fs'
 
 -- * Because patterns or decls eventually introduce new variables, the
 --   scope has to be nested one level.
 -- * Because statements are processed list-wise, inNestedEnv can not be
 --   used as this nesting must be visible to following statements.
 checkStatement :: String -> SpanInfo -> Statement () -> SCM (Statement ())
-checkStatement _ p (StmtExpr   e) = StmtExpr <$> checkExpr p e
-checkStatement s p (StmtBind t e) =
-  flip StmtBind <$> checkExpr p e <*> (incNesting >> bindPattern s p t)
-checkStatement _ _ (StmtDecl  ds) =
-  StmtDecl <$> (incNesting >> checkDeclGroup bindVarDecl ds)
+checkStatement _ p (StmtExpr spi   e) = StmtExpr spi <$> checkExpr p e
+checkStatement s p (StmtBind spi t e) =
+  flip (StmtBind spi) <$> checkExpr p e <*> (incNesting >> bindPattern s p t)
+checkStatement _ _ (StmtDecl spi  ds) =
+  StmtDecl spi <$> (incNesting >> checkDeclGroup bindVarDecl ds)
 
 bindPattern :: String -> SpanInfo -> Pattern () -> SCM (Pattern ())
 bindPattern s p t = do
@@ -998,21 +1007,21 @@ bindPattern s p t = do
   addBoundVariables True t'
 
 banFPTerm :: String -> SpanInfo -> Pattern a -> SCM ()
-banFPTerm _ _ (LiteralPattern           _ _) = ok
-banFPTerm _ _ (NegativePattern          _ _) = ok
-banFPTerm _ _ (VariablePattern          _ _) = ok
-banFPTerm s p (ConstructorPattern    _ _ ts) = mapM_ (banFPTerm s p) ts
-banFPTerm s p (InfixPattern       _ t1 _ t2) = mapM_ (banFPTerm s p) [t1, t2]
-banFPTerm s p (ParenPattern               t) = banFPTerm s p t
-banFPTerm s p (RecordPattern         _ _ fs) = mapM_ banFPTermField fs
+banFPTerm _ _ (LiteralPattern           _ _ _) = ok
+banFPTerm _ _ (NegativePattern          _ _ _) = ok
+banFPTerm _ _ (VariablePattern          _ _ _) = ok
+banFPTerm s p (ConstructorPattern    _ _ _ ts) = mapM_ (banFPTerm s p) ts
+banFPTerm s p (InfixPattern       _ _ t1 _ t2) = mapM_ (banFPTerm s p) [t1, t2]
+banFPTerm s p (ParenPattern               _ t) = banFPTerm s p t
+banFPTerm s p (RecordPattern         _ _ _ fs) = mapM_ banFPTermField fs
   where banFPTermField (Field _ _ x) = banFPTerm s p x
-banFPTerm s p (TuplePattern              ts) = mapM_ (banFPTerm s p) ts
-banFPTerm s p (ListPattern             _ ts) = mapM_ (banFPTerm s p) ts
-banFPTerm s p (AsPattern                _ t) = banFPTerm s p t
-banFPTerm s p (LazyPattern                t) = banFPTerm s p t
-banFPTerm s p pat@(FunctionPattern    _ _ _)
+banFPTerm s p (TuplePattern              _ ts) = mapM_ (banFPTerm s p) ts
+banFPTerm s p (ListPattern             _ _ ts) = mapM_ (banFPTerm s p) ts
+banFPTerm s p (AsPattern                _ _ t) = banFPTerm s p t
+banFPTerm s p (LazyPattern                _ t) = banFPTerm s p t
+banFPTerm s p pat@(FunctionPattern    _ _ _ _)
  = report $ errUnsupportedFuncPattern s (spanInfo2Pos p) pat
-banFPTerm s p pat@(InfixFuncPattern _ _ _ _)
+banFPTerm s p pat@(InfixFuncPattern _ _ _ _ _)
  = report $ errUnsupportedFuncPattern s (spanInfo2Pos p) pat
 
 checkOp :: InfixOp a -> SCM (InfixOp a)
@@ -1035,9 +1044,8 @@ checkOp op = do
         a = opAnnotation op
 
 checkAlt :: Alt () -> SCM (Alt ())
-checkAlt (Alt p t rhs) = inNestedScope $
-  Alt p <$> bindPattern "case expression" sp t <*> checkRhs rhs
-  where sp = SpanInfo (Span "" p p) [] -- TODO
+checkAlt (Alt spi t rhs) = inNestedScope $
+  Alt spi <$> bindPattern "case expression" spi t <*> checkRhs rhs
 
 addBoundVariables :: (QuantExpr t) => Bool -> t -> SCM t
 addBoundVariables checkDuplicates ts = do
@@ -1197,24 +1205,24 @@ arity (RecordLabel _ _) = 1
 genFuncPattAppl :: Pattern () -> [Pattern ()] -> Pattern ()
 genFuncPattAppl term []     = term
 genFuncPattAppl term (t:ts)
-   = FunctionPattern () qApplyId [genFuncPattAppl term ts, t]
+   = FunctionPattern NoSpanInfo () qApplyId [genFuncPattAppl term ts, t] -- TODO FIXME major problem
 
 checkFPTerm :: SpanInfo -> Pattern a -> SCM ()
-checkFPTerm _ (LiteralPattern        _ _) = ok
-checkFPTerm _ (NegativePattern       _ _) = ok
-checkFPTerm _ (VariablePattern       _ _) = ok
-checkFPTerm p (ConstructorPattern _ _ ts) = mapM_ (checkFPTerm p) ts
-checkFPTerm p (InfixPattern    _ t1 _ t2) = mapM_ (checkFPTerm p) [t1, t2]
-checkFPTerm p (ParenPattern            t) = checkFPTerm p t
-checkFPTerm p (TuplePattern           ts) = mapM_ (checkFPTerm p) ts
-checkFPTerm p (ListPattern          _ ts) = mapM_ (checkFPTerm p) ts
-checkFPTerm p (AsPattern             _ t) = checkFPTerm p t
-checkFPTerm p t@(LazyPattern           _) =
+checkFPTerm _ (LiteralPattern        _ _ _) = ok
+checkFPTerm _ (NegativePattern       _ _ _) = ok
+checkFPTerm _ (VariablePattern       _ _ _) = ok
+checkFPTerm p (ConstructorPattern _ _ _ ts) = mapM_ (checkFPTerm p) ts
+checkFPTerm p (InfixPattern    _ _ t1 _ t2) = mapM_ (checkFPTerm p) [t1, t2]
+checkFPTerm p (ParenPattern            _ t) = checkFPTerm p t
+checkFPTerm p (TuplePattern           _ ts) = mapM_ (checkFPTerm p) ts
+checkFPTerm p (ListPattern          _ _ ts) = mapM_ (checkFPTerm p) ts
+checkFPTerm p (AsPattern             _ _ t) = checkFPTerm p t
+checkFPTerm p t@(LazyPattern           _ _) =
   report $ errUnsupportedFPTerm "Lazy" (spanInfo2Pos p) t
-checkFPTerm p (RecordPattern      _ _ fs) = mapM_ (checkFPTerm p)
+checkFPTerm p (RecordPattern      _ _ _ fs) = mapM_ (checkFPTerm p)
                                             [ t | Field _ _ t <- fs ]
-checkFPTerm _ (FunctionPattern     _ _ _) = ok -- do not check again
-checkFPTerm _ (InfixFuncPattern  _ _ _ _) = ok -- do not check again
+checkFPTerm _ (FunctionPattern     _ _ _ _) = ok -- do not check again
+checkFPTerm _ (InfixFuncPattern  _ _ _ _ _) = ok -- do not check again
 
 -- ---------------------------------------------------------------------------
 -- Miscellaneous functions
@@ -1236,8 +1244,8 @@ checkUsedExtension pos msg ext = do
     enableExtension ext -- to avoid multiple warnings
 
 typeArity :: TypeExpr -> Int
-typeArity (ArrowType _ t2) = 1 + typeArity t2
-typeArity _                = 0
+typeArity (ArrowType _ _ t2) = 1 + typeArity t2
+typeArity _                  = 0
 
 getFlatLhs :: Equation a -> (Ident, [Pattern a])
 getFlatLhs (Equation  _ lhs _) = flatLhs lhs

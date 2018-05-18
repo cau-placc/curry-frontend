@@ -264,11 +264,12 @@ augmentEquation mm (Equation p lhs rhs) =
   Equation p <$> augmentLhs mm lhs <*> augment rhs
 
 augmentLhs :: Maybe ModuleIdent -> Lhs PredType -> DTM (Lhs PredType)
-augmentLhs mm lhs@(FunLhs f ts) = do
+augmentLhs mm lhs@(FunLhs spi f ts) = do
     m <- maybe getModuleIdent return mm
     augEnv <- getAugEnv
     if isAugmented augEnv (qualifyWith m $ unRenameIdentIf (isJust mm) f)
-      then return $ FunLhs f $ ConstructorPattern predUnitType qUnitId [] : ts
+      then return $ FunLhs spi f
+                  $ ConstructorPattern NoSpanInfo predUnitType qUnitId [] : ts
       else return lhs
 augmentLhs _ lhs               =
   internalError $ "Dictionary.augmentLhs" ++ show lhs
@@ -279,21 +280,23 @@ instance Augment Rhs where
     internalError $ "Dictionary.augment: " ++ show rhs
 
 instance Augment Expression where
-  augment l@(Literal     _ _) = return l
-  augment v@(Variable pty v') = do
+  augment l@(Literal     _ _ _) = return l
+  augment v@(Variable _ pty v') = do
     augEnv <- getAugEnv
     return $ if isAugmented augEnv v'
-               then apply (Variable (augmentPredType pty) v')
-                      [Constructor predUnitType qUnitId]
+               then apply (Variable NoSpanInfo (augmentPredType pty) v')
+                      [Constructor NoSpanInfo predUnitType qUnitId]
                else v
-  augment c@(Constructor _ _) = return c
-  augment (Typed       e qty) = flip Typed qty <$> augment e
-  augment (Apply       e1 e2) = Apply <$> augment e1 <*> augment e2
-  augment (Lambda       ts e) = Lambda ts <$> augment e
-  augment (Let          ds e) =
-    Let <$> mapM (augmentDecl Nothing) ds <*> augment e
-  augment (Case      ct e as) = Case ct <$> augment e <*> mapM augment as
-  augment e                   = internalError $ "Dictionary.augment: " ++ show e
+  augment c@(Constructor _ _ _) = return c
+  augment (Typed       spi e qty) = flip (Typed spi) qty <$> augment e
+  augment (Apply       spi e1 e2) = Apply spi <$> augment e1 <*> augment e2
+  augment (Lambda       spi ts e) = Lambda spi ts <$> augment e
+  augment (Let          spi ds e) =
+    Let spi <$> mapM (augmentDecl Nothing) ds <*> augment e
+  augment (Case      spi ct e as) =
+    Case spi ct <$> augment e <*> mapM augment as
+  augment e                     =
+    internalError $ "Dictionary.augment: " ++ show e
 
 instance Augment Alt where
   augment (Alt p t rhs) = Alt p t <$> augment rhs
@@ -305,10 +308,11 @@ augmentType :: Type -> Type
 augmentType = TypeArrow unitType
 
 augmentQualTypeExpr :: QualTypeExpr -> QualTypeExpr
-augmentQualTypeExpr (QualTypeExpr cx ty) = QualTypeExpr cx $ augmentTypeExpr ty
+augmentQualTypeExpr (QualTypeExpr spi cx ty) =
+  QualTypeExpr spi cx $ augmentTypeExpr ty
 
 augmentTypeExpr :: TypeExpr -> TypeExpr
-augmentTypeExpr = ArrowType $ ConstructorType qUnitId
+augmentTypeExpr = ArrowType NoSpanInfo $ ConstructorType NoSpanInfo qUnitId
 
 -- -----------------------------------------------------------------------------
 -- Lifting class and instance declarations
@@ -325,7 +329,7 @@ liftDecls (ClassDecl _ _ cls tv ds) = do
   liftClassDecls (qualifyWith m cls) tv ds
 liftDecls (InstanceDecl _ cx cls ty ds) = do
   clsEnv <- getClassEnv
-  let PredType ps ty' = toPredType [] $ QualTypeExpr cx ty
+  let PredType ps ty' = toPredType [] $ QualTypeExpr NoSpanInfo cx ty
       ps' = minPredSet clsEnv ps
   liftInstanceDecls ps' cls ty' ds
 liftDecls d = return [d]
@@ -371,11 +375,12 @@ createClassDictConstrDecl :: QualIdent -> Ident -> [Decl a] -> DTM ConstrDecl
 createClassDictConstrDecl cls tv ds = do
   clsEnv <- getClassEnv
   let sclss = superClasses cls clsEnv
-      cx    = [Constraint scls (VariableType tv) | scls <- sclss]
-      tvs   = tv : filter (unRenameIdent tv /=) identSupply
-      mtys  = map (fromType tvs . generalizeMethodType . transformMethodPredType)
-                [toMethodType cls tv qty | TypeSig _ fs qty <- ds, _ <- fs]
-  return $ ConstrDecl NoPos [] cx (dictConstrId cls) mtys
+      cx    = [Constraint NoSpanInfo scls (VariableType NoSpanInfo tv)
+              | scls <- sclss]
+      tvs  = tv : filter (unRenameIdent tv /=) identSupply
+      mtys = map (fromType tvs . generalizeMethodType . transformMethodPredType)
+                 [toMethodType cls tv qty | TypeSig _ fs qty <- ds, _ <- fs]
+  return $ ConstrDecl NoSpanInfo [] cx (dictConstrId cls) mtys
 
 classDictConstrPredType :: ValueEnv -> ClassEnv -> QualIdent -> PredType
 classDictConstrPredType vEnv clsEnv cls = PredType ps $ foldr TypeArrow ty mtys
@@ -397,8 +402,8 @@ createInstDictExpr cls ty = do
   m <- getModuleIdent
   clsEnv <- getClassEnv
   let fs = map (qImplMethodId m cls ty) $ classMethods cls clsEnv
-  return $ apply (Constructor (predType ty') (qDictConstrId cls))
-             (zipWith (Variable . predType) (arrowArgs ty') fs)
+  return $ apply (Constructor NoSpanInfo (predType ty') (qDictConstrId cls))
+             (zipWith (Variable NoSpanInfo . predType) (arrowArgs ty') fs)
 
 getInstDictConstrType :: QualIdent -> Type -> DTM Type
 getInstDictConstrType cls ty = do
@@ -415,7 +420,7 @@ defaultClassMethodDecl cls f = do
   pty@(PredType _ ty) <- getClassMethodType cls f
   augEnv <- getAugEnv
   let pats = if isAugmented augEnv (qualifyLike cls f)
-               then [ConstructorPattern predUnitType qUnitId []]
+               then [ConstructorPattern NoSpanInfo predUnitType qUnitId []]
                else []
   return $ funDecl NoSpanInfo pty f pats $ preludeError (instType ty) $
     "No instance or default method for class operation " ++ escName f
@@ -440,7 +445,7 @@ defaultInstMethodDecl ps cls ty f = do
   vEnv <- getValueEnv
   let pty@(PredType _ ty') = instMethodType vEnv ps cls ty f
   return $ funDecl NoSpanInfo pty f [] $
-    Variable (predType $ instType ty') (qDefaultMethodId cls f)
+    Variable NoSpanInfo (predType $ instType ty') (qDefaultMethodId cls f)
 
 -- Returns the type for a given instance's method of a given class. To this
 -- end, the class method's type is stripped of its first predicate (which is
@@ -464,7 +469,7 @@ createMethodDecl methodId defaultDecl ms f =
 renameDecl :: Ident -> Decl a -> Decl a
 renameDecl f (FunctionDecl p a _ eqs) = FunctionDecl p a f $ map renameEq eqs
   where renameEq (Equation p' lhs rhs) = Equation p' (renameLhs lhs) rhs
-        renameLhs (FunLhs _ ts) = FunLhs f ts
+        renameLhs (FunLhs _ _ ts) = FunLhs NoSpanInfo f ts
         renameLhs _ = internalError "Dictionary.renameDecl.renameLhs"
 renameDecl _ _ = internalError "Dictionary.renameDecl"
 
@@ -529,12 +534,13 @@ createMethodStubDecl = createStubDecl
 
 createStubDecl :: Pattern a -> a -> Ident -> (a, Ident) -> [(a, Ident)]
                -> Decl a
-createStubDecl t a f v us = FunctionDecl NoSpanInfo a f [createStubEquation t f v us]
+createStubDecl t a f v us =
+  FunctionDecl NoSpanInfo a f [createStubEquation t f v us]
 
 createStubEquation :: Pattern a -> Ident -> (a, Ident) -> [(a, Ident)]
                    -> Equation a
 createStubEquation t f v us =
-  mkEquation NoSpanInfo f (t : map (uncurry VariablePattern) us) $
+  mkEquation NoSpanInfo f (t : map (uncurry (VariablePattern NoSpanInfo)) us) $
     apply (uncurry mkVar v) (map (uncurry mkVar) us)
 
 superDictStubType :: QualIdent -> QualIdent -> Type -> Type
@@ -720,15 +726,15 @@ dictExports _ = return []
 
 classExports :: ModuleIdent -> ClassEnv -> Ident -> [Export]
 classExports m clsEnv cls =
-  ExportTypeWith (qDictTypeId qcls) [dictConstrId qcls] :
-    map (Export . qSuperDictStubId qcls) (superClasses qcls clsEnv) ++
-      map (Export . qDefaultMethodId qcls) (classMethods qcls clsEnv)
+  ExportTypeWith NoSpanInfo (qDictTypeId qcls) [dictConstrId qcls] :
+   map (Export NoSpanInfo . qSuperDictStubId qcls) (superClasses qcls clsEnv) ++
+    map (Export NoSpanInfo . qDefaultMethodId qcls) (classMethods qcls clsEnv)
   where qcls = qualifyWith m cls
 
 instExports :: ModuleIdent -> ClassEnv -> QualIdent -> Type -> [Export]
 instExports m clsEnv cls ty =
-  Export (qInstFunId m cls ty) :
-    map (Export . qImplMethodId m cls ty) (classMethods cls clsEnv)
+  Export NoSpanInfo (qInstFunId m cls ty) :
+    map (Export NoSpanInfo . qImplMethodId m cls ty) (classMethods cls clsEnv)
 
 -- -----------------------------------------------------------------------------
 -- Transforming the module
@@ -781,8 +787,8 @@ instance DictTrans Decl where
   dictTrans (FunctionDecl p      pty f eqs) =
     FunctionDecl p (transformPredType pty) f <$> mapM dictTrans eqs
   dictTrans (PatternDecl           p t rhs) = case t of
-    VariablePattern pty@(PredType ps _) v | not (Set.null ps) ->
-      dictTrans $ FunctionDecl p pty v [Equation p (FunLhs v []) rhs]
+    VariablePattern _ pty@(PredType ps _) v | not (Set.null ps) ->
+      dictTrans $ FunctionDecl p pty v [Equation p (FunLhs NoSpanInfo v []) rhs]
     _ -> withLocalDictEnv $ PatternDecl p <$> dictTrans t <*> dictTrans rhs
   dictTrans d@(FreeDecl                _ _) = return $ fmap unpredType d
   dictTrans d@(ExternalDecl            _ _) = return $ fmap unpredType d
@@ -799,13 +805,13 @@ dictTransConstrDecl tvs (ConOpDecl p evs cx ty1 op ty2) dc =
 dictTransConstrDecl _ d _ = internalError $ "Dictionary.dictTrans: " ++ show d
 
 instance DictTrans Equation where
-  dictTrans (Equation p (FunLhs f ts) rhs) = withLocalValueEnv $ do
+  dictTrans (Equation p (FunLhs _ f ts) rhs) = withLocalValueEnv $ do
     m <- getModuleIdent
     pls <- matchPredList (varType m f) $
              foldr (TypeArrow . typeOf) (typeOf rhs) ts
     ts' <- addDictArgs pls ts
     modifyValueEnv $ bindPatterns ts'
-    Equation p (FunLhs f ts') <$> dictTrans rhs
+    Equation p (FunLhs NoSpanInfo f ts') <$> dictTrans rhs
   dictTrans eq                             =
     internalError $ "Dictionary.dictTrans: " ++ show eq
 
@@ -815,43 +821,45 @@ instance DictTrans Rhs where
     internalError $ "Dictionary.dictTrans: " ++ show rhs
 
 instance DictTrans Pattern where
-  dictTrans (LiteralPattern        pty l) =
-    return $ LiteralPattern (unpredType pty) l
-  dictTrans (VariablePattern       pty v) =
-    return $ VariablePattern (unpredType pty) v
-  dictTrans (ConstructorPattern pty c ts) = do
+  dictTrans (LiteralPattern        _ pty l) =
+    return $ LiteralPattern NoSpanInfo (unpredType pty) l
+  dictTrans (VariablePattern       _ pty v) =
+    return $ VariablePattern NoSpanInfo (unpredType pty) v
+  dictTrans (ConstructorPattern _ pty c ts) = do
     pls <- matchPredList (conType c) $
              foldr (TypeArrow . typeOf) (unpredType pty) ts
-    ConstructorPattern (unpredType pty) c <$> addDictArgs pls ts
-  dictTrans (AsPattern               v t) = AsPattern v <$> dictTrans t
-  dictTrans t                             =
+    ConstructorPattern NoSpanInfo (unpredType pty) c <$> addDictArgs pls ts
+  dictTrans (AsPattern               _ v t) =
+    AsPattern NoSpanInfo v <$> dictTrans t
+  dictTrans t                               =
     internalError $ "Dictionary.dictTrans: " ++ show t
 
 instance DictTrans Expression where
-  dictTrans (Literal     pty l) = return $ Literal (unpredType pty) l
-  dictTrans (Variable    pty v) = do
+  dictTrans (Literal     _ pty l) =
+    return $ Literal NoSpanInfo (unpredType pty) l
+  dictTrans (Variable    _ pty v) = do
     pls <- matchPredList (funType v) (unpredType pty)
     es <- mapM dictArg pls
     let ty = foldr (TypeArrow . typeOf) (unpredType pty) es
-    return $ apply (Variable ty v) es
-  dictTrans (Constructor pty c) = do
+    return $ apply (Variable NoSpanInfo ty v) es
+  dictTrans (Constructor _ pty c) = do
     pls <- matchPredList (conType c) (unpredType pty)
     es <- mapM dictArg pls
     let ty = foldr (TypeArrow . typeOf) (unpredType pty) es
-    return $ apply (Constructor ty c) es
-  dictTrans (Apply       e1 e2) =
-    Apply <$> dictTrans e1 <*> dictTrans e2
-  dictTrans (Typed       e qty) =
-    Typed <$> dictTrans e <*> dictTransQualTypeExpr qty
-  dictTrans (Lambda       ts e) = withLocalValueEnv $ withLocalDictEnv $ do
+    return $ apply (Constructor NoSpanInfo ty c) es
+  dictTrans (Apply       _ e1 e2) =
+    Apply NoSpanInfo <$> dictTrans e1 <*> dictTrans e2
+  dictTrans (Typed       _ e qty) =
+    Typed NoSpanInfo <$> dictTrans e <*> dictTransQualTypeExpr qty
+  dictTrans (Lambda       _ ts e) = withLocalValueEnv $ withLocalDictEnv $ do
     ts' <- mapM dictTrans ts
     modifyValueEnv $ bindPatterns ts'
-    Lambda ts' <$> dictTrans e
-  dictTrans (Let          ds e) = withLocalValueEnv $ do
+    Lambda NoSpanInfo ts' <$> dictTrans e
+  dictTrans (Let          _ ds e) = withLocalValueEnv $ do
     modifyValueEnv $ bindDecls ds
-    Let <$> mapM dictTrans ds <*> dictTrans e
-  dictTrans (Case      ct e as) =
-    Case ct <$> dictTrans e <*> mapM dictTrans as
+    Let NoSpanInfo <$> mapM dictTrans ds <*> dictTrans e
+  dictTrans (Case      _ ct e as) =
+    Case NoSpanInfo ct <$> dictTrans e <*> mapM dictTrans as
   dictTrans e                   =
     internalError $ "Dictionary.dictTrans: " ++ show e
 
@@ -861,7 +869,7 @@ instance DictTrans Expression where
 -- TODO: Verify
 
 dictTransQualTypeExpr :: QualTypeExpr -> DTM QualTypeExpr
-dictTransQualTypeExpr (QualTypeExpr _ ty) = return $ QualTypeExpr [] ty
+dictTransQualTypeExpr (QualTypeExpr spi _ ty) = return $ QualTypeExpr spi [] ty
 
 instance DictTrans Alt where
   dictTrans (Alt p t rhs) = withLocalValueEnv $ withLocalDictEnv $ do
@@ -874,16 +882,18 @@ addDictArgs pls ts = do
   dictVars <- mapM (freshVar "_#dict" . dictType) pls
   clsEnv <- getClassEnv
   modifyDictEnv $ (++) $ dicts clsEnv $ zip pls (map (uncurry mkVar) dictVars)
-  (++) (map (uncurry VariablePattern) dictVars) <$> mapM dictTrans ts
+  (++) (map (uncurry (VariablePattern NoSpanInfo )) dictVars)
+         <$> mapM dictTrans ts
   where dicts clsEnv vs
           | null vs = vs
           | otherwise = vs ++ dicts clsEnv (concatMap (superDicts clsEnv) vs)
         superDicts clsEnv (Pred cls ty, e) =
           map (superDict cls ty e) (superClasses cls clsEnv)
         superDict cls ty e scls =
-          (Pred scls ty, Apply (superDictExpr cls scls ty) e)
+          (Pred scls ty, Apply NoSpanInfo (superDictExpr cls scls ty) e)
         superDictExpr cls scls ty =
-          Variable (superDictStubType cls scls ty) (qSuperDictStubId cls scls)
+          Variable NoSpanInfo (superDictStubType cls scls ty)
+            (qSuperDictStubId cls scls)
 
 -- The function 'dictArg' constructs the dictionary argument for a predicate
 -- from the predicates of a class method or an overloaded function. It checks
@@ -902,7 +912,8 @@ instDict :: Pred -> DTM (Expression Type)
 instDict p = instPredList p >>= flip (uncurry instFunApp) p
 
 instFunApp :: ModuleIdent -> [Pred] -> Pred -> DTM (Expression Type)
-instFunApp m pls p@(Pred cls ty) = apply (Variable ty' f) <$> mapM dictArg pls
+instFunApp m pls p@(Pred cls ty) = apply (Variable NoSpanInfo ty' f)
+  <$> mapM dictArg pls
   where f   = qInstFunId m cls ty
         ty' = foldr1 TypeArrow $ map dictType $ pls ++ [p]
 
@@ -1003,33 +1014,33 @@ instance Specialize Expression where
   specialize e = specialize' e []
 
 specialize' :: Expression Type -> [Expression Type] -> DTM (Expression Type)
-specialize' l@(Literal     _ _) es = return $ apply l es
-specialize' v@(Variable   _ v') es = do
+specialize' l@(Literal     _ _ _) es = return $ apply l es
+specialize' v@(Variable   _ _ v') es = do
   spEnv <- getSpEnv
   return $ case Map.lookup (v', f) spEnv of
-    Just f' -> apply (Variable ty' f') $ es'' ++ es'
+    Just f' -> apply (Variable NoSpanInfo ty' f') $ es'' ++ es'
     Nothing -> apply v es
   where d:es' = es
-        (Variable _ f, es'') = unapply d []
-        ty' = foldr (TypeArrow . typeOf) (typeOf $ Apply v d) es''
-specialize' c@(Constructor _ _) es = return $ apply c es
-specialize' (Typed       e qty) es = do
+        (Variable _ _ f, es'') = unapply d []
+        ty' = foldr (TypeArrow . typeOf) (typeOf $ Apply NoSpanInfo v d) es''
+specialize' c@(Constructor _ _ _) es = return $ apply c es
+specialize' (Typed       _ e qty) es = do
   e' <- specialize e
-  return $ apply (Typed e' qty) es
-specialize' (Apply       e1 e2) es = do
+  return $ apply (Typed NoSpanInfo e' qty) es
+specialize' (Apply       _ e1 e2) es = do
   e2' <- specialize e2
   specialize' e1 $ e2' : es
-specialize' (Lambda       ts e) es = do
+specialize' (Lambda       _ ts e) es = do
   e' <- specialize e
-  return $ apply (Lambda ts e') es
-specialize' (Let          ds e) es = do
+  return $ apply (Lambda NoSpanInfo ts e') es
+specialize' (Let          _ ds e) es = do
   ds' <- mapM specialize ds
   e' <- specialize e
-  return $ apply (Let ds' e') es
-specialize' (Case      ct e as) es = do
+  return $ apply (Let NoSpanInfo ds' e') es
+specialize' (Case      _ ct e as) es = do
   e' <- specialize e
   as' <- mapM specialize as
-  return $ apply (Case ct e' as') es
+  return $ apply (Case NoSpanInfo ct e' as') es
 specialize' e                   _  =
   internalError $ "Dictionary.specialize': " ++ show e
 
@@ -1059,11 +1070,11 @@ cleanupExportSpec :: ExportSpec -> DTM ExportSpec
 cleanupExportSpec (Exporting p es) = Exporting p <$> concatMapM cleanupExport es
 
 cleanupExport :: Export -> DTM [Export]
-cleanupExport e@(Export             _) = return [e]
-cleanupExport e@(ExportTypeWith tc cs) = do
+cleanupExport e@(Export             _ _) = return [e]
+cleanupExport e@(ExportTypeWith spi tc cs) = do
   tcEnv <- getTyConsEnv
   case qualLookupTypeInfo tc tcEnv of
-    [TypeClass _ _ _] -> return $ map (Export . qualifyLike tc) cs
+    [TypeClass _ _ _] -> return $ map (Export spi . qualifyLike tc) cs
     _                 -> return [e]
 cleanupExport e                        =
   internalError $ "Dictionary.cleanupExport: " ++ show e
@@ -1154,7 +1165,7 @@ dictTransIConstrDecl m tvs (ConOpDecl p evs cx ty1 op ty2) =
 dictTransIConstrDecl m tvs (RecordDecl      p evs cx c fs) =
   RecordDecl p evs [] c $
     map toFieldDecl (transformIContext m (tvs ++ evs) cx) ++ fs
-  where toFieldDecl = FieldDecl NoPos [anonId]
+  where toFieldDecl = FieldDecl NoSpanInfo [anonId]
 
 transformIContext :: ModuleIdent -> [Ident] -> Context -> [TypeExpr]
 transformIContext m tvs cx =
@@ -1171,7 +1182,7 @@ iConstrDeclFromDataConstructor :: ModuleIdent -> ValueEnv -> QualIdent
                                -> ConstrDecl
 iConstrDeclFromDataConstructor m vEnv c = case qualLookupValue c vEnv of
   [DataConstructor _ _ _ (ForAllExist n n' pty)] ->
-    ConstrDecl NoPos evs [] (unqualify c) tys
+    ConstrDecl NoSpanInfo evs [] (unqualify c) tys
     where evs = take n' $ drop n identSupply
           tys = map (fromQualType m identSupply) $ arrowArgs $ unpredType pty
   _ -> internalError $ "Dictionary.iConstrDeclFromDataConstructor: " ++ show c
@@ -1282,13 +1293,16 @@ unRenameIdentIf b = if b then unRenameIdent else id
 
 preludeError :: Type -> String -> Expression PredType
 preludeError a =
-  Apply (Variable (predType (TypeArrow stringType a)) qErrorId) . stringExpr
+  Apply NoSpanInfo (Variable NoSpanInfo
+                     (predType (TypeArrow stringType a)) qErrorId) . stringExpr
 
 stringExpr :: String -> Expression PredType
-stringExpr = foldr (consExpr . Literal (predType charType) . Char) nilExpr
+stringExpr = foldr (consExpr . Literal NoSpanInfo (predType charType) . Char)
+               nilExpr
   where
-  nilExpr = Constructor (predType stringType) qNilId
-  consExpr = Apply . Apply (Constructor (predType $ consType charType) qConsId)
+  nilExpr = Constructor NoSpanInfo (predType stringType) qNilId
+  consExpr = (Apply NoSpanInfo) . (Apply NoSpanInfo)
+    (Constructor NoSpanInfo (predType $ consType charType) qConsId)
 
 -- The function 'varType' is able to lookup both local and global identifiers.
 -- Since the environments have been qualified before, global declarations are

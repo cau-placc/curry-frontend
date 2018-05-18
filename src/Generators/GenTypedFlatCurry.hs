@@ -144,15 +144,15 @@ run env (CS.Module _ _ mid es is ds) act = S.evalState act env0
 
 -- Builds a table containing all exported identifiers from a module.
 buildTypeExports :: ModuleIdent -> CS.Export -> Set.Set Ident -> Set.Set Ident
-buildTypeExports mid (CS.ExportTypeWith tc _)
+buildTypeExports mid (CS.ExportTypeWith _ tc _)
   | isLocalIdent mid tc = Set.insert (unqualify tc)
 buildTypeExports _   _  = id
 
 -- Builds a table containing all exported identifiers from a module.
 buildValueExports :: ModuleIdent -> CS.Export -> Set.Set Ident -> Set.Set Ident
-buildValueExports mid (CS.Export             q)
+buildValueExports mid (CS.Export             _ q)
   | isLocalIdent mid q  = Set.insert (unqualify q)
-buildValueExports mid (CS.ExportTypeWith tc cs)
+buildValueExports mid (CS.ExportTypeWith _ tc cs)
   | isLocalIdent mid tc = flip (foldr Set.insert) cs
 buildValueExports _   _  = id
 

@@ -36,7 +36,7 @@ import           System.Process           (system)
 
 import Curry.Base.Ident
 import Curry.Base.Monad
-import Curry.Base.Position
+import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Base.Span
 import Curry.FlatCurry.InterfaceEquivalence (eqInterface)
@@ -202,7 +202,7 @@ importPrelude opts m@(CS.Module spi ps mid es is ds)
   where
   noImpPrelude = NoImplicitPrelude `elem` optExtensions opts
                  || m `CS.hasLanguageExtension` NoImplicitPrelude
-  preludeImp   = CS.ImportDecl NoPos preludeMIdent
+  preludeImp   = CS.ImportDecl NoSpanInfo preludeMIdent
                   False   -- qualified?
                   Nothing -- no alias
                   Nothing -- no selection of types, functions, etc.

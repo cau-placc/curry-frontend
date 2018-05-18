@@ -109,7 +109,8 @@ checkDecls tcEnv clsEnv ds = do
 bindInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
 bindInstance tcEnv clsEnv (InstanceDecl _ cx qcls inst ds) = do
   m <- getModuleIdent
-  let PredType ps _ = expandPolyType m tcEnv clsEnv $ QualTypeExpr cx inst
+  let PredType ps _ = expandPolyType m tcEnv clsEnv $
+                        QualTypeExpr NoSpanInfo cx inst
   modifyInstEnv $
     bindInstInfo (genInstIdent m tcEnv qcls inst) (m, ps, impls [] ds)
   where impls is [] = is
@@ -252,7 +253,8 @@ reportUndecidable p what doc predicate@(Pred _ ty) = do
 checkInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
 checkInstance tcEnv clsEnv (InstanceDecl spi cx cls inst _) = do
   m <- getModuleIdent
-  let PredType ps ty = expandPolyType m tcEnv clsEnv $ QualTypeExpr cx inst
+  let PredType ps ty = expandPolyType m tcEnv clsEnv $
+                         QualTypeExpr NoSpanInfo cx inst
       ocls = getOrigName m cls tcEnv
       ps' = Set.fromList [ Pred scls ty | scls <- superClasses ocls clsEnv ]
       doc = ppPred m $ Pred cls ty
@@ -276,7 +278,8 @@ checkDefault _ _ _ = ok
 checkDefaultType :: Position -> TCEnv -> ClassEnv -> TypeExpr -> INCM ()
 checkDefaultType p tcEnv clsEnv ty = do
   m <- getModuleIdent
-  let PredType _ ty' = expandPolyType m tcEnv clsEnv $ QualTypeExpr [] ty
+  let PredType _ ty' = expandPolyType m tcEnv clsEnv $
+                         QualTypeExpr NoSpanInfo [] ty
   ps <- reducePredSet p what empty clsEnv (Set.singleton $ Pred qNumId ty')
   Set.mapM_ (report . errMissingInstance m p what empty) ps
   where what = "default declaration"
@@ -315,9 +318,11 @@ instPredSet inEnv (Pred qcls ty) =
 
 genInstIdents :: ModuleIdent -> TCEnv -> Decl a -> [InstIdent]
 genInstIdents m tcEnv (DataDecl    _ tc _ _ qclss) =
-  map (flip (genInstIdent m tcEnv) $ ConstructorType $ qualify tc) qclss
+  map (flip (genInstIdent m tcEnv) $ ConstructorType NoSpanInfo $ qualify tc)
+      qclss
 genInstIdents m tcEnv (NewtypeDecl _ tc _ _ qclss) =
-  map (flip (genInstIdent m tcEnv) $ ConstructorType $ qualify tc) qclss
+  map (flip (genInstIdent m tcEnv) $ ConstructorType NoSpanInfo $ qualify tc)
+      qclss
 genInstIdents m tcEnv (InstanceDecl _ _ qcls ty _) =
   [genInstIdent m tcEnv qcls ty]
 genInstIdents _ _     _                            = []

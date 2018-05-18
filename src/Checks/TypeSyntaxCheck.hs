@@ -44,6 +44,8 @@ import Base.Utils (findMultiples, findDouble)
 import Env.TypeConstructor (TCEnv)
 import Env.Type
 
+-- TODO Use span info for err messages
+
 -- In order to check type constructor applications, the compiler
 -- maintains an environment containing all known type constructors and
 -- type classes. The function 'typeSyntaxCheck' expects a type constructor
@@ -222,71 +224,72 @@ instance Rename NewConstrDecl where
   rename (NewRecordDecl p c (l, ty)) = NewRecordDecl p c . (,) l <$> rename ty
 
 instance Rename Constraint where
-  rename (Constraint cls ty) = Constraint cls <$> rename ty
+  rename (Constraint spi cls ty) = Constraint spi cls <$> rename ty
 
 instance Rename QualTypeExpr where
-  rename (QualTypeExpr cx ty) = QualTypeExpr <$> rename cx <*> rename ty
+  rename (QualTypeExpr spi cx ty) = QualTypeExpr spi <$> rename cx <*> rename ty
 
 instance Rename TypeExpr where
-  rename (ConstructorType tc) = return $ ConstructorType tc
-  rename (ApplyType ty1 ty2) = ApplyType <$> rename ty1 <*> rename ty2
-  rename (VariableType tv) = VariableType <$> rename tv
-  rename (TupleType tys) = TupleType <$> rename tys
-  rename (ListType ty) = ListType <$> rename ty
-  rename (ArrowType ty1 ty2) = ArrowType <$> rename ty1 <*> rename ty2
-  rename (ParenType ty) = ParenType <$> rename ty
-  rename (ForallType vs ty) = do
+  rename (ConstructorType spi tc) = return $ ConstructorType spi tc
+  rename (ApplyType spi ty1 ty2) = ApplyType spi <$> rename ty1 <*> rename ty2
+  rename (VariableType spi tv) = VariableType spi <$> rename tv
+  rename (TupleType spi tys) = TupleType spi <$> rename tys
+  rename (ListType spi ty) = ListType spi <$> rename ty
+  rename (ArrowType spi ty1 ty2) = ArrowType spi <$> rename ty1 <*> rename ty2
+  rename (ParenType spi ty) = ParenType spi <$> rename ty
+  rename (ForallType spi vs ty) = do
     bindVars vs
-    ForallType <$> mapM rename vs <*> rename ty
+    ForallType spi <$> mapM rename vs <*> rename ty
 
 instance Rename (Equation a) where
   rename (Equation p lhs rhs) = Equation p lhs <$> rename rhs
 
 instance Rename (Rhs a) where
-  rename (SimpleRhs p e ds) = SimpleRhs p <$> rename e <*> rename ds
-  rename (GuardedRhs es ds) = GuardedRhs <$> rename es <*> rename ds
+  rename (SimpleRhs  spi e  ds) = SimpleRhs  spi <$> rename e  <*> rename ds
+  rename (GuardedRhs spi es ds) = GuardedRhs spi <$> rename es <*> rename ds
 
 instance Rename (CondExpr a) where
-  rename (CondExpr p c e) = CondExpr p <$> rename c <*> rename e
+  rename (CondExpr spi c e) = CondExpr spi <$> rename c <*> rename e
 
 instance Rename (Expression a) where
-  rename (Literal a l) = return $ Literal a l
-  rename (Variable a v) = return $ Variable a v
-  rename (Constructor a c) = return $ Constructor a c
-  rename (Paren e) = Paren <$> rename e
-  rename (Typed e qty) = Typed <$> rename e <*> renameTypeSig qty
-  rename (Record a c fs) = Record a c <$> rename fs
-  rename (RecordUpdate e fs) = RecordUpdate <$> rename e <*> rename fs
-  rename (Tuple es) = Tuple <$> rename es
-  rename (List a es) = List a <$> rename es
-  rename (ListCompr e stmts) = ListCompr <$> rename e <*> rename stmts
-  rename (EnumFrom e) = EnumFrom <$> rename e
-  rename (EnumFromThen e1 e2) = EnumFromThen <$> rename e1 <*> rename e2
-  rename (EnumFromTo e1 e2) = EnumFromTo <$> rename e1 <*> rename e2
-  rename (EnumFromThenTo e1 e2 e3) =
-    EnumFromThenTo <$> rename e1 <*> rename e2 <*> rename e3
-  rename (UnaryMinus e) = UnaryMinus <$> rename e
-  rename (Apply e1 e2) = Apply <$> rename e1 <*> rename e2
-  rename (InfixApply e1 op e2) = flip InfixApply op <$> rename e1 <*> rename e2
-  rename (LeftSection e op) = flip LeftSection op <$> rename e
-  rename (RightSection op e) = RightSection op <$> rename e
-  rename (Lambda ts e) = Lambda ts <$> rename e
-  rename (Let ds e) = Let <$> rename ds <*> rename e
-  rename (Do stmts e) = Do <$> rename stmts <*> rename e
-  rename (IfThenElse c e1 e2) =
-    IfThenElse <$> rename c <*> rename e1 <*> rename e2
-  rename (Case ct e alts) = Case ct <$> rename e <*> rename alts
+  rename (Literal spi a l) = return $ Literal spi a l
+  rename (Variable spi a v) = return $ Variable spi a v
+  rename (Constructor spi a c) = return $ Constructor spi a c
+  rename (Paren spi e) = Paren spi <$> rename e
+  rename (Typed spi e qty) = Typed spi <$> rename e <*> renameTypeSig qty
+  rename (Record spi a c fs) = Record spi a c <$> rename fs
+  rename (RecordUpdate spi e fs) = RecordUpdate spi <$> rename e <*> rename fs
+  rename (Tuple spi es) = Tuple spi <$> rename es
+  rename (List spi a es) = List spi a <$> rename es
+  rename (ListCompr spi e stmts) = ListCompr spi <$> rename e <*> rename stmts
+  rename (EnumFrom spi e) = EnumFrom spi <$> rename e
+  rename (EnumFromThen spi e1 e2) = EnumFromThen spi <$> rename e1 <*> rename e2
+  rename (EnumFromTo spi e1 e2) = EnumFromTo spi <$> rename e1 <*> rename e2
+  rename (EnumFromThenTo spi e1 e2 e3) =
+    EnumFromThenTo spi <$> rename e1 <*> rename e2 <*> rename e3
+  rename (UnaryMinus spi e) = UnaryMinus spi <$> rename e
+  rename (Apply spi e1 e2) = Apply spi <$> rename e1 <*> rename e2
+  rename (InfixApply spi e1 op e2) =
+    flip (InfixApply spi) op <$> rename e1 <*> rename e2
+  rename (LeftSection spi e op) = flip (LeftSection spi) op <$> rename e
+  rename (RightSection spi op e) = RightSection spi op <$> rename e
+  rename (Lambda spi ts e) = Lambda spi ts <$> rename e
+  rename (Let spi ds e) = Let spi <$> rename ds <*> rename e
+  rename (Do spi stmts e) = Do spi <$> rename stmts <*> rename e
+  rename (IfThenElse spi c e1 e2) =
+    IfThenElse spi <$> rename c <*> rename e1 <*> rename e2
+  rename (Case spi ct e alts) = Case spi ct <$> rename e <*> rename alts
 
 instance Rename (Statement a) where
-  rename (StmtExpr e) = StmtExpr <$> rename e
-  rename (StmtDecl ds) = StmtDecl <$> rename ds
-  rename (StmtBind t e) = StmtBind t <$> rename e
+  rename (StmtExpr spi e) = StmtExpr spi <$> rename e
+  rename (StmtDecl spi ds) = StmtDecl spi <$> rename ds
+  rename (StmtBind spi t e) = StmtBind spi t <$> rename e
 
 instance Rename (Alt a) where
-  rename (Alt p t rhs) = Alt p t <$> rename rhs
+  rename (Alt spi t rhs) = Alt spi t <$> rename rhs
 
 instance Rename a => Rename (Field a) where
-  rename (Field p l x) = Field p l <$> rename x
+  rename (Field spi l x) = Field spi l <$> rename x
 
 instance Rename Ident where
   rename tv | isAnonId tv = renameIdent tv <$> newId
@@ -348,7 +351,7 @@ checkDecl (ClassDecl p cx cls clsvar ds) = do
   return $ ClassDecl p cx' cls clsvar ds'
 checkDecl (InstanceDecl p cx qcls inst ds) = do
   checkClass qcls
-  QualTypeExpr cx' inst' <- checkQualType $ QualTypeExpr cx inst
+  QualTypeExpr _ cx' inst' <- checkQualType $ QualTypeExpr NoSpanInfo cx inst
   checkSimpleContext cx'
   checkInstanceType p inst'
   InstanceDecl p cx' qcls inst' <$> mapM checkDecl ds
@@ -387,7 +390,7 @@ checkSimpleContext :: Context -> TSCM ()
 checkSimpleContext = mapM_ checkSimpleConstraint
 
 checkSimpleConstraint :: Constraint -> TSCM ()
-checkSimpleConstraint c@(Constraint _ ty) =
+checkSimpleConstraint c@(Constraint _ _ ty) =
   unless (isVariableType ty) $ report $ errIllegalSimpleConstraint c
 
 -- Class method's type signatures have to obey a few additional restrictions.
@@ -397,12 +400,11 @@ checkSimpleConstraint c@(Constraint _ ty) =
 checkClassMethod :: Ident -> Decl a -> TSCM ()
 checkClassMethod tv (TypeSig spi _ qty) = do
   unless (tv `elem` fv qty) $ report $ errAmbiguousType p tv
-  let QualTypeExpr cx _ = qty
+  let QualTypeExpr _ cx _ = qty
   when (tv `elem` fv cx) $ report $ errConstrainedClassVariable p tv
   where p = spanInfo2Pos spi
 checkClassMethod _ _ = ok
 
--- TODO Use span info for err messages
 checkInstanceType :: SpanInfo -> InstanceType -> TSCM ()
 checkInstanceType p inst = do
   tEnv <- getTypeEnv
@@ -442,61 +444,67 @@ checkEquation :: Equation a -> TSCM (Equation a)
 checkEquation (Equation p lhs rhs) = Equation p lhs <$> checkRhs rhs
 
 checkRhs :: Rhs a -> TSCM (Rhs a)
-checkRhs (SimpleRhs p e ds) = SimpleRhs p <$> checkExpr e <*> mapM checkDecl ds
-checkRhs (GuardedRhs es ds) = GuardedRhs  <$> mapM checkCondExpr es
-                                          <*> mapM checkDecl ds
+checkRhs (SimpleRhs  spi e  ds) = SimpleRhs  spi <$> checkExpr e
+                                                 <*> mapM checkDecl ds
+checkRhs (GuardedRhs spi es ds) = GuardedRhs spi <$> mapM checkCondExpr es
+                                                 <*> mapM checkDecl ds
 
 checkCondExpr :: CondExpr a -> TSCM (CondExpr a)
-checkCondExpr (CondExpr p g e) = CondExpr p <$> checkExpr g <*> checkExpr e
+checkCondExpr (CondExpr spi g e) = CondExpr spi <$> checkExpr g <*> checkExpr e
 
 checkExpr :: Expression a -> TSCM (Expression a)
-checkExpr l@(Literal           _ _) = return l
-checkExpr v@(Variable          _ _) = return v
-checkExpr c@(Constructor       _ _) = return c
-checkExpr (Paren                 e) = Paren <$> checkExpr e
-checkExpr (Typed             e qty) = Typed <$> checkExpr e
-                                            <*> checkQualType qty
-checkExpr (Record           a c fs) = Record a c <$> mapM checkFieldExpr fs
-checkExpr (RecordUpdate       e fs) = RecordUpdate <$> checkExpr e
-                                                   <*> mapM checkFieldExpr fs
-checkExpr (Tuple                es) = Tuple <$> mapM checkExpr es
-checkExpr (List               a es) = List a <$> mapM checkExpr es
-checkExpr (ListCompr          e qs) = ListCompr <$> checkExpr e
-                                                <*> mapM checkStmt qs
-checkExpr (EnumFrom              e) = EnumFrom <$> checkExpr e
-checkExpr (EnumFromThen      e1 e2) = EnumFromThen <$> checkExpr e1
-                                                   <*> checkExpr e2
-checkExpr (EnumFromTo        e1 e2) = EnumFromTo <$> checkExpr e1
-                                                 <*> checkExpr e2
-checkExpr (EnumFromThenTo e1 e2 e3) = EnumFromThenTo <$> checkExpr e1
-                                                     <*> checkExpr e2
-                                                     <*> checkExpr e3
-checkExpr (UnaryMinus            e) = UnaryMinus <$> checkExpr e
-checkExpr (Apply             e1 e2) = Apply <$> checkExpr e1 <*> checkExpr e2
-checkExpr (InfixApply     e1 op e2) = InfixApply <$> checkExpr e1
-                                                 <*> return op
-                                                 <*> checkExpr e2
-checkExpr (LeftSection        e op) = flip LeftSection op <$> checkExpr e
-checkExpr (RightSection       op e) = RightSection op <$> checkExpr e
-checkExpr (Lambda             ts e) = Lambda ts <$> checkExpr e
-checkExpr (Let                ds e) = Let <$> mapM checkDecl ds <*> checkExpr e
-checkExpr (Do                sts e) = Do <$> mapM checkStmt sts <*> checkExpr e
-checkExpr (IfThenElse     e1 e2 e3) = IfThenElse <$> checkExpr e1
-                                                 <*> checkExpr e2
-                                                 <*> checkExpr e3
-checkExpr (Case          ct e alts) = Case ct <$> checkExpr e
-                                              <*> mapM checkAlt alts
+checkExpr l@(Literal             _ _ _) = return l
+checkExpr v@(Variable            _ _ _) = return v
+checkExpr c@(Constructor         _ _ _) = return c
+checkExpr (Paren                 spi e) = Paren spi <$> checkExpr e
+checkExpr (Typed             spi e qty) = Typed spi <$> checkExpr e
+                                                    <*> checkQualType qty
+checkExpr (Record           spi a c fs) =
+  Record spi a c <$> mapM checkFieldExpr fs
+checkExpr (RecordUpdate       spi e fs) =
+  RecordUpdate spi <$> checkExpr e <*> mapM checkFieldExpr fs
+checkExpr (Tuple                spi es) = Tuple spi <$> mapM checkExpr es
+checkExpr (List               spi a es) = List spi a <$> mapM checkExpr es
+checkExpr (ListCompr          spi e qs) = ListCompr spi <$> checkExpr e
+                                                        <*> mapM checkStmt qs
+checkExpr (EnumFrom              spi e) = EnumFrom spi <$> checkExpr e
+checkExpr (EnumFromThen      spi e1 e2) = EnumFromThen spi <$> checkExpr e1
+                                                           <*> checkExpr e2
+checkExpr (EnumFromTo        spi e1 e2) = EnumFromTo spi <$> checkExpr e1
+                                                         <*> checkExpr e2
+checkExpr (EnumFromThenTo spi e1 e2 e3) = EnumFromThenTo spi <$> checkExpr e1
+                                                             <*> checkExpr e2
+                                                             <*> checkExpr e3
+checkExpr (UnaryMinus            spi e) = UnaryMinus spi <$> checkExpr e
+checkExpr (Apply             spi e1 e2) = Apply spi <$> checkExpr e1
+                                                    <*> checkExpr e2
+checkExpr (InfixApply     spi e1 op e2) = InfixApply spi <$> checkExpr e1
+                                                         <*> return op
+                                                         <*> checkExpr e2
+checkExpr (LeftSection        spi e op) =
+  flip (LeftSection spi) op <$> checkExpr e
+checkExpr (RightSection       spi op e) = RightSection spi op <$> checkExpr e
+checkExpr (Lambda             spi ts e) = Lambda spi ts <$> checkExpr e
+checkExpr (Let                spi ds e) = Let spi <$> mapM checkDecl ds
+                                                  <*> checkExpr e
+checkExpr (Do                spi sts e) = Do spi <$> mapM checkStmt sts
+                                                 <*> checkExpr e
+checkExpr (IfThenElse     spi e1 e2 e3) = IfThenElse spi <$> checkExpr e1
+                                                         <*> checkExpr e2
+                                                         <*> checkExpr e3
+checkExpr (Case          spi ct e alts) = Case spi ct <$> checkExpr e
+                                                      <*> mapM checkAlt alts
 
 checkStmt :: Statement a -> TSCM (Statement a)
-checkStmt (StmtExpr   e) = StmtExpr <$> checkExpr e
-checkStmt (StmtBind t e) = StmtBind t <$> checkExpr e
-checkStmt (StmtDecl  ds) = StmtDecl <$> mapM checkDecl ds
+checkStmt (StmtExpr spi   e) = StmtExpr spi   <$> checkExpr e
+checkStmt (StmtBind spi t e) = StmtBind spi t <$> checkExpr e
+checkStmt (StmtDecl spi  ds) = StmtDecl spi   <$> mapM checkDecl ds
 
 checkAlt :: Alt a -> TSCM (Alt a)
-checkAlt (Alt p t rhs) = Alt p t <$> checkRhs rhs
+checkAlt (Alt spi t rhs) = Alt spi t <$> checkRhs rhs
 
 checkFieldExpr :: Field (Expression a) -> TSCM (Field (Expression a))
-checkFieldExpr (Field p l e) = Field p l <$> checkExpr e
+checkFieldExpr (Field spi l e) = Field spi l <$> checkExpr e
 
 -- The parser cannot distinguish unqualified nullary type constructors
 -- and type variables. Therefore, if the compiler finds an unbound
@@ -504,29 +512,29 @@ checkFieldExpr (Field p l e) = Field p l <$> checkExpr e
 -- interpret the identifier as such.
 
 checkQualType :: QualTypeExpr -> TSCM QualTypeExpr
-checkQualType (QualTypeExpr cx ty) = do
+checkQualType (QualTypeExpr spi cx ty) = do
   ty' <- checkType ty
   cx' <- checkClosedContext (fv ty') cx
-  return $ QualTypeExpr cx' ty'
+  return $ QualTypeExpr spi cx' ty'
 
 checkClosedContext :: [Ident] -> Context -> TSCM Context
 checkClosedContext tvs cx = do
   cx' <- checkContext cx
-  mapM_ (\(Constraint _ ty) -> checkClosed tvs ty) cx'
+  mapM_ (\(Constraint _ _ ty) -> checkClosed tvs ty) cx'
   return cx'
 
 checkContext :: Context -> TSCM Context
 checkContext = mapM checkConstraint
 
 checkConstraint :: Constraint -> TSCM Constraint
-checkConstraint c@(Constraint qcls ty) = do
+checkConstraint c@(Constraint spi qcls ty) = do
   checkClass qcls
   ty' <- checkType ty
   unless (isVariableType $ rootType ty') $ report $ errIllegalConstraint c
-  return $ Constraint qcls ty'
+  return $ Constraint spi qcls ty'
   where
-    rootType (ApplyType ty' _) = ty'
-    rootType ty'               = ty'
+    rootType (ApplyType _ ty' _) = ty'
+    rootType ty'                 = ty'
 
 checkClass :: QualIdent -> TSCM ()
 checkClass qcls = do
@@ -548,13 +556,13 @@ checkClosedType tvs ty = do
   return ty'
 
 checkType :: TypeExpr -> TSCM TypeExpr
-checkType c@(ConstructorType tc) = do
+checkType c@(ConstructorType spi tc) = do
   m <- getModuleIdent
   tEnv <- getTypeEnv
   case qualLookupTypeKind tc tEnv of
     []
       | isQTupleId tc -> return c
-      | not (isQualified tc) -> return $ VariableType $ unqualify tc
+      | not (isQualified tc) -> return $ VariableType spi $ unqualify tc
       | otherwise -> report (errUndefinedType tc) >> return c
     [Class _ _] -> report (errUndefinedType tc) >> return c
     [_] -> return c
@@ -562,26 +570,28 @@ checkType c@(ConstructorType tc) = do
       [Class _ _] -> report (errUndefinedType tc) >> return c
       [_] -> return c
       _ -> report (errAmbiguousIdent tc $ map origName tks) >> return c
-checkType (ApplyType ty1 ty2) = ApplyType  <$> checkType ty1 <*> checkType ty2
-checkType v@(VariableType tv)
+checkType (ApplyType spi ty1 ty2) = ApplyType spi <$> checkType ty1
+                                                  <*> checkType ty2
+checkType v@(VariableType spi tv)
   | isAnonId tv = return v
-  | otherwise   = checkType $ ConstructorType (qualify tv)
-checkType (TupleType     tys) = TupleType  <$> mapM checkType tys
-checkType (ListType       ty) = ListType   <$> checkType ty
-checkType (ArrowType ty1 ty2) = ArrowType  <$> checkType ty1 <*> checkType ty2
-checkType (ParenType      ty) = ParenType  <$> checkType ty
-checkType (ForallType  vs ty) = ForallType vs <$> checkType ty
+  | otherwise   = checkType $ ConstructorType  spi (qualify tv)
+checkType (TupleType     spi tys) = TupleType  spi    <$> mapM checkType tys
+checkType (ListType       spi ty) = ListType   spi    <$> checkType ty
+checkType (ArrowType spi ty1 ty2) = ArrowType  spi    <$> checkType ty1
+                                                      <*> checkType ty2
+checkType (ParenType      spi ty) = ParenType  spi    <$> checkType ty
+checkType (ForallType  spi vs ty) = ForallType spi vs <$> checkType ty
 
 checkClosed :: [Ident] -> TypeExpr -> TSCM ()
-checkClosed _   (ConstructorType _) = ok
-checkClosed tvs (ApplyType ty1 ty2) = mapM_ (checkClosed tvs) [ty1, ty2]
-checkClosed tvs (VariableType   tv) =
+checkClosed _   (ConstructorType _ _) = ok
+checkClosed tvs (ApplyType _ ty1 ty2) = mapM_ (checkClosed tvs) [ty1, ty2]
+checkClosed tvs (VariableType   _ tv) =
   when (isAnonId tv || tv `notElem` tvs) $ report $ errUnboundVariable tv
-checkClosed tvs (TupleType     tys) = mapM_ (checkClosed tvs) tys
-checkClosed tvs (ListType       ty) = checkClosed tvs ty
-checkClosed tvs (ArrowType ty1 ty2) = mapM_ (checkClosed tvs) [ty1, ty2]
-checkClosed tvs (ParenType      ty) = checkClosed tvs ty
-checkClosed tvs (ForallType  vs ty) = checkClosed (tvs ++ vs) ty
+checkClosed tvs (TupleType     _ tys) = mapM_ (checkClosed tvs) tys
+checkClosed tvs (ListType       _ ty) = checkClosed tvs ty
+checkClosed tvs (ArrowType _ ty1 ty2) = mapM_ (checkClosed tvs) [ty1, ty2]
+checkClosed tvs (ParenType      _ ty) = checkClosed tvs ty
+checkClosed tvs (ForallType  _ vs ty) = checkClosed (tvs ++ vs) ty
 
 checkUsedExtension :: Position -> String -> KnownExtension -> TSCM ()
 checkUsedExtension pos msg ext = do
@@ -667,14 +677,14 @@ errUnboundVariable tv = posMessage tv $ hsep $ map text
   [ "Unbound type variable", idName tv ]
 
 errIllegalConstraint :: Constraint -> Message
-errIllegalConstraint c@(Constraint qcls _) = posMessage qcls $ vcat
+errIllegalConstraint c@(Constraint _ qcls _) = posMessage qcls $ vcat
   [ text "Illegal class constraint" <+> ppConstraint c
   , text "Constraints must be of the form C u or C (u t1 ... tn),"
   , text "where C is a type class, u is a type variable and t1, ..., tn are types."
   ]
 
 errIllegalSimpleConstraint :: Constraint -> Message
-errIllegalSimpleConstraint c@(Constraint qcls _) = posMessage qcls $ vcat
+errIllegalSimpleConstraint c@(Constraint _ qcls _) = posMessage qcls $ vcat
   [ text "Illegal class constraint" <+> ppConstraint c
   , text "Constraints in class and instance declarations must be of"
   , text "the form C u, where C is a type class and u is a type variable."

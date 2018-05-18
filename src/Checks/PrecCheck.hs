@@ -31,6 +31,7 @@ import           Data.List                (partition)
 
 import Curry.Base.Ident
 import Curry.Base.Position
+import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
 
@@ -145,95 +146,95 @@ checkEquation (Equation p lhs rhs) =
   Equation p <$> checkLhs lhs <*> checkRhs rhs
 
 checkLhs :: Lhs a -> PCM (Lhs a)
-checkLhs (FunLhs    f ts) = FunLhs f <$> mapM checkPattern ts
-checkLhs (OpLhs t1 op t2) =
-  flip OpLhs op <$> (checkPattern t1 >>= checkOpL op)
-                <*> (checkPattern t2 >>= checkOpR op)
-checkLhs (ApLhs   lhs ts) =
-  ApLhs <$> checkLhs lhs <*> mapM checkPattern ts
+checkLhs (FunLhs spi     f ts) = FunLhs spi f <$> mapM checkPattern ts
+checkLhs (OpLhs  spi t1 op t2) =
+  flip (OpLhs spi) op <$> (checkPattern t1 >>= checkOpL op)
+                      <*> (checkPattern t2 >>= checkOpR op)
+checkLhs (ApLhs  spi   lhs ts) =
+  ApLhs spi <$> checkLhs lhs <*> mapM checkPattern ts
 
 checkPattern :: Pattern a -> PCM (Pattern a)
-checkPattern l@(LiteralPattern        _ _) = return l
-checkPattern n@(NegativePattern       _ _) = return n
-checkPattern v@(VariablePattern       _ _) = return v
-checkPattern (ConstructorPattern   a c ts) =
-  ConstructorPattern a c <$> mapM checkPattern ts
-checkPattern (InfixPattern     a t1 op t2) = do
+checkPattern l@(LiteralPattern        _ _ _) = return l
+checkPattern n@(NegativePattern       _ _ _) = return n
+checkPattern v@(VariablePattern       _ _ _) = return v
+checkPattern (ConstructorPattern spi a c ts) =
+  ConstructorPattern spi a c <$> mapM checkPattern ts
+checkPattern (InfixPattern   spi a t1 op t2) = do
   t1' <- checkPattern t1
   t2' <- checkPattern t2
-  fixPrecT (InfixPattern a) t1' op t2'
-checkPattern (ParenPattern              t) =
-  ParenPattern <$> checkPattern t
-checkPattern (TuplePattern             ts) =
-  TuplePattern <$> mapM checkPattern ts
-checkPattern (ListPattern            a ts) =
-  ListPattern a <$> mapM checkPattern ts
-checkPattern (AsPattern               v t) =
-  AsPattern v <$> checkPattern t
-checkPattern (LazyPattern               t) =
-  LazyPattern <$> checkPattern t
-checkPattern (FunctionPattern      a f ts) =
-  FunctionPattern a f <$> mapM checkPattern ts
-checkPattern (InfixFuncPattern a t1 op t2) = do
+  fixPrecT (InfixPattern spi a) t1' op t2'
+checkPattern (ParenPattern              spi t) =
+  ParenPattern spi <$> checkPattern t
+checkPattern (TuplePattern             spi ts) =
+  TuplePattern spi <$> mapM checkPattern ts
+checkPattern (ListPattern            spi a ts) =
+  ListPattern spi a <$> mapM checkPattern ts
+checkPattern (AsPattern               spi v t) =
+  AsPattern spi v <$> checkPattern t
+checkPattern (LazyPattern               spi t) =
+  LazyPattern spi <$> checkPattern t
+checkPattern (FunctionPattern      spi a f ts) =
+  FunctionPattern spi a f <$> mapM checkPattern ts
+checkPattern (InfixFuncPattern spi a t1 op t2) = do
   t1' <- checkPattern t1
   t2' <- checkPattern t2
-  fixPrecT (InfixFuncPattern a) t1' op t2'
-checkPattern (RecordPattern       a c fs) =
-  RecordPattern a c <$> mapM (checkField checkPattern) fs
+  fixPrecT (InfixFuncPattern spi a) t1' op t2'
+checkPattern (RecordPattern       spi a c fs) =
+  RecordPattern spi a c <$> mapM (checkField checkPattern) fs
 
 checkRhs :: Rhs a -> PCM (Rhs a)
-checkRhs (SimpleRhs p e ds) = withLocalPrecEnv $
-  flip (SimpleRhs p) <$> checkDecls ds <*> checkExpr e
-checkRhs (GuardedRhs es ds) = withLocalPrecEnv $
-  (flip GuardedRhs) <$> checkDecls ds <*> mapM checkCondExpr es
+checkRhs (SimpleRhs  spi e  ds) = withLocalPrecEnv $
+  flip (SimpleRhs spi) <$> checkDecls ds <*> checkExpr e
+checkRhs (GuardedRhs spi es ds) = withLocalPrecEnv $
+  flip (GuardedRhs spi) <$> checkDecls ds <*> mapM checkCondExpr es
 
 checkCondExpr :: CondExpr a -> PCM (CondExpr a)
 checkCondExpr (CondExpr p g e) = CondExpr p <$> checkExpr g <*> checkExpr e
 
 checkExpr :: Expression a -> PCM (Expression a)
-checkExpr l@(Literal       _ _) = return l
-checkExpr v@(Variable      _ _) = return v
-checkExpr c@(Constructor   _ _) = return c
-checkExpr (Paren             e) = Paren <$> checkExpr e
-checkExpr (Typed          e ty) = flip Typed ty <$> checkExpr e
-checkExpr (Record       a c fs) = Record a c <$> mapM (checkField checkExpr) fs
-checkExpr (RecordUpdate   e fs) = RecordUpdate <$> (checkExpr e)
-                                             <*> mapM (checkField checkExpr) fs
-checkExpr (Tuple            es) = Tuple <$> mapM checkExpr es
-checkExpr (List           a es) = List a <$> mapM checkExpr es
-checkExpr (ListCompr      e qs) = withLocalPrecEnv $
-  flip ListCompr <$> mapM checkStmt qs <*> checkExpr e
-checkExpr (EnumFrom              e) = EnumFrom <$> checkExpr e
-checkExpr (EnumFromThen      e1 e2) =
-  EnumFromThen <$> checkExpr e1 <*> checkExpr e2
-checkExpr (EnumFromTo        e1 e2) =
-  EnumFromTo <$> checkExpr e1 <*> checkExpr e2
-checkExpr (EnumFromThenTo e1 e2 e3) =
-  EnumFromThenTo <$> checkExpr e1 <*> checkExpr e2 <*> checkExpr e3
-checkExpr (UnaryMinus            e) = UnaryMinus <$> checkExpr e
-checkExpr (Apply e1 e2) =
-  Apply <$> checkExpr e1 <*> checkExpr e2
-checkExpr (InfixApply e1 op e2) = do
+checkExpr l@(Literal          _ _ _) = return l
+checkExpr v@(Variable         _ _ _) = return v
+checkExpr c@(Constructor      _ _ _) = return c
+checkExpr (Paren              spi e) = Paren spi <$> checkExpr e
+checkExpr (Typed           spi e ty) = flip (Typed spi) ty <$> checkExpr e
+checkExpr (Record        spi a c fs) = Record spi a c <$> mapM (checkField checkExpr) fs
+checkExpr (RecordUpdate    spi e fs) = RecordUpdate spi <$> checkExpr e
+                                                       <*> mapM (checkField checkExpr) fs
+checkExpr (Tuple            spi es) = Tuple spi <$> mapM checkExpr es
+checkExpr (List           spi a es) = List spi a <$> mapM checkExpr es
+checkExpr (ListCompr      spi e qs) = withLocalPrecEnv $
+  flip (ListCompr spi) <$> mapM checkStmt qs <*> checkExpr e
+checkExpr (EnumFrom              spi e) = EnumFrom spi <$> checkExpr e
+checkExpr (EnumFromThen      spi e1 e2) =
+  EnumFromThen spi <$> checkExpr e1 <*> checkExpr e2
+checkExpr (EnumFromTo        spi e1 e2) =
+  EnumFromTo spi <$> checkExpr e1 <*> checkExpr e2
+checkExpr (EnumFromThenTo spi e1 e2 e3) =
+  EnumFromThenTo spi <$> checkExpr e1 <*> checkExpr e2 <*> checkExpr e3
+checkExpr (UnaryMinus            spi e) = UnaryMinus spi <$> checkExpr e
+checkExpr (Apply spi e1 e2) =
+  Apply spi <$> checkExpr e1 <*> checkExpr e2
+checkExpr (InfixApply spi e1 op e2) = do
   e1' <- checkExpr e1
   e2' <- checkExpr e2
-  fixPrec e1' op e2'
-checkExpr (LeftSection      e op) = checkExpr e >>= checkLSection op
-checkExpr (RightSection     op e) = checkExpr e >>= checkRSection op
-checkExpr (Lambda           ts e) =
-  Lambda <$> mapM checkPattern ts <*> checkExpr e
-checkExpr (Let              ds e) = withLocalPrecEnv $
-  Let <$> checkDecls ds <*> checkExpr e
-checkExpr (Do              sts e) = withLocalPrecEnv $
-  Do <$>  mapM checkStmt sts <*> checkExpr e
-checkExpr (IfThenElse   e1 e2 e3) =
-  IfThenElse <$> checkExpr e1 <*> checkExpr e2 <*> checkExpr e3
-checkExpr (Case        ct e alts) =
-  Case ct <$> checkExpr e <*> mapM checkAlt alts
+  fixPrec spi e1' op e2'
+checkExpr (LeftSection      spi e op) = checkExpr e >>= checkLSection spi op
+checkExpr (RightSection     spi op e) = checkExpr e >>= checkRSection spi op
+checkExpr (Lambda           spi ts e) =
+  Lambda spi <$> mapM checkPattern ts <*> checkExpr e
+checkExpr (Let              spi ds e) = withLocalPrecEnv $
+  Let spi <$> checkDecls ds <*> checkExpr e
+checkExpr (Do              spi sts e) = withLocalPrecEnv $
+  Do spi <$>  mapM checkStmt sts <*> checkExpr e
+checkExpr (IfThenElse   spi e1 e2 e3) =
+  IfThenElse spi <$> checkExpr e1 <*> checkExpr e2 <*> checkExpr e3
+checkExpr (Case        spi ct e alts) =
+  Case spi ct <$> checkExpr e <*> mapM checkAlt alts
 
 checkStmt :: Statement a -> PCM (Statement a)
-checkStmt (StmtExpr   e) = StmtExpr <$> checkExpr e
-checkStmt (StmtDecl  ds) = StmtDecl <$> checkDecls ds
-checkStmt (StmtBind t e) = StmtBind <$> checkPattern t <*> checkExpr e
+checkStmt (StmtExpr spi   e) = StmtExpr spi <$> checkExpr e
+checkStmt (StmtDecl spi  ds) = StmtDecl spi <$> checkDecls ds
+checkStmt (StmtBind spi t e) = StmtBind spi <$> checkPattern t <*> checkExpr e
 
 checkAlt :: Alt a -> PCM (Alt a)
 checkAlt (Alt p t rhs) = Alt p <$> checkPattern t <*> checkRhs rhs
@@ -259,56 +260,57 @@ checkField check (Field p l x) = Field p l <$> check x
 -- Note that both arguments already have been checked before 'fixPrec'
 -- is called.
 
-fixPrec :: Expression a -> InfixOp a -> Expression a -> PCM (Expression a)
-fixPrec (UnaryMinus e1) op e2 = do
+fixPrec :: SpanInfo -> Expression a -> InfixOp a -> Expression a -> PCM (Expression a)
+fixPrec spi (UnaryMinus spi' e1) op e2 = do
   OpPrec fix pr <- getOpPrec op
   if pr < 6 || pr == 6 && fix == InfixL
-    then fixRPrec (UnaryMinus e1) op e2
+    then fixRPrec spi (UnaryMinus spi' e1) op e2
     else if pr > 6
-      then fixUPrec e1 op e2
+      then fixUPrec spi e1 op e2
       else do
         report $ errAmbiguousParse "unary" (qualify minusId) (opName op)
-        return $ InfixApply (UnaryMinus e1) op e2
-fixPrec e1 op e2 = fixRPrec e1 op e2
+        return $ InfixApply spi (UnaryMinus spi' e1) op e2 -- TODO updateEndPos?
+fixPrec spi e1 op e2 = fixRPrec spi e1 op e2
 
-fixUPrec :: Expression a -> InfixOp a -> Expression a
+fixUPrec :: SpanInfo -> Expression a -> InfixOp a -> Expression a
          -> PCM (Expression a)
-fixUPrec e1 op e2@(UnaryMinus _) = do
+fixUPrec spi e1 op e2@(UnaryMinus spi' _) = do
   report $ errAmbiguousParse "operator" (opName op) (qualify minusId)
-  return $ UnaryMinus (InfixApply e1 op e2)
-fixUPrec e1 op1 e'@(InfixApply e2 op2 e3) = do
+  return $ UnaryMinus spi' (InfixApply spi e1 op e2) -- TODO updateEndPos?
+fixUPrec spi e1 op1 e'@(InfixApply spi' e2 op2 e3) = do
   OpPrec fix2 pr2 <- getOpPrec op2
   if pr2 < 6 || pr2 == 6 && fix2 == InfixL
     then do
-      left <- fixUPrec e1 op1 e2
-      return $ InfixApply left op2 e3
+      left <- fixUPrec spi e1 op1 e2
+      return $ InfixApply spi' left op2 e3  -- TODO updateEndPos?
     else if pr2 > 6
       then do
-        op <- fixRPrec e1 op1 $ InfixApply e2 op2 e3
-        return $ UnaryMinus op
+        op <- fixRPrec spi e1 op1 $ InfixApply spi' e2 op2 e3
+        return $ UnaryMinus spi op
       else do
         report $ errAmbiguousParse "unary" (qualify minusId) (opName op2)
-        return $ InfixApply (UnaryMinus e1) op1 e'
-fixUPrec e1 op e2 = return $ UnaryMinus (InfixApply e1 op e2)
+        return $ InfixApply spi' (UnaryMinus spi e1) op1 e' -- TODO updateEndPos?
+fixUPrec spi e1 op e2 = return $ UnaryMinus spi (InfixApply spi e1 op e2) -- TODO updateEndPos?
 
-fixRPrec :: Expression a -> InfixOp a -> Expression a -> PCM (Expression a)
-fixRPrec e1 op (UnaryMinus e2) = do
+fixRPrec :: SpanInfo -> Expression a -> InfixOp a -> Expression a
+         -> PCM (Expression a)
+fixRPrec spi e1 op (UnaryMinus spi' e2) = do
   OpPrec _ pr <- getOpPrec op
   unless (pr < 6) $ report $ errAmbiguousParse "operator" (opName op) (qualify minusId)
-  return $ InfixApply e1 op $ UnaryMinus e2
-fixRPrec e1 op1 (InfixApply e2 op2 e3) = do
+  return $ InfixApply spi e1 op $ UnaryMinus spi' e2 -- TODO updateEndPos?
+fixRPrec spi e1 op1 (InfixApply spi' e2 op2 e3) = do
   OpPrec fix1 pr1 <- getOpPrec op1
   OpPrec fix2 pr2 <- getOpPrec op2
   if pr1 < pr2 || pr1 == pr2 && fix1 == InfixR && fix2 == InfixR
-     then return $ InfixApply e1 op1 $ InfixApply e2 op2 e3
+     then return $ InfixApply spi e1 op1 $ InfixApply spi' e2 op2 e3 -- TODO updateEndPos?
      else if pr1 > pr2 || pr1 == pr2 && fix1 == InfixL && fix2 == InfixL
        then do
-          left <- fixPrec e1 op1 e2
-          return $ InfixApply left op2 e3
+          left <- fixPrec spi e1 op1 e2
+          return $ InfixApply spi' left op2 e3
        else do
          report $ errAmbiguousParse "operator" (opName op1) (opName op2)
-         return $ InfixApply e1 op1 $ InfixApply e2 op2 e3
-fixRPrec e1 op e2 = return $ InfixApply e1 op e2
+         return $ InfixApply spi e1 op1 $ InfixApply spi' e2 op2 e3
+fixRPrec spi e1 op e2 = return $ InfixApply spi e1 op e2
 
 -- The functions 'checkLSection' and 'checkRSection' are used for handling
 -- the precedences inside left and right sections.
@@ -318,32 +320,32 @@ fixRPrec e1 op e2 = return $ InfixApply e1 op e2
 -- associative for a left section and right associative for a right
 -- section, respectively.
 
-checkLSection :: InfixOp a -> Expression a -> PCM (Expression a)
-checkLSection op e@(UnaryMinus _) = do
+checkLSection :: SpanInfo -> InfixOp a -> Expression a -> PCM (Expression a)
+checkLSection spi op e@(UnaryMinus _ _) = do
   OpPrec fix pr <- getOpPrec op
   unless (pr < 6 || pr == 6 && fix == InfixL) $
     report $ errAmbiguousParse "unary" (qualify minusId) (opName op)
-  return $ LeftSection e op
-checkLSection op1 e@(InfixApply _ op2 _) = do
+  return $ LeftSection spi e op
+checkLSection spi op1 e@(InfixApply _ _ op2 _) = do
   OpPrec fix1 pr1 <- getOpPrec op1
   OpPrec fix2 pr2 <- getOpPrec op2
   unless (pr1 < pr2 || pr1 == pr2 && fix1 == InfixL && fix2 == InfixL) $
     report $ errAmbiguousParse "operator" (opName op1) (opName op2)
-  return $ LeftSection e op1
-checkLSection op e = return $ LeftSection e op
+  return $ LeftSection spi e op1
+checkLSection spi op e = return $ LeftSection spi e op
 
-checkRSection :: InfixOp a -> Expression a -> PCM (Expression a)
-checkRSection op e@(UnaryMinus _) = do
+checkRSection :: SpanInfo -> InfixOp a -> Expression a -> PCM (Expression a)
+checkRSection spi op e@(UnaryMinus _ _) = do
   OpPrec _ pr <- getOpPrec op
   unless (pr < 6) $ report $ errAmbiguousParse "unary" (qualify minusId) (opName op)
-  return $ RightSection op e
-checkRSection op1 e@(InfixApply _ op2 _) = do
+  return $ RightSection spi op e
+checkRSection spi op1 e@(InfixApply _ _ op2 _) = do
   OpPrec fix1 pr1 <- getOpPrec op1
   OpPrec fix2 pr2 <- getOpPrec op2
   unless (pr1 < pr2 || pr1 == pr2 && fix1 == InfixR && fix2 == InfixR) $
     report $ errAmbiguousParse "operator" (opName op1) (opName op2)
-  return $ RightSection op1 e
-checkRSection op e = return $ RightSection op e
+  return $ RightSection spi op1 e
+checkRSection spi op e = return $ RightSection spi op e
 
 -- The functions 'fixPrecT' and 'fixRPrecT' check the relative precedences
 -- of adjacent infix operators in patterns. The patterns will be reordered
@@ -357,7 +359,7 @@ checkRSection op e = return $ RightSection op e
 
 fixPrecT :: (Pattern a -> QualIdent -> Pattern a -> Pattern a)
          -> Pattern a -> QualIdent -> Pattern a -> PCM (Pattern a)
-fixPrecT infixpatt t1@(NegativePattern _ _) op t2 = do
+fixPrecT infixpatt t1@(NegativePattern _ _ _) op t2 = do
   OpPrec fix pr <- prec op <$> getPrecEnv
   unless (pr < 6 || pr == 6 && fix == InfixL) $
     report $ errInvalidParse "unary operator" minusId op
@@ -366,34 +368,34 @@ fixPrecT infixpatt t1 op t2 = fixRPrecT infixpatt t1 op t2
 
 fixRPrecT :: (Pattern a -> QualIdent -> Pattern a -> Pattern a)
           -> Pattern a -> QualIdent -> Pattern a -> PCM (Pattern a)
-fixRPrecT infixpatt t1 op t2@(NegativePattern _ _) = do
+fixRPrecT infixpatt t1 op t2@(NegativePattern _ _ _) = do
   OpPrec _ pr <- prec op <$> getPrecEnv
   unless (pr < 6) $ report $ errInvalidParse "unary operator" minusId op
   return $ infixpatt t1 op t2
-fixRPrecT infixpatt t1 op1 (InfixPattern a t2 op2 t3) = do
+fixRPrecT infixpatt t1 op1 (InfixPattern spi a t2 op2 t3) = do
   OpPrec fix1 pr1 <- prec op1 <$> getPrecEnv
   OpPrec fix2 pr2 <- prec op2 <$> getPrecEnv
   if pr1 < pr2 || pr1 == pr2 && fix1 == InfixR && fix2 == InfixR
-    then return $ infixpatt t1 op1 (InfixPattern a t2 op2 t3)
+    then return $ infixpatt t1 op1 (InfixPattern spi a t2 op2 t3)
     else if pr1 > pr2 || pr1 == pr2 && fix1 == InfixL && fix2 == InfixL
       then do
         left <- fixPrecT infixpatt t1 op1 t2
-        return $ InfixPattern a left op2 t3
+        return $ InfixPattern spi a left op2 t3
       else do
         report $ errAmbiguousParse "operator" op1 op2
-        return $ infixpatt t1 op1 (InfixPattern a t2 op2 t3)
-fixRPrecT infixpatt t1 op1 (InfixFuncPattern a t2 op2 t3) = do
+        return $ infixpatt t1 op1 (InfixPattern spi a t2 op2 t3)
+fixRPrecT infixpatt t1 op1 (InfixFuncPattern spi a t2 op2 t3) = do
   OpPrec fix1 pr1 <- prec op1 <$> getPrecEnv
   OpPrec fix2 pr2 <- prec op2 <$> getPrecEnv
   if pr1 < pr2 || pr1 == pr2 && fix1 == InfixR && fix2 == InfixR
-    then return $ infixpatt t1 op1 (InfixFuncPattern a t2 op2 t3)
+    then return $ infixpatt t1 op1 (InfixFuncPattern spi a t2 op2 t3)
     else if pr1 > pr2 || pr1 == pr2 && fix1 == InfixL && fix2 == InfixL
       then do
         left <- fixPrecT infixpatt t1 op1 t2
-        return $ InfixFuncPattern a left op2 t3
+        return $ InfixFuncPattern spi a left op2 t3
       else do
         report $ errAmbiguousParse "operator" op1 op2
-        return $ infixpatt t1 op1 (InfixFuncPattern a t2 op2 t3)
+        return $ infixpatt t1 op1 (InfixFuncPattern spi a t2 op2 t3)
 fixRPrecT infixpatt t1 op t2 = return $ infixpatt t1 op t2
 
 {-fixPrecT :: Position -> OpPrecEnv -> Pattern -> QualIdent -> Pattern
@@ -426,12 +428,12 @@ fixRPrecT _ _ t1 op t2 = InfixPattern t1 op t2-}
 -- declaration is invalid.
 
 checkOpL :: Ident -> Pattern a -> PCM (Pattern a)
-checkOpL op t@(NegativePattern _ _) = do
+checkOpL op t@(NegativePattern _ _ _) = do
   OpPrec fix pr <- prec (qualify op) <$> getPrecEnv
   unless (pr < 6 || pr == 6 && fix == InfixL) $
     report $ errInvalidParse "unary operator" minusId (qualify op)
   return t
-checkOpL op1 t@(InfixPattern _ _ op2 _) = do
+checkOpL op1 t@(InfixPattern _ _ _ op2 _) = do
   OpPrec fix1 pr1 <- prec (qualify op1) <$> getPrecEnv
   OpPrec fix2 pr2 <- prec op2 <$> getPrecEnv
   unless (pr1 < pr2 || pr1 == pr2 && fix1 == InfixL && fix2 == InfixL) $
@@ -440,11 +442,11 @@ checkOpL op1 t@(InfixPattern _ _ op2 _) = do
 checkOpL _ t = return t
 
 checkOpR :: Ident -> Pattern a -> PCM (Pattern a)
-checkOpR op t@(NegativePattern _ _) = do
+checkOpR op t@(NegativePattern _ _ _) = do
   OpPrec _ pr <- prec (qualify op)  <$> getPrecEnv
   when (pr >= 6) $ report $ errInvalidParse "unary operator" minusId (qualify op)
   return t
-checkOpR op1 t@(InfixPattern _ _ op2 _) = do
+checkOpR op1 t@(InfixPattern _ _ _ op2 _) = do
   OpPrec fix1 pr1 <- prec (qualify op1)  <$> getPrecEnv
   OpPrec fix2 pr2 <- prec op2  <$> getPrecEnv
   unless (pr1 < pr2 || pr1 == pr2 && fix1 == InfixR && fix2 == InfixR) $
@@ -454,7 +456,7 @@ checkOpR _ t = return t
 
 -- The functions 'opPrec' and 'prec' return the fixity and operator precedence
 -- of an entity. Even though precedence checking is performed after the
--- renaming phase, we have to be prepared to see ambiguous identifiers here.
+-- renaming phase, we have to be prepared to see ambiguoeus identifiers here.
 -- This may happen while checking the root of an operator definition that
 -- shadows an imported definition.
 
