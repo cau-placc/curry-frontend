@@ -175,12 +175,14 @@ verbosities = [ ( VerbQuiet , "0", "quiet" )
 -- |Type of the target file
 data TargetType
   = Tokens               -- ^ Source code tokens
+  | CommentTokens        -- ^ Source code comment tokens
   | Parsed               -- ^ Parsed source code
   | FlatCurry            -- ^ FlatCurry
   | TypedFlatCurry       -- ^ Typed FlatCurry
   | AbstractCurry        -- ^ AbstractCurry
   | UntypedAbstractCurry -- ^ Untyped AbstractCurry
   | Html                 -- ^ HTML documentation
+  | AST                  -- ^ Abstract-Syntax-Tree after checks
     deriving (Eq, Show)
 
 -- |Warnings flags
@@ -423,6 +425,8 @@ options =
   -- target types
   , targetOption Tokens               "tokens"
       "generate token stream"
+  , targetOption CommentTokens        "commentTokens"
+      "generate comment token stream"
   , targetOption Parsed               "parse-only"
       "generate source representation"
   , targetOption FlatCurry            "flat"
@@ -435,6 +439,8 @@ options =
       "generate untyped AbstractCurry"
   , targetOption Html                 "html"
       "generate html documentation"
+  , targetOption AST                  "ast"
+      "generate abstract syntax tree"
   , Option "F"  []
       (NoArg (onPrepOpts $ \ opts -> opts { ppPreprocess = True }))
       "use custom preprocessor"

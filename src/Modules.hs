@@ -43,6 +43,7 @@ import Curry.FlatCurry.InterfaceEquivalence (eqInterface)
 import Curry.Files.Filenames
 import Curry.Files.PathUtils
 import Curry.Syntax.InterfaceEquivalence
+import Curry.Syntax.Lexer (Token(..), Category(..))
 
 import Base.Messages
 import Base.Types
@@ -86,9 +87,11 @@ import Transformations
 compileModule :: Options -> ModuleIdent -> FilePath -> CYIO ()
 compileModule opts m fn = do
   mdl <- loadAndCheckModule opts m fn
-  writeTokens opts (fst mdl)
+  writeTokens        opts (fst mdl)
+  writeCommentTokens opts (fst mdl)
   writeParsed opts mdl
   writeHtml   opts (qual mdl)
+  writeAST    opts (fst mdl, fmap (const ()) (snd mdl))
   mdl' <- expandExports opts mdl
   qmdl <- dumpWith opts CS.showModule CS.ppModule DumpQualified $ qual mdl'
   writeAbstractCurry opts qmdl
@@ -288,6 +291,18 @@ writeTokens opts env = when tokTarget $ liftIO $
   tokTarget  = Tokens `elem` optTargetTypes opts
   useSubDir  = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
 
+writeCommentTokens :: Options -> CompilerEnv -> CYIO ()
+writeCommentTokens opts env = when tokTarget $ liftIO $ (putStrLn "lol" >>
+  writeModule (useSubDir $ commentTokensName (filePath env))
+              (showTokenStream $ filter (isCommentTok . snd) (tokens env)))
+  where
+  tokTarget  = CommentTokens `elem` optTargetTypes opts
+  useSubDir  = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
+
+-- | Check if Token is LineComment or NestedComment
+isCommentTok :: Token -> Bool
+isCommentTok (Token c _) = c == NestedComment || c == LineComment
+
 -- |Output the parsed 'Module' on request
 writeParsed :: Show a => Options -> CompEnv (CS.Module a) -> CYIO ()
 writeParsed opts (env, mdl) = when srcTarget $ liftIO $
@@ -370,6 +385,15 @@ writeAbstractCurry opts (env, mdl) = do
   acyTarget  = AbstractCurry        `elem` optTargetTypes opts
   uacyTarget = UntypedAbstractCurry `elem` optTargetTypes opts
   useSubDir  = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
+
+
+writeAST :: Options -> CompEnv (CS.Module ()) -> CYIO ()
+writeAST opts (env, mdl) = when astTarget $ liftIO $
+  writeModule (useSubDir $ astName (filePath env)) (show mdl)
+  where
+  astTarget  = AST `elem` optTargetTypes opts
+  useSubDir  = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
+
 
 type Dump = (DumpLevel, CompilerEnv, String)
 

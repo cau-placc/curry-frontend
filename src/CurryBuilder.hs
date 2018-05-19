@@ -166,12 +166,14 @@ process opts idx m fn deps
 
   destFiles = [ gen fn | (t, gen) <- nameGens, t `elem` optTargetTypes opts]
   nameGens  =
-    [ (Tokens              , tgtDir . tokensName   )
-    , (Parsed              , tgtDir . sourceRepName)
-    , (FlatCurry           , tgtDir . flatName     )
-    , (TypedFlatCurry      , tgtDir . typedFlatName)
-    , (AbstractCurry       , tgtDir . acyName      )
-    , (UntypedAbstractCurry, tgtDir . uacyName     )
+    [ (Tokens              , tgtDir . tokensName       )
+    , (CommentTokens       , tgtDir . commentTokensName)
+    , (Parsed              , tgtDir . sourceRepName    )
+    , (FlatCurry           , tgtDir . flatName         )
+    , (TypedFlatCurry      , tgtDir . typedFlatName    )
+    , (AbstractCurry       , tgtDir . acyName          )
+    , (UntypedAbstractCurry, tgtDir . uacyName         )
+    , (AST                 , tgtDir . astName          )
     , (Html                , const (fromMaybe "." (optHtmlDir opts) </> htmlName m))
     ]
 
