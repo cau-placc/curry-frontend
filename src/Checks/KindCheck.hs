@@ -724,7 +724,7 @@ errRecursiveTypes (tc:tcs) = posMessage tc $
     types del [tc']      = del <> space <> text "and" <+> typePos tc'
     types _   (tc':tcs') = comma <+> typePos tc' <> types comma tcs'
     typePos tc' =
-      text (idName tc') <+> parens (text $ showLine $ idPosition tc')
+      text (idName tc') <+> parens (text $ showLine $ getPosition tc')
 
 errRecursiveClasses :: [Ident] -> Message
 errRecursiveClasses []         = internalError
@@ -739,7 +739,7 @@ errRecursiveClasses (cls:clss) = posMessage cls $
     classes del [cls']       = del <> space <> text "and" <+> classPos cls'
     classes _   (cls':clss') = comma <+> classPos cls' <> classes comma clss'
     classPos cls' =
-      text (idName cls') <+> parens (text $ showLine $ idPosition cls')
+      text (idName cls') <+> parens (text $ showLine $ getPosition cls')
 
 errNonArrowKind :: HasPosition p => p -> String -> Doc -> Kind -> Message
 errNonArrowKind p what doc k = posMessage p $ vcat

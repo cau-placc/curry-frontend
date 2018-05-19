@@ -225,12 +225,12 @@ showsPair sa sb (a,b)
   = showsString "(" . sa a . showsString "," . sb b . showsString ")"
 
 showsIdent :: Ident -> ShowS
-showsIdent (Ident p x n)
-  = showsString "(Ident " . showsPosition p . space
+showsIdent (Ident spi x n)
+  = showsString "(Ident " . showsPosition (getPosition spi) . space
   . shows x . space . shows n . showsString ")"
 
 showsQualIdent :: QualIdent -> ShowS
-showsQualIdent (QualIdent mident ident)
+showsQualIdent (QualIdent _ mident ident)
   = showsString "(QualIdent "
   . showsMaybe showsModuleIdent mident
   . space
@@ -238,9 +238,9 @@ showsQualIdent (QualIdent mident ident)
   . showsString ")"
 
 showsModuleIdent :: ModuleIdent -> ShowS
-showsModuleIdent (ModuleIdent pos ss)
+showsModuleIdent (ModuleIdent spi ss)
   = showsString "(ModuleIdent "
-  . showsPosition pos . space
+  . showsPosition (getPosition spi) . space
   . showsList (showsQuotes showsString) ss
   . showsString ")"
 

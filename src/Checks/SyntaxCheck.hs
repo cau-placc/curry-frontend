@@ -704,7 +704,7 @@ checkLhs p (FunLhs    spi f ts) = FunLhs spi f <$> mapM (checkPattern p) ts
 checkLhs p (OpLhs spi t1 op t2) = do
   let wrongCalls = concatMap (checkParenPattern (Just $ qualify op)) [t1,t2]
   unless (null wrongCalls) $ report $ errInfixWithoutParens
-    (idPosition op) wrongCalls
+    (getPosition op) wrongCalls
   flip (OpLhs spi) op <$> checkPattern p t1 <*> checkPattern p t2
 checkLhs p (ApLhs   spi lhs ts) =
   ApLhs spi <$> checkLhs p lhs <*> mapM (checkPattern p) ts
@@ -935,7 +935,7 @@ checkVariable :: SpanInfo -> a -> QualIdent -> SCM (Expression a)
 checkVariable spi a v
     -- anonymous free variable
   | isAnonId (unqualify v) = do
-    checkAnonFreeVarsExtension $ qidPosition v
+    checkAnonFreeVarsExtension $ getPosition v
     (\n -> Variable spi a $ updQualIdent id (flip renameIdent n) v) <$> newId
     -- return $ Variable v
     -- normal variable
@@ -975,7 +975,7 @@ checkRecordExpr _ spi c [] = do
                          else do report $ errAmbiguousData rs c
                                  return $ Record spi () c []
 checkRecordExpr p spi c fs =
-  checkExpr p (RecordUpdate spi (Constructor (fromSrcSpan (qIdent2Span c)) () c)
+  checkExpr p (RecordUpdate spi (Constructor (getSpanInfo c) () c)
                 fs)
 
 checkRecordUpdExpr :: SpanInfo -> SpanInfo -> Expression ()
@@ -1406,4 +1406,4 @@ errInfixWithoutParens p calls = posMessage p $
   where
   showCall (q1, q2) = showWithPos q1 <+> text "calls" <+> showWithPos q2
   showWithPos q =  text (qualName q)
-               <+> parens (text $ showLine $ qidPosition q)
+               <+> parens (text $ showLine $ getPosition q)

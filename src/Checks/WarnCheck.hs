@@ -537,8 +537,8 @@ warnAliasNameClash []         = internalError
   "WarnCheck.warnAliasNameClash: empty list"
 warnAliasNameClash mids = posMessage (head mids) $ text
   "Overlapping module aliases" $+$ nest 2 (vcat (map myppAlias mids))
-  where myppAlias mid@(ModuleIdent pos _) =
-          ppLine pos <> text ":" <+> text (escModuleName mid)
+  where myppAlias mid =
+          ppLine (getPosition mid) <> text ":" <+> text (escModuleName mid)
 
 -- -----------------------------------------------------------------------------
 -- Check for overlapping/unreachable and non-exhaustive case alternatives

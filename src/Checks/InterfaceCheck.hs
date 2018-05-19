@@ -280,8 +280,8 @@ checkValueInfo what check p x = do
   where p' = getPosition p
 
 checkImported :: (ModuleIdent -> Ident -> IC ()) -> QualIdent -> IC ()
-checkImported _ (QualIdent Nothing  _) = ok
-checkImported f (QualIdent (Just m) x) = f m x
+checkImported _ (QualIdent _ Nothing  _) = ok
+checkImported f (QualIdent _ (Just m) x) = f m x
 
 -- ---------------------------------------------------------------------------
 -- Error messages

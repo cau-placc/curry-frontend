@@ -32,6 +32,7 @@ import           Data.List                (partition)
 import Curry.Base.Ident
 import Curry.Base.Position
 import Curry.Base.SpanInfo
+import Curry.Base.Span
 import Curry.Base.Pretty
 import Curry.Syntax
 
@@ -159,10 +160,12 @@ checkPattern n@(NegativePattern       _ _ _) = return n
 checkPattern v@(VariablePattern       _ _ _) = return v
 checkPattern (ConstructorPattern spi a c ts) =
   ConstructorPattern spi a c <$> mapM checkPattern ts
-checkPattern (InfixPattern   spi a t1 op t2) = do
+checkPattern (InfixPattern   _ a t1 op t2) = do
   t1' <- checkPattern t1
   t2' <- checkPattern t2
-  fixPrecT (InfixPattern spi a) t1' op t2'
+  fixPrecT mkInfixPattern t1' op t2'
+  where mkInfixPattern t1'' op'' t2'' =
+          InfixPattern (t1'' @+@ t2'') a t1'' op'' t2''
 checkPattern (ParenPattern              spi t) =
   ParenPattern spi <$> checkPattern t
 checkPattern (TuplePattern             spi ts) =
@@ -175,10 +178,12 @@ checkPattern (LazyPattern               spi t) =
   LazyPattern spi <$> checkPattern t
 checkPattern (FunctionPattern      spi a f ts) =
   FunctionPattern spi a f <$> mapM checkPattern ts
-checkPattern (InfixFuncPattern spi a t1 op t2) = do
+checkPattern (InfixFuncPattern _ a t1 op t2) = do
   t1' <- checkPattern t1
   t2' <- checkPattern t2
-  fixPrecT (InfixFuncPattern spi a) t1' op t2'
+  fixPrecT mkInfixFuncPattern t1' op t2'
+  where mkInfixFuncPattern t1'' op'' t2'' =
+          InfixFuncPattern (t1'' @+@ t2'') a t1'' op'' t2''
 checkPattern (RecordPattern       spi a c fs) =
   RecordPattern spi a c <$> mapM (checkField checkPattern) fs
 
@@ -266,47 +271,49 @@ fixPrec spi (UnaryMinus spi' e1) op e2 = do
   if pr < 6 || pr == 6 && fix == InfixL
     then fixRPrec spi (UnaryMinus spi' e1) op e2
     else if pr > 6
-      then fixUPrec spi e1 op e2
+      then fixUPrec spi' e1 op e2
       else do
         report $ errAmbiguousParse "unary" (qualify minusId) (opName op)
-        return $ InfixApply spi (UnaryMinus spi' e1) op e2 -- TODO updateEndPos?
+        return $ InfixApply spi (UnaryMinus spi' e1) op e2
 fixPrec spi e1 op e2 = fixRPrec spi e1 op e2
 
 fixUPrec :: SpanInfo -> Expression a -> InfixOp a -> Expression a
          -> PCM (Expression a)
 fixUPrec spi e1 op e2@(UnaryMinus spi' _) = do
   report $ errAmbiguousParse "operator" (opName op) (qualify minusId)
-  return $ UnaryMinus spi' (InfixApply spi e1 op e2) -- TODO updateEndPos?
+  return $ UnaryMinus spi' (InfixApply spi e1 op e2)
 fixUPrec spi e1 op1 e'@(InfixApply spi' e2 op2 e3) = do
   OpPrec fix2 pr2 <- getOpPrec op2
   if pr2 < 6 || pr2 == 6 && fix2 == InfixL
     then do
       left <- fixUPrec spi e1 op1 e2
-      return $ InfixApply spi' left op2 e3  -- TODO updateEndPos?
+      return $ InfixApply (left @+@ e3) left op2 e3
     else if pr2 > 6
       then do
         op <- fixRPrec spi e1 op1 $ InfixApply spi' e2 op2 e3
-        return $ UnaryMinus spi op
+        return $ updateEndPos $ UnaryMinus spi' op
       else do
         report $ errAmbiguousParse "unary" (qualify minusId) (opName op2)
-        return $ InfixApply spi' (UnaryMinus spi e1) op1 e' -- TODO updateEndPos?
-fixUPrec spi e1 op e2 = return $ UnaryMinus spi (InfixApply spi e1 op e2) -- TODO updateEndPos?
+        let left = updateEndPos (UnaryMinus spi' e1)
+        return $ InfixApply (left @+@ e') left op1 e'
+fixUPrec spi e1 op e2 = return $ updateEndPos $ UnaryMinus spi
+  (InfixApply (e1 @+@ e2) e1 op e2)
 
 fixRPrec :: SpanInfo -> Expression a -> InfixOp a -> Expression a
          -> PCM (Expression a)
 fixRPrec spi e1 op (UnaryMinus spi' e2) = do
   OpPrec _ pr <- getOpPrec op
   unless (pr < 6) $ report $ errAmbiguousParse "operator" (opName op) (qualify minusId)
-  return $ InfixApply spi e1 op $ UnaryMinus spi' e2 -- TODO updateEndPos?
+  return $ InfixApply spi e1 op $ UnaryMinus spi' e2
 fixRPrec spi e1 op1 (InfixApply spi' e2 op2 e3) = do
   OpPrec fix1 pr1 <- getOpPrec op1
   OpPrec fix2 pr2 <- getOpPrec op2
   if pr1 < pr2 || pr1 == pr2 && fix1 == InfixR && fix2 == InfixR
-     then return $ InfixApply spi e1 op1 $ InfixApply spi' e2 op2 e3 -- TODO updateEndPos?
+     then return $ InfixApply spi e1 op1 $ InfixApply spi' e2 op2 e3
      else if pr1 > pr2 || pr1 == pr2 && fix1 == InfixL && fix2 == InfixL
        then do
-          left <- fixPrec spi e1 op1 e2
-          return $ InfixApply spi' left op2 e3
+          left <- fixPrec (e1 @+@ e2) e1 op1 e2
+          return $ InfixApply (left @+@ e3) left op2 e3
        else do
          report $ errAmbiguousParse "operator" (opName op1) (opName op2)
          return $ InfixApply spi e1 op1 $ InfixApply spi' e2 op2 e3
@@ -380,7 +387,7 @@ fixRPrecT infixpatt t1 op1 (InfixPattern spi a t2 op2 t3) = do
     else if pr1 > pr2 || pr1 == pr2 && fix1 == InfixL && fix2 == InfixL
       then do
         left <- fixPrecT infixpatt t1 op1 t2
-        return $ InfixPattern spi a left op2 t3
+        return $ InfixPattern (left @+@ t3) a left op2 t3
       else do
         report $ errAmbiguousParse "operator" op1 op2
         return $ infixpatt t1 op1 (InfixPattern spi a t2 op2 t3)
@@ -392,7 +399,7 @@ fixRPrecT infixpatt t1 op1 (InfixFuncPattern spi a t2 op2 t3) = do
     else if pr1 > pr2 || pr1 == pr2 && fix1 == InfixL && fix2 == InfixL
       then do
         left <- fixPrecT infixpatt t1 op1 t2
-        return $ InfixFuncPattern spi a left op2 t3
+        return $ InfixFuncPattern (left @+@ t3) a left op2 t3
       else do
         report $ errAmbiguousParse "operator" op1 op2
         return $ infixpatt t1 op1 (InfixFuncPattern spi a t2 op2 t3)
@@ -471,6 +478,11 @@ prec op env = case qualLookupP op env of
   [] -> defaultP
   PrecInfo _ p : _ -> p
 
+
+-- Combine two entities with SpanInfo to a new SpanInfo (discarding info points)
+(@+@) :: (HasSpanInfo a, HasSpanInfo b) => a -> b -> SpanInfo
+a @+@ b = fromSrcSpan (combineSpans (getSrcSpan a) (getSrcSpan b))
+
 -- ---------------------------------------------------------------------------
 -- Error messages
 -- ---------------------------------------------------------------------------
@@ -489,11 +501,12 @@ errMultiplePrecedence (op:ops) = posMessage op $
 errInvalidParse :: String -> Ident -> QualIdent -> Message
 errInvalidParse what op1 op2 = posMessage op1 $ hsep $ map text
   [ "Invalid use of", what, escName op1, "with", escQualName op2, "in"
-  , showLine $ qidPosition op2]
+  , showLine $ getPosition op2]
 
 -- FIXME: Messages may have missing positions for minus operators
+-- TODO: Is this still true after span update for parser?
 
 errAmbiguousParse :: String -> QualIdent -> QualIdent -> Message
 errAmbiguousParse what op1 op2 = posMessage op1 $ hsep $ map text
   ["Ambiguous use of", what, escQualName op1, "with", escQualName op2, "in"
-  , showLine $ qidPosition op2]
+  , showLine $ getPosition op2]

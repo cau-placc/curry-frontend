@@ -419,7 +419,7 @@ checkTypeLhs = checkTypeVars "left hand side of type declaration"
 
 checkExistVars :: [Ident] -> TSCM ()
 checkExistVars evs = do
-  unless (null evs) $ checkUsedExtension (idPosition $ head evs)
+  unless (null evs) $ checkUsedExtension (getPosition $ head evs)
     "Existentially quantified types" ExistentialQuantification
   checkTypeVars "list of existentially quantified type variables" evs
 
@@ -633,7 +633,7 @@ errMultipleDeclarations is = posMessage i $
   text "Multiple declarations of" <+> text (escName i) <+> text "at:" $+$
     nest 2 (vcat $ map showPos is)
   where i = head is
-        showPos = text . showLine . idPosition
+        showPos = text . showLine . getPosition
 
 errMissingLanguageExtension :: Position -> String -> KnownExtension -> Message
 errMissingLanguageExtension p what ext = posMessage p $

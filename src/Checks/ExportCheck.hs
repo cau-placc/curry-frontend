@@ -452,7 +452,7 @@ errMultiple _    []     = internalError $
 errMultiple what (i:is) = posMessage i $
   text "Multiple exports of" <+> text what <+> text (escName i) <+> text "at:"
   $+$ nest 2 (vcat (map showPos (i:is)))
-  where showPos = text . showLine . idPosition
+  where showPos = text . showLine . getPosition
 
 errNonDataTypeOrTypeClass :: QualIdent -> Message
 errNonDataTypeOrTypeClass tc = posMessage tc $ hsep $ map text
