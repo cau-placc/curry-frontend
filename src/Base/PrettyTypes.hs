@@ -10,8 +10,12 @@
 
    TODO
 -}
-
+{-# LANGUAGE CPP #-}
 module Base.PrettyTypes where
+
+#if __GLASGOW_HASKELL__ >= 804
+import Prelude hiding ((<>))
+#endif
 
 import Data.Maybe (fromMaybe)
 import qualified Data.Set as Set (Set, toAscList)
