@@ -9,7 +9,7 @@
     and spans of a Curry source module into a separate file.
 -}
 
-module TokenStream (showTokenStream) where
+module TokenStream (showTokenStream, showCommentTokenStream) where
 
 import Data.List             (intercalate)
 
@@ -21,20 +21,46 @@ import Curry.Syntax          (Token (..), Category (..), Attributes (..))
 -- The list is split into one tuple on each line to increase readability.
 showTokenStream :: [(Span, Token)] -> String
 showTokenStream [] = "[]\n"
-showTokenStream ts = "[ " ++ intercalate "\n, " (map showST filteredTs) ++ "\n]\n"
+showTokenStream ts =
+  "[ " ++ intercalate "\n, " (map showST filteredTs) ++ "\n]\n"
   where filteredTs     = filter (not . isVirtual) ts
+        showST (sp, t) = "(" ++ showSpanAsPair sp ++ ", " ++ showToken t ++ ")"
+
+-- |Show a list of 'Span' and 'Token' tuples filtered by CommentTokens.
+-- The list is split into one tuple on each line to increase readability.
+showCommentTokenStream :: [(Span, Token)] -> String
+showCommentTokenStream [] = "[]\n"
+showCommentTokenStream ts =
+  "[ " ++ intercalate "\n, " (map showST filteredTs) ++ "\n]\n"
+  where filteredTs     = filter isComment ts
         showST (sp, t) = "(" ++ showSpan sp ++ ", " ++ showToken t ++ ")"
 
 isVirtual :: (Span, Token) -> Bool
 isVirtual (_, Token cat _) = cat `elem` [EOF, VRightBrace, VSemicolon]
 
+isComment :: (Span, Token) -> Bool
+isComment (_, Token cat _) = cat `elem` [LineComment, NestedComment]
+
 -- show 'span' as "((startLine, startColumn), (endLine, endColumn))"
+showSpanAsPair :: Span -> String
+showSpanAsPair sp =
+  "(" ++ showPosAsPair (start sp) ++ ", " ++ showPos (end sp) ++ ")"
+
+-- show 'span' as "(Span startPos endPos)"
 showSpan :: Span -> String
-showSpan sp = "(" ++ showPos (start sp) ++ ", " ++ showPos (end sp) ++ ")"
+showSpan NoSpan = "NoSpan"
+showSpan Span { start = s, end = e } =
+   "(Span " ++ showPos s ++ " " ++ showPos e ++ ")"
+
+-- show 'position' as "(Position line column)"
+showPos :: Position -> String
+showPos NoPos = "NoPos"
+showPos Position { line = l, column = c } =
+  "(Position " ++ show l++ " " ++ show c ++ ")"
 
 -- show 'Position' as "(line, column)"
-showPos :: Position -> String
-showPos p = "(" ++ show (line p) ++ ", " ++ show (column p) ++ ")"
+showPosAsPair :: Position -> String
+showPosAsPair p = "(" ++ show (line p) ++ ", " ++ show (column p) ++ ")"
 
 -- |Show tokens and their value if needed
 showToken :: Token -> String
