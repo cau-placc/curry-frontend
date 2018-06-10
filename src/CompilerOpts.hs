@@ -174,13 +174,14 @@ verbosities = [ ( VerbQuiet , "0", "quiet" )
 
 -- |Type of the target file
 data TargetType
-  = Tokens               -- ^ Source code tokens
-  | Parsed               -- ^ Parsed source code
-  | FlatCurry            -- ^ FlatCurry
-  | TypedFlatCurry       -- ^ Typed FlatCurry
-  | AbstractCurry        -- ^ AbstractCurry
-  | UntypedAbstractCurry -- ^ Untyped AbstractCurry
-  | Html                 -- ^ HTML documentation
+  = Tokens                 -- ^ Source code tokens
+  | Parsed                 -- ^ Parsed source code
+  | FlatCurry              -- ^ FlatCurry
+  | TypedFlatCurry         -- ^ Typed FlatCurry
+  | TypeAnnotatedFlatCurry -- ^ Type-annotated FlatCurry
+  | AbstractCurry          -- ^ AbstractCurry
+  | UntypedAbstractCurry   -- ^ Untyped AbstractCurry
+  | Html                   -- ^ HTML documentation
     deriving (Eq, Show)
 
 -- |Warnings flags
@@ -421,19 +422,21 @@ options =
         addFlag WarnOverlapping (wnWarnFlags opts) }))
       "do not print warnings for overlapping rules"
   -- target types
-  , targetOption Tokens               "tokens"
+  , targetOption Tokens                 "tokens"
       "generate token stream"
-  , targetOption Parsed               "parse-only"
+  , targetOption Parsed                 "parse-only"
       "generate source representation"
-  , targetOption FlatCurry            "flat"
+  , targetOption FlatCurry              "flat"
       "generate FlatCurry code"
-  , targetOption TypedFlatCurry       "typed-flat"
+  , targetOption TypedFlatCurry         "typed-flat"
       "generate typed FlatCurry code"
-  , targetOption AbstractCurry        "acy"
+  , targetOption TypeAnnotatedFlatCurry "typed-flat"
+      "generate type-annotated FlatCurry code"
+  , targetOption AbstractCurry          "acy"
       "generate typed AbstractCurry"
-  , targetOption UntypedAbstractCurry "uacy"
+  , targetOption UntypedAbstractCurry   "uacy"
       "generate untyped AbstractCurry"
-  , targetOption Html                 "html"
+  , targetOption Html                   "html"
       "generate html documentation"
   , Option "F"  []
       (NoArg (onPrepOpts $ \ opts -> opts { ppPreprocess = True }))

@@ -108,6 +108,7 @@ Library
     , Generators.GenAbstractCurry
     , Generators.GenFlatCurry
     , Generators.GenTypedFlatCurry
+    , Generators.GenTypeAnnotatedFlatCurry
     , Html.CurryHtml
     , Html.SyntaxColoring
     , IL
