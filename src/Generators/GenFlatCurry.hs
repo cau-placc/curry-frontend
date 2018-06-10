@@ -15,39 +15,39 @@ module Generators.GenFlatCurry (genFlatCurry, genFlatInterface) where
 
 import Curry.FlatCurry.Goodies
 import Curry.FlatCurry.Type
-import Curry.FlatCurry.Annotated.Goodies
-import Curry.FlatCurry.Annotated.Type
+import Curry.FlatCurry.Typed.Goodies
+import Curry.FlatCurry.Typed.Type
 
 -- transforms annotated FlatCurry code to FlatCurry code
-genFlatCurry :: AProg a -> Prog
-genFlatCurry = trAProg
+genFlatCurry :: TProg -> Prog
+genFlatCurry = trTProg
   (\name imps types funcs ops ->
     Prog name imps types (map genFlatFuncDecl funcs) ops)
 
-genFlatFuncDecl :: AFuncDecl a -> FuncDecl
-genFlatFuncDecl = trAFunc
+genFlatFuncDecl :: TFuncDecl -> FuncDecl
+genFlatFuncDecl = trTFunc
   (\name arity vis ty rule -> Func name arity vis ty $ genFlatRule rule)
 
-genFlatRule :: ARule a -> Rule
-genFlatRule = trARule
-  (\_ args e -> Rule (map fst args) $ genFlatExpr e)
+genFlatRule :: TRule -> Rule
+genFlatRule = trTRule
+  (\args e -> Rule (map fst args) $ genFlatExpr e)
   (const External)
 
-genFlatExpr :: AExpr a -> Expr
-genFlatExpr = trAExpr
+genFlatExpr :: TExpr -> Expr
+genFlatExpr = trTExpr
   (const Var)
   (const Lit)
-  (\_ ct name args -> Comb ct (fst name) args)
-  (\_ bs e -> Let (map (\(v, e') -> (fst v, e')) bs) e)
-  (\_ vs e -> Free (map fst vs) e)
-  (\_ e1 e2 -> Or e1 e2)
-  (\_ ct e bs -> Case ct e bs)
+  (\ct name args -> Comb ct (fst name) args)
+  (\bs e -> Let (map (\(v, e') -> (fst v, e')) bs) e)
+  (\vs e -> Free (map fst vs) e)
+  Or
+  Case
   (\pat e -> Branch (genFlatPattern pat) e)
-  (\_ e ty -> Typed e ty)
+  Typed
 
-genFlatPattern :: APattern a -> Pattern
-genFlatPattern = trAPattern
-  (\_ name args -> Pattern (fst name) $ map fst args)
+genFlatPattern :: TPattern -> Pattern
+genFlatPattern = trTPattern
+  (\name args -> Pattern (fst name) $ map fst args)
   (const LPattern)
 
 -- transforms a FlatCurry module to a FlatCurry interface
