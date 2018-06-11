@@ -37,7 +37,7 @@ genFlatExpr :: TExpr -> Expr
 genFlatExpr = trTExpr
   (const Var)
   (const Lit)
-  (\ct name args -> Comb ct (fst name) args)
+  (\_ ct name args -> Comb ct name args)
   (\bs e -> Let (map (\(v, e') -> (fst v, e')) bs) e)
   (\vs e -> Free (map fst vs) e)
   Or
@@ -47,7 +47,7 @@ genFlatExpr = trTExpr
 
 genFlatPattern :: TPattern -> Pattern
 genFlatPattern = trTPattern
-  (\name args -> Pattern (fst name) $ map fst args)
+  (\_ name args -> Pattern name $ map fst args)
   (const LPattern)
 
 -- transforms a FlatCurry module to a FlatCurry interface

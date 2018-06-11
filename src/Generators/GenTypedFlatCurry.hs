@@ -371,9 +371,8 @@ trAlt (IL.Alt p e) = TBranch <$> trPat p <*> trTExpr e
 -- Translate a pattern
 trPat :: IL.ConstrTerm -> FlatState TPattern
 trPat (IL.LiteralPattern        ty l) = TLPattern <$> trType ty <*> trLiteral l
-trPat (IL.ConstructorPattern ty c vs) = do
-  qty <- trType $ foldr (IL.TypeArrow . fst) ty vs
-  TPattern <$> ((\q -> (q, qty)) <$> trQualIdent c) <*> mapM (uncurry newVar) vs
+trPat (IL.ConstructorPattern ty c vs) =
+  TPattern <$> trType ty <*> trQualIdent c <*> mapM (uncurry newVar) vs
 trPat (IL.VariablePattern        _ _) = internalError "GenTypedFlatCurry.trPat"
 
 -- Convert a case type
@@ -406,15 +405,19 @@ genCall call ty f es = do
 genTComb :: IL.Type -> QName -> [IL.Expression] -> CombType -> FlatState TExpr
 genTComb ty qid es ct = do
   ty' <- trType ty
-  TComb ct (qid, ty') <$> mapM trTExpr es
+  let ty'' = defunc ty' (length es)
+  TComb ty'' ct qid <$> mapM trTExpr es
+  where
+  defunc t               0 = t
+  defunc (FuncType _ t2) n = defunc t2 (n - 1)
+  defunc _               _ = internalError "GenTypedFlatCurry.genTComb.defunc"
 
 genApply :: TExpr -> [IL.Expression] -> FlatState TExpr
 genApply e es = do
-  ap  <- trQualIdent $ qApplyId
+  ap  <- trQualIdent qApplyId
   es' <- mapM trTExpr es
-  return $ foldl (\e1 e2 -> let FuncType ty1 ty2 = typeOf e1
-                            in TComb FuncCall (ap, FuncType (FuncType ty1 ty2)
-                                                     (FuncType ty1 ty2)) [e1, e2])
+  return $ foldl (\e1 e2 -> let FuncType _ ty2 = typeOf e1
+                            in TComb ty2 FuncCall ap [e1, e2])
              e es'
 
 -- -----------------------------------------------------------------------------
@@ -457,9 +460,10 @@ instance Normalize TRule where
   normalize (TExternal ty    s) = flip TExternal s <$> normalize ty
 
 instance Normalize TExpr where
-  normalize (TVarE  ty       v) = flip TVarE  v  <$> normalize ty
+  normalize (TVarE  ty       v) = flip TVarE  v <$> normalize ty
   normalize (TLit   ty       l) = flip TLit  l  <$> normalize ty
-  normalize (TComb     ct f es) =      TComb ct <$> normalize f
+  normalize (TComb  ty ct f es) = flip TComb ct <$> normalize ty
+                                                <*> pure f
                                                 <*> mapM normalize es
   normalize (TLet        ds e) = TLet <$> mapM normalizeBinding ds
                                       <*> normalize e
@@ -477,7 +481,8 @@ instance Normalize TBranchExpr where
   normalize (TBranch p e) = TBranch <$> normalize p <*> normalize e
 
 instance Normalize TPattern where
-  normalize (TPattern     c vs) = TPattern <$> normalize c
+  normalize (TPattern  ty c vs) = TPattern <$> normalize ty
+                                           <*> pure c
                                            <*> mapM normalize vs
   normalize (TLPattern ty    l) = flip TLPattern l <$> normalize ty
 
