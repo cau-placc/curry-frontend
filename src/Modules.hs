@@ -327,7 +327,7 @@ matchInterface ifn i = do
 
 writeFlat :: Options -> CompilerEnv -> CS.Module Type -> IL.Module -> CYIO ()
 writeFlat opts env mdl il = do
-  (_, tfc) <- dumpWith opts show (FC.ppProg . genFlatCurry) DumpTypedFlatCurry (env, tfcyProg) -- TODO ???
+  (_, tfc) <- dumpWith opts show (FC.ppProg . genFlatCurry) DumpTypedFlatCurry (env, tfcyProg)
   when tfcyTarget  $ liftIO $ FC.writeFlatCurry (useSubDir tfcyName) tfc
   when tafcyTarget $ liftIO $ FC.writeFlatCurry (useSubDir tafcyName) tafcyProg
   when fcyTarget $ do
