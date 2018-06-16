@@ -430,7 +430,7 @@ options =
       "generate FlatCurry code"
   , targetOption TypedFlatCurry         "typed-flat"
       "generate typed FlatCurry code"
-  , targetOption TypeAnnotatedFlatCurry "typed-flat"
+  , targetOption TypeAnnotatedFlatCurry "type-annotated-flat"
       "generate type-annotated FlatCurry code"
   , targetOption AbstractCurry          "acy"
       "generate typed AbstractCurry"
