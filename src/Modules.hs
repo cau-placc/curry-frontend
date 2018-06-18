@@ -7,9 +7,10 @@
                        2011 - 2015 Björn Peemöller
                        2016        Jan Tikovsky
                        2016 - 2017 Finn Teegen
+                       2018        Kai-Oliver Prott
     License     :  BSD-3-clause
 
-    Maintainer  :  bjp@informatik.uni-kiel.de
+    Maintainer  :  fte@informatik.uni-kiel.de
     Stability   :  experimental
     Portability :  portable
 

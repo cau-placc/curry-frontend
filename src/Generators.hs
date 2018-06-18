@@ -3,9 +3,10 @@
     Description :  Code generators
     Copyright   :  (c) 2011        Björn Peemöller
                        2017        Finn Teegen
+                       2018        Kai-Oliver Prott
     License     :  BSD-3-clause
 
-    Maintainer  :  bjp@informatik.uni-kiel.de
+    Maintainer  :  fte@informatik.uni-kiel.de
     Stability   :  experimental
     Portability :  portable
 
