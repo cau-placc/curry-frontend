@@ -28,6 +28,10 @@
 {-# LANGUAGE CPP #-}
 module Checks.KindCheck (kindCheck) where
 
+#if __GLASGOW_HASKELL__ >= 804
+import Prelude hiding ((<>))
+#endif
+
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative      ((<$>), (<*>))
 #endif

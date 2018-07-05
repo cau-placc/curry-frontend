@@ -16,6 +16,7 @@
 
 -- TODO: Use MultiParamTypeClasses ?
 
+{-# LANGUAGE CPP #-}
 module Base.Types
   ( -- * Representation of Types
     Type (..), isArrowType, arrowArity, arrowArgs, arrowBase, arrowUnapply
@@ -30,6 +31,10 @@ module Base.Types
   , unitType, boolType, charType, intType, floatType, stringType
   , listType, ioType, tupleType, typeVar, predefTypes
   ) where
+
+#if __GLASGOW_HASKELL__ >= 804
+import Prelude hiding ((<>))
+#endif
 
 import Curry.Base.Ident
 import Curry.Base.Pretty   (Pretty(..))

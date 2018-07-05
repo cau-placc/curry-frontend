@@ -22,6 +22,7 @@
     names match.
 -}
 
+{-# LANGUAGE CPP #-}
 module Env.Value
   ( ValueEnv, ValueInfo (..)
   , bindGlobalInfo, bindFun, qualBindFun, rebindFun, unbindFun
@@ -29,6 +30,10 @@ module Env.Value
   , initDCEnv, ppTypes
   , conType
   ) where
+
+#if __GLASGOW_HASKELL__ >= 804
+import Prelude hiding ((<>))
+#endif
 
 import Curry.Base.Ident
 import Curry.Base.Position

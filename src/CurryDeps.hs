@@ -16,8 +16,13 @@
     dependencies and to update programs composed of multiple modules.
 -}
 
+{-# LANGUAGE CPP #-}
 module CurryDeps
   ( Source (..), flatDeps, deps, flattenDeps, sourceDeps, moduleDeps ) where
+
+#if __GLASGOW_HASKELL__ >= 804
+import Prelude hiding ((<>))
+#endif
 
 import           Control.Monad   (foldM)
 import           Data.List       (isSuffixOf, nub)
