@@ -14,7 +14,12 @@
     This module searches for potentially irregular code and generates
     warning messages.
 -}
+{-# LANGUAGE CPP #-}
 module Checks.WarnCheck (warnCheck) where
+
+#if __GLASGOW_HASKELL__ >= 804
+import Prelude hiding ((<>))
+#endif
 
 import           Control.Monad
   (filterM, foldM_, guard, liftM, liftM2, when, unless)
