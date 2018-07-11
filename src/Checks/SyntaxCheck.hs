@@ -74,8 +74,8 @@ import Env.Value           (ValueEnv, ValueInfo (..))
 syntaxCheck :: [KnownExtension] -> TCEnv -> ValueEnv -> Module ()
             -> ((Module (), [KnownExtension]), [Message])
 syntaxCheck exts tcEnv vEnv mdl@(Module _ m _ _ ds) =
-  case findMultiples $ concatMap constrs tds of
-    []  -> case findMultiples (ls ++ fs ++ cs) of
+  case findMultiples cons of
+    []  -> case findMultiples (ls ++ fs ++ cons ++ cs) of
              []  -> runSC (checkModule mdl) state
              iss -> ((mdl, exts), map (errMultipleDeclarations m) iss)
     css -> ((mdl, exts), map errMultipleDataConstructor css)
@@ -83,6 +83,7 @@ syntaxCheck exts tcEnv vEnv mdl@(Module _ m _ _ ds) =
     tds   = filter isTypeDecl ds
     vds   = filter isValueDecl ds
     cds   = filter isClassDecl ds
+    cons  = concatMap constrs tds
     ls    = nub $ concatMap recLabels tds
     fs    = nub $ concatMap vars vds
     cs    = concatMap (concatMap methods) $ [ds' | ClassDecl _ _ _ _ ds' <- cds]
