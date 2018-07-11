@@ -569,12 +569,8 @@ checkEquationsLhs p [Equation p' lhs rhs] = do
   lhs' <- checkEqLhs p' lhs
   case lhs' of
     Left  l -> return $ funDecl' l
-    Right r -> patDecl' r >>= checkDeclLhs
+    Right r -> checkDeclLhs (PatternDecl p' r rhs)
   where funDecl' (f, lhs') = FunctionDecl p () f [Equation p' lhs' rhs]
-        patDecl' t = do
-          k <- getScopeId
-          when (k == globalScopeId) $ report $ errToplevelPattern p
-          return $ PatternDecl p' t rhs
 checkEquationsLhs _ _ = internalError "SyntaxCheck.checkEquationsLhs"
 
 checkEqLhs :: Position -> Lhs () -> SCM (Either (Ident, Lhs ()) (Pattern ()))
