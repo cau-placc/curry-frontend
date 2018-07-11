@@ -77,7 +77,7 @@ import Env.Value           (ValueEnv, ValueInfo (..))
 
 syntaxCheck :: [KnownExtension] -> TCEnv -> ValueEnv -> Module ()
             -> ((Module (), [KnownExtension]), [Message])
-syntaxCheck exts tcEnv vEnv mdl@(Module _ m _ _ ds) =
+syntaxCheck exts tcEnv vEnv mdl@(Module _ _ m _ _ ds) =
   case findMultiples cons of
     []  -> case findMultiples (ls ++ fs ++ cons ++ cs) of
              []  -> runSC (checkModule mdl) state
