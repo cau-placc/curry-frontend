@@ -5,9 +5,10 @@
                        2007        Sebastian Fischer
                        2011 - 2016 Björn Peemöller
                        2016 - 2017 Finn Teegen
+                       2018        Kai-Oliver Prott
     License     :  BSD-3-clause
 
-    Maintainer  :  bjp@informatik.uni-kiel.de
+    Maintainer  :  fte@informatik.uni-kiel.de
     Stability   :  experimental
     Portability :  portable
 
@@ -179,9 +180,10 @@ data TargetType
   | Parsed               -- ^ Parsed source code
   | FlatCurry            -- ^ FlatCurry
   | TypedFlatCurry       -- ^ Typed FlatCurry
-  | AbstractCurry        -- ^ AbstractCurry
-  | UntypedAbstractCurry -- ^ Untyped AbstractCurry
-  | Html                 -- ^ HTML documentation
+  | TypeAnnotatedFlatCurry -- ^ Type-annotated FlatCurry
+  | AbstractCurry          -- ^ AbstractCurry
+  | UntypedAbstractCurry   -- ^ Untyped AbstractCurry
+  | Html                   -- ^ HTML documentation
   | AST                  -- ^ Abstract-Syntax-Tree after checks
   | ShortAST             -- ^ Abstract-Syntax-Tree with shortened decls
     deriving (Eq, Show)
@@ -424,25 +426,27 @@ options =
         addFlag WarnOverlapping (wnWarnFlags opts) }))
       "do not print warnings for overlapping rules"
   -- target types
-  , targetOption Tokens               "tokens"
+  , targetOption Tokens                 "tokens"
       "generate token stream"
-  , targetOption Comments             "comments"
+  , targetOption Comments               "comments"
       "generate comments stream"
-  , targetOption Parsed               "parse-only"
+  , targetOption Parsed                 "parse-only"
       "generate source representation"
-  , targetOption FlatCurry            "flat"
+  , targetOption FlatCurry              "flat"
       "generate FlatCurry code"
-  , targetOption TypedFlatCurry       "typed-flat"
+  , targetOption TypedFlatCurry         "typed-flat"
       "generate typed FlatCurry code"
-  , targetOption AbstractCurry        "acy"
+  , targetOption TypeAnnotatedFlatCurry "type-annotated-flat"
+      "generate type-annotated FlatCurry code"
+  , targetOption AbstractCurry          "acy"
       "generate typed AbstractCurry"
-  , targetOption UntypedAbstractCurry "uacy"
+  , targetOption UntypedAbstractCurry   "uacy"
       "generate untyped AbstractCurry"
-  , targetOption Html                 "html"
+  , targetOption Html                   "html"
       "generate html documentation"
-  , targetOption AST                  "ast"
+  , targetOption AST                    "ast"
       "generate abstract syntax tree"
-  , targetOption ShortAST                  "short-ast"
+  , targetOption ShortAST               "short-ast"
       "generate shortened abstract syntax tree for documentation"
   , Option "F"  []
       (NoArg (onPrepOpts $ \ opts -> opts { ppPreprocess = True }))

@@ -50,7 +50,7 @@ ok = return ()
 
 -- The extension check iterates over all given pragmas in the module and
 -- gathers all extensions mentioned in a language pragma. An error is reported
--- if an extension is unkown.
+-- if an extension is unknown.
 
 checkModule :: Module a -> EXCM ()
 checkModule (Module _ ps _ _ _ _) = mapM_ checkPragma ps

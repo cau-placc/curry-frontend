@@ -4,9 +4,10 @@
     Copyright   :  (c) 2005        Martin Engelke
                        2007        Sebastian Fischer
                        2011 - 2015 Björn Peemöller
+                       2018        Kai-Oliver Prott
     License     :  BSD-3-clause
 
-    Maintainer  :  bjp@informatik.uni-kiel.de
+    Maintainer  :  fte@informatik.uni-kiel.de
     Stability   :  experimental
     Portability :  portable
 
@@ -171,6 +172,7 @@ process opts idx m fn deps
     , (Parsed              , tgtDir . sourceRepName    )
     , (FlatCurry           , tgtDir . flatName         )
     , (TypedFlatCurry      , tgtDir . typedFlatName    )
+    , (TypeAnnotatedFlatCurry, tgtDir . typeAnnFlatName)
     , (AbstractCurry       , tgtDir . acyName          )
     , (UntypedAbstractCurry, tgtDir . uacyName         )
     , (AST                 , tgtDir . astName          )
