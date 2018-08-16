@@ -92,18 +92,19 @@ compileModule opts m fn = do
   writeTokens   opts (fst mdl)
   writeComments opts (fst mdl)
   writeParsed   opts mdl
-  writeHtml     opts (qual mdl)
-  let umdl = (fst mdl, fmap (const ()) (snd mdl))
+  let qmdl = qual mdl
+  writeHtml     opts qmdl
+  let umdl = (fst qmdl, fmap (const ()) (snd qmdl))
   writeAST      opts umdl
   writeShortAST opts umdl
   mdl' <- expandExports opts mdl
-  qmdl <- dumpWith opts CS.showModule CS.ppModule DumpQualified $ qual mdl'
-  writeAbstractCurry opts qmdl
+  qmdl' <- dumpWith opts CS.showModule CS.ppModule DumpQualified $ qual mdl'
+  writeAbstractCurry opts qmdl'
   -- generate interface file
-  let intf = uncurry exportInterface qmdl
+  let intf = uncurry exportInterface qmdl'
   writeInterface opts (fst mdl') intf
   when withFlat $ do
-    ((env, il), mdl'') <- transModule opts qmdl
+    ((env, il), mdl'') <- transModule opts qmdl'
     writeFlat opts env (snd mdl'') il
   where
   withFlat = any (`elem` optTargetTypes opts) [TypedFlatCurry, FlatCurry]
