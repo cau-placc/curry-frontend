@@ -587,8 +587,8 @@ dsPat p ds (RecordPattern   pty c fs) = do
   --TODO: Rework
   let (ls, tys) = argumentTypes (unpredType pty) c vEnv
       tsMap = map field2Tuple fs
-      anonTs = map (flip VariablePattern anonId . predType) tys
-      maybeTs = map (flip lookup tsMap) ls
+  anonTs <- mapM ((uncurry VariablePattern <$>) . freshVar "_#recpat") tys
+  let maybeTs = map (flip lookup tsMap) ls
       ts = zipWith fromMaybe anonTs maybeTs
   dsPat p ds (ConstructorPattern pty c ts)
 dsPat p ds (TuplePattern          ts) =
