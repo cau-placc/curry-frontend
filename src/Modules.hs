@@ -338,10 +338,10 @@ writeFlat opts env mdl il = do
   where
   tfcyName    = typedFlatName (filePath env)
   tfcyProg    = genTypedFlatCurry env mdl il
-  tfcyTarget  = TypedFlatCurry `elem` optTargetTypes opts
+  tfcyTarget  = TypeAnnotatedFlatCurry `elem` optTargetTypes opts
   tafcyName   = typeAnnFlatName (filePath env)
   tafcyProg   = genTypeAnnotatedFlatCurry env mdl il
-  tafcyTarget = TypeAnnotatedFlatCurry `elem` optTargetTypes opts
+  tafcyTarget = TypedFlatCurry `elem` optTargetTypes opts
   fcyName     = flatName (filePath env)
   fcyProg     = genFlatCurry tfcyProg
   fcyTarget   = FlatCurry `elem` optTargetTypes opts
