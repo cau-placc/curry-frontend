@@ -6,6 +6,7 @@ Version 1.0.2 (under development)
 
   * Fixed bug with wrong type of free variables in the intermediate language.
   * Fixed bug with generated default implementations of nullary class methods.
+  * Fixed bug in desugaring of record patterns.
 
 Version 1.0.1
 =============

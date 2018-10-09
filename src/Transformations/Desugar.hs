@@ -596,8 +596,9 @@ dsPat p ds (RecordPattern      _ pty c fs) = do
   --TODO: Rework
   let (ls, tys) = argumentTypes (unpredType pty) c vEnv
       tsMap = map field2Tuple fs
-      anonTs = map (flip (VariablePattern NoSpanInfo) anonId . predType) tys
-      maybeTs = map (flip lookup tsMap) ls
+  anonTs <- mapM ((uncurry (VariablePattern NoSpanInfo) <$>) .
+                  freshVar "_#recpat") tys
+  let maybeTs = map (flip lookup tsMap) ls
       ts = zipWith fromMaybe anonTs maybeTs
   dsPat p ds (ConstructorPattern NoSpanInfo pty c ts)
 dsPat p ds (TuplePattern              _ ts) =
