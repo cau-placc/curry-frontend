@@ -152,6 +152,9 @@ trTypeDecl (NewtypeDecl _ t vs nc clss) =
   <$> trGlobalIdent t <*> getTypeVisibility t
   <*> mapM genTVarIndex vs <*> trNewConsDecl nc
   <*> mapM trQual clss
+trTypeDecl (ExternalDataDecl _ t vs) =
+  (\t' v vs' -> [CType t' v vs' [] []])
+  <$> trGlobalIdent t <*> getTypeVisibility t <*> mapM genTVarIndex vs
 trTypeDecl _                       = return []
 
 trConsDecl :: ConstrDecl -> GAC CConsDecl
