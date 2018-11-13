@@ -51,20 +51,20 @@ qual :: ModuleIdent -> TCEnv -> ValueEnv -> Module a -> Module a
 qual m tcEnv tyEnv mdl = R.runReader (qModule mdl) (QualEnv m tcEnv tyEnv)
 
 qModule :: Qual (Module a)
-qModule (Module ps m es is ds) = do
+qModule (Module spi ps m es is ds) = do
   es' <- qExportSpec es
   ds' <- mapM qDecl  ds
-  return (Module ps m es' is ds')
+  return (Module spi ps m es' is ds')
 
 qExportSpec :: Qual (Maybe ExportSpec)
 qExportSpec Nothing                 = return Nothing
 qExportSpec (Just (Exporting p es)) = (Just . Exporting p) <$> mapM qExport es
 
 qExport :: Qual Export
-qExport (Export            x) = Export <$> qIdent x
-qExport (ExportTypeWith t cs) = flip ExportTypeWith cs <$> qConstr t
-qExport (ExportTypeAll     t) = ExportTypeAll <$> qConstr t
-qExport m@(ExportModule    _) = return m
+qExport (Export            spi x) = Export spi <$> qIdent x
+qExport (ExportTypeWith spi t cs) = flip (ExportTypeWith spi) cs <$> qConstr t
+qExport (ExportTypeAll     spi t) = ExportTypeAll spi <$> qConstr t
+qExport m@(ExportModule      _ _) = return m
 
 qDecl :: Qual (Decl a)
 qDecl i@(InfixDecl          _ _ _ _) = return i
@@ -103,100 +103,112 @@ qFieldDecl :: Qual FieldDecl
 qFieldDecl (FieldDecl p fs ty) = FieldDecl p fs <$> qTypeExpr ty
 
 qConstraint :: Qual Constraint
-qConstraint (Constraint cls ty) = Constraint <$> qClass cls <*> qTypeExpr ty
+qConstraint (Constraint spi cls ty) =
+  Constraint spi <$> qClass cls <*> qTypeExpr ty
 
 qContext :: Qual Context
 qContext = mapM qConstraint
 
 qTypeExpr :: Qual TypeExpr
-qTypeExpr (ConstructorType     c) = ConstructorType <$> qConstr c
-qTypeExpr (ApplyType     ty1 ty2) = ApplyType <$> qTypeExpr ty1
+qTypeExpr (ConstructorType     spi c) = ConstructorType spi <$> qConstr c
+qTypeExpr (ApplyType     spi ty1 ty2) = ApplyType spi <$> qTypeExpr ty1
                                               <*> qTypeExpr ty2
-qTypeExpr v@(VariableType      _) = return v
-qTypeExpr (TupleType         tys) = TupleType <$> mapM qTypeExpr tys
-qTypeExpr (ListType           ty) = ListType  <$> qTypeExpr ty
-qTypeExpr (ArrowType     ty1 ty2) = ArrowType <$> qTypeExpr ty1
+qTypeExpr v@(VariableType        _ _) = return v
+qTypeExpr (TupleType         spi tys) = TupleType spi <$> mapM qTypeExpr tys
+qTypeExpr (ListType           spi ty) = ListType spi  <$> qTypeExpr ty
+qTypeExpr (ArrowType     spi ty1 ty2) = ArrowType spi <$> qTypeExpr ty1
                                               <*> qTypeExpr ty2
-qTypeExpr (ParenType          ty) = ParenType <$> qTypeExpr ty
-qTypeExpr (ForallType      vs ty) = ForallType vs <$> qTypeExpr ty
+qTypeExpr (ParenType          spi ty) = ParenType spi <$> qTypeExpr ty
+qTypeExpr (ForallType      spi vs ty) = ForallType spi vs <$> qTypeExpr ty
 
 qQualTypeExpr :: Qual QualTypeExpr
-qQualTypeExpr (QualTypeExpr cx ty) = QualTypeExpr <$> qContext cx
-                                                  <*> qTypeExpr ty
+qQualTypeExpr (QualTypeExpr spi cx ty) = QualTypeExpr spi <$> qContext cx
+                                                          <*> qTypeExpr ty
 
 qEquation :: Qual (Equation a)
 qEquation (Equation p lhs rhs) = Equation p <$> qLhs lhs <*> qRhs rhs
 
 qLhs :: Qual (Lhs a)
-qLhs (FunLhs    f ts) = FunLhs f      <$> mapM qPattern ts
-qLhs (OpLhs t1 op t2) = flip OpLhs op <$> qPattern t1 <*> qPattern t2
-qLhs (ApLhs   lhs ts) = ApLhs         <$> qLhs lhs <*> mapM qPattern ts
+qLhs (FunLhs sp    f ts) = FunLhs sp       f  <$> mapM qPattern ts
+qLhs (OpLhs sp t1 op t2) = flip (OpLhs sp) op <$> qPattern t1 <*> qPattern t2
+qLhs (ApLhs sp   lhs ts) = ApLhs sp           <$> qLhs lhs <*> mapM qPattern ts
 
 qPattern :: Qual (Pattern a)
-qPattern l@(LiteralPattern        _ _) = return l
-qPattern n@(NegativePattern       _ _) = return n
-qPattern v@(VariablePattern       _ _) = return v
-qPattern (ConstructorPattern   a c ts) = ConstructorPattern a
-                                         <$> qIdent c <*> mapM qPattern ts
-qPattern (InfixPattern     a t1 op t2) = InfixPattern a <$> qPattern t1
-                                                        <*> qIdent op
-                                                        <*> qPattern t2
-qPattern (ParenPattern              t) = ParenPattern <$> qPattern t
-qPattern (RecordPattern        a c fs) = RecordPattern a <$> qIdent c
-                                         <*> mapM (qField qPattern) fs
-qPattern (TuplePattern             ts) = TuplePattern <$> mapM qPattern ts
-qPattern (ListPattern            a ts) = ListPattern a <$> mapM qPattern ts
-qPattern (AsPattern               v t) = AsPattern v <$> qPattern t
-qPattern (LazyPattern               t) = LazyPattern <$> qPattern t
-qPattern (FunctionPattern      a f ts) = FunctionPattern a <$> qIdent f
-                                                           <*> mapM qPattern ts
-qPattern (InfixFuncPattern a t1 op t2) = InfixFuncPattern a <$> qPattern t1
-                                                            <*> qIdent op
-                                                            <*> qPattern t2
+qPattern l@(LiteralPattern          _ _ _) = return l
+qPattern n@(NegativePattern         _ _ _) = return n
+qPattern v@(VariablePattern         _ _ _) = return v
+qPattern (ConstructorPattern   spi a c ts) =
+  ConstructorPattern spi a <$> qIdent c <*> mapM qPattern ts
+qPattern (InfixPattern     spi a t1 op t2) =
+  InfixPattern spi a <$> qPattern t1 <*> qIdent op <*> qPattern t2
+qPattern (ParenPattern              spi t) = ParenPattern spi <$> qPattern t
+qPattern (RecordPattern        spi a c fs) = RecordPattern spi a <$> qIdent c
+                                          <*> mapM (qField qPattern) fs
+qPattern (TuplePattern             spi ts) =
+  TuplePattern spi <$> mapM qPattern ts
+qPattern (ListPattern            spi a ts) =
+  ListPattern spi a <$> mapM qPattern ts
+qPattern (AsPattern               spi v t) = AsPattern spi v <$> qPattern t
+qPattern (LazyPattern               spi t) = LazyPattern spi <$> qPattern t
+qPattern (FunctionPattern      spi a f ts) =
+  FunctionPattern spi a <$> qIdent f <*> mapM qPattern ts
+qPattern (InfixFuncPattern spi a t1 op t2) =
+  InfixFuncPattern spi a <$> qPattern t1 <*> qIdent op <*> qPattern t2
 
 qRhs :: Qual (Rhs a)
-qRhs (SimpleRhs p e ds) = SimpleRhs p <$> qExpr e           <*> mapM qDecl ds
-qRhs (GuardedRhs es ds) = GuardedRhs  <$> mapM qCondExpr es <*> mapM qDecl ds
+qRhs (SimpleRhs spi e ds) =
+  SimpleRhs  spi <$> qExpr e           <*> mapM qDecl ds
+qRhs (GuardedRhs spi es ds) =
+  GuardedRhs spi <$> mapM qCondExpr es <*> mapM qDecl ds
 
 qCondExpr :: Qual (CondExpr a)
 qCondExpr (CondExpr p g e) = CondExpr p <$> qExpr g <*> qExpr e
 
 qExpr :: Qual (Expression a)
-qExpr l@(Literal           _ _) = return l
-qExpr (Variable            a v) = Variable     a <$> qIdent v
-qExpr (Constructor         a c) = Constructor  a <$> qIdent c
-qExpr (Paren                 e) = Paren          <$> qExpr e
-qExpr (Typed             e qty) = Typed          <$> qExpr e
-                                                 <*> qQualTypeExpr qty
-qExpr (Record           a c fs) =
-  Record a <$> qIdent c <*> mapM (qField qExpr) fs
-qExpr (RecordUpdate       e fs) = RecordUpdate   <$> qExpr e
-                                                 <*> mapM (qField qExpr) fs
-qExpr (Tuple                es) = Tuple          <$> mapM qExpr es
-qExpr (List               a es) = List a         <$> mapM qExpr es
-qExpr (ListCompr          e qs) = ListCompr      <$> qExpr e <*> mapM qStmt qs
-qExpr (EnumFrom              e) = EnumFrom       <$> qExpr e
-qExpr (EnumFromThen      e1 e2) = EnumFromThen   <$> qExpr e1 <*> qExpr e2
-qExpr (EnumFromTo        e1 e2) = EnumFromTo     <$> qExpr e1 <*> qExpr e2
-qExpr (EnumFromThenTo e1 e2 e3) = EnumFromThenTo <$> qExpr e1 <*> qExpr e2
-                                                              <*> qExpr e3
-qExpr (UnaryMinus            e) = UnaryMinus     <$> qExpr e
-qExpr (Apply             e1 e2) = Apply          <$> qExpr e1 <*> qExpr e2
-qExpr (InfixApply     e1 op e2) = InfixApply     <$> qExpr e1 <*> qInfixOp op
-                                                              <*> qExpr e2
-qExpr (LeftSection        e op) = LeftSection  <$> qExpr e <*> qInfixOp op
-qExpr (RightSection       op e) = RightSection <$> qInfixOp op <*> qExpr e
-qExpr (Lambda             ts e) = Lambda       <$> mapM qPattern ts <*> qExpr e
-qExpr (Let                ds e) = Let <$> mapM qDecl ds  <*> qExpr e
-qExpr (Do                sts e) = Do  <$> mapM qStmt sts <*> qExpr e
-qExpr (IfThenElse     e1 e2 e3) = IfThenElse <$> qExpr e1 <*> qExpr e2
-                                                          <*> qExpr e3
-qExpr (Case            ct e as) = Case ct    <$> qExpr e <*> mapM qAlt as
+qExpr l@(Literal             _ _ _) = return l
+qExpr (Variable            spi a v) = Variable     spi a <$> qIdent v
+qExpr (Constructor         spi a c) = Constructor  spi a <$> qIdent c
+qExpr (Paren                 spi e) = Paren        spi   <$> qExpr e
+qExpr (Typed             spi e qty) = Typed        spi   <$> qExpr e
+                                                         <*> qQualTypeExpr qty
+qExpr (Record           spi a c fs) =
+  Record spi a <$> qIdent c <*> mapM (qField qExpr) fs
+qExpr (RecordUpdate       spi e fs) =
+  RecordUpdate spi <$> qExpr e <*> mapM (qField qExpr) fs
+qExpr (Tuple                spi es) = Tuple          spi <$> mapM qExpr es
+qExpr (List               spi a es) = List           spi a <$> mapM qExpr es
+qExpr (ListCompr          spi e qs) = ListCompr      spi <$> qExpr e
+                                                         <*> mapM qStmt qs
+qExpr (EnumFrom              spi e) = EnumFrom       spi <$> qExpr e
+qExpr (EnumFromThen      spi e1 e2) = EnumFromThen   spi <$> qExpr e1
+                                                         <*> qExpr e2
+qExpr (EnumFromTo        spi e1 e2) = EnumFromTo     spi <$> qExpr e1
+                                                         <*> qExpr e2
+qExpr (EnumFromThenTo spi e1 e2 e3) = EnumFromThenTo spi <$> qExpr e1
+                                                         <*> qExpr e2
+                                                         <*> qExpr e3
+qExpr (UnaryMinus            spi e) = UnaryMinus     spi <$> qExpr e
+qExpr (Apply             spi e1 e2) = Apply          spi <$> qExpr e1
+                                                         <*> qExpr e2
+qExpr (InfixApply     spi e1 op e2) = InfixApply     spi <$> qExpr e1
+                                                         <*> qInfixOp op
+                                                         <*> qExpr e2
+qExpr (LeftSection        spi e op) = LeftSection  spi <$> qExpr e
+                                                       <*> qInfixOp op
+qExpr (RightSection       spi op e) = RightSection spi <$> qInfixOp op
+                                                       <*> qExpr e
+qExpr (Lambda             spi ts e) = Lambda       spi <$> mapM qPattern ts
+                                                       <*> qExpr e
+qExpr (Let                spi ds e) = Let spi <$> mapM qDecl ds  <*> qExpr e
+qExpr (Do                spi sts e) = Do  spi <$> mapM qStmt sts <*> qExpr e
+qExpr (IfThenElse     spi e1 e2 e3) = IfThenElse spi <$> qExpr e1 <*> qExpr e2
+                                                     <*> qExpr e3
+qExpr (Case            spi ct e as) = Case spi ct   <$> qExpr e <*> mapM qAlt as
 
 qStmt :: Qual (Statement a)
-qStmt (StmtExpr   e) = StmtExpr <$> qExpr e
-qStmt (StmtBind t e) = StmtBind <$> qPattern t <*> qExpr e
-qStmt (StmtDecl  ds) = StmtDecl <$> mapM qDecl ds
+qStmt (StmtExpr spi   e) = StmtExpr spi <$> qExpr e
+qStmt (StmtBind spi t e) = StmtBind spi <$> qPattern t <*> qExpr e
+qStmt (StmtDecl spi  ds) = StmtDecl spi <$> mapM qDecl ds
 
 qAlt :: Qual (Alt a)
 qAlt (Alt p t rhs) = Alt p <$> qPattern t <*> qRhs rhs

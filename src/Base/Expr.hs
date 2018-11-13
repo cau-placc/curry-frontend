@@ -27,6 +27,7 @@ import           Data.List        (nub)
 import qualified Data.Set  as Set (fromList, notMember)
 
 import Curry.Base.Ident
+import Curry.Base.SpanInfo
 import Curry.Syntax
 
 class Expr e where
@@ -83,44 +84,44 @@ instance QualExpr (Lhs a) where
 
 instance QualExpr (Rhs a) where
   qfv m (SimpleRhs _ e ds) = filterBv ds $ qfv m e  ++ qfv m ds
-  qfv m (GuardedRhs es ds) = filterBv ds $ qfv m es ++ qfv m ds
+  qfv m (GuardedRhs _ es ds) = filterBv ds $ qfv m es ++ qfv m ds
 
 instance QualExpr (CondExpr a) where
   qfv m (CondExpr _ g e) = qfv m g ++ qfv m e
 
 instance QualExpr (Expression a) where
-  qfv _ (Literal             _ _) = []
-  qfv m (Variable            _ v) = maybe [] return $ localIdent m v
-  qfv _ (Constructor         _ _) = []
-  qfv m (Paren                 e) = qfv m e
-  qfv m (Typed               e _) = qfv m e
-  qfv m (Record           _ _ fs) = qfv m fs
-  qfv m (RecordUpdate       e fs) = qfv m e ++ qfv m fs
-  qfv m (Tuple                es) = qfv m es
-  qfv m (List               _ es) = qfv m es
-  qfv m (ListCompr          e qs) = foldr (qfvStmt m) (qfv m e) qs
-  qfv m (EnumFrom              e) = qfv m e
-  qfv m (EnumFromThen      e1 e2) = qfv m e1 ++ qfv m e2
-  qfv m (EnumFromTo        e1 e2) = qfv m e1 ++ qfv m e2
-  qfv m (EnumFromThenTo e1 e2 e3) = qfv m e1 ++ qfv m e2 ++ qfv m e3
-  qfv m (UnaryMinus            e) = qfv m e
-  qfv m (Apply             e1 e2) = qfv m e1 ++ qfv m e2
-  qfv m (InfixApply     e1 op e2) = qfv m op ++ qfv m e1 ++ qfv m e2
-  qfv m (LeftSection        e op) = qfv m op ++ qfv m e
-  qfv m (RightSection       op e) = qfv m op ++ qfv m e
-  qfv m (Lambda             ts e) = filterBv ts $ qfv m e
-  qfv m (Let                ds e) = filterBv ds $ qfv m ds ++ qfv m e
-  qfv m (Do                sts e) = foldr (qfvStmt m) (qfv m e) sts
-  qfv m (IfThenElse     e1 e2 e3) = qfv m e1 ++ qfv m e2 ++ qfv m e3
-  qfv m (Case           _ e alts) = qfv m e ++ qfv m alts
+  qfv _ (Literal             _ _ _) = []
+  qfv m (Variable            _ _ v) = maybe [] return $ localIdent m v
+  qfv _ (Constructor         _ _ _) = []
+  qfv m (Paren               _   e) = qfv m e
+  qfv m (Typed               _ e _) = qfv m e
+  qfv m (Record           _ _ _ fs) = qfv m fs
+  qfv m (RecordUpdate       _ e fs) = qfv m e ++ qfv m fs
+  qfv m (Tuple                _ es) = qfv m es
+  qfv m (List               _ _ es) = qfv m es
+  qfv m (ListCompr          _ e qs) = foldr (qfvStmt m) (qfv m e) qs
+  qfv m (EnumFrom              _ e) = qfv m e
+  qfv m (EnumFromThen      _ e1 e2) = qfv m e1 ++ qfv m e2
+  qfv m (EnumFromTo        _ e1 e2) = qfv m e1 ++ qfv m e2
+  qfv m (EnumFromThenTo _ e1 e2 e3) = qfv m e1 ++ qfv m e2 ++ qfv m e3
+  qfv m (UnaryMinus            _ e) = qfv m e
+  qfv m (Apply             _ e1 e2) = qfv m e1 ++ qfv m e2
+  qfv m (InfixApply     _ e1 op e2) = qfv m op ++ qfv m e1 ++ qfv m e2
+  qfv m (LeftSection        _ e op) = qfv m op ++ qfv m e
+  qfv m (RightSection       _ op e) = qfv m op ++ qfv m e
+  qfv m (Lambda             _ ts e) = filterBv ts $ qfv m e
+  qfv m (Let                _ ds e) = filterBv ds $ qfv m ds ++ qfv m e
+  qfv m (Do                _ sts e) = foldr (qfvStmt m) (qfv m e) sts
+  qfv m (IfThenElse     _ e1 e2 e3) = qfv m e1 ++ qfv m e2 ++ qfv m e3
+  qfv m (Case           _ _ e alts) = qfv m e ++ qfv m alts
 
 qfvStmt :: ModuleIdent -> (Statement a) -> [Ident] -> [Ident]
 qfvStmt m st fvs = qfv m st ++ filterBv st fvs
 
 instance QualExpr (Statement a) where
-  qfv m (StmtExpr   e) = qfv m e
-  qfv m (StmtDecl  ds) = filterBv ds $ qfv m ds
-  qfv m (StmtBind _ e) = qfv m e
+  qfv m (StmtExpr   _ e) = qfv m e
+  qfv m (StmtDecl  _ ds) = filterBv ds $ qfv m ds
+  qfv m (StmtBind _ _ e) = qfv m e
 
 instance QualExpr (Alt a) where
   qfv m (Alt _ t rhs) = filterBv t $ qfv m rhs
@@ -135,77 +136,77 @@ instance QualExpr a => QualExpr (Field a) where
   qfv m (Field _ _ t) = qfv m t
 
 instance QuantExpr (Statement a) where
-  bv (StmtExpr   _) = []
-  bv (StmtBind t _) = bv t
-  bv (StmtDecl  ds) = bv ds
+  bv (StmtExpr   _ _) = []
+  bv (StmtBind _ t _) = bv t
+  bv (StmtDecl  _ ds) = bv ds
 
 instance QualExpr (InfixOp a) where
-  qfv m (InfixOp     a op) = qfv m $ Variable a op
+  qfv m (InfixOp     a op) = qfv m $ Variable NoSpanInfo a op
   qfv _ (InfixConstr _ _ ) = []
 
 instance QuantExpr (Pattern a) where
-  bv (LiteralPattern         _ _) = []
-  bv (NegativePattern        _ _) = []
-  bv (VariablePattern        _ v) = [v]
-  bv (ConstructorPattern  _ _ ts) = bv ts
-  bv (InfixPattern     _ t1 _ t2) = bv t1 ++ bv t2
-  bv (ParenPattern             t) = bv t
-  bv (RecordPattern       _ _ fs) = bv fs
-  bv (TuplePattern            ts) = bv ts
-  bv (ListPattern           _ ts) = bv ts
-  bv (AsPattern              v t) = v : bv t
-  bv (LazyPattern              t) = bv t
-  bv (FunctionPattern     _ _ ts) = nub $ bv ts
-  bv (InfixFuncPattern _ t1 _ t2) = nub $ bv t1 ++ bv t2
+  bv (LiteralPattern         _ _ _) = []
+  bv (NegativePattern        _ _ _) = []
+  bv (VariablePattern        _ _ v) = [v]
+  bv (ConstructorPattern  _ _ _ ts) = bv ts
+  bv (InfixPattern     _ _ t1 _ t2) = bv t1 ++ bv t2
+  bv (ParenPattern             _ t) = bv t
+  bv (RecordPattern       _ _ _ fs) = bv fs
+  bv (TuplePattern           _  ts) = bv ts
+  bv (ListPattern          _  _ ts) = bv ts
+  bv (AsPattern              _ v t) = v : bv t
+  bv (LazyPattern              _ t) = bv t
+  bv (FunctionPattern     _ _ _ ts) = nub $ bv ts
+  bv (InfixFuncPattern _ _ t1 _ t2) = nub $ bv t1 ++ bv t2
 
 instance QualExpr (Pattern a) where
-  qfv _ (LiteralPattern          _ _) = []
-  qfv _ (NegativePattern         _ _) = []
-  qfv _ (VariablePattern         _ _) = []
-  qfv m (ConstructorPattern   _ _ ts) = qfv m ts
-  qfv m (InfixPattern      _ t1 _ t2) = qfv m [t1, t2]
-  qfv m (ParenPattern              t) = qfv m t
-  qfv m (RecordPattern        _ _ fs) = qfv m fs
-  qfv m (TuplePattern             ts) = qfv m ts
-  qfv m (ListPattern            _ ts) = qfv m ts
-  qfv m (AsPattern              _ ts) = qfv m ts
-  qfv m (LazyPattern               t) = qfv m t
-  qfv m (FunctionPattern      _ f ts)
+  qfv _ (LiteralPattern          _ _ _) = []
+  qfv _ (NegativePattern         _ _ _) = []
+  qfv _ (VariablePattern         _ _ _) = []
+  qfv m (ConstructorPattern   _ _ _ ts) = qfv m ts
+  qfv m (InfixPattern      _ _ t1 _ t2) = qfv m [t1, t2]
+  qfv m (ParenPattern              _ t) = qfv m t
+  qfv m (RecordPattern        _ _ _ fs) = qfv m fs
+  qfv m (TuplePattern             _ ts) = qfv m ts
+  qfv m (ListPattern            _ _ ts) = qfv m ts
+  qfv m (AsPattern              _ _ ts) = qfv m ts
+  qfv m (LazyPattern               _ t) = qfv m t
+  qfv m (FunctionPattern      _ _ f ts)
     = maybe [] return (localIdent m f) ++ qfv m ts
-  qfv m (InfixFuncPattern _ t1 op t2)
+  qfv m (InfixFuncPattern _ _ t1 op t2)
     = maybe [] return (localIdent m op) ++ qfv m [t1, t2]
 
 instance Expr Constraint where
-  fv (Constraint _ ty) = fv ty
+  fv (Constraint _ _ ty) = fv ty
 
 instance QuantExpr Constraint where
   bv _ = []
 
 instance Expr QualTypeExpr where
-  fv (QualTypeExpr _ ty) = fv ty
+  fv (QualTypeExpr _ _ ty) = fv ty
 
 instance QuantExpr QualTypeExpr where
-  bv (QualTypeExpr _ ty) = bv ty
+  bv (QualTypeExpr _ _ ty) = bv ty
 
 instance Expr TypeExpr where
-  fv (ConstructorType     _) = []
-  fv (ApplyType     ty1 ty2) = fv ty1 ++ fv ty2
-  fv (VariableType       tv) = [tv]
-  fv (TupleType         tys) = fv tys
-  fv (ListType           ty) = fv ty
-  fv (ArrowType     ty1 ty2) = fv ty1 ++ fv ty2
-  fv (ParenType          ty) = fv ty
-  fv (ForallType      vs ty) = filter (`notElem` vs) $ fv ty
+  fv (ConstructorType     _ _) = []
+  fv (ApplyType     _ ty1 ty2) = fv ty1 ++ fv ty2
+  fv (VariableType       _ tv) = [tv]
+  fv (TupleType         _ tys) = fv tys
+  fv (ListType          _  ty) = fv ty
+  fv (ArrowType     _ ty1 ty2) = fv ty1 ++ fv ty2
+  fv (ParenType          _ ty) = fv ty
+  fv (ForallType      _ vs ty) = filter (`notElem` vs) $ fv ty
 
 instance QuantExpr TypeExpr where
-  bv (ConstructorType     _) = []
-  bv (ApplyType     ty1 ty2) = bv ty1 ++ bv ty2
-  bv (VariableType        _) = []
-  bv (TupleType         tys) = bv tys
-  bv (ListType           ty) = bv ty
-  bv (ArrowType     ty1 ty2) = bv ty1 ++ bv ty2
-  bv (ParenType          ty) = bv ty
-  bv (ForallType     tvs ty) = tvs ++ bv ty
+  bv (ConstructorType     _ _) = []
+  bv (ApplyType     _ ty1 ty2) = bv ty1 ++ bv ty2
+  bv (VariableType        _ _) = []
+  bv (TupleType         _ tys) = bv tys
+  bv (ListType           _ ty) = bv ty
+  bv (ArrowType     _ ty1 ty2) = bv ty1 ++ bv ty2
+  bv (ParenType          _ ty) = bv ty
+  bv (ForallType     _ tvs ty) = tvs ++ bv ty
 
 filterBv :: QuantExpr e => e -> [Ident] -> [Ident]
 filterBv e = filter (`Set.notMember` Set.fromList (bv e))

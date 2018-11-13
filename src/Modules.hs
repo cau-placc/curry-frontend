@@ -37,13 +37,15 @@ import           System.Process           (system)
 
 import Curry.Base.Ident
 import Curry.Base.Monad
-import Curry.Base.Position
+import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Base.Span
 import Curry.FlatCurry.InterfaceEquivalence (eqInterface)
 import Curry.Files.Filenames
 import Curry.Files.PathUtils
 import Curry.Syntax.InterfaceEquivalence
+import Curry.Syntax.Utils (shortenModuleAST)
+import Curry.Syntax.Lexer (Token(..), Category(..))
 
 import Base.Messages
 import Base.Types
@@ -65,7 +67,7 @@ import Generators
 import Html.CurryHtml (source2html)
 import Imports
 import Interfaces (loadInterfaces)
-import TokenStream (showTokenStream)
+import TokenStream (showTokenStream, showCommentTokenStream)
 import Transformations
 
 -- The function 'compileModule' is the main entry-point of this
@@ -87,17 +89,22 @@ import Transformations
 compileModule :: Options -> ModuleIdent -> FilePath -> CYIO ()
 compileModule opts m fn = do
   mdl <- loadAndCheckModule opts m fn
-  writeTokens opts (fst mdl)
-  writeParsed opts mdl
-  writeHtml   opts (qual mdl)
+  writeTokens   opts (fst mdl)
+  writeComments opts (fst mdl)
+  writeParsed   opts mdl
+  let qmdl = qual mdl
+  writeHtml     opts qmdl
+  let umdl = (fst qmdl, fmap (const ()) (snd qmdl))
+  writeAST      opts umdl
+  writeShortAST opts umdl
   mdl' <- expandExports opts mdl
-  qmdl <- dumpWith opts CS.showModule CS.ppModule DumpQualified $ qual mdl'
-  writeAbstractCurry opts qmdl
+  qmdl' <- dumpWith opts CS.showModule CS.ppModule DumpQualified $ qual mdl'
+  writeAbstractCurry opts qmdl'
   -- generate interface file
-  let intf = uncurry exportInterface qmdl
+  let intf = uncurry exportInterface qmdl'
   writeInterface opts (fst mdl') intf
   when withFlat $ do
-    ((env, il), mdl'') <- transModule opts qmdl
+    ((env, il), mdl'') <- transModule opts qmdl'
     writeFlat opts env (snd mdl'') il
   where
   withFlat = any (`elem` optTargetTypes opts) [TypedFlatCurry, FlatCurry]
@@ -181,7 +188,7 @@ checkModuleHeader opts m fn = checkModuleId m
 
 -- |Check whether the 'ModuleIdent' and the 'FilePath' fit together
 checkModuleId :: Monad m => ModuleIdent -> CS.Module () -> CYT m (CS.Module ())
-checkModuleId mid m@(CS.Module _ mid' _ _ _)
+checkModuleId mid m@(CS.Module _ _ mid' _ _ _)
   | mid == mid' = ok m
   | otherwise   = failMessages [errModuleFileMismatch mid']
 
@@ -191,7 +198,7 @@ checkModuleId mid m@(CS.Module _ mid' _ _ _)
 -- the prelude is imported unqualified, otherwise a qualified import is added.
 
 importPrelude :: Options -> CS.Module () -> CS.Module ()
-importPrelude opts m@(CS.Module ps mid es is ds)
+importPrelude opts m@(CS.Module spi ps mid es is ds)
     -- the Prelude itself
   | mid == preludeMIdent          = m
     -- disabled by compiler option
@@ -199,11 +206,11 @@ importPrelude opts m@(CS.Module ps mid es is ds)
     -- already imported
   | preludeMIdent `elem` imported = m
     -- let's add it!
-  | otherwise                     = CS.Module ps mid es (preludeImp : is) ds
+  | otherwise                     = CS.Module spi ps mid es (preludeImp : is) ds
   where
   noImpPrelude = NoImplicitPrelude `elem` optExtensions opts
                  || m `CS.hasLanguageExtension` NoImplicitPrelude
-  preludeImp   = CS.ImportDecl NoPos preludeMIdent
+  preludeImp   = CS.ImportDecl NoSpanInfo preludeMIdent
                   False   -- qualified?
                   Nothing -- no alias
                   Nothing -- no selection of types, functions, etc.
@@ -217,7 +224,7 @@ checkInterfaces opts iEnv = mapM_ checkInterface (Map.elems iEnv)
     interfaceCheck opts (env, intf)
 
 importSyntaxCheck :: Monad m => InterfaceEnv -> CS.Module a -> CYT m [CS.ImportDecl]
-importSyntaxCheck iEnv (CS.Module _ _ _ imps _) = mapM checkImportDecl imps
+importSyntaxCheck iEnv (CS.Module _ _ _ _ imps _) = mapM checkImportDecl imps
   where
   checkImportDecl (CS.ImportDecl p m q asM is) = case Map.lookup m iEnv of
     Just intf -> CS.ImportDecl p m q asM `liftM` importCheck intf is
@@ -287,6 +294,14 @@ writeTokens opts env = when tokTarget $ liftIO $
               (showTokenStream (tokens env))
   where
   tokTarget  = Tokens `elem` optTargetTypes opts
+  useSubDir  = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
+
+writeComments :: Options -> CompilerEnv -> CYIO ()
+writeComments opts env = when tokTarget $ liftIO $
+  writeModule (useSubDir $ commentsName (filePath env))
+              (showCommentTokenStream $ tokens env)
+  where
+  tokTarget  = Comments `elem` optTargetTypes opts
   useSubDir  = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
 
 -- |Output the parsed 'Module' on request
@@ -375,6 +390,24 @@ writeAbstractCurry opts (env, mdl) = do
   acyTarget  = AbstractCurry        `elem` optTargetTypes opts
   uacyTarget = UntypedAbstractCurry `elem` optTargetTypes opts
   useSubDir  = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
+
+
+writeAST :: Options -> CompEnv (CS.Module ()) -> CYIO ()
+writeAST opts (env, mdl) = when astTarget $ liftIO $
+  writeModule (useSubDir $ astName (filePath env)) (show mdl)
+  where
+  astTarget  = AST `elem` optTargetTypes opts
+  useSubDir  = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
+
+
+writeShortAST :: Options -> CompEnv (CS.Module ()) -> CYIO ()
+writeShortAST opts (env, mdl) = when astTarget $ liftIO $
+  writeModule (useSubDir $ shortASTName (filePath env))
+              (CS.showModule $ shortenModuleAST mdl)
+  where
+  astTarget  = ShortAST `elem` optTargetTypes opts
+  useSubDir  = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
+
 
 type Dump = (DumpLevel, CompilerEnv, String)
 

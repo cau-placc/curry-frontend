@@ -38,6 +38,7 @@ import Env.Type
 
 import Curry.Base.Ident
 import Curry.Base.Position
+import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
 import Curry.Syntax.Pretty
@@ -121,7 +122,7 @@ checkIDecl (IClassDecl p cx qcls k clsvar ms hs) = do
   return $ IClassDecl p cx' qcls k clsvar ms' hs
 checkIDecl (IInstanceDecl p cx qcls inst is m) = do
   checkClass qcls
-  QualTypeExpr cx' inst' <- checkQualType $ QualTypeExpr cx inst
+  QualTypeExpr _ cx' inst' <- checkQualType $ QualTypeExpr NoSpanInfo cx inst
   checkSimpleContext cx'
   checkInstanceType p inst'
   mapM_ (report . errMultipleImplementation . head) $ findMultiples $ map fst is
@@ -183,14 +184,14 @@ checkSimpleContext :: Context -> ISC ()
 checkSimpleContext = mapM_ checkSimpleConstraint
 
 checkSimpleConstraint :: Constraint -> ISC ()
-checkSimpleConstraint c@(Constraint _ ty) =
+checkSimpleConstraint c@(Constraint _ _ ty) =
   unless (isVariableType ty) $ report $ errIllegalSimpleConstraint c
 
 checkIMethodDecl :: Ident -> IMethodDecl -> ISC IMethodDecl
 checkIMethodDecl tv (IMethodDecl p f a qty) = do
   qty' <- checkQualType qty
   unless (tv `elem` fv qty') $ report $ errAmbiguousType p tv
-  let QualTypeExpr cx _ = qty'
+  let QualTypeExpr _ cx _ = qty'
   when (tv `elem` fv cx) $ report $ errConstrainedClassVariable p tv
   return $ IMethodDecl p f a qty'
 
@@ -204,24 +205,24 @@ checkInstanceType p inst = do
       report $ errIllegalInstanceType p inst
 
 checkQualType :: QualTypeExpr -> ISC QualTypeExpr
-checkQualType (QualTypeExpr cx ty) = do
+checkQualType (QualTypeExpr spi cx ty) = do
   ty' <- checkType ty
   cx' <- checkClosedContext (fv ty') cx
-  return $ QualTypeExpr cx' ty'
+  return $ QualTypeExpr spi cx' ty'
 
 checkClosedContext :: [Ident] -> Context -> ISC Context
 checkClosedContext tvs cx = do
   cx' <- checkContext cx
-  mapM_ (\(Constraint _ ty) -> checkClosed tvs ty) cx'
+  mapM_ (\(Constraint _ _ ty) -> checkClosed tvs ty) cx'
   return cx'
 
 checkContext :: Context -> ISC Context
 checkContext = mapM checkConstraint
 
 checkConstraint :: Constraint -> ISC Constraint
-checkConstraint (Constraint qcls ty) = do
+checkConstraint (Constraint spi qcls ty) = do
   checkClass qcls
-  Constraint qcls `liftM` checkType ty
+  Constraint spi qcls `liftM` checkType ty
 
 checkClass :: QualIdent -> ISC ()
 checkClass qcls = do
@@ -240,38 +241,41 @@ checkClosedType tvs ty = do
   return ty'
 
 checkType :: TypeExpr -> ISC TypeExpr
-checkType (ConstructorType tc) = checkTypeConstructor tc
-checkType (ApplyType  ty1 ty2) = liftM2 ApplyType (checkType ty1) (checkType ty2)
-checkType (VariableType    tv) = checkType $ ConstructorType (qualify tv)
-checkType (TupleType      tys) = liftM TupleType (mapM checkType tys)
-checkType (ListType        ty) = liftM ListType (checkType ty)
-checkType (ArrowType  ty1 ty2) = liftM2 ArrowType (checkType ty1) (checkType ty2)
-checkType (ParenType       ty) = liftM ParenType (checkType ty)
-checkType (ForallType   vs ty) = liftM (ForallType vs) (checkType ty)
+checkType (ConstructorType spi tc) = checkTypeConstructor spi tc
+checkType (ApplyType  spi ty1 ty2) =
+  liftM2 (ApplyType spi) (checkType ty1) (checkType ty2)
+checkType (VariableType    spi tv) =
+  checkType $ ConstructorType spi (qualify tv)
+checkType (TupleType      spi tys) = liftM (TupleType spi) (mapM checkType tys)
+checkType (ListType        spi ty) = liftM (ListType spi) (checkType ty)
+checkType (ArrowType  spi ty1 ty2) =
+  liftM2 (ArrowType spi) (checkType ty1) (checkType ty2)
+checkType (ParenType      spi  ty) = liftM (ParenType spi) (checkType ty)
+checkType (ForallType   spi vs ty) = liftM (ForallType spi vs) (checkType ty)
 
 checkClosed :: [Ident] -> TypeExpr -> ISC ()
-checkClosed _   (ConstructorType _) = return ()
-checkClosed tvs (ApplyType ty1 ty2) = mapM_ (checkClosed tvs) [ty1, ty2]
-checkClosed tvs (VariableType   tv) =
+checkClosed _   (ConstructorType _ _) = return ()
+checkClosed tvs (ApplyType _ ty1 ty2) = mapM_ (checkClosed tvs) [ty1, ty2]
+checkClosed tvs (VariableType   _ tv) =
   when (isAnonId tv || tv `notElem` tvs) $ report $ errUnboundVariable tv
-checkClosed tvs (TupleType     tys) = mapM_ (checkClosed tvs) tys
-checkClosed tvs (ListType       ty) = checkClosed tvs ty
-checkClosed tvs (ArrowType ty1 ty2) = mapM_ (checkClosed tvs) [ty1, ty2]
-checkClosed tvs (ParenType      ty) = checkClosed tvs ty
-checkClosed tvs (ForallType  vs ty) = checkClosed (tvs ++ vs) ty
+checkClosed tvs (TupleType     _ tys) = mapM_ (checkClosed tvs) tys
+checkClosed tvs (ListType       _ ty) = checkClosed tvs ty
+checkClosed tvs (ArrowType _ ty1 ty2) = mapM_ (checkClosed tvs) [ty1, ty2]
+checkClosed tvs (ParenType      _ ty) = checkClosed tvs ty
+checkClosed tvs (ForallType  _ vs ty) = checkClosed (tvs ++ vs) ty
 
-checkTypeConstructor :: QualIdent -> ISC TypeExpr
-checkTypeConstructor tc = do
+checkTypeConstructor :: SpanInfo -> QualIdent -> ISC TypeExpr
+checkTypeConstructor spi tc = do
   tyEnv <- getTypeEnv
   case qualLookupTypeKind tc tyEnv of
-    [] | not (isQualified tc) -> return $ VariableType $ unqualify tc
+    [] | not (isQualified tc) -> return $ VariableType spi $ unqualify tc
        | otherwise            -> do
           report $ errUndefinedType tc
-          return $ ConstructorType tc
-    [Data _ _] -> return $ ConstructorType tc
+          return $ ConstructorType spi tc
+    [Data _ _] -> return $ ConstructorType spi tc
     [Alias  _] -> do
                   report $ errBadTypeSynonym tc
-                  return $ ConstructorType tc
+                  return $ ConstructorType spi tc
     _          ->
       internalError "Checks.InterfaceSyntaxCheck.checkTypeConstructor"
 
@@ -280,14 +284,14 @@ checkTypeConstructor tc = do
 -- ---------------------------------------------------------------------------
 
 typeVars :: TypeExpr -> [Ident]
-typeVars (ConstructorType       _) = []
-typeVars (ApplyType       ty1 ty2) = typeVars ty1 ++ typeVars ty2
-typeVars (VariableType         tv) = [tv]
-typeVars (TupleType           tys) = concatMap typeVars tys
-typeVars (ListType             ty) = typeVars ty
-typeVars (ArrowType       ty1 ty2) = typeVars ty1 ++ typeVars ty2
-typeVars (ParenType            ty) = typeVars ty
-typeVars (ForallType        vs ty) = vs ++ typeVars ty
+typeVars (ConstructorType      _ _) = []
+typeVars (ApplyType      _ ty1 ty2) = typeVars ty1 ++ typeVars ty2
+typeVars (VariableType        _ tv) = [tv]
+typeVars (TupleType          _ tys) = concatMap typeVars tys
+typeVars (ListType            _ ty) = typeVars ty
+typeVars (ArrowType      _ ty1 ty2) = typeVars ty1 ++ typeVars ty2
+typeVars (ParenType           _ ty) = typeVars ty
+typeVars (ForallType       _ vs ty) = vs ++ typeVars ty
 
 isTypeSyn :: QualIdent -> TypeEnv -> Bool
 isTypeSyn tc tEnv = case qualLookupTypeKind tc tEnv of
@@ -341,7 +345,7 @@ errNoElement what for tc x = posMessage tc $ hsep $ map text
   [ "Hidden", what, escName x, "is not defined for", for, qualName tc ]
 
 errIllegalSimpleConstraint :: Constraint -> Message
-errIllegalSimpleConstraint c@(Constraint qcls _) = posMessage qcls $ vcat
+errIllegalSimpleConstraint c@(Constraint _ qcls _) = posMessage qcls $ vcat
   [ text "Illegal class constraint" <+> ppConstraint c
   , text "Constraints in class and instance declarations must be of"
   , text "the form C u, where C is a type class and u is a type variable."

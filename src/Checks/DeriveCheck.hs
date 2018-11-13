@@ -24,7 +24,7 @@ import Base.Messages (Message, posMessage)
 import Env.TypeConstructor
 
 deriveCheck :: TCEnv -> Module a -> [Message]
-deriveCheck tcEnv (Module _ m _ _ ds) = concatMap (checkDecl m tcEnv) ds
+deriveCheck tcEnv (Module _ _ m _ _ ds) = concatMap (checkDecl m tcEnv) ds
 
 -- No instances can be derived for abstract data types as well as for
 -- existential data types.

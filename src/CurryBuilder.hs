@@ -24,6 +24,7 @@ import System.FilePath ((</>), normalise)
 import Curry.Base.Ident
 import Curry.Base.Monad
 import Curry.Base.Position (Position)
+import Curry.Base.SpanInfo (spanInfo2Pos)
 import Curry.Base.Pretty
 import Curry.Files.Filenames
 import Curry.Files.PathUtils
@@ -113,8 +114,8 @@ processPragmas opts0 ps = do
   let opts1 = foldl processLanguagePragma opts0
                 [ e | LanguagePragma _ es <- ps, KnownExtension _ e <- es ]
   foldM processOptionPragma opts1 $
-    [ (p, s) | OptionsPragma p (Just FRONTEND) s <- ps ] ++
-      [ (p, s) | OptionsPragma p (Just CYMAKE) s <- ps ]
+    [ (spanInfo2Pos p, s) | OptionsPragma p (Just FRONTEND) s <- ps ] ++
+      [ (spanInfo2Pos p, s) | OptionsPragma p (Just CYMAKE) s <- ps ]
   where
   processLanguagePragma opts CPP
     = opts { optCppOpts = (optCppOpts opts) { cppRun = True } }
@@ -166,14 +167,17 @@ process opts idx m fn deps
 
   destFiles = [ gen fn | (t, gen) <- nameGens, t `elem` optTargetTypes opts]
   nameGens  =
-    [ (Tokens                , tgtDir . tokensName     )
-    , (Parsed                , tgtDir . sourceRepName  )
-    , (FlatCurry             , tgtDir . flatName       )
-    , (TypedFlatCurry        , tgtDir . typedFlatName  )
+    [ (Tokens              , tgtDir . tokensName       )
+    , (Comments            , tgtDir . commentsName)
+    , (Parsed              , tgtDir . sourceRepName    )
+    , (FlatCurry           , tgtDir . flatName         )
+    , (TypedFlatCurry      , tgtDir . typedFlatName    )
     , (TypeAnnotatedFlatCurry, tgtDir . typeAnnFlatName)
-    , (AbstractCurry         , tgtDir . acyName        )
-    , (UntypedAbstractCurry  , tgtDir . uacyName       )
-    , (Html                  , const (fromMaybe "." (optHtmlDir opts) </> htmlName m))
+    , (AbstractCurry       , tgtDir . acyName          )
+    , (UntypedAbstractCurry, tgtDir . uacyName         )
+    , (AST                 , tgtDir . astName          )
+    , (ShortAST            , tgtDir . shortASTName     )
+    , (Html                , const (fromMaybe "." (optHtmlDir opts) </> htmlName m))
     ]
 
 -- |Create a status message like

@@ -46,57 +46,57 @@ instance Typeable PredType where
   typeOf = unpredType
 
 instance Typeable a => Typeable (Rhs a) where
-  typeOf (SimpleRhs _ e _) = typeOf e
-  typeOf (GuardedRhs es _) = head [typeOf e | CondExpr _ _ e <- es]
+  typeOf (SimpleRhs  _ e _ ) = typeOf e
+  typeOf (GuardedRhs _ es _) = head [typeOf e | CondExpr _ _ e <- es]
 
 instance Typeable a => Typeable (Pattern a) where
-  typeOf (LiteralPattern a _) = typeOf a
-  typeOf (NegativePattern a _) = typeOf a
-  typeOf (VariablePattern a _) = typeOf a
-  typeOf (ConstructorPattern a _ _) = typeOf a
-  typeOf (InfixPattern a _ _ _) = typeOf a
-  typeOf (ParenPattern t) = typeOf t
-  typeOf (RecordPattern a _ _) = typeOf a
-  typeOf (TuplePattern ts) = tupleType $ map typeOf ts
-  typeOf (ListPattern a _) = typeOf a
-  typeOf (AsPattern _ t) = typeOf t
-  typeOf (LazyPattern t) = typeOf t
-  typeOf (FunctionPattern a _ _) = typeOf a
-  typeOf (InfixFuncPattern a _ _ _) = typeOf a
+  typeOf (LiteralPattern _ a _) = typeOf a
+  typeOf (NegativePattern _ a _) = typeOf a
+  typeOf (VariablePattern _ a _) = typeOf a
+  typeOf (ConstructorPattern _ a _ _) = typeOf a
+  typeOf (InfixPattern _ a _ _ _) = typeOf a
+  typeOf (ParenPattern _ t) = typeOf t
+  typeOf (RecordPattern _ a _ _) = typeOf a
+  typeOf (TuplePattern _ ts) = tupleType $ map typeOf ts
+  typeOf (ListPattern _ a _) = typeOf a
+  typeOf (AsPattern _ _ t) = typeOf t
+  typeOf (LazyPattern _ t) = typeOf t
+  typeOf (FunctionPattern _ a _ _) = typeOf a
+  typeOf (InfixFuncPattern _ a _ _ _) = typeOf a
 
 instance Typeable a => Typeable (Expression a) where
-  typeOf (Literal a _) = typeOf a
-  typeOf (Variable a _) = typeOf a
-  typeOf (Constructor a _) = typeOf a
-  typeOf (Paren e) = typeOf e
-  typeOf (Typed e _) = typeOf e
-  typeOf (Record a _ _) = typeOf a
-  typeOf (RecordUpdate e _) = typeOf e
-  typeOf (Tuple es) = tupleType (map typeOf es)
-  typeOf (List a _) = typeOf a
-  typeOf (ListCompr e _) = listType (typeOf e)
-  typeOf (EnumFrom e) = listType (typeOf e)
-  typeOf (EnumFromThen e _) = listType (typeOf e)
-  typeOf (EnumFromTo e _) = listType (typeOf e)
-  typeOf (EnumFromThenTo e _ _) = listType (typeOf e)
-  typeOf (UnaryMinus e) = typeOf e
-  typeOf (Apply e _) = case typeOf e of
+  typeOf (Literal _ a _) = typeOf a
+  typeOf (Variable _ a _) = typeOf a
+  typeOf (Constructor _ a _) = typeOf a
+  typeOf (Paren _ e) = typeOf e
+  typeOf (Typed _ e _) = typeOf e
+  typeOf (Record _ a _ _) = typeOf a
+  typeOf (RecordUpdate _ e _) = typeOf e
+  typeOf (Tuple _ es) = tupleType (map typeOf es)
+  typeOf (List _ a _) = typeOf a
+  typeOf (ListCompr _ e _) = listType (typeOf e)
+  typeOf (EnumFrom _ e) = listType (typeOf e)
+  typeOf (EnumFromThen _ e _) = listType (typeOf e)
+  typeOf (EnumFromTo _ e _) = listType (typeOf e)
+  typeOf (EnumFromThenTo _ e _ _) = listType (typeOf e)
+  typeOf (UnaryMinus _ e) = typeOf e
+  typeOf (Apply _ e _) = case typeOf e of
     TypeArrow _ ty -> ty
     _ -> internalError "Base.Typing.typeOf: application"
-  typeOf (InfixApply _ op _) = case typeOf (infixOp op) of
+  typeOf (InfixApply _ _ op _) = case typeOf (infixOp op) of
     TypeArrow _ (TypeArrow _ ty) -> ty
     _ -> internalError "Base.Typing.typeOf: infix application"
-  typeOf (LeftSection _ op) = case typeOf (infixOp op) of
+  typeOf (LeftSection _ _ op) = case typeOf (infixOp op) of
     TypeArrow _ ty -> ty
     _ -> internalError "Base.Typing.typeOf: left section"
-  typeOf (RightSection op _) = case typeOf (infixOp op) of
+  typeOf (RightSection _ op _) = case typeOf (infixOp op) of
     TypeArrow ty1 (TypeArrow _ ty2) -> TypeArrow ty1 ty2
     _ -> internalError "Base.Typing.typeOf: right section"
-  typeOf (Lambda ts e) = foldr (TypeArrow . typeOf) (typeOf e) ts
-  typeOf (Let _ e) = typeOf e
-  typeOf (Do _ e) = typeOf e
-  typeOf (IfThenElse _ e _) = typeOf e
-  typeOf (Case _ _ as) = typeOf $ head as
+  typeOf (Lambda _ ts e) = foldr (TypeArrow . typeOf) (typeOf e) ts
+  typeOf (Let _ _ e) = typeOf e
+  typeOf (Do _ _ e) = typeOf e
+  typeOf (IfThenElse _ _ e _) = typeOf e
+  typeOf (Case _ _ _ as) = typeOf $ head as
 
 instance Typeable a => Typeable (Alt a) where
   typeOf (Alt _ _ rhs) = typeOf rhs
@@ -174,19 +174,19 @@ declVars (FreeDecl            _ vs) = [(v, 0, ty) | Var ty v <- vs]
 declVars _                          = internalError "Base.Typing.declVars"
 
 patternVars :: (Eq t, Typeable t, ValueType t) => Pattern t -> [(Ident, Int, t)]
-patternVars (LiteralPattern         _ _) = []
-patternVars (NegativePattern        _ _) = []
-patternVars (VariablePattern       ty v) = [(v, 0, ty)]
-patternVars (ConstructorPattern  _ _ ts) = concatMap patternVars ts
-patternVars (InfixPattern     _ t1 _ t2) = patternVars t1 ++ patternVars t2
-patternVars (ParenPattern             t) = patternVars t
-patternVars (RecordPattern       _ _ fs) =
+patternVars (LiteralPattern         _ _ _) = []
+patternVars (NegativePattern        _ _ _) = []
+patternVars (VariablePattern       _ ty v) = [(v, 0, ty)]
+patternVars (ConstructorPattern  _ _ _ ts) = concatMap patternVars ts
+patternVars (InfixPattern     _ _ t1 _ t2) = patternVars t1 ++ patternVars t2
+patternVars (ParenPattern             _ t) = patternVars t
+patternVars (RecordPattern       _ _ _ fs) =
   concat [patternVars t | Field _ _ t <- fs]
-patternVars (TuplePattern            ts) = concatMap patternVars ts
-patternVars (ListPattern           _ ts) = concatMap patternVars ts
-patternVars (AsPattern              v t) =
+patternVars (TuplePattern            _ ts) = concatMap patternVars ts
+patternVars (ListPattern           _ _ ts) = concatMap patternVars ts
+patternVars (AsPattern              _ v t) =
   (v, 0, toValueType $ typeOf t) : patternVars t
-patternVars (LazyPattern              t) = patternVars t
-patternVars (FunctionPattern     _ _ ts) = nub $ concatMap patternVars ts
-patternVars (InfixFuncPattern _ t1 _ t2) =
+patternVars (LazyPattern              _ t) = patternVars t
+patternVars (FunctionPattern     _ _ _ ts) = nub $ concatMap patternVars ts
+patternVars (InfixFuncPattern _ _ t1 _ t2) =
   nub $ patternVars t1 ++ patternVars t2

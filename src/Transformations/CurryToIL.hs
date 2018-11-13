@@ -49,7 +49,7 @@ import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 import qualified IL as IL
 
 ilTrans :: ValueEnv -> Module Type -> IL.Module
-ilTrans vEnv (Module _ m _ _ ds) = IL.Module m (imports m ds') ds'
+ilTrans vEnv (Module _ _ m _ _ ds) = IL.Module m (imports m ds') ds'
   where ds' = R.runReader (concatMapM trDecl ds) (TransEnv m vEnv)
 
 -- -----------------------------------------------------------------------------
@@ -235,7 +235,7 @@ trEquation :: [Ident]       -- identifiers for the function's parameters
            -> [Ident]       -- infinite list of additional identifiers
            -> Equation Type -- equation to be translated
            -> TransM Match  -- nested constructor terms + translated RHS
-trEquation vs vs' (Equation _ (FunLhs _ ts) rhs) = do
+trEquation vs vs' (Equation _ (FunLhs _ _ ts) rhs) = do
   -- construct renaming of variables inside constructor terms
   let patternRenaming = foldr2 bindRenameEnv Map.empty vs ts
   -- translate right-hand-side
@@ -249,18 +249,18 @@ type RenameEnv = Map.Map Ident Ident
 
 -- Construct a renaming of all variables inside the pattern to fresh identifiers
 bindRenameEnv :: Ident -> Pattern a -> RenameEnv -> RenameEnv
-bindRenameEnv _ (LiteralPattern        _ _) env = env
-bindRenameEnv v (VariablePattern      _ v') env = Map.insert v' v env
-bindRenameEnv v (ConstructorPattern _ _ ts) env
+bindRenameEnv _ (LiteralPattern        _ _ _) env = env
+bindRenameEnv v (VariablePattern      _ _ v') env = Map.insert v' v env
+bindRenameEnv v (ConstructorPattern _ _ _ ts) env
   = foldr2 bindRenameEnv env (argNames v) ts
-bindRenameEnv v (AsPattern            v' t) env
+bindRenameEnv v (AsPattern            _ v' t) env
   = Map.insert v' v (bindRenameEnv v t env)
 bindRenameEnv _ _                           _
   = internalError "CurryToIL.bindRenameEnv"
 
 trRhs :: [Ident] -> RenameEnv -> Rhs Type -> TransM IL.Expression
 trRhs vs env (SimpleRhs _ e _) = trExpr vs env e
-trRhs _  _   (GuardedRhs _  _) = internalError "CurryToIL.trRhs: GuardedRhs"
+trRhs _  _   (GuardedRhs _ _  _) = internalError "CurryToIL.trRhs: GuardedRhs"
 
 -- Note that the case matching algorithm assumes that the matched
 -- expression is accessible through a variable. The translation of case
@@ -271,18 +271,18 @@ trRhs _  _   (GuardedRhs _  _) = internalError "CurryToIL.trRhs: GuardedRhs"
 -- instance, if one of the alternatives contains an as-pattern.
 
 trExpr :: [Ident] -> RenameEnv -> Expression Type -> TransM IL.Expression
-trExpr _  _   (Literal     ty l) = return $ IL.Literal (transType ty) (trLiteral l)
-trExpr _  env (Variable    ty v)
+trExpr _  _   (Literal     _ ty l) = return $ IL.Literal (transType ty) (trLiteral l)
+trExpr _  env (Variable    _ ty v)
   | isQualified v = fun
   | otherwise     = case Map.lookup (unqualify v) env of
       Nothing -> fun
       Just v' -> return $ IL.Variable (transType ty) v' -- apply renaming
   where fun = (IL.Function (transType ty) v . arrowArity) <$> varType v
-trExpr _  _   (Constructor ty c)
+trExpr _  _   (Constructor _ ty c)
   = (IL.Constructor (transType ty) c . arrowArity) <$> constrType c
-trExpr vs env (Apply     e1 e2)
+trExpr vs env (Apply     _ e1 e2)
   = IL.Apply <$> trExpr vs env e1 <*> trExpr vs env e2
-trExpr vs env (Let        ds e) = do
+trExpr vs env (Let        _ ds e) = do
   e' <- trExpr vs env' e
   case ds of
     [FreeDecl _ vs']
@@ -293,10 +293,10 @@ trExpr vs env (Let        ds e) = do
   where
   env' = foldr2 Map.insert env bvs bvs
   bvs  = bv ds
-  trBinding (PatternDecl _ (VariablePattern _ v) rhs)
+  trBinding (PatternDecl _ (VariablePattern _ _ v) rhs)
     = IL.Binding v <$> trRhs vs env' rhs
   trBinding p = error $ "unexpected binding: " ++ show p
-trExpr (v:vs) env (Case ct e alts) = do
+trExpr (v:vs) env (Case _ ct e alts) = do
   -- the ident v is used for the case expression subject, as this could
   -- be referenced in the case alternatives by a variable pattern
   e' <- trExpr vs env e
@@ -311,7 +311,7 @@ trExpr (v:vs) env (Case ct e alts) = do
         -- subject is referenced -> introduce binding for v as subject
       | v `elem` fv expr                -> IL.Let (IL.Binding v e') expr
       | otherwise                       -> expr
-trExpr  vs env (Typed e (QualTypeExpr _ ty)) =
+trExpr  vs env (Typed _ e (QualTypeExpr _ _ ty)) =
   flip IL.Typed ty' <$> trExpr vs env e
   where ty' = transType (toType [] ty)
 trExpr _ _ _ = internalError "CurryToIL.trExpr"
@@ -340,16 +340,16 @@ arguments :: NestedTerm -> [NestedTerm]
 arguments (NestedTerm _ ts) = ts
 
 trPattern :: Ident -> Pattern Type -> NestedTerm
-trPattern _ (LiteralPattern        ty l)
+trPattern _ (LiteralPattern        _ ty l)
   = NestedTerm (IL.LiteralPattern (transType ty) $ trLiteral l) []
-trPattern v (VariablePattern       ty _)
+trPattern v (VariablePattern       _ ty _)
   = NestedTerm (IL.VariablePattern (transType ty) v) []
-trPattern v (ConstructorPattern ty c ts)
+trPattern v (ConstructorPattern _ ty c ts)
   = NestedTerm (IL.ConstructorPattern (transType ty) c vs')
                (zipWith trPattern vs ts)
   where vs  = argNames v
         vs' = zip (map (transType . typeOf) ts) vs
-trPattern v (AsPattern              _ t) = trPattern v t
+trPattern v (AsPattern              _ _ t) = trPattern v t
 trPattern _ _                            = internalError "CurryToIL.trPattern"
 
 argNames :: Ident -> [Ident]

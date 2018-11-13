@@ -28,6 +28,7 @@ import qualified Data.Set.Extra      as Set
 import Curry.Base.Ident
 import Curry.Base.Position
 import Curry.Base.Pretty
+import Curry.Base.SpanInfo
 import Curry.Syntax hiding (impls)
 import Curry.Syntax.Pretty
 
@@ -108,7 +109,8 @@ checkDecls tcEnv clsEnv ds = do
 bindInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
 bindInstance tcEnv clsEnv (InstanceDecl _ cx qcls inst ds) = do
   m <- getModuleIdent
-  let PredType ps _ = expandPolyType m tcEnv clsEnv $ QualTypeExpr cx inst
+  let PredType ps _ = expandPolyType m tcEnv clsEnv $
+                        QualTypeExpr NoSpanInfo cx inst
   modifyInstEnv $
     bindInstInfo (genInstIdent m tcEnv qcls inst) (m, ps, impls [] ds)
   where impls is [] = is
@@ -149,15 +151,16 @@ declDeriveInfo tcEnv clsEnv (NewtypeDecl p tc tvs nc clss) =
 declDeriveInfo _ _ _ =
   internalError "InstanceCheck.declDeriveInfo: no data or newtype declaration"
 
-mkDeriveInfo :: TCEnv -> ClassEnv -> Position -> Ident -> [Ident] -> Context
+mkDeriveInfo :: TCEnv -> ClassEnv -> SpanInfo -> Ident -> [Ident] -> Context
            -> [TypeExpr] -> [QualIdent] -> INCM DeriveInfo
-mkDeriveInfo tcEnv clsEnv p tc tvs cx tys clss = do
+mkDeriveInfo tcEnv clsEnv spi tc tvs cx tys clss = do
   m <- getModuleIdent
   let otc = qualifyWith m tc
       oclss = map (flip (getOrigName m) tcEnv) clss
       PredType ps ty = expandConstrType m tcEnv clsEnv otc tvs cx tys
       (tys', ty') = arrowUnapply ty
   return $ DeriveInfo p otc (PredType ps ty') tys' $ sortClasses clsEnv oclss
+  where p = spanInfo2Pos spi
 
 sortClasses :: ClassEnv -> [QualIdent] -> [QualIdent]
 sortClasses clsEnv clss = map fst $ sortBy compareDepth $ map adjoinDepth clss
@@ -248,9 +251,10 @@ reportUndecidable p what doc predicate@(Pred _ ty) = do
 -- satisfied by cx.
 
 checkInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
-checkInstance tcEnv clsEnv (InstanceDecl p cx cls inst _) = do
+checkInstance tcEnv clsEnv (InstanceDecl spi cx cls inst _) = do
   m <- getModuleIdent
-  let PredType ps ty = expandPolyType m tcEnv clsEnv $ QualTypeExpr cx inst
+  let PredType ps ty = expandPolyType m tcEnv clsEnv $
+                         QualTypeExpr NoSpanInfo cx inst
       ocls = getOrigName m cls tcEnv
       ps' = Set.fromList [ Pred scls ty | scls <- superClasses ocls clsEnv ]
       doc = ppPred m $ Pred cls ty
@@ -258,6 +262,7 @@ checkInstance tcEnv clsEnv (InstanceDecl p cx cls inst _) = do
   ps'' <- reducePredSet p what doc clsEnv ps'
   Set.mapM_ (report . errMissingInstance m p what doc) $
     ps'' `Set.difference` (maxPredSet clsEnv ps)
+  where p = spanInfo2Pos spi
 checkInstance _ _ _ = ok
 
 -- All types specified in the optional default declaration of a module
@@ -267,13 +272,14 @@ checkInstance _ _ _ = ok
 
 checkDefault :: TCEnv -> ClassEnv -> Decl a -> INCM ()
 checkDefault tcEnv clsEnv (DefaultDecl p tys) =
-  mapM_ (checkDefaultType p tcEnv clsEnv) tys
+  mapM_ (checkDefaultType (spanInfo2Pos p) tcEnv clsEnv) tys
 checkDefault _ _ _ = ok
 
 checkDefaultType :: Position -> TCEnv -> ClassEnv -> TypeExpr -> INCM ()
 checkDefaultType p tcEnv clsEnv ty = do
   m <- getModuleIdent
-  let PredType _ ty' = expandPolyType m tcEnv clsEnv $ QualTypeExpr [] ty
+  let PredType _ ty' = expandPolyType m tcEnv clsEnv $
+                         QualTypeExpr NoSpanInfo [] ty
   ps <- reducePredSet p what empty clsEnv (Set.singleton $ Pred qNumId ty')
   Set.mapM_ (report . errMissingInstance m p what empty) ps
   where what = "default declaration"
@@ -312,9 +318,11 @@ instPredSet inEnv (Pred qcls ty) =
 
 genInstIdents :: ModuleIdent -> TCEnv -> Decl a -> [InstIdent]
 genInstIdents m tcEnv (DataDecl    _ tc _ _ qclss) =
-  map (flip (genInstIdent m tcEnv) $ ConstructorType $ qualify tc) qclss
+  map (flip (genInstIdent m tcEnv) $ ConstructorType NoSpanInfo $ qualify tc)
+      qclss
 genInstIdents m tcEnv (NewtypeDecl _ tc _ _ qclss) =
-  map (flip (genInstIdent m tcEnv) $ ConstructorType $ qualify tc) qclss
+  map (flip (genInstIdent m tcEnv) $ ConstructorType NoSpanInfo $ qualify tc)
+      qclss
 genInstIdents m tcEnv (InstanceDecl _ _ qcls ty _) =
   [genInstIdent m tcEnv qcls ty]
 genInstIdents _ _     _                            = []

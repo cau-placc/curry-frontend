@@ -36,6 +36,7 @@ import qualified Data.Map               as M (insert, member)
 import           Curry.Base.Ident
 import           Curry.Base.Monad
 import           Curry.Base.Position
+import           Curry.Base.SpanInfo ()
 import           Curry.Base.Pretty
 import           Curry.Files.PathUtils
 import           Curry.Syntax
@@ -76,7 +77,7 @@ addInterface m intf = S.modify $ \ s -> s { iEnv = M.insert m intf $ iEnv s }
 loadInterfaces :: [FilePath] -- ^ 'FilePath's to search in for interfaces
                -> Module a   -- ^ 'Module' header with import declarations
                -> CYIO InterfaceEnv
-loadInterfaces paths (Module _ m _ is _) = do
+loadInterfaces paths (Module _ _ m _ is _) = do
   res <- liftIO $ S.execStateT load (LoaderState initInterfaceEnv paths [])
   if null (errs res) then ok (iEnv res) else failMessages (reverse $ errs res)
   where load = mapM_ (loadInterface [m]) [(p, m') | ImportDecl p m' _ _ _ <- is]
@@ -90,8 +91,9 @@ loadInterfaces paths (Module _ m _ is _) = do
 -- Otherwise, the compiler checks whether the module has already been imported.
 -- If so, nothing needs to be done, otherwise the interface will be searched
 -- for in the import paths and compiled.
-loadInterface :: [ModuleIdent] -> (Position, ModuleIdent) -> IntfLoader ()
-loadInterface ctxt imp@(p, m)
+loadInterface :: HasPosition a => [ModuleIdent] -> (a, ModuleIdent)
+              -> IntfLoader ()
+loadInterface ctxt imp@(pp, m)
   | m `elem` ctxt = report [errCyclicImport p (m : takeWhile (/= m) ctxt)]
   | otherwise     = do
     isLoaded <- loaded m
@@ -101,12 +103,13 @@ loadInterface ctxt imp@(p, m)
       case mbIntf of
         Nothing -> report [errInterfaceNotFound p m]
         Just fn -> compileInterface ctxt imp fn
+  where p = getPosition pp
 
 -- |Compile an interface by recursively loading its dependencies.
 --
 -- After reading an interface, all imported interfaces are recursively
 -- loaded and inserted into the interface's environment.
-compileInterface :: [ModuleIdent] -> (Position, ModuleIdent) -> FilePath
+compileInterface :: HasPosition p => [ModuleIdent] -> (p, ModuleIdent) -> FilePath
                  -> IntfLoader ()
 compileInterface ctxt (p, m) fn = do
   mbSrc <- liftIO $ readModule fn
@@ -124,18 +127,18 @@ compileInterface ctxt (p, m) fn = do
             addInterface m intf'
 
 -- Error message for required interface that could not be found.
-errInterfaceNotFound :: Position -> ModuleIdent -> Message
+errInterfaceNotFound :: HasPosition p => p -> ModuleIdent -> Message
 errInterfaceNotFound p m = posMessage p $
   text "Interface for module" <+> text (moduleName m) <+> text "not found"
 
 -- Error message for an unexpected interface.
-errWrongInterface :: Position -> ModuleIdent -> ModuleIdent -> Message
+errWrongInterface :: HasPosition p => p -> ModuleIdent -> ModuleIdent -> Message
 errWrongInterface p m n = posMessage p $
   text "Expected interface for" <+> text (moduleName m)
   <> comma <+> text "but found" <+> text (moduleName n)
 
 -- Error message for a cyclic import.
-errCyclicImport :: Position -> [ModuleIdent] -> Message
+errCyclicImport :: HasPosition p => p -> [ModuleIdent] -> Message
 errCyclicImport _ []  = internalError "Interfaces.errCyclicImport: empty list"
 errCyclicImport p [m] = posMessage p $
   text "Recursive import for module" <+> text (moduleName m)

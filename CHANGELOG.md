@@ -4,6 +4,7 @@ Change log for curry-frontend
 Version 1.0.2 (under development)
 =============
 
+  * Added 'short-ast' and 'ast' as new compilation targets
   * Fixed bug with wrong type of free variables in the intermediate language.
   * Fixed bug with generated default implementations of nullary class methods.
   * Fixed bug in desugaring of record patterns.

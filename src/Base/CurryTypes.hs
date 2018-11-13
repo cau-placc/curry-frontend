@@ -39,6 +39,7 @@ import qualified Data.Set as Set
 
 import Curry.Base.Ident
 import Curry.Base.Pretty (Doc)
+import Curry.Base.SpanInfo
 import qualified Curry.Syntax as CS
 import Curry.Syntax.Pretty (ppConstraint, ppTypeExpr, ppQualTypeExpr)
 
@@ -59,25 +60,26 @@ toTypes :: [Ident] -> [CS.TypeExpr] -> [Type]
 toTypes tvs tys = map ((flip (toType' (enumTypeVars tvs tys))) []) tys
 
 toType' :: Map.Map Ident Int -> CS.TypeExpr -> [Type] -> Type
-toType' _   (CS.ConstructorType tc) tys = applyType (TypeConstructor tc) tys
-toType' tvs (CS.ApplyType  ty1 ty2) tys =
+toType' _   (CS.ConstructorType _ tc) tys = applyType (TypeConstructor tc) tys
+toType' tvs (CS.ApplyType  _ ty1 ty2) tys =
   toType' tvs ty1 (toType' tvs ty2 [] : tys)
-toType' tvs (CS.VariableType    tv) tys =
+toType' tvs (CS.VariableType    _ tv) tys =
   applyType (TypeVariable (toVar tvs tv)) tys
-toType' tvs (CS.TupleType      tys) tys'
+toType' tvs (CS.TupleType      _ tys) tys'
   | null tys  = internalError "Base.CurryTypes.toType': zero-element tuple"
   | null tys' = tupleType $ map ((flip $ toType' tvs) []) tys
   | otherwise = internalError "Base.CurryTypes.toType': tuple type application"
-toType' tvs (CS.ListType        ty) tys
+toType' tvs (CS.ListType        _ ty) tys
   | null tys  = listType $ toType' tvs ty []
   | otherwise = internalError "Base.CurryTypes.toType': list type application"
-toType' tvs (CS.ArrowType  ty1 ty2) tys
+toType' tvs (CS.ArrowType  _ ty1 ty2) tys
   | null tys = TypeArrow (toType' tvs ty1 []) (toType' tvs ty2 [])
   | otherwise = internalError "Base.CurryTypes.toType': arrow type application"
-toType' tvs (CS.ParenType       ty) tys = toType' tvs ty tys
-toType' tvs (CS.ForallType tvs' ty) tys
+toType' tvs (CS.ParenType       _ ty) tys = toType' tvs ty tys
+toType' tvs (CS.ForallType _ tvs' ty) tys
   | null tvs' = toType' tvs ty tys
-  | otherwise = applyType (TypeForall (map (toVar tvs) tvs') (toType' tvs ty []))
+  | otherwise = applyType (TypeForall (map (toVar tvs) tvs')
+                                      (toType' tvs ty []))
                           tys
 
 toVar :: Map.Map Ident Int -> Ident -> Int
@@ -95,7 +97,7 @@ toPred :: [Ident] -> CS.Constraint -> Pred
 toPred tvs c = toPred' (enumTypeVars tvs c) c
 
 toPred' :: Map.Map Ident Int -> CS.Constraint -> Pred
-toPred' tvs (CS.Constraint qcls ty) = Pred qcls (toType' tvs ty [])
+toPred' tvs (CS.Constraint _ qcls ty) = Pred qcls (toType' tvs ty [])
 
 toQualPred :: ModuleIdent -> [Ident] -> CS.Constraint -> Pred
 toQualPred m tvs = qualifyPred m . toPred tvs
@@ -113,7 +115,7 @@ toPredType :: [Ident] -> CS.QualTypeExpr -> PredType
 toPredType tvs qty = toPredType' (enumTypeVars tvs qty) qty
 
 toPredType' :: Map.Map Ident Int -> CS.QualTypeExpr -> PredType
-toPredType' tvs (CS.QualTypeExpr cx ty) =
+toPredType' tvs (CS.QualTypeExpr _ cx ty) =
   PredType (toPredSet' tvs cx) (toType' tvs ty [])
 
 toQualPredType :: ModuleIdent -> [Ident] -> CS.QualTypeExpr -> PredType
@@ -124,19 +126,21 @@ toQualPredType m tvs = qualifyPredType m . toPredType tvs
 -- which are free in the argument types.
 
 toConstrType :: QualIdent -> [Ident] -> CS.Context -> [CS.TypeExpr] -> PredType
-toConstrType tc tvs cx tys = toPredType tvs $ CS.QualTypeExpr cx' ty'
+toConstrType tc tvs cx tys = toPredType tvs $
+  CS.QualTypeExpr NoSpanInfo cx' ty' 
   where tvs' = nub (fv tys)
         cx'  = restrictContext tvs' cx
-        ty'  = foldr CS.ArrowType ty0 tys
-        ty0  = foldl CS.ApplyType
-                     (CS.ConstructorType tc)
-                     (map CS.VariableType tvs)
+        ty'  = foldr (CS.ArrowType NoSpanInfo) ty0 tys
+        ty0  = foldl (CS.ApplyType NoSpanInfo)
+                     (CS.ConstructorType NoSpanInfo tc)
+                     (map (CS.VariableType NoSpanInfo) tvs)
 
 restrictContext :: [Ident] -> CS.Context -> CS.Context
 restrictContext tvs cx =
-  [CS.Constraint cls ty | CS.Constraint cls ty <- cx, classVar ty `elem` tvs]
-  where classVar (CS.VariableType tv) = tv
-        classVar (CS.ApplyType  ty _) = classVar ty
+  [CS.Constraint spi cls ty
+    | CS.Constraint spi cls ty <- cx, classVar ty `elem` tvs]
+  where classVar (CS.VariableType _ tv) = tv
+        classVar (CS.ApplyType  _ ty _) = classVar ty
         classVar _ = internalError "Base.CurryTypes.restrictContext.classVar"
 
 -- The function 'toMethodType' returns the type of a type class method.
@@ -144,32 +148,39 @@ restrictContext tvs cx =
 -- and ensures that the class' type variable is always assigned index 0.
 
 toMethodType :: QualIdent -> Ident -> CS.QualTypeExpr -> PredType
-toMethodType qcls clsvar (CS.QualTypeExpr cx ty) =
-  toPredType [clsvar] (CS.QualTypeExpr cx' ty)
-  where cx' = CS.Constraint qcls (CS.VariableType clsvar) : cx
+toMethodType qcls clsvar (CS.QualTypeExpr spi cx ty) =
+  toPredType [clsvar] (CS.QualTypeExpr spi cx' ty)
+  where cx' = CS.Constraint NoSpanInfo qcls
+                (CS.VariableType NoSpanInfo clsvar) : cx
 
 fromType :: [Ident] -> Type -> CS.TypeExpr
 fromType tvs ty = fromType' tvs ty []
 
 fromType' :: [Ident] -> Type -> [CS.TypeExpr] -> CS.TypeExpr
 fromType' _   (TypeConstructor    tc) tys
-  | isQTupleId tc && qTupleArity tc == length tys = CS.TupleType tys
-  | tc == qListId && length tys == 1              = CS.ListType (head tys)
+  | isQTupleId tc && qTupleArity tc == length tys
+    = CS.TupleType NoSpanInfo tys
+  | tc == qListId && length tys == 1
+    = CS.ListType NoSpanInfo (head tys)
   | otherwise
-  = foldl CS.ApplyType (CS.ConstructorType tc) tys
+  = foldl (CS.ApplyType NoSpanInfo) (CS.ConstructorType NoSpanInfo tc) tys
 fromType' tvs (TypeApply     ty1 ty2) tys =
   fromType' tvs ty1 (fromType tvs ty2 : tys)
 fromType' tvs (TypeVariable       tv) tys =
-  foldl CS.ApplyType (CS.VariableType (fromVar tvs tv)) tys
+  foldl (CS.ApplyType NoSpanInfo) (CS.VariableType NoSpanInfo (fromVar tvs tv))
+    tys
 fromType' tvs (TypeArrow     ty1 ty2) tys =
-  foldl CS.ApplyType (CS.ArrowType (fromType tvs ty1) (fromType tvs ty2)) tys
+  foldl (CS.ApplyType NoSpanInfo)
+    (CS.ArrowType NoSpanInfo (fromType tvs ty1) (fromType tvs ty2)) tys
 fromType' tvs (TypeConstrained tys _) tys' = fromType' tvs (head tys) tys'
 fromType' _   (TypeSkolem          k) tys =
-  foldl CS.ApplyType (CS.VariableType $ mkIdent $ "_?" ++ show k) tys
+  foldl (CS.ApplyType NoSpanInfo)
+    (CS.VariableType NoSpanInfo $ mkIdent $ "_?" ++ show k) tys
 fromType' tvs (TypeForall    tvs' ty) tys
   | null tvs' = fromType' tvs ty tys
-  | otherwise = foldl CS.ApplyType
-                      (CS.ForallType (map (fromVar tvs) tvs') (fromType tvs ty))
+  | otherwise = foldl (CS.ApplyType NoSpanInfo)
+                      (CS.ForallType NoSpanInfo (map (fromVar tvs) tvs')
+                                                (fromType tvs ty))
                       tys
 
 fromVar :: [Ident] -> Int -> Ident
@@ -179,7 +190,7 @@ fromQualType :: ModuleIdent -> [Ident] -> Type -> CS.TypeExpr
 fromQualType m tvs = fromType tvs . unqualifyType m
 
 fromPred :: [Ident] -> Pred -> CS.Constraint
-fromPred tvs (Pred qcls ty) = CS.Constraint qcls (fromType tvs ty)
+fromPred tvs (Pred qcls ty) = CS.Constraint NoSpanInfo qcls (fromType tvs ty)
 
 fromQualPred :: ModuleIdent -> [Ident] -> Pred -> CS.Constraint
 fromQualPred m tvs = fromPred tvs .  unqualifyPred m
@@ -195,7 +206,7 @@ fromQualPredSet m tvs = fromPredSet tvs . unqualifyPredSet m
 
 fromPredType :: [Ident] -> PredType -> CS.QualTypeExpr
 fromPredType tvs (PredType ps ty) =
-  CS.QualTypeExpr (fromPredSet tvs ps) (fromType tvs ty)
+  CS.QualTypeExpr NoSpanInfo (fromPredSet tvs ps) (fromType tvs ty)
 
 fromQualPredType :: ModuleIdent -> [Ident] -> PredType -> CS.QualTypeExpr
 fromQualPredType m tvs = fromPredType tvs . unqualifyPredType m
