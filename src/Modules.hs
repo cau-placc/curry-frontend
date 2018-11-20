@@ -394,7 +394,7 @@ writeAbstractCurry opts (env, mdl) = do
 
 writeAST :: Options -> CompEnv (CS.Module ()) -> CYIO ()
 writeAST opts (env, mdl) = when astTarget $ liftIO $
-  writeModule (useSubDir $ astName (filePath env)) (show mdl)
+  writeModule (useSubDir $ astName (filePath env)) (CS.showModule mdl)
   where
   astTarget  = AST `elem` optTargetTypes opts
   useSubDir  = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
