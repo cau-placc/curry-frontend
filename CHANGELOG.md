@@ -1,7 +1,7 @@
 Change log for curry-frontend
 =============================
 
-Version 1.0.2 (under development)
+Version 1.0.2
 =============
 
   * Added 'short-ast' and 'ast' as new compilation targets
