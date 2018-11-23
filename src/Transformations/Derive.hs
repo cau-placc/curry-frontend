@@ -253,7 +253,8 @@ deriveEnumFromThen :: Type -> ConstrInfo -> ConstrInfo -> PredSet
                    -> DVM (Decl PredType)
 deriveEnumFromThen ty (_, c1, _, _) (_, c2, _, _) ps = do
   pty <- getInstMethodType ps qEnumId ty enumFromId
-  vs@[v1, v2] <- mapM (freshArgument . instType) $ replicate 2 ty
+  vs  <- mapM (freshArgument . instType) $ replicate 2 ty
+  let [v1, v2] = vs
   return $ funDecl NoSpanInfo pty enumFromThenId
     (map (uncurry (VariablePattern NoSpanInfo)) vs) $
     enumFromThenExpr v1 v2 c1 c2

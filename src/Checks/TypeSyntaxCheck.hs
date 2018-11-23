@@ -365,7 +365,8 @@ checkConstrDecl tvs (ConstrDecl p evs cx c tys) = do
   return $ ConstrDecl p evs cx' c tys'
 checkConstrDecl tvs (ConOpDecl p evs cx ty1 op ty2) = do
   checkExistVars evs
-  [ty1', ty2'] <- mapM (checkClosedType (evs ++ tvs)) [ty1, ty2]
+  tys' <- mapM (checkClosedType (evs ++ tvs)) [ty1, ty2]
+  let [ty1', ty2'] = tys'
   cx' <- checkClosedContext (fv ty1' ++ fv ty2') cx
   return $ ConOpDecl p evs cx' ty1' op ty2'
 checkConstrDecl tvs (RecordDecl p evs cx c fs) = do

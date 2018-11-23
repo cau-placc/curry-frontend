@@ -245,7 +245,8 @@ absFunDecl :: String -> [(Type, Ident)] -> [Ident] -> Decl Type
            -> LiftM (Decl Type)
 absFunDecl pre fvs lvs (FunctionDecl p _ f eqs) = do
   m <- getModuleIdent
-  FunctionDecl _ _ _ eqs'' <- absDecl pre lvs $ FunctionDecl p undefined f' eqs'
+  d <- absDecl pre lvs $ FunctionDecl p undefined f' eqs'
+  let FunctionDecl _ _ _ eqs'' = d
   modifyValueEnv $ bindGlobalInfo
     (\qf tySc -> Value qf False (eqnArity $ head eqs') tySc) m f' $ polyType ty''
   return $ FunctionDecl p ty'' f' eqs''

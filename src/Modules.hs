@@ -45,7 +45,6 @@ import Curry.Files.Filenames
 import Curry.Files.PathUtils
 import Curry.Syntax.InterfaceEquivalence
 import Curry.Syntax.Utils (shortenModuleAST)
-import Curry.Syntax.Lexer (Token(..), Category(..))
 
 import Base.Messages
 import Base.Types

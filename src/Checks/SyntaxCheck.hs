@@ -837,7 +837,8 @@ checkInfixPattern p spi t1 op t2 = do
   funcPattern r qop = do
     checkFuncPatsExtension (spanInfo2Pos p)
     checkFuncPatCall r qop
-    ts'@[t1',t2'] <- mapM (checkPattern p) [t1,t2]
+    ts' <- mapM (checkPattern p) [t1,t2]
+    let [t1',t2'] = ts'
     mapM_ (checkFPTerm p) ts'
     return $ InfixFuncPattern spi () t1' qop t2'
 

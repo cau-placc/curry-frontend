@@ -552,7 +552,8 @@ tcEqn fs p lhs rhs = do
     (ps, tys, lhs') <- tcLhs p lhs
     (ps', ty, rhs') <- tcRhs rhs
     return (ps, tys, lhs', ps', ty, rhs')
-  ps'' <- reducePredSet p "equation" (ppEquation (Equation p lhs' rhs')) (ps `Set.union` ps')
+  ps'' <- reducePredSet p "equation" (ppEquation (Equation p lhs' rhs')) 
+                        (ps `Set.union` ps')
   checkSkolems p "Equation" ppEquation fs ps'' (foldr TypeArrow ty tys)
     (Equation p lhs' rhs')
 
@@ -567,7 +568,8 @@ lambdaVar v = do
   ty <- freshTypeVar
   return (v, 0, monoType ty)
 
-unifyDecl :: HasPosition p => p -> String -> Doc -> PredSet -> Type -> PredSet -> Type
+unifyDecl :: HasPosition p => p -> String -> Doc -> PredSet -> Type -> PredSet 
+          -> Type
           -> TCM PredSet
 unifyDecl p what doc psLhs tyLhs psRhs tyRhs = do
   ps <- unify p what doc psLhs tyLhs psRhs tyRhs
@@ -590,8 +592,8 @@ defaultPDecl fvs ps ty (_, PatternDecl p t _) = case t of
   _ -> return ps
 defaultPDecl _ _ _ _ = internalError "TypeCheck.defaultPDecl"
 
-applyDefaultsDecl :: HasPosition p => p -> String -> Doc -> Set.Set Int -> PredSet -> Type
-                  -> TCM PredSet
+applyDefaultsDecl :: HasPosition p => p -> String -> Doc -> Set.Set Int 
+                  -> PredSet -> Type -> TCM PredSet
 applyDefaultsDecl p what doc fvs ps ty = do
   theta <- getTypeSubst
   let ty' = subst theta ty
@@ -630,7 +632,8 @@ declVars _ = internalError "TypeCheck.declVars"
 -- because the context of a function's type signature is ignored in the
 -- function 'tcFunctionPDecl' above.
 
-tcCheckPDecl :: PredSet -> QualTypeExpr -> PDecl a -> TCM (PredSet, PDecl PredType)
+tcCheckPDecl :: PredSet -> QualTypeExpr -> PDecl a 
+             -> TCM (PredSet, PDecl PredType)
 tcCheckPDecl ps qty pd = do
   (ps', (ty, pd')) <- tcPDecl ps pd
   fvs <- computeFvEnv
@@ -661,7 +664,8 @@ checkTypeSig :: PredType -> TypeScheme -> TCM Bool
 checkTypeSig (PredType sigPs sigTy) (ForAll _ (PredType ps ty)) = do
   clsEnv <- getClassEnv
   return $
-    ty `eqTypes` sigTy && all (`Set.member` maxPredSet clsEnv sigPs) (Set.toList ps)
+    ty `eqTypes` sigTy &&
+    all (`Set.member` maxPredSet clsEnv sigPs) (Set.toList ps)
 
 -- The function 'equTypes' computes whether two types are equal modulo
 -- renaming of type variables.
@@ -882,7 +886,8 @@ tcClassMethodPDecl qcls tv pd@(_, FunctionDecl _ _ f _) = do
   checkClassMethodType qty tySc pd'
 tcClassMethodPDecl _ _ _ = internalError "TypeCheck.tcClassMethodPDecl"
 
-tcInstanceMethodPDecl :: QualIdent -> PredType -> PDecl a -> TCM (PDecl PredType)
+tcInstanceMethodPDecl :: QualIdent -> PredType -> PDecl a 
+                      -> TCM (PDecl PredType)
 tcInstanceMethodPDecl qcls pty pd@(_, FunctionDecl _ _ f _) = do
   methTy <- instMethodType (qualifyLike qcls) pty f
   (tySc, pd') <- tcMethodPDecl (typeScheme methTy) pd
@@ -983,7 +988,8 @@ tcLhs p (ApLhs spi lhs ts) = do
 -- checked as constructor and functional patterns, respectively, resulting
 -- in slighty misleading error messages if the type check fails.
 
-tcPattern :: HasPosition p => p -> Pattern a -> TCM (PredSet, Type, Pattern PredType)
+tcPattern :: HasPosition p => p -> Pattern a 
+          -> TCM (PredSet, Type, Pattern PredType)
 tcPattern _ (LiteralPattern spi _ l) = do
   (ps, ty) <- tcLiteral False l
   return (ps, ty, LiteralPattern spi (predType ty) l)
@@ -998,11 +1004,12 @@ tcPattern p t@(ConstructorPattern spi _ c ts) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, (tys, ty')) <- liftM (fmap arrowUnapply) (skol (constrType m c vEnv))
-  (ps', ts') <- mapAccumM (uncurry . tcPatternArg p "pattern" (ppPattern 0 t)) ps (zip tys ts)
+  (ps', ts') <- mapAccumM (uncurry . tcPatternArg p "pattern" (ppPattern 0 t))
+                          ps (zip tys ts)
   return (ps', ty', ConstructorPattern spi (predType ty') c ts')
 tcPattern p (InfixPattern spi a t1 op t2) = do
-  (ps, ty, ConstructorPattern _ a' op' [t1', t2']) <-
-    tcPattern p (ConstructorPattern NoSpanInfo a op [t1, t2])
+  (ps, ty, t') <- tcPattern p (ConstructorPattern NoSpanInfo a op [t1, t2])
+  let ConstructorPattern _ a' op' [t1', t2'] = t'
   return (ps, ty, InfixPattern spi a' t1' op' t2')
 tcPattern p (ParenPattern spi t) = do
   (ps, ty, t') <- tcPattern p t
@@ -1011,14 +1018,16 @@ tcPattern _ t@(RecordPattern spi _ c fs) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- liftM (fmap arrowBase) (skol (constrType m c vEnv))
-  (ps', fs') <- mapAccumM (tcField tcPattern "pattern" (\t' -> ppPattern 0 t $-$ text "Term:" <+> ppPattern 0 t') ty) ps fs
+  (ps', fs') <- mapAccumM (tcField tcPattern "pattern" 
+    (\t' -> ppPattern 0 t $-$ text "Term:" <+> ppPattern 0 t') ty) ps fs
   return (ps', ty, RecordPattern spi (predType ty) c fs')
 tcPattern p (TuplePattern spi ts) = do
   (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern p) ts
   return (Set.unions pss, tupleType tys, TuplePattern spi ts')
 tcPattern p t@(ListPattern spi _ ts) = do
   ty <- freshTypeVar
-  (ps, ts') <- mapAccumM (flip (tcPatternArg p "pattern" (ppPattern 0 t)) ty) emptyPredSet ts
+  (ps, ts') <- mapAccumM (flip (tcPatternArg p "pattern" (ppPattern 0 t)) ty)
+                         emptyPredSet ts
   return (ps, listType ty, ListPattern spi (predType $ listType ty) ts')
 tcPattern p t@(AsPattern spi v t') = do
   vEnv <- getValueEnv
@@ -1035,8 +1044,8 @@ tcPattern p t@(FunctionPattern spi _ f ts) = do
   (ps, ty) <- inst (funType m f vEnv)
   tcFuncPattern p spi (ppPattern 0 t) f id ps ty ts
 tcPattern p (InfixFuncPattern spi a t1 op t2) = do
-  (ps, ty, FunctionPattern _ a' op' [t1', t2']) <-
-    tcPattern p (FunctionPattern spi a op [t1, t2])
+  (ps, ty, t') <- tcPattern p (FunctionPattern spi a op [t1, t2])
+  let FunctionPattern _ a' op' [t1', t2'] = t'
   return (ps, ty, InfixFuncPattern spi a' t1' op' t2')
 
 tcFuncPattern :: HasPosition p => p -> SpanInfo -> Doc -> QualIdent
@@ -1078,7 +1087,8 @@ tcCondExpr ty ps (CondExpr p g e) = do
   (ps'', e') <- tcExpr p e >>- unify p "guarded expression" (ppExpr 0 e) ps' ty
   return (ps'', CondExpr p g' e')
 
-tcExpr :: HasPosition p => p -> Expression a -> TCM (PredSet, Type, Expression PredType)
+tcExpr :: HasPosition p => p -> Expression a 
+       -> TCM (PredSet, Type, Expression PredType)
 tcExpr _ (Literal spi _ l) = do
   (ps, ty) <- tcLiteral True l
   return (ps, ty, Literal spi (predType ty) l)
@@ -1114,11 +1124,13 @@ tcExpr _ e@(Record spi _ c fs) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- liftM (fmap arrowBase) (instExist (constrType m c vEnv))
-  (ps', fs') <- mapAccumM (tcField tcExpr "construction" (\e' -> ppExpr 0 e $-$ text "Term:" <+> ppExpr 0 e') ty) ps fs
+  (ps', fs') <- mapAccumM (tcField tcExpr "construction" 
+    (\e' -> ppExpr 0 e $-$ text "Term:" <+> ppExpr 0 e') ty) ps fs
   return (ps', ty, Record spi (predType ty) c fs')
 tcExpr p e@(RecordUpdate spi e1 fs) = do
   (ps, ty, e1') <- tcExpr p e1
-  (ps', fs') <- mapAccumM (tcField tcExpr "update" (\e' -> ppExpr 0 e $-$ text "Term:" <+> ppExpr 0 e') ty) ps fs
+  (ps', fs') <- mapAccumM (tcField tcExpr "update" 
+    (\e' -> ppExpr 0 e $-$ text "Term:" <+> ppExpr 0 e') ty) ps fs
   return (ps', ty, RecordUpdate spi e1' fs')
 tcExpr p (Tuple spi es) = do
   (pss, tys, es') <- liftM unzip3 $ mapM (tcExpr p) es
@@ -1241,7 +1253,8 @@ tcAltern fs tyLhs p t rhs = do
       tcPatternArg p "case pattern" (ppAlt (Alt p t rhs)) emptyPredSet tyLhs t
     (ps', ty', rhs') <- tcRhs rhs
     return (ps, t', ps', ty', rhs')
-  ps'' <- reducePredSet p "alternative" (ppAlt (Alt p t' rhs')) (ps `Set.union` ps')
+  ps'' <- reducePredSet p "alternative" (ppAlt (Alt p t' rhs')) 
+                        (ps `Set.union` ps')
   checkSkolems p "Alternative" ppAlt fs ps'' ty' (Alt p t' rhs')
 
 tcQual :: HasPosition p => p -> PredSet -> Statement a
@@ -1300,7 +1313,8 @@ tcField :: (Position -> a b -> TCM (PredSet, Type, a PredType))
 tcField check what doc ty ps (Field p l x) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  (ps', TypeArrow ty1 ty2) <- inst (labelType m l vEnv)
+  (ps', ty') <- inst (labelType m l vEnv)
+  let TypeArrow ty1 ty2 = ty'
   _ <- unify p "field label" empty emptyPredSet ty emptyPredSet ty1
   (ps'', x') <- check (spanInfo2Pos p) x >>-
     unify p ("record " ++ what) (doc x) (ps `Set.union` ps') ty2
@@ -1328,7 +1342,8 @@ tcArrow p what doc ty = do
 -- The function 'tcBinary' checks that its argument can be used as an arrow type
 -- a -> b -> c and returns the triple (a,b,c).
 
-tcBinary :: HasPosition p => p -> String -> Doc -> Type -> TCM (Type, Type, Type)
+tcBinary :: HasPosition p => p -> String -> Doc -> Type 
+         -> TCM (Type, Type, Type)
 tcBinary p what doc ty = tcArrow p what doc ty >>= uncurry binaryArrow
   where
   binaryArrow ty1 (TypeArrow ty2 ty3) = return (ty1, ty2, ty3)
@@ -1344,8 +1359,8 @@ tcBinary p what doc ty = tcArrow p what doc ty >>= uncurry binaryArrow
 
 -- Unification: The unification uses Robinson's algorithm.
 
-unify :: HasPosition p => p -> String -> Doc -> PredSet -> Type -> PredSet -> Type
-      -> TCM PredSet
+unify :: HasPosition p => p -> String -> Doc -> PredSet -> Type -> PredSet 
+      -> Type -> TCM PredSet
 unify p what doc ps1 ty1 ps2 ty2 = do
   theta <- getTypeSubst
   let ty1' = subst theta ty1
@@ -1441,8 +1456,8 @@ instPredSet inEnv qcls ty = case Map.lookup qcls $ snd inEnv of
       fmap (expandAliasType tys . snd3) (lookupInstInfo (qcls, tc) $ fst inEnv)
     _ -> Nothing
 
-reportMissingInstance :: HasPosition p => ModuleIdent -> p -> String -> Doc -> InstEnv'
-                      -> TypeSubst -> Pred -> TCM TypeSubst
+reportMissingInstance :: HasPosition p => ModuleIdent -> p -> String -> Doc
+                      -> InstEnv' -> TypeSubst -> Pred -> TCM TypeSubst
 reportMissingInstance m p what doc inEnv theta (Pred qcls ty) =
   case subst theta ty of
     ty'@(TypeConstrained tys tv) ->
@@ -1484,8 +1499,8 @@ hasInstance inEnv qcls = isJust . instPredSet inEnv qcls
 -- types that satisfies all constraints for the ambiguous type variable. An
 -- error is reported if no such type exists.
 
-applyDefaults :: HasPosition p => p -> String -> Doc -> Set.Set Int -> PredSet -> Type
-              -> TCM PredSet
+applyDefaults :: HasPosition p => p -> String -> Doc -> Set.Set Int -> PredSet
+              -> Type -> TCM PredSet
 applyDefaults p what doc fvs ps ty = do
   m <- getModuleIdent
   clsEnv <- getClassEnv
@@ -1529,8 +1544,8 @@ isNumClass = (elem qNumId .) . flip allSuperClasses
 -- a skolem constant escapes in the (result) type of 'f' and in the type of the
 -- environment variable 'x' for the fcase expression in the definition of 'g'.
 
-checkSkolems :: HasPosition p => p -> String -> (a -> Doc) -> Set.Set Int -> PredSet
-             -> Type -> a -> TCM (PredSet, Type, a)
+checkSkolems :: HasPosition p => p -> String -> (a -> Doc) -> Set.Set Int 
+             -> PredSet -> Type -> a -> TCM (PredSet, Type, a)
 checkSkolems p what pp fs ps ty x = do
   m <- getModuleIdent
   vEnv <- getValueEnv
@@ -1755,15 +1770,16 @@ errNonFunctionType p what doc m ty = posMessage p $ vcat
   , text "Cannot be applied"
   ]
 
-errNonBinaryOp :: HasPosition a => a -> String -> Doc -> ModuleIdent -> Type -> Message
+errNonBinaryOp :: HasPosition a => a -> String -> Doc -> ModuleIdent -> Type
+               -> Message
 errNonBinaryOp p what doc m ty = posMessage p $ vcat
   [ text "Type error in" <+> text what, doc
   , text "Type:" <+> ppType m ty
   , text "Cannot be used as binary operator"
   ]
 
-errTypeMismatch :: HasPosition a => a -> String -> Doc -> ModuleIdent -> Type -> Type
-                -> Doc -> Message
+errTypeMismatch :: HasPosition a => a -> String -> Doc -> ModuleIdent -> Type
+                -> Type -> Doc -> Message
 errTypeMismatch p what doc m ty1 ty2 reason = posMessage p $ vcat
   [ text "Type error in"  <+> text what, doc
   , text "Inferred type:" <+> ppType m ty2
@@ -1793,8 +1809,8 @@ errIncompatibleTypes m ty1 ty2 = sep
   , text "are incompatible"
   ]
 
-errIncompatibleLabelTypes :: HasPosition a => a -> ModuleIdent -> Ident -> Type -> Type
-                          -> Message
+errIncompatibleLabelTypes :: HasPosition a => a -> ModuleIdent -> Ident -> Type
+                          -> Type -> Message
 errIncompatibleLabelTypes p m l ty1 ty2 = posMessage p $ sep
   [ text "Labeled types" <+> ppIdent l <+> text "::" <+> ppType m ty1
   , nest 10 $ text "and" <+> ppIdent l <+> text "::" <+> ppType m ty2
@@ -1809,8 +1825,8 @@ errMissingInstance m p what doc pr = posMessage p $ vcat
   , doc
   ]
 
-errAmbiguousTypeVariable :: HasPosition a => ModuleIdent -> a -> String -> Doc -> PredSet
-                         -> Type -> Int -> Message
+errAmbiguousTypeVariable :: HasPosition a => ModuleIdent -> a -> String -> Doc
+                         -> PredSet -> Type -> Int -> Message
 errAmbiguousTypeVariable m p what doc ps ty tv = posMessage p $ vcat
   [ text "Ambiguous type variable" <+> ppType m (TypeVariable tv)
   , text "in type" <+> ppPredType m (PredType ps ty)

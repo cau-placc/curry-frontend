@@ -375,8 +375,8 @@ dsNonLinear env (ListPattern          _ pty ts) =
   second (ListPattern NoSpanInfo pty) <$> mapAccumM dsNonLinear env ts
 dsNonLinear env (AsPattern               _ v t) = do
   let pty = predType $ typeOf t
-  (env1, VariablePattern _ _ v') <-
-    dsNonLinear env (VariablePattern NoSpanInfo pty v)
+  (env1, pat) <- dsNonLinear env (VariablePattern NoSpanInfo pty v)
+  let VariablePattern _ _ v' = pat
   (env2, t') <- dsNonLinear env1 t
   return (env2, AsPattern NoSpanInfo v' t')
 dsNonLinear env (LazyPattern               _ t) =
