@@ -960,77 +960,82 @@ negateLiteral _ = internalError "Desugar.negateLiteral"
 -- Prelude entities
 -- ---------------------------------------------------------------------------
 
-preludeFun :: [Type] -> Type -> String -> Expression PredType
-preludeFun tys ty = Variable NoSpanInfo (predType $ foldr TypeArrow ty tys)
-                  . preludeIdent
+baseFun :: String -> [Type] -> Type -> String -> Expression PredType
+baseFun bs tys ty = Variable NoSpanInfo (predType $ foldr TypeArrow ty tys)
+                  . baseIdent bs
 
-preludeIdent :: String -> QualIdent
-preludeIdent = qualifyWith preludeMIdent . mkIdent
+baseIdent :: String -> String -> QualIdent
+baseIdent bs = qualifyWith (baseMIdent bs) . mkIdent
 
 prelBind :: Type -> Type -> Type -> Expression PredType
-prelBind ma a mb = preludeFun [ma, TypeArrow a mb] mb ">>="
+prelBind ma a mb = baseFun baseMonadModule [ma, TypeArrow a mb] mb ">>="
 
 prelBind_ :: Type -> Type -> Expression PredType
-prelBind_ ma mb = preludeFun [ma, mb] mb ">>"
+prelBind_ ma mb = baseFun baseMonadModule [ma, mb] mb ">>"
 
 prelFlip :: Type -> Type -> Type -> Expression PredType
-prelFlip a b c = preludeFun [TypeArrow a (TypeArrow b c), b, a] c "flip"
+prelFlip a b c = baseFun baseFunctionModule [TypeArrow a (TypeArrow b c), b, a] c "flip"
 
 prelFromInt :: Type -> Expression PredType
-prelFromInt a = preludeFun [intType] a "fromInt"
+prelFromInt a = baseFun baseNumModule [intType] a "fromInt"
 
 prelFromFloat :: Type -> Expression PredType
-prelFromFloat a = preludeFun [floatType] a "fromFloat"
+prelFromFloat a = baseFun baseFractionalModule [floatType] a "fromFloat"
 
 prelEnumFrom :: Type -> Expression PredType
-prelEnumFrom a = preludeFun [a] (listType a) "enumFrom"
+prelEnumFrom a = baseFun baseEnumModule [a] (listType a) "enumFrom"
 
 prelEnumFromTo :: Type -> Expression PredType
-prelEnumFromTo a = preludeFun [a, a] (listType a) "enumFromTo"
+prelEnumFromTo a = baseFun baseEnumModule [a, a] (listType a) "enumFromTo"
 
 prelEnumFromThen :: Type -> Expression PredType
-prelEnumFromThen a = preludeFun [a, a] (listType a) "enumFromThen"
+prelEnumFromThen a = baseFun baseEnumModule [a, a] (listType a) "enumFromThen"
 
 prelEnumFromThenTo :: Type -> Expression PredType
-prelEnumFromThenTo a = preludeFun [a, a, a] (listType a) "enumFromThenTo"
+prelEnumFromThenTo a =
+  baseFun baseEnumModule [a, a, a] (listType a) "enumFromThenTo"
 
 prelNegate :: Type -> Expression PredType
-prelNegate a = preludeFun [a] a "negate"
+prelNegate a = baseFun baseNumModule [a] a "negate"
 
 prelFail :: Type -> Expression PredType
-prelFail ma = preludeFun [stringType] ma "fail"
+prelFail ma = baseFun baseMonadModule [stringType] ma "fail"
 
 prelFailed :: Type -> Expression PredType
-prelFailed a = preludeFun [] a "failed"
+prelFailed a = baseFun baseFailedModule [] a "failed"
 
 prelUnknown :: Type -> Expression PredType
-prelUnknown a = preludeFun [] a "unknown"
+prelUnknown a = baseFun baseNondetModule [] a "unknown"
 
 prelMap :: Type -> Type -> Expression PredType
-prelMap a b = preludeFun [TypeArrow a b, listType a] (listType b) "map"
+prelMap a b = baseFun baseListModule [TypeArrow a b, listType a] (listType b) "map"
 
 prelFoldr :: Type -> Type -> Expression PredType
 prelFoldr a b =
-  preludeFun [TypeArrow a (TypeArrow b b), b, listType a] b "foldr"
+  baseFun baseListModule [TypeArrow a (TypeArrow b b), b, listType a] b "foldr"
 
 prelAppend :: Type -> Expression PredType
-prelAppend a = preludeFun [listType a, listType a] (listType a) "++"
+prelAppend a = baseFun baseListModule [listType a, listType a] (listType a) "++"
 
 prelConcatMap :: Type -> Type -> Expression PredType
-prelConcatMap a b =
-  preludeFun [TypeArrow a (listType b), listType a] (listType b) "concatMap"
+prelConcatMap a b = baseFun baseListModule
+  [TypeArrow a (listType b), listType a] (listType b) "concatMap"
 
 (=:<=) :: Expression PredType -> Expression PredType -> Expression PredType
-e1 =:<= e2 = apply (preludeFun [typeOf e1, typeOf e2] boolType "=:<=") [e1, e2]
+e1 =:<= e2 = apply (baseFun baseConstraintModule [typeOf e1, typeOf e2]
+                    boolType "=:<=") [e1, e2]
 
 (=:=) :: Expression PredType -> Expression PredType -> Expression PredType
-e1 =:= e2 = apply (preludeFun [typeOf e1, typeOf e2] boolType "=:=") [e1, e2]
+e1 =:= e2 = apply (baseFun baseConstraintModule [typeOf e1, typeOf e2]
+                   boolType "=:=") [e1, e2]
 
 (&>) :: Expression PredType -> Expression PredType -> Expression PredType
-e1 &> e2 = apply (preludeFun [boolType, typeOf e2] (typeOf e2) "cond") [e1, e2]
+e1 &> e2 = apply (baseFun baseConstraintModule [boolType, typeOf e2]
+                  (typeOf e2) "cond") [e1, e2]
 
 (&) :: Expression PredType -> Expression PredType -> Expression PredType
-e1 & e2 = apply (preludeFun [boolType, boolType] boolType "&") [e1, e2]
+e1 & e2 = apply (baseFun baseConstraintModule [boolType, boolType]
+                 boolType "&") [e1, e2]
 
 truePat :: Pattern PredType
 truePat = ConstructorPattern NoSpanInfo predBoolType qTrueId []

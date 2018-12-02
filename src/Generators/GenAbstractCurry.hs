@@ -309,7 +309,7 @@ trExpr (Apply             _ e1 e2) = CApply <$> trExpr e1 <*> trExpr e2
 trExpr (InfixApply     _ e1 op e2) = trExpr $ apply (infixOp op) [e1, e2]
 trExpr (LeftSection        _ e op) = trExpr $ apply (infixOp op) [e]
 trExpr (RightSection       _ op e) =
-  trExpr $ apply (Variable NoSpanInfo undefined qFlip) [infixOp op, e]
+  trExpr $ apply (Variable NoSpanInfo undefined qFlipId) [infixOp op, e]
 trExpr (Lambda             _ ps e) = inNestedScope $
                                      CLambda <$> mapM trPat ps <*> trExpr e
 trExpr (Let                _ ds e) = inNestedScope $
@@ -384,15 +384,6 @@ trGlobalIdent i = S.gets moduleId >>= \m -> return (moduleName m, idName i)
 
 trLocalIdent :: Ident -> GAC QName
 trLocalIdent i = return ("", idName i)
-
-qFlip :: QualIdent
-qFlip = qualifyWith preludeMIdent (mkIdent "flip")
-
-qNegateId :: QualIdent
-qNegateId = qualifyWith preludeMIdent (mkIdent "negate")
-
-qIfThenElseId :: QualIdent
-qIfThenElseId = qualifyWith preludeMIdent (mkIdent "if_then_else")
 
 prelUntyped :: QualIdent
 prelUntyped = qualifyWith preludeMIdent $ mkIdent "untyped"

@@ -313,11 +313,11 @@ occursInBinding v (Binding w _) = v == w
 -- The following functions generate several IL expressions and patterns
 
 failedExpr :: Type -> Expression
-failedExpr ty = Function ty (qualifyWith preludeMIdent (mkIdent "failed")) 0
+failedExpr ty = Function ty qFailedId 0
 
 eqExpr :: Expression -> Expression -> Expression
 eqExpr e1 e2 = Apply (Apply (Function eqTy eq 2) e1) e2
-  where eq   = qImplMethodId preludeMIdent qEqId ty $ mkIdent "=="
+  where eq   = qImplMethodId (baseMIdent "Eq") qEqId ty $ eqOpId
         ty   = case e2 of
                  Literal _ l -> case l of
                                   Char  _ -> charType
