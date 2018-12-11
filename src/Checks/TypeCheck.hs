@@ -868,7 +868,6 @@ tcTopPDecl (i, ClassDecl p cx cls tv ds) = withLocalSigEnv $ do
   where (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
 tcTopPDecl (i, InstanceDecl p cx qcls ty ds) = do
   tcEnv <- getTyConsEnv
-  --let ocls = origName $ head $ qualLookupTypeInfo qcls tcEnv
   pty <- expandPoly $ QualTypeExpr NoSpanInfo cx ty
   vpds' <- mapM (tcInstanceMethodPDecl qcls pty) vpds
   return (i, InstanceDecl p cx qcls ty $ fromPDecls $ map untyped opds ++ vpds')
