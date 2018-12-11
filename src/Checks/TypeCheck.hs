@@ -552,7 +552,7 @@ tcEqn fs p lhs rhs = do
     (ps, tys, lhs') <- tcLhs p lhs
     (ps', ty, rhs') <- tcRhs rhs
     return (ps, tys, lhs', ps', ty, rhs')
-  ps'' <- reducePredSet p "equation" (ppEquation (Equation p lhs' rhs')) 
+  ps'' <- reducePredSet p "equation" (ppEquation (Equation p lhs' rhs'))
                         (ps `Set.union` ps')
   checkSkolems p "Equation" ppEquation fs ps'' (foldr TypeArrow ty tys)
     (Equation p lhs' rhs')
@@ -568,7 +568,7 @@ lambdaVar v = do
   ty <- freshTypeVar
   return (v, 0, monoType ty)
 
-unifyDecl :: HasPosition p => p -> String -> Doc -> PredSet -> Type -> PredSet 
+unifyDecl :: HasPosition p => p -> String -> Doc -> PredSet -> Type -> PredSet
           -> Type
           -> TCM PredSet
 unifyDecl p what doc psLhs tyLhs psRhs tyRhs = do
@@ -592,7 +592,7 @@ defaultPDecl fvs ps ty (_, PatternDecl p t _) = case t of
   _ -> return ps
 defaultPDecl _ _ _ _ = internalError "TypeCheck.defaultPDecl"
 
-applyDefaultsDecl :: HasPosition p => p -> String -> Doc -> Set.Set Int 
+applyDefaultsDecl :: HasPosition p => p -> String -> Doc -> Set.Set Int
                   -> PredSet -> Type -> TCM PredSet
 applyDefaultsDecl p what doc fvs ps ty = do
   theta <- getTypeSubst
@@ -632,7 +632,7 @@ declVars _ = internalError "TypeCheck.declVars"
 -- because the context of a function's type signature is ignored in the
 -- function 'tcFunctionPDecl' above.
 
-tcCheckPDecl :: PredSet -> QualTypeExpr -> PDecl a 
+tcCheckPDecl :: PredSet -> QualTypeExpr -> PDecl a
              -> TCM (PredSet, PDecl PredType)
 tcCheckPDecl ps qty pd = do
   (ps', (ty, pd')) <- tcPDecl ps pd
@@ -868,9 +868,8 @@ tcTopPDecl (i, ClassDecl p cx cls tv ds) = withLocalSigEnv $ do
   where (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
 tcTopPDecl (i, InstanceDecl p cx qcls ty ds) = do
   tcEnv <- getTyConsEnv
-  let ocls = origName $ head $ qualLookupTypeInfo qcls tcEnv
   pty <- expandPoly $ QualTypeExpr NoSpanInfo cx ty
-  vpds' <- mapM (tcInstanceMethodPDecl ocls pty) vpds
+  vpds' <- mapM (tcInstanceMethodPDecl qcls pty) vpds
   return (i, InstanceDecl p cx qcls ty $ fromPDecls $ map untyped opds ++ vpds')
   where (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
 tcTopPDecl _ = internalError "Checks.TypeCheck.tcTopDecl"
@@ -886,7 +885,7 @@ tcClassMethodPDecl qcls tv pd@(_, FunctionDecl _ _ f _) = do
   checkClassMethodType qty tySc pd'
 tcClassMethodPDecl _ _ _ = internalError "TypeCheck.tcClassMethodPDecl"
 
-tcInstanceMethodPDecl :: QualIdent -> PredType -> PDecl a 
+tcInstanceMethodPDecl :: QualIdent -> PredType -> PDecl a
                       -> TCM (PDecl PredType)
 tcInstanceMethodPDecl qcls pty pd@(_, FunctionDecl _ _ f _) = do
   methTy <- instMethodType (qualifyLike qcls) pty f
@@ -988,7 +987,7 @@ tcLhs p (ApLhs spi lhs ts) = do
 -- checked as constructor and functional patterns, respectively, resulting
 -- in slighty misleading error messages if the type check fails.
 
-tcPattern :: HasPosition p => p -> Pattern a 
+tcPattern :: HasPosition p => p -> Pattern a
           -> TCM (PredSet, Type, Pattern PredType)
 tcPattern _ (LiteralPattern spi _ l) = do
   (ps, ty) <- tcLiteral False l
@@ -1018,7 +1017,7 @@ tcPattern _ t@(RecordPattern spi _ c fs) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- liftM (fmap arrowBase) (skol (constrType m c vEnv))
-  (ps', fs') <- mapAccumM (tcField tcPattern "pattern" 
+  (ps', fs') <- mapAccumM (tcField tcPattern "pattern"
     (\t' -> ppPattern 0 t $-$ text "Term:" <+> ppPattern 0 t') ty) ps fs
   return (ps', ty, RecordPattern spi (predType ty) c fs')
 tcPattern p (TuplePattern spi ts) = do
@@ -1087,7 +1086,7 @@ tcCondExpr ty ps (CondExpr p g e) = do
   (ps'', e') <- tcExpr p e >>- unify p "guarded expression" (ppExpr 0 e) ps' ty
   return (ps'', CondExpr p g' e')
 
-tcExpr :: HasPosition p => p -> Expression a 
+tcExpr :: HasPosition p => p -> Expression a
        -> TCM (PredSet, Type, Expression PredType)
 tcExpr _ (Literal spi _ l) = do
   (ps, ty) <- tcLiteral True l
@@ -1124,12 +1123,12 @@ tcExpr _ e@(Record spi _ c fs) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- liftM (fmap arrowBase) (instExist (constrType m c vEnv))
-  (ps', fs') <- mapAccumM (tcField tcExpr "construction" 
+  (ps', fs') <- mapAccumM (tcField tcExpr "construction"
     (\e' -> ppExpr 0 e $-$ text "Term:" <+> ppExpr 0 e') ty) ps fs
   return (ps', ty, Record spi (predType ty) c fs')
 tcExpr p e@(RecordUpdate spi e1 fs) = do
   (ps, ty, e1') <- tcExpr p e1
-  (ps', fs') <- mapAccumM (tcField tcExpr "update" 
+  (ps', fs') <- mapAccumM (tcField tcExpr "update"
     (\e' -> ppExpr 0 e $-$ text "Term:" <+> ppExpr 0 e') ty) ps fs
   return (ps', ty, RecordUpdate spi e1' fs')
 tcExpr p (Tuple spi es) = do
@@ -1253,7 +1252,7 @@ tcAltern fs tyLhs p t rhs = do
       tcPatternArg p "case pattern" (ppAlt (Alt p t rhs)) emptyPredSet tyLhs t
     (ps', ty', rhs') <- tcRhs rhs
     return (ps, t', ps', ty', rhs')
-  ps'' <- reducePredSet p "alternative" (ppAlt (Alt p t' rhs')) 
+  ps'' <- reducePredSet p "alternative" (ppAlt (Alt p t' rhs'))
                         (ps `Set.union` ps')
   checkSkolems p "Alternative" ppAlt fs ps'' ty' (Alt p t' rhs')
 
@@ -1342,7 +1341,7 @@ tcArrow p what doc ty = do
 -- The function 'tcBinary' checks that its argument can be used as an arrow type
 -- a -> b -> c and returns the triple (a,b,c).
 
-tcBinary :: HasPosition p => p -> String -> Doc -> Type 
+tcBinary :: HasPosition p => p -> String -> Doc -> Type
          -> TCM (Type, Type, Type)
 tcBinary p what doc ty = tcArrow p what doc ty >>= uncurry binaryArrow
   where
@@ -1359,7 +1358,7 @@ tcBinary p what doc ty = tcArrow p what doc ty >>= uncurry binaryArrow
 
 -- Unification: The unification uses Robinson's algorithm.
 
-unify :: HasPosition p => p -> String -> Doc -> PredSet -> Type -> PredSet 
+unify :: HasPosition p => p -> String -> Doc -> PredSet -> Type -> PredSet
       -> Type -> TCM PredSet
 unify p what doc ps1 ty1 ps2 ty2 = do
   theta <- getTypeSubst
@@ -1544,7 +1543,7 @@ isNumClass = (elem qNumId .) . flip allSuperClasses
 -- a skolem constant escapes in the (result) type of 'f' and in the type of the
 -- environment variable 'x' for the fcase expression in the definition of 'g'.
 
-checkSkolems :: HasPosition p => p -> String -> (a -> Doc) -> Set.Set Int 
+checkSkolems :: HasPosition p => p -> String -> (a -> Doc) -> Set.Set Int
              -> PredSet -> Type -> a -> TCM (PredSet, Type, a)
 checkSkolems p what pp fs ps ty x = do
   m <- getModuleIdent
