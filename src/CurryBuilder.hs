@@ -16,7 +16,7 @@
 -}
 module CurryBuilder (buildCurry, findCurry) where
 
-import Control.Monad   (foldM, liftM)
+import Control.Monad   (foldM, liftM, unless)
 import Data.Char       (isSpace)
 import Data.Maybe      (catMaybes, fromMaybe, mapMaybe)
 import System.FilePath ((</>), normalise)
@@ -80,15 +80,25 @@ findCurry opts s = do
 
 -- |Compiles the given source modules, which must be in topological order.
 makeCurry :: Options -> [(ModuleIdent, Source)] ->  CYIO ()
-makeCurry opts srcs = mapM_ process' (zip [1 ..] srcs)
+makeCurry opts srcs = mapM_ process' (snd (foldr addIndex (noBase, []) srcs))
   where
   total    = length srcs
+  noBase   = length $ filter (not . isBase . fst) srcs
+
+  addIndex src@(mid, _) (n, srcs') = if isBase mid
+                                       then (n  , ((n, src):srcs'))
+                                       else (n-1, ((n, src):srcs'))
+
+  isBase mid = case midQualifiers mid of
+    ["Base", _] -> True
+    _           -> False
+
   tgtDir m = addCurrySubdirModule (optUseSubdir opts) m
 
   process' :: (Int, (ModuleIdent, Source)) -> CYIO ()
   process' (n, (m, Source fn ps is)) = do
     opts' <- processPragmas opts ps
-    process (adjustOptions (n == total) opts') (n, total) m fn deps
+    process (adjustOptions (n == total) opts') (n, noBase) m fn deps
     where
     deps = fn : mapMaybe curryInterface is
 
@@ -158,10 +168,17 @@ process opts idx m fn deps
   | optForce opts = compile
   | otherwise     = smake (tgtDir (interfName fn) : destFiles) deps compile skip
   where
-  skip    = status opts $ compMessage idx "Skipping" m (fn, head destFiles)
+  skip    =
+    unless (isBase m) $
+      status opts $ compMessage idx "Skipping" m (fn, head destFiles)
   compile = do
-    status opts $ compMessage idx "Compiling" m (fn, head destFiles)
+    unless (isBase m) $
+      status opts $ compMessage idx "Compiling" m (fn, head destFiles)
     compileModule opts m fn
+
+  isBase mid = case midQualifiers mid of
+      ["Base", _] -> True
+      _           -> False
 
   tgtDir = addCurrySubdirModule (optUseSubdir opts) m
 
