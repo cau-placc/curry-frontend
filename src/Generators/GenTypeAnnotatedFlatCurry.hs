@@ -60,8 +60,8 @@ genTypeAnnotatedFlatCurry env mdl il = patchPrelude $ run env mdl (trModule il)
 -- -----------------------------------------------------------------------------
 
 patchPrelude :: AProg a -> AProg a
-patchPrelude p@(AProg n _ ts fs os)
-  | n == prelude = AProg n [] ts' fs os
+patchPrelude p@(AProg n is ts fs os)
+  | n == prelude = AProg n is ts' fs os
   | otherwise    = p
   where ts' = sortBy (compare `on` typeName) pts
         pts = primTypes ++ ts
