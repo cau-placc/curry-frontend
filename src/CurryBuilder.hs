@@ -95,7 +95,8 @@ makeCurry opts srcs = mapM_ process' (snd (foldr addIndex (noBase, []) srcs))
   process' :: (Int, (ModuleIdent, Source)) -> CYIO ()
   process' (n, (m, Source fn ps is)) = do
     opts' <- processPragmas opts ps
-    process (adjustOptions (isBaseModule m) (n == total) opts') (n, noBase) m fn deps
+    process (adjustOptions (isBaseModule m)
+            (n == total) opts') (n, noBase) m fn deps
     where
     deps = fn : mapMaybe curryInterface is
 
@@ -109,7 +110,7 @@ makeCurry opts srcs = mapM_ process' (snd (foldr addIndex (noBase, []) srcs))
 adjustOptions :: Bool -> Bool -> Options -> Options
 adjustOptions base final opts
   | final      = opts { optForce         = optForce opts || isDump
-                      , optOptimizations = optimOpts}
+                      , optOptimizations = optimOpts'}
   | otherwise  = opts { optForce         = False
                       , optDebugOpts     = defaultDebugOpts
                       , optOptimizations = optimOpts'
