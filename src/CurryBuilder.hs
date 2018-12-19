@@ -34,7 +34,8 @@ import Curry.Syntax ( ModulePragma (..), Extension (KnownExtension)
 import Base.Messages
 
 import CompilerOpts ( Options (..), CppOpts (..), DebugOpts (..)
-                    , TargetType (..), defaultDebugOpts, updateOpts )
+                    , TargetType (..), defaultDebugOpts, updateOpts
+                    , optRemoveUnusedImports )
 import CurryDeps    (Source (..), flatDeps)
 import Modules      (compileModule)
 
@@ -83,22 +84,18 @@ makeCurry :: Options -> [(ModuleIdent, Source)] ->  CYIO ()
 makeCurry opts srcs = mapM_ process' (snd (foldr addIndex (noBase, []) srcs))
   where
   total    = length srcs
-  noBase   = length $ filter (not . isBase . fst) srcs
+  noBase   = length $ filter (not . isBaseModule . fst) srcs
 
-  addIndex src@(mid, _) (n, srcs') = if isBase mid
+  addIndex src@(mid, _) (n, srcs') = if isBaseModule mid
                                        then (n  , ((n, src):srcs'))
                                        else (n-1, ((n, src):srcs'))
-
-  isBase mid = case midQualifiers mid of
-    ["Base", _] -> True
-    _           -> False
 
   tgtDir m = addCurrySubdirModule (optUseSubdir opts) m
 
   process' :: (Int, (ModuleIdent, Source)) -> CYIO ()
   process' (n, (m, Source fn ps is)) = do
     opts' <- processPragmas opts ps
-    process (adjustOptions (n == total) opts') (n, noBase) m fn deps
+    process (adjustOptions (isBaseModule m) (n == total) opts') (n, noBase) m fn deps
     where
     deps = fn : mapMaybe curryInterface is
 
@@ -109,13 +106,18 @@ makeCurry opts srcs = mapM_ process' (snd (foldr addIndex (noBase, []) srcs))
 
   process' _ = return ()
 
-adjustOptions :: Bool -> Options -> Options
-adjustOptions final opts
-  | final      = opts { optForce = optForce opts || isDump }
-  | otherwise  = opts { optForce       = False
-                      , optDebugOpts   = defaultDebugOpts
+adjustOptions :: Bool -> Bool -> Options -> Options
+adjustOptions base final opts
+  | final      = opts { optForce         = optForce opts || isDump
+                      , optOptimizations = optimOpts}
+  | otherwise  = opts { optForce         = False
+                      , optDebugOpts     = defaultDebugOpts
+                      , optOptimizations = optimOpts'
                       }
   where
+  optimOpts = optOptimizations opts
+  optimOpts' = optimOpts { optRemoveUnusedImports =
+                             optRemoveUnusedImports optimOpts && not base }
   isDump = not $ null $ dbDumpLevels $ optDebugOpts opts
 
 
@@ -169,16 +171,12 @@ process opts idx m fn deps
   | otherwise     = smake (tgtDir (interfName fn) : destFiles) deps compile skip
   where
   skip    =
-    unless (isBase m) $
+    unless (isBaseModule m) $
       status opts $ compMessage idx "Skipping" m (fn, head destFiles)
   compile = do
-    unless (isBase m) $
+    unless (isBaseModule m) $
       status opts $ compMessage idx "Compiling" m (fn, head destFiles)
     compileModule opts m fn
-
-  isBase mid = case midQualifiers mid of
-      ["Base", _] -> True
-      _           -> False
 
   tgtDir = addCurrySubdirModule (optUseSubdir opts) m
 

@@ -48,9 +48,12 @@ import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 
 import qualified IL as IL
 
-ilTrans :: ValueEnv -> Module Type -> IL.Module
-ilTrans vEnv (Module _ _ m _ _ ds) = IL.Module m (imports m ds') ds'
+ilTrans :: Bool -> ValueEnv -> Module Type -> IL.Module
+ilTrans remIm vEnv (Module _ _ m _ im ds) = IL.Module m im' ds'
   where ds' = R.runReader (concatMapM trDecl ds) (TransEnv m vEnv)
+        im' = if remIm then imports m ds' else map moduleImport im
+        moduleImport (ImportDecl _ mdl _ _ _) = mdl
+
 
 -- -----------------------------------------------------------------------------
 -- Computation of necessary imports

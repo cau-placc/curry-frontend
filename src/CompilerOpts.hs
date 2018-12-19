@@ -18,8 +18,9 @@
 -}
 module CompilerOpts
   ( Options (..), CppOpts (..), PrepOpts (..), WarnOpts (..), DebugOpts (..)
-  , CaseMode (..), CymakeMode (..), Verbosity (..), TargetType (..)
-  , WarnFlag (..), KnownExtension (..), DumpLevel (..), dumpLevel
+  , OptimizationOpts(..), CaseMode (..), CymakeMode (..), Verbosity (..)
+  , TargetType (..), WarnFlag (..), KnownExtension (..), DumpLevel (..)
+  , dumpLevel
   , defaultOptions, defaultPrepOpts, defaultWarnOpts, defaultDebugOpts
   , getCompilerOpts, updateOpts, usage
   ) where
@@ -43,24 +44,25 @@ import Curry.Syntax.Extension
 -- |Compiler options
 data Options = Options
   -- general
-  { optMode         :: CymakeMode         -- ^ modus operandi
-  , optVerbosity    :: Verbosity          -- ^ verbosity level
+  { optMode          :: CymakeMode          -- ^ modus operandi
+  , optVerbosity     :: Verbosity           -- ^ verbosity level
   -- compilation
-  , optForce        :: Bool               -- ^ force (re-)compilation of target
-  , optLibraryPaths :: [FilePath]         -- ^ directories to search in
-                                          --   for libraries
-  , optImportPaths  :: [FilePath]         -- ^ directories to search in
-                                          --   for imports
-  , optHtmlDir      :: Maybe FilePath     -- ^ output directory for HTML
-  , optUseSubdir    :: Bool               -- ^ use subdir for output?
-  , optInterface    :: Bool               -- ^ create a FlatCurry interface file?
-  , optPrepOpts     :: PrepOpts           -- ^ preprocessor options
-  , optWarnOpts     :: WarnOpts           -- ^ warning options
-  , optTargetTypes  :: [TargetType]       -- ^ what to generate
-  , optExtensions   :: [KnownExtension]   -- ^ enabled language extensions
-  , optDebugOpts    :: DebugOpts          -- ^ debug options
-  , optCaseMode     :: CaseMode           -- ^ case mode
-  , optCppOpts      :: CppOpts            -- ^ C preprocessor options
+  , optForce         :: Bool                -- ^ force (re-)compilation of target
+  , optLibraryPaths  :: [FilePath]          -- ^ directories to search in
+                                            --   for libraries
+  , optImportPaths   :: [FilePath]          -- ^ directories to search in
+                                            --   for imports
+  , optHtmlDir       :: Maybe FilePath      -- ^ output directory for HTML
+  , optUseSubdir     :: Bool                -- ^ use subdir for output?
+  , optInterface     :: Bool                -- ^ create a FlatCurry interface file?
+  , optPrepOpts      :: PrepOpts            -- ^ preprocessor options
+  , optWarnOpts      :: WarnOpts            -- ^ warning options
+  , optTargetTypes   :: [TargetType]        -- ^ what to generate
+  , optExtensions    :: [KnownExtension]    -- ^ enabled language extensions
+  , optDebugOpts     :: DebugOpts           -- ^ debug options
+  , optCaseMode      :: CaseMode            -- ^ case mode
+  , optCppOpts       :: CppOpts             -- ^ C preprocessor options
+  , optOptimizations :: OptimizationOpts -- ^ Optimization options
   } deriving Show
 
 -- |C preprocessor options
@@ -100,24 +102,29 @@ data DebugOpts = DebugOpts
   , dbDumpSimple      :: Bool        -- ^ print more readable environments
   } deriving Show
 
+data OptimizationOpts = OptimizationOpts
+  { optRemoveUnusedImports :: Bool }
+  deriving Show
+
 -- | Default compiler options
 defaultOptions :: Options
 defaultOptions = Options
-  { optMode         = ModeMake
-  , optVerbosity    = VerbStatus
-  , optForce        = False
-  , optLibraryPaths = []
-  , optImportPaths  = []
-  , optHtmlDir      = Nothing
-  , optUseSubdir    = True
-  , optInterface    = True
-  , optPrepOpts     = defaultPrepOpts
-  , optWarnOpts     = defaultWarnOpts
-  , optTargetTypes  = []
-  , optExtensions   = []
-  , optDebugOpts    = defaultDebugOpts
-  , optCaseMode     = CaseModeFree
-  , optCppOpts      = defaultCppOpts
+  { optMode          = ModeMake
+  , optVerbosity     = VerbStatus
+  , optForce         = False
+  , optLibraryPaths  = []
+  , optImportPaths   = []
+  , optHtmlDir       = Nothing
+  , optUseSubdir     = True
+  , optInterface     = True
+  , optPrepOpts      = defaultPrepOpts
+  , optWarnOpts      = defaultWarnOpts
+  , optTargetTypes   = []
+  , optExtensions    = []
+  , optDebugOpts     = defaultDebugOpts
+  , optCaseMode      = CaseModeFree
+  , optCppOpts       = defaultCppOpts
+  , optOptimizations = defaultOptimizationOpts
   }
 
 -- | Default C preprocessor options
@@ -152,6 +159,10 @@ defaultDebugOpts = DebugOpts
   , dbDumpAllBindings = False
   , dbDumpSimple      = False
   }
+
+defaultOptimizationOpts :: OptimizationOpts
+defaultOptimizationOpts = OptimizationOpts
+  { optRemoveUnusedImports = True }
 
 -- |Modus operandi of the program
 data CymakeMode
@@ -342,6 +353,10 @@ onDebugOpts :: (DebugOpts -> DebugOpts) -> OptErr -> OptErr
 onDebugOpts f (opts, errs)
   = (opts { optDebugOpts = f (optDebugOpts opts) }, errs)
 
+onOptimOpts :: (OptimizationOpts -> OptimizationOpts) -> OptErr -> OptErr
+onOptimOpts f (opts, errs)
+    = (opts { optOptimizations = f (optOptimizations opts) }, errs)
+
 withArg :: ((a -> b) -> OptErr -> OptErr)
         -> (String -> a -> b) -> String -> OptErr -> OptErr
 withArg lift f arg = lift (f arg)
@@ -464,10 +479,11 @@ options =
       (NoArg (onOpts $ \ opts -> opts { optExtensions =
         nub $ kielExtensions ++ optExtensions opts }))
       "enable extended Curry functionalities"
-  , mkOptDescr onOpts      "c" ["case-mode"] "mode" "case mode"          caseModeDescriptions
-  , mkOptDescr onOpts      "X" []            "ext"  "language extension" extDescriptions
-  , mkOptDescr onWarnOpts  "W" []            "opt"  "warning option"     warnDescriptions
-  , mkOptDescr onDebugOpts "d" []            "opt"  "debug option"       debugDescriptions
+  , mkOptDescr onOpts      "c" ["case-mode"] "mode" "case mode"           caseModeDescriptions
+  , mkOptDescr onOpts      "X" []            "ext"  "language extension"  extDescriptions
+  , mkOptDescr onWarnOpts  "W" []            "opt"  "warning option"      warnDescriptions
+  , mkOptDescr onDebugOpts "d" []            "opt"  "debug option"        debugDescriptions
+  , mkOptDescr onOptimOpts "O" []            "opt"  "optimization option" optimizeDescriptions
   , Option ""   ["cpp"]
       (NoArg (onCppOpts $ \ opts -> opts { cppRun = True }))
       "run C preprocessor"
@@ -492,9 +508,9 @@ cppDefinitionErr :: String -> String
 cppDefinitionErr = (++) "Invalid format for option '-D': "
 
 targetOption :: TargetType -> String -> String -> OptDescr (OptErr -> OptErr)
-targetOption ty flag desc
+targetOption ty flag
   = Option "" [flag] (NoArg (onOpts $ \ opts -> opts { optTargetTypes =
-      nub $ ty : optTargetTypes opts })) desc
+      nub $ ty : optTargetTypes opts }))
 
 verbDescriptions :: OptErrTable Options
 verbDescriptions = map toDescr verbosities
@@ -564,11 +580,19 @@ debugDescriptions =
     = (name , "dump code after " ++ desc
         , \ opts -> opts { dbDumpLevels = addFlag flag (dbDumpLevels opts)})
 
+optimizeDescriptions :: OptErrTable OptimizationOpts
+optimizeDescriptions =
+  [ ( "remove-unused-imports"   , "removes unused imports"
+    , \ opts -> opts { optRemoveUnusedImports = True            })
+  , ( "no-remove-unused-imports", "prevents removing of unused imports"
+    , \ opts -> opts { optRemoveUnusedImports = False           })
+  ]
+
 addFlag :: Eq a => a -> [a] -> [a]
 addFlag o opts = nub $ o : opts
 
 removeFlag :: Eq a => a -> [a] -> [a]
-removeFlag o opts = filter (/= o) opts
+removeFlag o = filter (/= o)
 
 -- |Update the 'Options' record by the parsed and processed arguments
 updateOpts :: Options -> [String] -> (Options, [String], [String])
