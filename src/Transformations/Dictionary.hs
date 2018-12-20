@@ -424,7 +424,7 @@ defaultClassMethodDecl cls f = do
                then [ConstructorPattern NoSpanInfo predUnitType qUnitId []]
                else []
       ty' = if augmented then arrowBase ty else ty
-  return $ funDecl NoSpanInfo pty f pats $ preludeError (instType ty') $
+  return $ funDecl NoSpanInfo pty f pats $ baseError (instType ty') $
     "No instance or default method for class operation " ++ escName f
 
 getClassMethodType :: QualIdent -> Ident -> DTM PredType
@@ -1293,8 +1293,8 @@ unRenameIdentIf b = if b then unRenameIdent else id
 -- implementation has to be constructed in its desugared form since the
 -- desugaring has already taken place.
 
-preludeError :: Type -> String -> Expression PredType
-preludeError a =
+baseError :: Type -> String -> Expression PredType
+baseError a =
   Apply NoSpanInfo (Variable NoSpanInfo
                      (predType (TypeArrow stringType a)) qErrorId) . stringExpr
 

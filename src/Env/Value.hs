@@ -37,6 +37,7 @@ import Prelude hiding ((<>))
 
 import Curry.Base.Ident
 import Curry.Base.Pretty (Pretty(..))
+import Curry.Base.SpanInfo
 
 import Base.Messages (internalError)
 import Base.PrettyTypes ()
@@ -105,7 +106,7 @@ mergeLabel l1 l2
 -- special cases for handling tuple constructors.
 --
 -- Note: the function 'qualLookupValue' has been extended to
--- allow the usage of the qualified list constructor (Prelude.:).
+-- allow the usage of the qualified list constructor (Base.Types.:).
 
 type ValueEnv = TopEnv ValueInfo
 
@@ -178,7 +179,7 @@ initDCEnv = foldr predefDC emptyTopEnv
   | (ty, cs) <- predefTypes, DataConstr c _ _ tys <- cs ]
   where predefDC (c, a, ty) = predefTopEnv c' (DataConstructor c' a ls ty)
           where ls = replicate a anonId
-                c' = qualify c
+                c' = qualifyWith (ModuleIdent NoSpanInfo ["Base","Types"]) c
         constrType (ForAll n (PredType ps ty)) =
           ForAllExist n 0 . PredType ps . foldr TypeArrow ty
 

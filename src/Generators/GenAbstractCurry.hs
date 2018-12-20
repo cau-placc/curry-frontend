@@ -373,8 +373,8 @@ cvLiteral (String s) = CStringc s
 
 trQual :: QualIdent -> GAC QName
 trQual qid
-  | n `elem` [unitId, listId, nilId, consId] = return ("Prelude", idName n)
-  | isTupleId n                              = return ("Prelude", idName n)
+  | n `elem` [unitId, listId, nilId, consId] = return ("Base.Types", idName n)
+  | isTupleId n                              = return ("Base.Types", idName n)
   | otherwise
   = return (maybe "" moduleName (qidModule qid), idName n)
   where n = qidIdent qid
@@ -386,7 +386,7 @@ trLocalIdent :: Ident -> GAC QName
 trLocalIdent i = return ("", idName i)
 
 prelUntyped :: QualIdent
-prelUntyped = qualifyWith preludeMIdent $ mkIdent "untyped"
+prelUntyped = qualifyWith (preludeMIdent) $ mkIdent "untyped"
 
 -------------------------------------------------------------------------------
 -- This part defines an environment containing all necessary information

@@ -53,16 +53,16 @@ import Transformations     (transType)
 -- transforms intermediate language code (IL) to type-annotated FlatCurry code
 genTypeAnnotatedFlatCurry :: CompilerEnv -> CS.Module Type -> IL.Module
                   -> AProg TypeExpr
-genTypeAnnotatedFlatCurry env mdl il = patchPrelude $ run env mdl (trModule il)
+genTypeAnnotatedFlatCurry env mdl il = patchBaseTypes $ run env mdl (trModule il)
 
 -- -----------------------------------------------------------------------------
 -- Addition of primitive types for lists and tuples to the Prelude
 -- -----------------------------------------------------------------------------
 
-patchPrelude :: AProg a -> AProg a
-patchPrelude p@(AProg n is ts fs os)
-  | n == prelude = AProg n is ts' fs os
-  | otherwise    = p
+patchBaseTypes :: AProg a -> AProg a
+patchBaseTypes p@(AProg n is ts fs os)
+  | n == basetypemod = AProg n is ts' fs os
+  | otherwise        = p
   where ts' = sortBy (compare `on` typeName) pts
         pts = primTypes ++ ts
 
@@ -74,21 +74,21 @@ primTypes =
                         , Cons cons 2 Public [TVar 0, TCons nil [TVar 0]]
                         ]
   ] ++ map mkTupleType [2 .. maxTupleArity]
-  where arrow = mkPreludeQName "(->)"
-        unit  = mkPreludeQName "()"
-        nil   = mkPreludeQName "[]"
-        cons  = mkPreludeQName ":"
+  where arrow = mkBasetypeQName "(->)"
+        unit  = mkBasetypeQName "()"
+        nil   = mkBasetypeQName "[]"
+        cons  = mkBasetypeQName ":"
 
 mkTupleType :: Int -> TypeDecl
 mkTupleType arity = Type tuple Public [0 .. arity - 1]
   [Cons tuple arity Public (map TVar [0 .. arity - 1])]
-  where tuple = mkPreludeQName $ '(' : replicate (arity - 1) ',' ++ ")"
+  where tuple = mkBasetypeQName $ '(' : replicate (arity - 1) ',' ++ ")"
 
-mkPreludeQName :: String -> QName
-mkPreludeQName n = (prelude, n)
+mkBasetypeQName :: String -> QName
+mkBasetypeQName n = (basetypemod, n)
 
-prelude :: String
-prelude = "Prelude"
+basetypemod :: String
+basetypemod = "Base.Types"
 
 -- |Maximal arity of tuples
 maxTupleArity :: Int
@@ -503,7 +503,7 @@ trQualIdent qid = do
   return $ (moduleName $ fromMaybe mid mid', idName i)
   where
   mid' | i `elem` [listId, consId, nilId, unitId] || isTupleId i
-       = Just preludeMIdent
+       = Just (ModuleIdent NoSpanInfo ["Base","Types"])
        | otherwise
        = qidModule qid
   i = qidIdent qid

@@ -153,7 +153,7 @@ ccCase Rigid e as@(Alt p _:_) = case p of
 -- where the C'_j are the complementary constructor patterns of the C_i,
 -- @x@ and @y@ are fresh variables, and "default_expr" is the expression
 -- from the first alternative containing a variable pattern. If there is no such
--- alternative, the default expression is set to the prelude function 'failed'.
+-- alternative, the default expression is set to the base function 'failed'.
 -- In addition, there are a few optimizations performed to avoid the
 -- construction of unnecessary let-bindings:
 --   - If there are no complementary patterns, the expression remains unchanged.

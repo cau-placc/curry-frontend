@@ -35,6 +35,7 @@ import qualified Data.Map             as Map (Map, empty, insert, lookup)
 import qualified Data.Set             as Set (Set, empty, insert, delete, toList)
 
 import Curry.Base.Ident
+import Curry.Base.SpanInfo
 import Curry.Syntax hiding (caseAlt)
 
 import Base.CurryTypes (toType)
@@ -198,7 +199,8 @@ transType' (TypeForall     tvs ty) =
 
 applyType' :: IL.Type -> IL.Type -> IL.Type
 applyType' ty1 ty2 =
-  IL.TypeConstructor (qualifyWith preludeMIdent (mkIdent "Apply")) [ty1, ty2]
+  IL.TypeConstructor (qualifyWith (ModuleIdent NoSpanInfo ["Base","Types"])
+                                  (mkIdent "Apply")) [ty1, ty2]
 
 -- Each function in the program is translated into a function of the
 -- intermediate language. The arguments of the function are renamed such

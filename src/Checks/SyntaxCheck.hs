@@ -283,7 +283,7 @@ getFuncPats = funcPats <$> S.gets funcDeps
 -- the record identifier and all its labels are entered into the environment
 
 -- Note: the function 'qualLookupVar' has been extended to allow the usage of
--- the qualified list constructor (prelude.:).
+-- the qualified list constructor (Base.Types.:).
 
 type RenameEnv = NestEnv RenameInfo
 
@@ -425,13 +425,14 @@ qualLookupVar v env =  qualLookupNestEnv v env
 lookupTupleConstr :: Ident -> [RenameInfo]
 lookupTupleConstr v
   | isTupleId v = let a = tupleArity v
-                  in  [Constr (qualifyWith preludeMIdent $ tupleId a) a]
+                  in  [Constr (qTupleId a) a]
   | otherwise   = []
 
 qualLookupListCons :: QualIdent -> RenameEnv -> [RenameInfo]
 qualLookupListCons v env
-  | v == qualifyWith preludeMIdent consId
-  = qualLookupNestEnv (qualify $ qidIdent v) env
+  | v == qConsId
+  = qualLookupNestEnv (qualifyWith (ModuleIdent NoSpanInfo ["Base","Types"])
+                         $ qidIdent v) env
   | otherwise
   = []
 
@@ -1081,7 +1082,7 @@ checkFieldLabel l = do
     [RecordLabel _ cs] -> processLabel cs
     rs                 -> case qualLookupVar (qualQualify m l) env of
       [RecordLabel _ cs] -> processLabel cs
-      rs'                -> if (null rs && null rs')
+      rs'                -> if null rs && null rs'
                                then do report $ errUndefinedLabel l
                                        return []
                                else do report $
@@ -1134,7 +1135,7 @@ recLabels _                        = []
 -- it is necessary to sort the list of declarations.
 
 sortFuncDecls :: [Decl a] -> [Decl a]
-sortFuncDecls decls = sortFD Set.empty [] decls
+sortFuncDecls = sortFD Set.empty []
  where
  sortFD _   res []              = reverse res
  sortFD env res (decl : decls') = case decl of

@@ -211,7 +211,7 @@ succOrPredEquation f ty (_, c1, _, _) (_, c2, _, _) =
 failedEquation :: Ident -> Type -> (PredType, Ident) -> Equation PredType
 failedEquation f ty v =
   mkEquation NoSpanInfo f [uncurry (VariablePattern NoSpanInfo) v] $
-    preludeFailed $ instType ty
+    baseFailed $ instType ty
 
 deriveToEnum :: Type -> [ConstrInfo] -> PredSet -> DVM (Decl PredType)
 deriveToEnum ty cis ps = do
@@ -406,7 +406,7 @@ deriveReadsPrecLexStmt str r = do
                [ LiteralPattern NoSpanInfo predStringType $ String str
                , uncurry (VariablePattern NoSpanInfo) s
                ]
-      stmt = StmtBind NoSpanInfo pat $ preludeLex $ uncurry mkVar r
+      stmt = StmtBind NoSpanInfo pat $ baseLex $ uncurry mkVar r
   return (s, stmt)
 
 deriveReadsPrecReadsPrecStmt  :: Precedence -> (PredType, Ident) -> Type
@@ -416,7 +416,7 @@ deriveReadsPrecReadsPrecStmt p r ty = do
   s <- freshArgument $ stringType
   let pat  = TuplePattern NoSpanInfo $
                map (uncurry (VariablePattern NoSpanInfo)) [v, s]
-      stmt = StmtBind NoSpanInfo pat $ preludeReadsPrec (instType ty) p $
+      stmt = StmtBind NoSpanInfo pat $ baseReadsPrec (instType ty) p $
                uncurry mkVar r
   return (s, (stmt, v))
 
@@ -453,7 +453,7 @@ showsPrecExpr c p ls d vs
     showsPrecConstrExpr c vs
 
 showsPrecNullaryConstrExpr :: Ident -> Expression PredType
-showsPrecNullaryConstrExpr c = preludeShowString $ showsConstr c ""
+showsPrecNullaryConstrExpr c = baseShowString $ showsConstr c ""
 
 showsPrecShowParenExpr :: Expression PredType -> Precedence
                        -> Expression PredType -> Expression PredType
@@ -462,26 +462,26 @@ showsPrecShowParenExpr d p =
 
 showsPrecRecordConstrExpr :: Ident -> [Ident] -> [Expression PredType]
                           -> Expression PredType
-showsPrecRecordConstrExpr c ls vs = foldr prelDot (preludeShowString "}") $
-  (:) (preludeShowString $ showsConstr c " {") $
-    intercalate [preludeShowString ", "] $ zipWith showsPrecFieldExpr ls vs
+showsPrecRecordConstrExpr c ls vs = foldr prelDot (baseShowString "}") $
+  (:) (baseShowString $ showsConstr c " {") $
+    intercalate [baseShowString ", "] $ zipWith showsPrecFieldExpr ls vs
 
 showsPrecFieldExpr :: Ident -> Expression PredType -> [Expression PredType]
 showsPrecFieldExpr l v =
-  [preludeShowString $ showsConstr l " = ", preludeShowsPrec 0 v]
+  [baseShowString $ showsConstr l " = ", baseShowsPrec 0 v]
 
 showsPrecInfixConstrExpr :: Ident -> Precedence -> [Expression PredType]
                          -> Expression PredType
 showsPrecInfixConstrExpr c p vs = foldr1 prelDot
-  [ preludeShowsPrec (p + 1) $ head vs
-  , preludeShowString $ ' ' : idName c ++ " "
-  , preludeShowsPrec (p + 1) $ head $ tail vs
+  [ baseShowsPrec (p + 1) $ head vs
+  , baseShowString $ ' ' : idName c ++ " "
+  , baseShowsPrec (p + 1) $ head $ tail vs
   ]
 
 showsPrecConstrExpr :: Ident -> [Expression PredType] -> Expression PredType
 showsPrecConstrExpr c vs = foldr1 prelDot $
-  preludeShowString (showsConstr c " ") :
-    intersperse (preludeShowString " ") (map (preludeShowsPrec 11) vs)
+  baseShowString (showsConstr c " ") :
+    intersperse (baseShowString " ") (map (baseShowsPrec 11) vs)
 
 -- -----------------------------------------------------------------------------
 -- Generating variables
@@ -545,7 +545,7 @@ instMethodType vEnv ps cls ty f = PredType (ps `Set.union` ps'') ty''
         PredType ps'' ty'' = instanceType ty $ PredType (Set.deleteMin ps') ty'
 
 -- -----------------------------------------------------------------------------
--- Prelude entities
+-- Base entities
 -- -----------------------------------------------------------------------------
 
 prelTrue :: Expression PredType
@@ -625,14 +625,14 @@ prelShowParen e1 e2 = apply (Variable NoSpanInfo pty qShowParenId) [e1, e2]
                                           , stringType, stringType
                                           ]
 
-preludeLex :: Expression PredType -> Expression PredType
-preludeLex e = Apply NoSpanInfo (Variable NoSpanInfo pty qLexId) e
+baseLex :: Expression PredType -> Expression PredType
+baseLex e = Apply NoSpanInfo (Variable NoSpanInfo pty qLexId) e
   where pty = predType $ TypeArrow stringType $
                 listType $ tupleType [stringType, stringType]
 
-preludeReadsPrec :: Type -> Integer -> Expression PredType
+baseReadsPrec :: Type -> Integer -> Expression PredType
                  -> Expression PredType
-preludeReadsPrec ty p e = flip (Apply NoSpanInfo) e $
+baseReadsPrec ty p e = flip (Apply NoSpanInfo) e $
   Apply NoSpanInfo (Variable NoSpanInfo pty qReadsPrecId) $
   Literal NoSpanInfo predIntType $ Int p
   where pty = predType $ foldr1 TypeArrow [ intType, stringType
@@ -641,18 +641,18 @@ preludeReadsPrec ty p e = flip (Apply NoSpanInfo) e $
                                                                  ]
                                           ]
 
-preludeShowsPrec :: Integer -> Expression PredType -> Expression PredType
-preludeShowsPrec p e = flip (Apply NoSpanInfo) e $
+baseShowsPrec :: Integer -> Expression PredType -> Expression PredType
+baseShowsPrec p e = flip (Apply NoSpanInfo) e $
   Apply NoSpanInfo (Variable NoSpanInfo pty qShowsPrecId) $
   Literal NoSpanInfo predIntType $ Int p
   where pty = predType $ foldr1 TypeArrow [ intType, typeOf e
                                           , stringType, stringType
                                           ]
 
-preludeShowString :: String -> Expression PredType
-preludeShowString s = Apply NoSpanInfo (Variable NoSpanInfo pty qShowStringId) $
+baseShowString :: String -> Expression PredType
+baseShowString s = Apply NoSpanInfo (Variable NoSpanInfo pty qShowStringId) $
   Literal NoSpanInfo predStringType $ String s
   where pty = predType $ foldr1 TypeArrow $ replicate 3 stringType
 
-preludeFailed :: Type -> Expression PredType
-preludeFailed ty = Variable NoSpanInfo (predType ty) qFailedId
+baseFailed :: Type -> Expression PredType
+baseFailed ty = Variable NoSpanInfo (predType ty) qFailedId

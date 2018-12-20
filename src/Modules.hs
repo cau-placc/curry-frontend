@@ -420,7 +420,6 @@ dumpWith opts rawView view lvl res@(env, mdl) = do
   doDump (optDebugOpts opts) (lvl, env, str)
   return res
 
--- |Translate FlatCurry into the intermediate language 'IL'
 -- |The 'dump' function writes the selected information to standard output.
 doDump :: MonadIO m => DebugOpts -> Dump -> m ()
 doDump opts (level, env, dump)
