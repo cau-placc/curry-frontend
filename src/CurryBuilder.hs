@@ -83,7 +83,6 @@ findCurry opts s = do
 makeCurry :: Options -> [(ModuleIdent, Source)] ->  CYIO ()
 makeCurry opts srcs = mapM_ process' (snd (foldr addIndex (noBase, []) srcs))
   where
-  total    = length srcs
   noBase   = length $ filter (not . isBaseModule . fst) srcs
 
   addIndex src@(mid, _) (n, srcs') = if isBaseModule mid
@@ -96,7 +95,7 @@ makeCurry opts srcs = mapM_ process' (snd (foldr addIndex (noBase, []) srcs))
   process' (n, (m, Source fn ps is)) = do
     opts' <- processPragmas opts ps
     process (adjustOptions (isBaseModule m)
-            (n == total) opts') (n, noBase) m fn deps
+            (n == noBase) opts') (n, noBase) m fn deps
     where
     deps = fn : mapMaybe curryInterface is
 

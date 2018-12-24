@@ -84,11 +84,16 @@ type OpPrecEnv = TopEnv PrecInfo
 
 -- |Initial 'OpPrecEnv'.
 initOpPrecEnv :: OpPrecEnv
-initOpPrecEnv = predefTopEnv qConsId consPrec emptyTopEnv
+initOpPrecEnv = predefTopEnv (qualify  consId)  consPrec $
+                predefTopEnv         qConsId   qConsPrec emptyTopEnv
+
+-- |Precedence of qualified list constructor.
+qConsPrec :: PrecInfo
+qConsPrec = PrecInfo qConsId (OpPrec InfixR 5)
 
 -- |Precedence of list constructor.
 consPrec :: PrecInfo
-consPrec = PrecInfo qConsId (OpPrec InfixR 5)
+consPrec = PrecInfo (qualify consId) (OpPrec InfixR 5)
 
 -- |Bind an operator precedence.
 bindP :: ModuleIdent -> Ident -> OpPrec -> OpPrecEnv -> OpPrecEnv

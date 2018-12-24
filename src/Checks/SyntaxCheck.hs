@@ -419,7 +419,7 @@ lookupVar v env = lookupNestEnv v env ++! lookupTupleConstr v
 
 qualLookupVar :: QualIdent -> RenameEnv -> [RenameInfo]
 qualLookupVar v env =  qualLookupNestEnv v env
-                   ++! qualLookupListCons v env
+                   ++! lookupListCons (unqualify v) env
                    ++! lookupTupleConstr (unqualify v)
 
 lookupTupleConstr :: Ident -> [RenameInfo]
@@ -428,11 +428,11 @@ lookupTupleConstr v
                   in  [Constr (qTupleId a) a]
   | otherwise   = []
 
-qualLookupListCons :: QualIdent -> RenameEnv -> [RenameInfo]
-qualLookupListCons v env
-  | v == qConsId
-  = qualLookupNestEnv (qualifyWith (ModuleIdent NoSpanInfo ["Base","Types"])
-                         $ qidIdent v) env
+lookupListCons :: Ident -> RenameEnv -> [RenameInfo]
+lookupListCons v env
+  | v == consId
+  = qualLookupNestEnv (qualifyWith (ModuleIdent NoSpanInfo ["Base","Types"]) v)
+                      env
   | otherwise
   = []
 

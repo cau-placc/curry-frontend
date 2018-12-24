@@ -177,9 +177,12 @@ initDCEnv :: ValueEnv
 initDCEnv = foldr predefDC emptyTopEnv
   [ (c, length tys, constrType (polyType ty) tys)
   | (ty, cs) <- predefTypes, DataConstr c _ _ tys <- cs ]
-  where predefDC (c, a, ty) = predefTopEnv c' (DataConstructor c' a ls ty)
+  where predefDC (c, a, ty) =
+            predefTopEnv qc  (DataConstructor qc  a ls ty) .
+            predefTopEnv qc' (DataConstructor qc' a ls ty)
           where ls = replicate a anonId
-                c' = qualifyWith (ModuleIdent NoSpanInfo ["Base","Types"]) c
+                qc  = qualify c
+                qc' = qualifyWith (ModuleIdent NoSpanInfo ["Base","Types"]) c
         constrType (ForAll n (PredType ps ty)) =
           ForAllExist n 0 . PredType ps . foldr TypeArrow ty
 
