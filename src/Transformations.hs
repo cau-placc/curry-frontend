@@ -73,9 +73,9 @@ lift (env, mdl) = (env { valueEnv = tyEnv' }, mdl')
   where (mdl', tyEnv') = L.lift (valueEnv env) mdl
 
 -- |Translate into the intermediate language
-ilTrans :: CompEnv (Module Type) -> CompEnv IL.Module
-ilTrans (env, mdl) = (env, il)
-  where il = IL.ilTrans (valueEnv env) mdl
+ilTrans :: Bool -> CompEnv (Module Type) -> CompEnv IL.Module
+ilTrans remIm (env, mdl) = (env, il)
+  where il = IL.ilTrans remIm (valueEnv env) mdl
 
 -- |Translate a type into its representation in the intermediate language
 transType :: Type -> IL.Type

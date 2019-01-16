@@ -267,10 +267,11 @@ transModule opts mdl = do
   newtypes   <- dumpCS DumpNewtypes      $ removeNewtypes dicts
   simplified <- dumpCS DumpSimplified    $ simplify       newtypes
   lifted     <- dumpCS DumpLifted        $ lift           simplified
-  il         <- dumpIL DumpTranslated    $ ilTrans        lifted
+  il         <- dumpIL DumpTranslated    $ ilTrans  remIm lifted
   ilCaseComp <- dumpIL DumpCaseCompleted $ completeCase   il
   return (ilCaseComp, newtypes)
   where
+  remIm = optRemoveUnusedImports $ optOptimizations opts
   dumpCS :: Show a => DumpLevel -> CompEnv (CS.Module a)
          -> CYIO (CompEnv (CS.Module a))
   dumpCS = dumpWith opts CS.showModule CS.ppModule
