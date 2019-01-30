@@ -1,6 +1,11 @@
 Change log for curry-frontend
 =============================
 
+Version 1.0.3
+=============
+
+  * Fixed bug in type checking of typeclasses
+
 Version 1.0.2
 =============
 
