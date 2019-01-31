@@ -29,6 +29,8 @@ Build-Depends: debhelper (>= 10),
  libghc-process-prof,
  libghc-set-extra-dev,
  libghc-set-extra-prof,
+ libghc-syb-dev,
+ libghc-syb-prof,
  libghc-transformers-dev,
  libghc-transformers-prof,
 Build-Depends-Indep: ghc-doc,
@@ -42,11 +44,12 @@ Build-Depends-Indep: ghc-doc,
  libghc-network-uri-doc,
  libghc-process-doc,
  libghc-set-extra-doc,
+ libghc-syb-doc,
  libghc-transformers-doc,
-Standards-Version: 4.1.1
+Standards-Version: 4.3.0
 Homepage: http://curry-language.org
-Vcs-Browser: https://anonscm.debian.org/git/pkg-curry/curry-frontend.git
-Vcs-Git: https://anonscm.debian.org/git/pkg-curry/curry-frontend.git
+Vcs-Browser: https://git.ps.informatik.uni-kiel.de/curry/curry-frontend
+Vcs-Git: https://git.ps.informatik.uni-kiel.de/curry/curry-frontend.git
 X-Description: Lexer, parser, type checker, etc. for Curry
  The Curry Frontend consists of the executable program
  "curry-frontend". It is used by various backends to
