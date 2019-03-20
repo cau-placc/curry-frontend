@@ -58,9 +58,9 @@ insertDicts (env, mdl) = (env { interfaceEnv = intfEnv'
                          (classEnv env) (instEnv env) (opPrecEnv env) mdl
 
 -- |Remove newtype constructors.
-removeNewtypes :: CompEnv (Module Type) -> CompEnv (Module Type)
-removeNewtypes (env, mdl) = (env, mdl')
-  where mdl' = NT.removeNewtypes (valueEnv env) mdl
+removeNewtypes :: Bool -> CompEnv (Module Type) -> CompEnv (Module Type)
+removeNewtypes remNT (env, mdl) = (env, mdl')
+  where mdl' = NT.removeNewtypes remNT (valueEnv env) mdl
 
 -- |Simplify the source code, changes the value environment.
 simplify :: CompEnv (Module Type) -> CompEnv (Module Type)

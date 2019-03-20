@@ -30,8 +30,10 @@ import Base.Types
 
 import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 
-removeNewtypes :: ValueEnv -> Module Type -> Module Type
-removeNewtypes vEnv mdl = R.runReader (nt mdl) vEnv
+removeNewtypes :: Bool -> ValueEnv -> Module Type -> Module Type
+removeNewtypes remNT vEnv mdl
+  | remNT     = R.runReader (nt mdl) vEnv
+  | otherwise = mdl
 
 type NTM a = R.Reader ValueEnv a
 

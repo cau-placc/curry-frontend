@@ -103,8 +103,9 @@ data DebugOpts = DebugOpts
   } deriving Show
 
 data OptimizationOpts = OptimizationOpts
-  { optRemoveUnusedImports :: Bool }
-  deriving Show
+  { optRemoveUnusedImports :: Bool -- ^ Remove unused imports in IL
+  , optDesugarNewtypes     :: Bool -- ^ Desugar newtypes
+  } deriving Show
 
 -- | Default compiler options
 defaultOptions :: Options
@@ -162,7 +163,9 @@ defaultDebugOpts = DebugOpts
 
 defaultOptimizationOpts :: OptimizationOpts
 defaultOptimizationOpts = OptimizationOpts
-  { optRemoveUnusedImports = True }
+  { optRemoveUnusedImports = True
+  , optDesugarNewtypes     = True
+  }
 
 -- |Modus operandi of the program
 data CymakeMode
@@ -586,9 +589,13 @@ debugDescriptions =
 optimizeDescriptions :: OptErrTable OptimizationOpts
 optimizeDescriptions =
   [ ( "remove-unused-imports"   , "removes unused imports"
-    , \ opts -> opts { optRemoveUnusedImports = True            })
+    , \ opts -> opts { optRemoveUnusedImports = True    })
   , ( "no-remove-unused-imports", "prevents removing of unused imports"
-    , \ opts -> opts { optRemoveUnusedImports = False           })
+    , \ opts -> opts { optRemoveUnusedImports = False   })
+  , ( "no-desugar-newtypes", "prevents desugaring of newtypes in FlatCurry"
+    , \ opts -> opts { optDesugarNewtypes     = False   })
+  , ( "desugar-newtypes", "desugars newtypes in FlatCurry"
+    , \ opts -> opts { optDesugarNewtypes     = True    })
   ]
 
 addFlag :: Eq a => a -> [a] -> [a]
