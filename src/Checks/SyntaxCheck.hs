@@ -496,9 +496,23 @@ checkInstanceDecl (InstanceDecl p cx qcls ty ds) = do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv
   checkMethods qcls (clsMethods m qcls tcEnv) ds
+  mapM_ checkAmbiguousMethod ds
   InstanceDecl p cx qcls ty <$> checkTopDecls ds
 checkInstanceDecl _ =
   internalError "SyntaxCheck.checkInstanceDecl: no instance declaration"
+
+checkAmbiguousMethod :: Decl a -> SCM ()
+checkAmbiguousMethod (FunctionDecl _ _ f _) = do
+  m <- getModuleIdent
+  rename <- getRenameEnv
+  case lookupVar f rename of
+    rs1@(_:_:_) -> case qualLookupVar (qualifyWith m f) rename of
+      []          -> report $ errAmbiguousIdent rs1 (qualify f)
+      rs2@(_:_:_) -> report $ errAmbiguousIdent rs2 (qualify f)
+      _           -> return ()
+    _           -> return ()
+checkAmbiguousMethod _ =
+  internalError "SyntaxCheck.checkAmbiguousMethod: no function declaration"
 
 checkMethods :: QualIdent -> [Ident] -> [Decl a] -> SCM ()
 checkMethods qcls ms ds =
