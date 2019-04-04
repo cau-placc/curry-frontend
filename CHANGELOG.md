@@ -1,6 +1,11 @@
 Change log for curry-frontend
 =============================
 
+Version 1.0.4
+=============
+
+  * Fixed bug in type checking of instances
+
 Version 1.0.3
 =============
 
@@ -308,4 +313,3 @@ Version 0.3.0
   * All compiler warnings removed.
 
   * Fixed various implementation bugs (#9, #16, #19, #29, #289).
-

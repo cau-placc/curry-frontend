@@ -869,7 +869,11 @@ tcTopPDecl (i, ClassDecl p cx cls tv ds) = withLocalSigEnv $ do
 tcTopPDecl (i, InstanceDecl p cx qcls ty ds) = do
   tcEnv <- getTyConsEnv
   pty <- expandPoly $ QualTypeExpr NoSpanInfo cx ty
-  vpds' <- mapM (tcInstanceMethodPDecl qcls pty) vpds
+  mid <- getModuleIdent
+  let origCls = getOrigName mid qcls tcEnv
+      clsQual = head $ filter isQualified $ reverseLookupByOrigName origCls tcEnv
+      qQualCls = qualQualify (fromJust $ qidModule clsQual) qcls
+  vpds' <- mapM (tcInstanceMethodPDecl qQualCls pty) vpds
   return (i, InstanceDecl p cx qcls ty $ fromPDecls $ map untyped opds ++ vpds')
   where (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
 tcTopPDecl _ = internalError "Checks.TypeCheck.tcTopDecl"
