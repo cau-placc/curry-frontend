@@ -1,5 +1,5 @@
 Name:          curry-frontend
-Version:       1.0.2
+Version:       2.0.0
 Cabal-Version: >= 1.10
 Synopsis:      Compile the functional logic language Curry to several
                intermediate formats

@@ -1,6 +1,22 @@
 Change log for curry-frontend
 =============================
 
+Version 2.0.0
+=============
+
+  * Implemented the "MonadFail-Proposal" for curry
+    (see <https://wiki.haskell.org/MonadFail_Proposal>)
+
+Version 1.0.4
+=============
+
+  * Fixed bug in type checking of instances
+
+Version 1.0.3
+=============
+
+  * Fixed bug in type checking of typeclasses
+
 Version 1.0.2
 =============
 
