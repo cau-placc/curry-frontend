@@ -188,7 +188,8 @@ trTypeExpr (ListType       _ ty) =
   trTypeExpr $ ApplyType NoSpanInfo (ConstructorType NoSpanInfo qListId) ty
 trTypeExpr (ArrowType _ ty1 ty2) = CFuncType <$> trTypeExpr ty1 <*> trTypeExpr ty2
 trTypeExpr (ParenType      _ ty) = trTypeExpr ty
-trTypeExpr (ForallType    _ _ _) = internalError "GenAbstractCurry.trTypeExpr"
+trTypeExpr (ForallType  _ vs ty) =
+  CForallType <$> mapM getTVarIndex vs <*> trTypeExpr ty
 
 trConstraint :: Constraint -> GAC CConstraint
 trConstraint (Constraint _ q ty) = (,) <$> trQual q <*> trTypeExpr ty
