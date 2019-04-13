@@ -581,7 +581,9 @@ checkType (ListType       spi ty) = ListType   spi    <$> checkType ty
 checkType (ArrowType spi ty1 ty2) = ArrowType  spi    <$> checkType ty1
                                                       <*> checkType ty2
 checkType (ParenType      spi ty) = ParenType  spi    <$> checkType ty
-checkType (ForallType  spi vs ty) = ForallType spi vs <$> checkType ty
+checkType (ForallType  spi vs ty) = do
+  checkUsedExtension (getPosition spi) "Higher-rank types" RankNTypes
+  ForallType spi vs <$> checkType ty
 
 checkClosed :: [Ident] -> TypeExpr -> TSCM ()
 checkClosed _   (ConstructorType _ _) = ok
