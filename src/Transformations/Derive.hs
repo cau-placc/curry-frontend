@@ -274,8 +274,8 @@ enumFromThenExpr v1 v2 c1 c2 =
 
 deriveBoundedMethods :: Type -> [ConstrInfo] -> PredSet -> DVM [Decl PredType]
 deriveBoundedMethods ty cis ps = sequence
-  [ deriveMaxOrMinBound qMaxBoundId ty (head cis) ps
-  , deriveMaxOrMinBound qMinBoundId ty (last cis) ps
+  [ deriveMaxOrMinBound qMinBoundId ty (head cis) ps
+  , deriveMaxOrMinBound qMaxBoundId ty (last cis) ps
   ]
 
 deriveMaxOrMinBound :: QualIdent -> Type -> ConstrInfo -> PredSet
