@@ -5,6 +5,7 @@ Version 1.0.4
 =============
 
   * Fixed bug in type checking of instances
+  * Fixed bugs in deriving of `Bounded` instances.
 
 Version 1.0.3
 =============

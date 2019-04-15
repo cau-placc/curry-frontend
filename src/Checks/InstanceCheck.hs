@@ -196,7 +196,7 @@ bindDerivedInstance clsEnv p tc pty tys cls = do
                                     , (fromEnumId, 1), (enumFromId, 1)
                                     , (enumFromThenId, 2)
                                     ]
-              | cls == qBoundedId = [(maxBoundId, 1), (minBoundId, 1)]
+              | cls == qBoundedId = [(maxBoundId, 0), (minBoundId, 0)]
               | cls == qReadId    = [(readsPrecId, 2)]
               | cls == qShowId    = [(showsPrecId, 2)]
               | otherwise         =
