@@ -582,7 +582,7 @@ checkType (ArrowType spi ty1 ty2) = ArrowType  spi    <$> checkType ty1
                                                       <*> checkType ty2
 checkType (ParenType      spi ty) = ParenType  spi    <$> checkType ty
 checkType (ForallType  spi vs ty) = do
-  checkUsedExtension (getPosition spi) "Higher-rank types" RankNTypes
+  checkUsedExtension (getPosition spi) "Arbitrary-rank types" RankNTypes
   ForallType spi vs <$> checkType ty
 
 checkClosed :: [Ident] -> TypeExpr -> TSCM ()

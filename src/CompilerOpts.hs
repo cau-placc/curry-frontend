@@ -307,7 +307,7 @@ extensions =
   , ( NoImplicitPrelude        , "NoImplicitPrelude"
     , "do not implicitly import the Prelude"         )
   , ( RankNTypes               , "RankNTypes"
-    , "enable higher-rank types"                     )
+    , "enable arbitrary-rank types"                  )
   ]
 
 -- -----------------------------------------------------------------------------
