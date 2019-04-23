@@ -1,41 +1,47 @@
-/* Use always white background */
+/* Use always white background. */
 body {
-  background : white;
-  color      : black;
+  background: white;
+  color: black;
   font-family: monospace;
 }
 
-/* Show hyperlinks without text decoration, but in light yellow */
-a:visited, a:link, a:active {
+table {
+  border-collapse: collapse;
+}
+
+/* Show hyperlinks without text decoration, but in light yellow. */
+a:link,
+a:visited,
+a:active {
+  background: lightyellow;
   text-decoration: none;
-  background     : lightyellow;
 }
 
 /* Line numbers */
-.linenumbers {
-  width        : 40px;
-  text-align   : right;
-  color        : grey;
-  padding-right: 10px;
-  border-right : 1px solid grey;
+.line-numbers {
+  border-right: 1px solid grey;
+  color: grey;
+  min-width: 5ch;
+  padding-right: 1em;
+  text-align: right;
 }
 
 /* Source code */
-.sourcecode  {
-  padding-left: 10px;
+.source-code {
+  padding-left: 1em;
 }
 
 /* Code highlighting */
-.pragma  { color : green     }
-.comment { color : green     }
-.keyword { color : blue      }
-.symbol  { color : red       }
-.type    { color : orange    }
-.cons    { color : magenta   }
-.label   { color : darkgreen }
-.func    { color : purple    }
-.ident   { color : black     }
-.module  { color : brown     }
-.number  { color : teal      }
-.string  { color : maroon    }
-.char    { color : maroon    }
+.pragma  { color: green     }
+.comment { color: green     }
+.keyword { color: blue      }
+.symbol  { color: red       }
+.type    { color: orange    }
+.cons    { color: magenta   }
+.label   { color: darkgreen }
+.func    { color: purple    }
+.ident   { color: black     }
+.module  { color: brown     }
+.number  { color: teal      }
+.string  { color: maroon    }
+.char    { color: maroon    }
