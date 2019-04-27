@@ -1104,7 +1104,7 @@ tcExpr _ (Variable spi _ v) = do
 tcExpr _ (Constructor spi _ c) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  (ps, ty) <- instExist (constrType m c vEnv)
+  (ps, ty) <- inst (constrType m c vEnv)
   return (ps, ty, Constructor spi (predType ty) c)
 tcExpr p (Paren spi e) = do
   (ps, ty, e') <- tcExpr p e
@@ -1126,7 +1126,7 @@ tcExpr p (Typed spi e qty) = do
 tcExpr _ e@(Record spi _ c fs) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  (ps, ty) <- liftM (fmap arrowBase) (instExist (constrType m c vEnv))
+  (ps, ty) <- liftM (fmap arrowBase) (inst (constrType m c vEnv))
   (ps', fs') <- mapAccumM (tcField tcExpr "construction"
     (\e' -> ppExpr 0 e $-$ text "Term:" <+> ppExpr 0 e') ty) ps fs
   return (ps', ty, Record spi (predType ty) c fs')
@@ -1304,7 +1304,7 @@ tcInfixOp (InfixOp _ op) = do
 tcInfixOp (InfixConstr _ op) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  (ps, ty) <- instExist (constrType m op vEnv)
+  (ps, ty) <- inst (constrType m op vEnv)
   return (ps, ty, InfixConstr (predType ty) op)
 
 -- The first unification in 'tcField' cannot fail; it serves only for
@@ -1598,11 +1598,6 @@ freshSkolem = fresh TypeSkolem
 
 inst :: TypeScheme -> TCM (PredSet, Type)
 inst (ForAll n (PredType ps ty)) = do
-  tys <- replicateM n freshTypeVar
-  return (expandAliasType tys ps, expandAliasType tys ty)
-
-instExist :: TypeScheme -> TCM (PredSet, Type)
-instExist (ForAll n (PredType ps ty)) = do
   tys <- replicateM n freshTypeVar
   return (expandAliasType tys ps, expandAliasType tys ty)
 
