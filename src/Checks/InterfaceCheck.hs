@@ -184,7 +184,7 @@ checkImport (IInstanceDecl p cx cls ty is m) =
         check ps' is' = ps == ps' && sort is == sort is'
 
 checkConstrImport :: QualIdent -> [Ident] -> ConstrDecl -> IC ()
-checkConstrImport tc tvs (ConstrDecl p evs cx c tys) = do
+checkConstrImport tc tvs (ConstrDecl p _ cx c tys) = do
   m <- getModuleIdent
   let qc = qualifyLike tc c
       check (DataConstructor c' _ _ (ForAll uqvs pty)) =
@@ -192,7 +192,7 @@ checkConstrImport tc tvs (ConstrDecl p evs cx c tys) = do
         qualifyPredType m (toConstrType tc tvs cx tys) == pty
       check _ = False
   checkValueInfo "data constructor" check p qc
-checkConstrImport tc tvs (ConOpDecl p evs cx ty1 op ty2) = do
+checkConstrImport tc tvs (ConOpDecl p _ cx ty1 op ty2) = do
   m <- getModuleIdent
   let qc = qualifyLike tc op
       check (DataConstructor c' _ _ (ForAll uqvs pty)) =
@@ -200,7 +200,7 @@ checkConstrImport tc tvs (ConOpDecl p evs cx ty1 op ty2) = do
         qualifyPredType m (toConstrType tc tvs cx [ty1, ty2]) == pty
       check _ = False
   checkValueInfo "data constructor" check p qc
-checkConstrImport tc tvs (RecordDecl p evs cx c fs) = do
+checkConstrImport tc tvs (RecordDecl p _ cx c fs) = do
   m <- getModuleIdent
   let qc = qualifyLike tc c
       (ls, tys) = unzip [(l, ty) | FieldDecl _ labels ty <- fs, l <- labels]
