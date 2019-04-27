@@ -793,8 +793,8 @@ getConTy q = do
   tyEnv <- gets valueEnv
   tcEnv <- gets tyConsEnv
   case qualLookupValue q tyEnv of
-    [DataConstructor  _ _ _ (ForAllExist _ _ (PredType _ ty))] -> return ty
-    [NewtypeConstructor _ _ (ForAllExist _ _ (PredType _ ty))] -> return ty
+    [DataConstructor  _ _ _ (ForAll _ (PredType _ ty))] -> return ty
+    [NewtypeConstructor _ _ (ForAll _ (PredType _ ty))] -> return ty
     _ -> case qualLookupTypeInfo q tcEnv of
       [AliasType _ _ _ ty] -> return ty
       _ -> internalError $ "Checks.WarnCheck.getConTy: " ++ show q

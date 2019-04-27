@@ -256,24 +256,24 @@ bindConstrs' m tcEnv vEnv = foldr (bindData . snd) vEnv $ localBindings tcEnv
     bindData _ vEnv' = vEnv'
 
 bindConstr :: ModuleIdent -> Int -> Type -> DataConstr -> ValueEnv -> ValueEnv
-bindConstr m n ty (DataConstr c n' ps tys) =
+bindConstr m n ty (DataConstr c _ ps tys) =
   bindGlobalInfo (\qc tyScheme -> DataConstructor qc arity ls tyScheme) m c
-                 (ForAllExist n n' (PredType ps (foldr TypeArrow ty tys)))
+                 (ForAll n (PredType ps (foldr TypeArrow ty tys)))
   where arity = length tys
         ls    = replicate arity anonId
-bindConstr m n ty (RecordConstr c n' ps ls tys) =
+bindConstr m n ty (RecordConstr c _ ps ls tys) =
   bindGlobalInfo (\qc tyScheme -> DataConstructor qc arity ls tyScheme) m c
-                 (ForAllExist n n' (PredType ps (foldr TypeArrow ty tys)))
+                 (ForAll n (PredType ps (foldr TypeArrow ty tys)))
   where arity = length tys
 
 bindNewConstr :: ModuleIdent -> Int -> Type -> DataConstr -> ValueEnv
               -> ValueEnv
-bindNewConstr m n cty (DataConstr c n' _ [lty]) =
+bindNewConstr m n cty (DataConstr c _ _ [lty]) =
   bindGlobalInfo (\qc tyScheme -> NewtypeConstructor qc anonId tyScheme) m c
-                 (ForAllExist n n' (predType (TypeArrow lty cty)))
-bindNewConstr m n cty (RecordConstr c n' _ [l] [lty]) =
+                 (ForAll n (predType (TypeArrow lty cty)))
+bindNewConstr m n cty (RecordConstr c _ _ [l] [lty]) =
   bindGlobalInfo (\qc tyScheme -> NewtypeConstructor qc l tyScheme) m c
-                 (ForAllExist n n' (predType (TypeArrow lty cty)))
+                 (ForAll n (predType (TypeArrow lty cty)))
 bindNewConstr _ _ _ _ = internalError
   "TypeCheck.bindConstrs'.bindNewConstr: newtype with illegal constructors"
 
@@ -1601,9 +1601,9 @@ inst (ForAll n (PredType ps ty)) = do
   tys <- replicateM n freshTypeVar
   return (expandAliasType tys ps, expandAliasType tys ty)
 
-instExist :: ExistTypeScheme -> TCM (PredSet, Type)
-instExist (ForAllExist n n' (PredType ps ty)) = do
-  tys <- replicateM (n + n') freshTypeVar
+instExist :: TypeScheme -> TCM (PredSet, Type)
+instExist (ForAll n (PredType ps ty)) = do
+  tys <- replicateM n freshTypeVar
   return (expandAliasType tys ps, expandAliasType tys ty)
 
 -- The function 'skol' instantiates the type of data and newtype
@@ -1614,15 +1614,13 @@ instExist (ForAllExist n n' (PredType ps ty)) = do
 -- constructor's declaration are added to the dynamic instance
 -- environment.
 
-skol :: ExistTypeScheme -> TCM (PredSet, Type)
-skol (ForAllExist n n' (PredType ps ty)) = do
+skol :: TypeScheme -> TCM (PredSet, Type)
+skol (ForAll n (PredType ps ty)) = do
   tys <- replicateM n freshTypeVar
-  tys' <- replicateM n' freshSkolem
-  let tys'' = tys ++ tys'
   clsEnv <- getClassEnv
   modifyInstEnv $
-    fmap $ bindSkolemInsts $ expandAliasType tys'' $ maxPredSet clsEnv ps
-  return (emptyPredSet, expandAliasType tys'' ty)
+    fmap $ bindSkolemInsts $ expandAliasType tys $ maxPredSet clsEnv ps
+  return (emptyPredSet, expandAliasType tys ty)
   where bindSkolemInsts = flip (foldr bindSkolemInst) . Set.toList
         bindSkolemInst (Pred qcls ty') dInEnv =
           Map.insert qcls (ty' : fromMaybe [] (Map.lookup qcls dInEnv)) dInEnv
@@ -1654,7 +1652,7 @@ gen gvs ps ty = ForAll (length tvs) (subst theta (PredType ps ty))
 -- data constructor. The function 'varArity' works like 'varType' but returns
 -- a variable's arity instead of its type.
 
-constrType :: ModuleIdent -> QualIdent -> ValueEnv -> ExistTypeScheme
+constrType :: ModuleIdent -> QualIdent -> ValueEnv -> TypeScheme
 constrType m c vEnv = case qualLookupValue c vEnv of
   [DataConstructor  _ _ _ tySc] -> tySc
   [NewtypeConstructor _ _ tySc] -> tySc

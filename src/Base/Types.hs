@@ -34,7 +34,7 @@ module Base.Types
     -- * Representation of class methods
   , ClassMethod (..), methodName, methodArity, methodType
     -- * Representation of quantification
-  , TypeScheme (..), ExistTypeScheme (..), monoType, polyType, typeScheme
+  , TypeScheme (..), monoType, polyType, typeScheme
   , rawType
     -- * Predefined types
   , arrowType, unitType, predUnitType, boolType, predBoolType, charType
@@ -393,27 +393,16 @@ methodType (ClassMethod _ _ pty) = pty
 -- Quantification
 -- ---------------------------------------------------------------------------
 
--- We support two kinds of quantifications of types here, universally
--- quantified type schemes (forall alpha . tau(alpha)) and universally
--- and existentially quantified type schemes
--- (forall alpha exists eta . tau(alpha,eta)). In both, quantified type
--- variables are assigned ascending indices starting from 0. Therefore it
--- is sufficient to record the numbers of quantified type variables in
--- the 'ForAll' and 'ForAllExist' constructors. In case of
--- the latter, the first of the two numbers is the number of universally
--- quantified variables and the second the number of existentially
--- quantified variables.
+-- We support only universally quantified type schemes
+-- (forall alpha . tau(alpha)). Quantified type variables are assigned
+-- ascending indices starting from 0. Therefore it is sufficient to record the
+-- numbers of quantified type variables in the 'ForAll' constructor.
 
 data TypeScheme = ForAll Int PredType deriving (Eq, Show)
-data ExistTypeScheme = ForAllExist Int Int PredType deriving (Eq, Show)
 
 instance IsType TypeScheme where
   typeVars (ForAll _ pty) = [tv | tv <- typeVars pty, tv < 0]
   typeSkolems (ForAll _ pty) = typeSkolems pty
-
-instance IsType ExistTypeScheme where
-  typeVars (ForAllExist _ _ pty) = [tv | tv <- typeVars pty, tv < 0]
-  typeSkolems (ForAllExist _ _ pty) = typeSkolems pty
 
 -- The functions 'monoType' and 'polyType' translate a type tau into a
 -- monomorphic type scheme and a polymorphic type scheme, respectively.

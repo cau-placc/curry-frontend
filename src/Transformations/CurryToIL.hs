@@ -127,8 +127,8 @@ constrType :: QualIdent -> TransM Type
 constrType c = do
   vEnv <- getValueEnv
   case qualLookupValue c vEnv of
-    [DataConstructor  _ _ _ (ForAllExist _ _ (PredType _ ty))] -> return ty
-    [NewtypeConstructor _ _ (ForAllExist _ _ (PredType _ ty))] -> return ty
+    [DataConstructor  _ _ _ (ForAll _ (PredType _ ty))] -> return ty
+    [NewtypeConstructor _ _ (ForAll _ (PredType _ ty))] -> return ty
     _ -> internalError $ "CurryToIL.constrType: " ++ show c
 
 -- -----------------------------------------------------------------------------

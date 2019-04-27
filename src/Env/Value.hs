@@ -48,10 +48,10 @@ import Text.PrettyPrint
 
 data ValueInfo
   -- |Data constructor with original name, arity, list of record labels and type
-  = DataConstructor    QualIdent      Int [Ident] ExistTypeScheme
+  = DataConstructor    QualIdent      Int [Ident] TypeScheme
   -- |Newtype constructor with original name, record label and type
   -- (arity is always 1)
-  | NewtypeConstructor QualIdent          Ident   ExistTypeScheme
+  | NewtypeConstructor QualIdent          Ident   TypeScheme
   -- |Value with original name, class method flag, arity and type
   | Value              QualIdent Bool Int         TypeScheme
   -- |Record label with original name, list of constructors for which label
@@ -164,7 +164,7 @@ tupleDCs = map dataInfo tupleData
   where dataInfo (DataConstr _ _ _ tys) =
           let n = length tys
           in  DataConstructor (qTupleId n) n (replicate n anonId) $
-                ForAllExist n 0 $ predType $ foldr TypeArrow (tupleType tys) tys
+                ForAll n $ predType $ foldr TypeArrow (tupleType tys) tys
         dataInfo (RecordConstr _ _ _ _ _) =
           internalError $ "Env.Value.tupleDCs: " ++ show tupleDCs
 
@@ -180,7 +180,7 @@ initDCEnv = foldr predefDC emptyTopEnv
           where ls = replicate a anonId
                 c' = qualify c
         constrType (ForAll n (PredType ps ty)) =
-          ForAllExist n 0 . PredType ps . foldr TypeArrow ty
+          ForAll n . PredType ps . foldr TypeArrow ty
 
 -- The functions 'bindLocalVar' and 'bindLocalVars' add the type of one or
 -- many local variables or functions to the value environment. In contrast

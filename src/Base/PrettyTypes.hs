@@ -53,6 +53,3 @@ instance Pretty ClassMethod where
 
 instance Pretty TypeScheme where
   pPrint (ForAll _ ty) = pPrint ty
-
-instance Pretty ExistTypeScheme where
-  pPrint (ForAllExist _ _ ty) = pPrint ty

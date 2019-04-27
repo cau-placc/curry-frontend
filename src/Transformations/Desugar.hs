@@ -1042,7 +1042,7 @@ falsePat = ConstructorPattern NoSpanInfo predBoolType qFalseId []
 -- Auxiliary definitions
 -- ---------------------------------------------------------------------------
 
-conType :: QualIdent -> ValueEnv -> ([Ident], ExistTypeScheme)
+conType :: QualIdent -> ValueEnv -> ([Ident], TypeScheme)
 conType c vEnv = case qualLookupValue c vEnv of
   [DataConstructor _ _ ls ty] -> (ls , ty)
   [NewtypeConstructor _ l ty] -> ([l], ty)
@@ -1071,8 +1071,8 @@ applyConstr pty c tys =
 -- variables are allowed for records), the compiler can reuse the same
 -- monomorphic type variables for every instantiated type.
 
-instType :: ExistTypeScheme -> Type
-instType (ForAllExist _ _ pty) = inst $ unpredType pty
+instType :: TypeScheme -> Type
+instType (ForAll _ pty) = inst $ unpredType pty
   where inst (TypeConstructor     tc) = TypeConstructor tc
         inst (TypeApply      ty1 ty2) = TypeApply (inst ty1) (inst ty2)
         inst (TypeVariable        tv) = TypeVariable (-1 - tv)
@@ -1094,5 +1094,5 @@ constructors tc = getTyConsEnv >>= \tcEnv -> return $
 argumentTypes :: Type -> QualIdent -> ValueEnv -> ([QualIdent], [Type])
 argumentTypes ty c vEnv =
   (map (qualifyLike c) ls, map (subst (matchType ty0 ty idSubst)) tys)
-  where (ls, ForAllExist _ _ (PredType _ ty')) = conType c vEnv
+  where (ls, ForAll _ (PredType _ ty')) = conType c vEnv
         (tys, ty0) = arrowUnapply ty'

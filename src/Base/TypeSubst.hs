@@ -69,10 +69,6 @@ instance SubstType TypeScheme where
   subst sigma (ForAll n ty) =
     ForAll n (subst (foldr unbindSubst sigma [0 .. n-1]) ty)
 
-instance SubstType ExistTypeScheme where
-  subst sigma (ForAllExist n n' ty) =
-    ForAllExist n n' (subst (foldr unbindSubst sigma [0 .. n + n' - 1]) ty)
-
 instance SubstType ValueInfo where
   subst _     dc@(DataConstructor  _ _ _ _) = dc
   subst _     nc@(NewtypeConstructor _ _ _) = nc

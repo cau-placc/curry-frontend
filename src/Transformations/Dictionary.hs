@@ -591,7 +591,7 @@ bindClassDict m clsEnv cls vEnv = bindEntity m c dc vEnv
         dc = DataConstructor c a (replicate a anonId) tySc
         a  = Set.size ps + arrowArity ty
         pty@(PredType ps ty) = classDictConstrPredType vEnv clsEnv cls
-        tySc = ForAllExist 1 0 pty
+        tySc = ForAll 1 pty
 
 bindDefaultMethods :: ModuleIdent -> QualIdent -> [(Ident, Int)] -> ValueEnv
                    -> ValueEnv
@@ -693,13 +693,13 @@ dictTransValues :: ValueEnv -> ValueEnv
 dictTransValues = fmap dictTransValueInfo
 
 dictTransValueInfo :: ValueInfo -> ValueInfo
-dictTransValueInfo (DataConstructor c a ls (ForAllExist n n' pty)) =
-  DataConstructor c a' ls' $ ForAllExist n n' $ predType ty
+dictTransValueInfo (DataConstructor c a ls (ForAll n pty)) =
+  DataConstructor c a' ls' $ ForAll n $ predType ty
   where a'  = arrowArity ty
         ls' = replicate (a' - a) anonId ++ ls
         ty  = transformPredType pty
-dictTransValueInfo (NewtypeConstructor c l (ForAllExist n n' pty)) =
-  NewtypeConstructor c l (ForAllExist n n' (predType (unpredType pty)))
+dictTransValueInfo (NewtypeConstructor c l (ForAll n pty)) =
+  NewtypeConstructor c l (ForAll n (predType (unpredType pty)))
 dictTransValueInfo (Value f cm a (ForAll n pty)) =
   Value f False a' $ ForAll n $ predType ty
   where a' = a + if cm then 1 else arrowArity ty - arrowArity (unpredType pty)
@@ -1183,10 +1183,9 @@ iFunctionDeclFromValue m vEnv f = case qualLookupValue f vEnv of
 iConstrDeclFromDataConstructor :: ModuleIdent -> ValueEnv -> QualIdent
                                -> ConstrDecl
 iConstrDeclFromDataConstructor m vEnv c = case qualLookupValue c vEnv of
-  [DataConstructor _ _ _ (ForAllExist n n' pty)] ->
-    ConstrDecl NoSpanInfo evs [] (unqualify c) tys
-    where evs = take n' $ drop n identSupply
-          tys = map (fromQualType m identSupply) $ arrowArgs $ unpredType pty
+  [DataConstructor _ _ _ (ForAll n pty)] ->
+    ConstrDecl NoSpanInfo [] [] (unqualify c) tys
+    where tys = map (fromQualType m identSupply) $ arrowArgs $ unpredType pty
   _ -> internalError $ "Dictionary.iConstrDeclFromDataConstructor: " ++ show c
 
 -- -----------------------------------------------------------------------------
@@ -1322,8 +1321,8 @@ varType m v vEnv = case qualLookupValue (qualify v) vEnv of
 
 conType :: QualIdent -> ValueEnv -> TypeScheme
 conType c vEnv = case qualLookupValue c vEnv of
-  [DataConstructor  _ _ _ (ForAllExist n _ pty)] -> ForAll n pty
-  [NewtypeConstructor _ _ (ForAllExist n _ pty)] -> ForAll n pty
+  [DataConstructor  _ _ _ (ForAll n pty)] -> ForAll n pty
+  [NewtypeConstructor _ _ (ForAll n pty)] -> ForAll n pty
   _ -> internalError $ "Dictionary.conType: " ++ show c
 
 funType :: QualIdent -> ValueEnv -> TypeScheme
@@ -1334,8 +1333,8 @@ funType f vEnv = case qualLookupValue f vEnv of
 
 opType :: QualIdent -> ValueEnv -> TypeScheme
 opType op vEnv = case qualLookupValue op vEnv of
-  [DataConstructor  _ _ _ (ForAllExist n _ pty)] -> ForAll n pty
-  [NewtypeConstructor _ _ (ForAllExist n _ pty)] -> ForAll n pty
+  [DataConstructor  _ _ _ (ForAll n pty)] -> ForAll n pty
+  [NewtypeConstructor _ _ (ForAll n pty)] -> ForAll n pty
   [Value _ _ _                             tySc] -> tySc
   [Label _ _                               tySc] -> tySc
   _ -> internalError $ "Dictionary.opType " ++ show op
