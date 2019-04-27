@@ -319,13 +319,13 @@ bindKind m tcEnv' clsEnv tcEnv (DataDecl _ tc tvs cs _) =
     mkData (RecordDecl _ evs cx     c   fs) =
       let (labels, tys) = unzip [(l, ty) | FieldDecl _ ls ty <- fs, l <- ls]
       in  mkRec evs cx c labels tys
-    mkData' evs cx c tys = DataConstr c (length evs) ps tys'
+    mkData' evs cx c tys = DataConstr c ps tys'
       where qtc = qualifyWith m tc
             tvs' = tvs ++ evs
             PredType ps ty = expandConstrType m tcEnv' clsEnv qtc tvs' cx tys
             tys' = arrowArgs ty
     mkRec evs cx c ls tys =
-      RecordConstr c (length evs) ps ls tys'
+      RecordConstr c ps ls tys'
       where qtc = qualifyWith m tc
             tvs' = tvs ++ evs
             PredType ps ty = expandConstrType m tcEnv' clsEnv qtc tvs' cx tys
@@ -335,9 +335,9 @@ bindKind _ _     _       tcEnv (ExternalDataDecl _ tc tvs) =
 bindKind m tcEnv' _      tcEnv (NewtypeDecl _ tc tvs nc _) =
   bindTypeConstructor RenamingType tc tvs (Just KindStar) (mkData nc) tcEnv
   where
-    mkData (NewConstrDecl _ c      ty) = DataConstr c 0 emptyPredSet [ty']
+    mkData (NewConstrDecl _ c      ty) = DataConstr c emptyPredSet [ty']
       where ty'  = expandMonoType m tcEnv' tvs ty
-    mkData (NewRecordDecl _ c (l, ty)) = RecordConstr c 0 emptyPredSet [l] [ty']
+    mkData (NewRecordDecl _ c (l, ty)) = RecordConstr c emptyPredSet [l] [ty']
       where ty'  = expandMonoType m tcEnv' tvs ty
 bindKind m tcEnv' _      tcEnv (TypeDecl _ tc tvs ty) =
   bindTypeConstructor aliasType tc tvs Nothing ty' tcEnv

@@ -561,7 +561,7 @@ bindDictType :: ModuleIdent -> ClassEnv -> TypeInfo -> TCEnv -> TCEnv
 bindDictType m clsEnv (TypeClass cls k ms) = bindEntity m tc ti
   where ti    = DataType tc (KindArrow k KindStar) [c]
         tc    = qDictTypeId cls
-        c     = DataConstr (dictConstrId cls) 0 ps tys
+        c     = DataConstr (dictConstrId cls) ps tys
         sclss = superClasses cls clsEnv
         ps    = Set.fromList [Pred scls (TypeVariable 0) | scls <- sclss]
         tys   = map (generalizeMethodType . transformMethodPredType . methodType) ms
@@ -675,10 +675,10 @@ dictTransTypeInfo (TypeVar _) =
   internalError "Dictionary.dictTransTypeInfo: type variable"
 
 dictTransDataConstr :: DataConstr -> DataConstr
-dictTransDataConstr (DataConstr c n ps tys) =
-  DataConstr c n emptyPredSet $ map dictType (Set.toAscList ps) ++ tys
-dictTransDataConstr (RecordConstr c n ps _ tys) =
-  dictTransDataConstr $ DataConstr c n ps tys
+dictTransDataConstr (DataConstr c ps tys) =
+  DataConstr c emptyPredSet $ map dictType (Set.toAscList ps) ++ tys
+dictTransDataConstr (RecordConstr c ps _ tys) =
+  dictTransDataConstr $ DataConstr c ps tys
 
 -- For the same reason as in 'bindClassEntities' it is safe to use 'fromMaybe 0'
 -- in 'dictTransClassMethod'. Note that type classes are removed anyway in the
@@ -800,7 +800,7 @@ instance DictTrans Decl where
 dictTransConstrDecl :: [Ident] -> ConstrDecl -> DataConstr -> ConstrDecl
 dictTransConstrDecl tvs (ConstrDecl p evs _ c tes) dc =
   ConstrDecl p evs [] c $ map (fromType $ tvs ++ evs ++ bvs) tys
-  where DataConstr _ _ _ tys = dictTransDataConstr dc
+  where DataConstr _ _ tys = dictTransDataConstr dc
         bvs = nub $ bv tes
 dictTransConstrDecl tvs (ConOpDecl p evs cx ty1 op ty2) dc =
   dictTransConstrDecl tvs (ConstrDecl p evs cx op [ty1, ty2]) dc

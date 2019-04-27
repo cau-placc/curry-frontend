@@ -147,28 +147,25 @@ iTypeDecl f m tvs tc k x hs = f NoPos (qualUnqualify m tc) k' (take n tvs) x hs
         k' = fromKind' k n
 
 constrDecl :: ModuleIdent -> Int -> [Ident] -> DataConstr -> ConstrDecl
-constrDecl m n tvs (DataConstr c n' ps [ty1, ty2])
-  | isInfixOp c = ConOpDecl NoSpanInfo evs cx ty1' c ty2'
-  where evs          = take n' $ drop n tvs
-        cx           = fromQualPredSet m tvs ps
+constrDecl m n tvs (DataConstr c ps [ty1, ty2])
+  | isInfixOp c = ConOpDecl NoSpanInfo [] cx ty1' c ty2'
+  where cx           = fromQualPredSet m tvs ps
         [ty1', ty2'] = map (fromQualType m tvs) [ty1, ty2]
-constrDecl m n tvs (DataConstr c n' ps tys) =
-  ConstrDecl NoSpanInfo evs cx c tys'
-  where evs  = take n' $ drop n tvs
-        cx   = fromQualPredSet m tvs ps
+constrDecl m n tvs (DataConstr c ps tys) =
+  ConstrDecl NoSpanInfo [] cx c tys'
+  where cx   = fromQualPredSet m tvs ps
         tys' = map (fromQualType m tvs) tys
-constrDecl m n tvs (RecordConstr c n' ps ls tys) =
-  RecordDecl NoSpanInfo evs cx c fs
+constrDecl m n tvs (RecordConstr c ps ls tys) =
+  RecordDecl NoSpanInfo [] cx c fs
   where
-    evs  = take n' $ drop n tvs
     cx   = fromQualPredSet m tvs ps
     tys' = map (fromQualType m tvs) tys
     fs   = zipWith (FieldDecl NoSpanInfo . return) ls tys'
 
 newConstrDecl :: ModuleIdent -> [Ident] -> DataConstr -> NewConstrDecl
-newConstrDecl m tvs (DataConstr c _ _ tys)
+newConstrDecl m tvs (DataConstr c _ tys)
   = NewConstrDecl NoSpanInfo c (fromQualType m tvs (head tys))
-newConstrDecl m tvs (RecordConstr c _ _ ls tys)
+newConstrDecl m tvs (RecordConstr c _ ls tys)
   = NewRecordDecl NoSpanInfo c (head ls, fromQualType m tvs (head tys))
 
 -- When exporting a class method, we have to remove the implicit class context.

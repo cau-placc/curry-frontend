@@ -342,31 +342,30 @@ unqualifyPredType m (PredType ps ty) =
 -- ---------------------------------------------------------------------------
 
 -- The type 'DataConstr' is used to represent value or record constructors
--- introduced by data or newtype declarations. The 'Int' denotes the number
--- of existentially quantified type variables in the types.
+-- introduced by data or newtype declarations.
 
-data DataConstr = DataConstr   Ident Int PredSet [Type]
-                | RecordConstr Ident Int PredSet [Ident] [Type]
+data DataConstr = DataConstr   Ident PredSet [Type]
+                | RecordConstr Ident PredSet [Ident] [Type]
   deriving (Eq, Show)
 
 constrIdent :: DataConstr -> Ident
-constrIdent (DataConstr     c _ _ _) = c
-constrIdent (RecordConstr c _ _ _ _) = c
+constrIdent (DataConstr     c _ _) = c
+constrIdent (RecordConstr c _ _ _) = c
 
 constrTypes :: DataConstr -> [Type]
-constrTypes (DataConstr     _ _ _ tys) = tys
-constrTypes (RecordConstr _ _ _ _ tys) = tys
+constrTypes (DataConstr     _ _ tys) = tys
+constrTypes (RecordConstr _ _ _ tys) = tys
 
 recLabels :: DataConstr -> [Ident]
-recLabels (DataConstr      _ _ _ _) = []
-recLabels (RecordConstr _ _ _ ls _) = ls
+recLabels (DataConstr      _ _ _) = []
+recLabels (RecordConstr _ _ ls _) = ls
 
 recLabelTypes :: DataConstr -> [Type]
-recLabelTypes (DataConstr       _ _ _ _) = []
-recLabelTypes (RecordConstr _ _ _ _ tys) = tys
+recLabelTypes (DataConstr       _ _ _) = []
+recLabelTypes (RecordConstr _ _ _ tys) = tys
 
 tupleData :: [DataConstr]
-tupleData = [DataConstr (tupleId n) 0 emptyPredSet (take n tvs) | n <- [2 ..]]
+tupleData = [DataConstr (tupleId n) emptyPredSet (take n tvs) | n <- [2 ..]]
   where tvs = map TypeVariable [0 ..]
 
 -- ---------------------------------------------------------------------------
@@ -491,9 +490,9 @@ fractionalTypes = drop 1 numTypes
 predefTypes :: [(Type, [DataConstr])]
 predefTypes =
   [ (arrowType a b, [])
-  , (unitType     , [ DataConstr unitId 0 emptyPredSet [] ])
-  , (listType a   , [ DataConstr nilId  0 emptyPredSet []
-                    , DataConstr consId 0 emptyPredSet [a, listType a]
+  , (unitType     , [ DataConstr unitId emptyPredSet [] ])
+  , (listType a   , [ DataConstr nilId  emptyPredSet []
+                    , DataConstr consId emptyPredSet [a, listType a]
                     ])
   ]
   where a = TypeVariable 0

@@ -677,7 +677,7 @@ dsExpr p (RecordUpdate _ e fs) = do
   where ty = typeOf e
         pty = predType ty
         tc = rootOfType (arrowBase ty)
-        updateAlt (RecordConstr c _ _ ls _)
+        updateAlt (RecordConstr c _ ls _)
           | all (`elem` qls2) (map fieldLabel fs)= do
             let qc = qualifyLike tc c
             vEnv <- getValueEnv

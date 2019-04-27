@@ -215,7 +215,7 @@ lookupTupleTC tc | isTupleId tc = [tupleTCs !! (tupleArity tc - 2)]
 tupleTCs :: [TypeInfo]
 tupleTCs = map typeInfo tupleData
   where
-    typeInfo dc@(DataConstr _ _ _ tys) =
+    typeInfo dc@(DataConstr _ _ tys) =
       let n = length tys in DataType (qTupleId n) (simpleKind n) [dc]
-    typeInfo (RecordConstr  _ _ _ _ _) =
+    typeInfo (RecordConstr  _ _ _ _) =
       internalError "Env.TypeConstructor.tupleTCs: record constructor"

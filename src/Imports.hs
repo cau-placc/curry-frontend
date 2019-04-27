@@ -201,26 +201,23 @@ types :: ModuleIdent -> IDecl -> [TypeInfo]
 types m (IDataDecl _ tc k tvs cs _) =
   [typeCon DataType m tc k tvs (map mkData cs)]
   where
-    mkData (ConstrDecl _ evs cx c tys) =
-      DataConstr c (length evs) (toQualPredSet m tvs' cx)
-        (toQualTypes m tvs' tys)
-      where tvs' = tvs ++ evs
-    mkData (ConOpDecl _ evs cx ty1 c ty2) =
-      DataConstr c (length evs) (toQualPredSet m tvs' cx)
-        (toQualTypes m tvs' [ty1, ty2])
-      where tvs' = tvs ++ evs
-    mkData (RecordDecl _ evs cx c fs) =
-      RecordConstr c (length evs) (toQualPredSet m tvs' cx) labels
-        (toQualTypes m tvs' tys)
-      where tvs' = tvs ++ evs
-            (labels, tys) = unzip [(l, ty) | FieldDecl _ ls ty <- fs, l <- ls]
+    mkData (ConstrDecl _ _ cx c tys) =
+      DataConstr c (toQualPredSet m tvs cx)
+        (toQualTypes m tvs tys)
+    mkData (ConOpDecl _ _ cx ty1 c ty2) =
+      DataConstr c (toQualPredSet m tvs cx)
+        (toQualTypes m tvs [ty1, ty2])
+    mkData (RecordDecl _ _ cx c fs) =
+      RecordConstr c (toQualPredSet m tvs cx) labels
+        (toQualTypes m tvs tys)
+      where (labels, tys) = unzip [(l, ty) | FieldDecl _ ls ty <- fs, l <- ls]
 types m (INewtypeDecl _ tc k tvs nc _) =
   [typeCon RenamingType m tc k tvs (mkData nc)]
   where
     mkData (NewConstrDecl _ c ty) =
-      DataConstr c 0 emptyPredSet [toQualType m tvs ty]
+      DataConstr c emptyPredSet [toQualType m tvs ty]
     mkData (NewRecordDecl _ c (l, ty)) =
-      RecordConstr c 0 emptyPredSet [l] [toQualType m tvs ty]
+      RecordConstr c emptyPredSet [l] [toQualType m tvs ty]
 types m (ITypeDecl _ tc k tvs ty) =
   [typeCon aliasType m tc k tvs (toQualType m tvs ty)]
   where
