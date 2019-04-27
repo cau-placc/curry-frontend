@@ -1593,9 +1593,6 @@ freshMonadType = freshPredType [qMonadId]
 freshConstrained :: [Type] -> TCM Type
 freshConstrained = freshVar . TypeConstrained
 
-freshSkolem :: TCM Type
-freshSkolem = fresh TypeSkolem
-
 inst :: TypeScheme -> TCM (PredSet, Type)
 inst (ForAll n (PredType ps ty)) = do
   tys <- replicateM n freshTypeVar
