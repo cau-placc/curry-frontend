@@ -67,9 +67,6 @@ import Env.Class (ClassEnv, allSuperClasses)
 -- 'Float'. If the type is not restricted, it defaults to the first type
 -- from the constraint list.
 
--- The case 'TypeSkolem' is used for handling skolem types, which
--- result from the use of existentially quantified data constructors.
-
 -- Type variables are represented with deBruijn style indices. Universally
 -- quantified type variables are assigned indices in the order of their
 -- occurrence in the type from left to right. This leads to a canonical
@@ -88,7 +85,6 @@ data Type
   = TypeConstructor QualIdent
   | TypeVariable Int
   | TypeConstrained [Type] Int
-  | TypeSkolem Int
   | TypeApply Type Type
   | TypeArrow Type Type
   | TypeForall [Int] Type
@@ -117,7 +113,6 @@ unapplyType dflt ty = unapply ty []
     unapply (TypeConstrained tys tv) tys'
       | dflt      = unapply (head tys) tys'
       | otherwise = (TypeConstrained tys tv, tys')
-    unapply (TypeSkolem           k) tys  = (TypeSkolem k, tys)
     unapply (TypeForall     tvs ty') tys  = (TypeForall tvs ty', tys)
 
 -- The function 'rootOfType' returns the name of the type constructor at the
@@ -163,21 +158,17 @@ typeConstrs ty = constrs ty [] where
   constrs (TypeVariable      _) tcs = tcs
   constrs (TypeConstrained _ _) tcs = tcs
   constrs (TypeArrow   ty1 ty2) tcs = constrs ty1 (constrs ty2 tcs)
-  constrs (TypeSkolem        _) tcs = tcs
   constrs (TypeForall    _ ty') tcs = constrs ty' tcs
 
--- The methods 'typeVars' and 'typeSkolems' return a list of all type
--- variables and skolems occurring in a type t, respectively. Note that
--- 'TypeConstrained' variables are not included in the set of type
--- variables because they cannot be generalized.
+-- The method 'typeVars' returns a list of all type variables occurring in a
+-- type t. Note that 'TypeConstrained' variables are not included in the set of
+-- type variables because they cannot be generalized.
 
 class IsType t where
   typeVars :: t -> [Int]
-  typeSkolems :: t -> [Int]
 
 instance IsType Type where
   typeVars = typeVars'
-  typeSkolems = typeSkolems'
 
 typeVars' :: Type -> [Int]
 typeVars' ty = vars ty [] where
@@ -186,18 +177,7 @@ typeVars' ty = vars ty [] where
   vars (TypeVariable     tv) tvs = tv : tvs
   vars (TypeConstrained _ _) tvs = tvs
   vars (TypeArrow   ty1 ty2) tvs = vars ty1 (vars ty2 tvs)
-  vars (TypeSkolem        _) tvs = tvs
   vars (TypeForall tvs' ty') tvs = filter (`notElem` tvs') (typeVars' ty') ++ tvs
-
-typeSkolems' :: Type -> [Int]
-typeSkolems' ty = skolems ty [] where
-  skolems (TypeConstructor   _) sks = sks
-  skolems (TypeApply   ty1 ty2) sks = skolems ty1 (skolems ty2 sks)
-  skolems (TypeVariable      _) sks = sks
-  skolems (TypeConstrained _ _) sks = sks
-  skolems (TypeArrow   ty1 ty2) sks = skolems ty1 (skolems ty2 sks)
-  skolems (TypeSkolem        k) sks = k : sks
-  skolems (TypeForall    _ ty') sks = skolems ty' sks
 
 -- The functions 'qualifyType' and 'unqualifyType' add/remove the
 -- qualification with a module identifier for type constructors.
@@ -211,7 +191,6 @@ qualifyType m (TypeConstrained tys tv) =
   TypeConstrained (map (qualifyType m) tys) tv
 qualifyType m (TypeArrow      ty1 ty2) =
   TypeArrow (qualifyType m ty1) (qualifyType m ty2)
-qualifyType _ ts@(TypeSkolem        _) = ts
 qualifyType m (TypeForall      tvs ty) = TypeForall tvs (qualifyType m ty)
 
 unqualifyType :: ModuleIdent -> Type -> Type
@@ -223,7 +202,6 @@ unqualifyType m (TypeConstrained tys tv) =
   TypeConstrained (map (unqualifyType m) tys) tv
 unqualifyType m (TypeArrow      ty1 ty2) =
   TypeArrow (unqualifyType m ty1) (unqualifyType m ty2)
-unqualifyType _ ts@(TypeSkolem        _) = ts
 unqualifyType m (TypeForall      tvs ty) = TypeForall tvs (unqualifyType m ty)
 
 qualifyTC :: ModuleIdent -> QualIdent -> QualIdent
@@ -249,7 +227,6 @@ instance Ord Pred where
 
 instance IsType Pred where
   typeVars (Pred _ ty) = typeVars ty
-  typeSkolems (Pred _ ty) = typeSkolems ty
 
 qualifyPred :: ModuleIdent -> Pred -> Pred
 qualifyPred m (Pred qcls ty) = Pred (qualQualify m qcls) (qualifyType m ty)
@@ -273,7 +250,6 @@ type PredSet = Set.Set Pred
 
 instance (IsType a, Ord a) => IsType (Set.Set a) where
   typeVars = concat . Set.toList . Set.map typeVars
-  typeSkolems = concat . Set.toList . Set.map typeSkolems
 
 emptyPredSet :: PredSet
 emptyPredSet = Set.empty
@@ -321,7 +297,6 @@ data PredType = PredType PredSet Type
 
 instance IsType PredType where
   typeVars (PredType ps ty) = typeVars ty ++ typeVars ps
-  typeSkolems (PredType ps ty) = typeSkolems ty ++ typeSkolems ps
 
 predType :: Type -> PredType
 predType = PredType emptyPredSet
@@ -401,7 +376,6 @@ data TypeScheme = ForAll Int PredType deriving (Eq, Show)
 
 instance IsType TypeScheme where
   typeVars (ForAll _ pty) = [tv | tv <- typeVars pty, tv < 0]
-  typeSkolems (ForAll _ pty) = typeSkolems pty
 
 -- The functions 'monoType' and 'polyType' translate a type tau into a
 -- monomorphic type scheme and a polymorphic type scheme, respectively.

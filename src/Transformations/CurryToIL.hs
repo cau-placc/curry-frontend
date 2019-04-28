@@ -186,8 +186,6 @@ transType' (TypeConstructor    tc) = IL.TypeConstructor tc
 transType' (TypeApply     ty1 ty2) = transType' ty1 . (transType ty2 :)
 transType' (TypeVariable       tv) = foldl applyType' (IL.TypeVariable tv)
 transType' (TypeConstrained tys _) = transType' (head tys)
-transType' (TypeSkolem          k) =
-  foldl applyType' (IL.TypeConstructor (qualify (mkIdent ("_" ++ show k))) [])
 transType' (TypeArrow     ty1 ty2) =
   foldl applyType' (IL.TypeArrow (transType ty1) (transType ty2))
 transType' (TypeForall     tvs ty) =

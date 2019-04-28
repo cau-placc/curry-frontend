@@ -535,18 +535,17 @@ tcFunctionPDecl :: Int -> PredSet -> TypeScheme -> SpanInfo -> Ident
                 -> [Equation a] -> TCM (PredSet, (Type, PDecl PredType))
 tcFunctionPDecl i ps tySc@(ForAll _ pty) p f eqs = do
   (_, ty) <- inst tySc
-  fs <- computeFsEnv
-  (ps', eqs') <- mapAccumM (tcEquation fs ty) ps eqs
+  (ps', eqs') <- mapAccumM (tcEquation ty) ps eqs
   return (ps', (ty, (i, FunctionDecl p pty f eqs')))
 
-tcEquation :: Set.Set Int -> Type -> PredSet -> Equation a
+tcEquation :: Type -> PredSet -> Equation a
            -> TCM (PredSet, Equation PredType)
-tcEquation fs ty ps eqn@(Equation p lhs rhs) =
-  tcEqn fs p lhs rhs >>- unifyDecl p "equation" (ppEquation eqn) ps ty
+tcEquation ty ps eqn@(Equation p lhs rhs) =
+  tcEqn p lhs rhs >>- unifyDecl p "equation" (ppEquation eqn) ps ty
 
-tcEqn :: Set.Set Int -> SpanInfo -> Lhs a -> Rhs a
+tcEqn :: SpanInfo -> Lhs a -> Rhs a
       -> TCM (PredSet, Type, Equation PredType)
-tcEqn fs p lhs rhs = do
+tcEqn p lhs rhs = do
   (ps, tys, lhs', ps', ty, rhs') <- withLocalValueEnv $ do
     bindLambdaVars lhs
     (ps, tys, lhs') <- tcLhs p lhs
@@ -554,8 +553,7 @@ tcEqn fs p lhs rhs = do
     return (ps, tys, lhs', ps', ty, rhs')
   ps'' <- reducePredSet p "equation" (ppEquation (Equation p lhs' rhs'))
                         (ps `Set.union` ps')
-  checkSkolems p "Equation" ppEquation fs ps'' (foldr TypeArrow ty tys)
-    (Equation p lhs' rhs')
+  return (ps'', foldr TypeArrow ty tys, Equation p lhs' rhs')
 
 bindLambdaVars :: QuantExpr t => t -> TCM ()
 bindLambdaVars t = do
@@ -681,7 +679,6 @@ eqTypes t1 t2 = fst (eq [] t1 t2)
    = let (res1, is1) = eqs   is  ts1 ts2
          (res2, is2) = eqVar is1 i1  i2
      in  (res1 && res2, is2)
- eq is (TypeSkolem          i1) (TypeSkolem          i2) = eqVar is i1 i2
  eq is (TypeApply      ta1 tb1) (TypeApply      ta2 tb2)
    = let (res1, is1) = eq is  ta1 ta2
          (res2, is2) = eq is1 tb1 tb2
@@ -1144,14 +1141,12 @@ tcExpr p e@(List spi _ es) = do
     mapAccumM (flip (tcArg p "expression" (ppExpr 0 e)) ty) emptyPredSet es
   return (ps, listType ty, List spi (predType $ listType ty) es')
 tcExpr p (ListCompr spi e qs) = do
-  fs <- computeFsEnv
   (ps, qs', ps', ty, e') <- withLocalValueEnv $ do
     (ps, qs') <- mapAccumM (tcQual p) emptyPredSet qs
     (ps', ty, e') <- tcExpr p e
     return (ps, qs', ps', ty, e')
   ps'' <- reducePredSet p "expression" (ppExpr 0 e') (ps `Set.union` ps')
-  checkSkolems p "Expression" (ppExpr 0) fs ps'' (listType ty)
-    (ListCompr spi e' qs')
+  return (ps'', listType ty, ListCompr spi e' qs')
 tcExpr p e@(EnumFrom spi e1) = do
   (ps, ty) <- freshEnumType
   (ps', e1') <- tcArg p "arithmetic sequence" (ppExpr 0 e) ps ty e1
@@ -1198,32 +1193,28 @@ tcExpr p e@(RightSection spi op e1) = do
   (ps', e1') <- tcArg p "right section" (ppExpr 0 e) ps beta e1
   return (ps', TypeArrow alpha gamma, RightSection spi op' e1')
 tcExpr p (Lambda spi ts e) = do
-  fs <- computeFsEnv
   (pss, tys, ts', ps, ty, e')<- withLocalValueEnv $ do
     bindLambdaVars ts
     (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern p) ts
     (ps, ty, e') <- tcExpr p e
     return (pss, tys, ts', ps, ty, e')
   ps' <- reducePredSet p "expression" (ppExpr 0 e') (Set.unions $ ps : pss)
-  checkSkolems p "Expression" (ppExpr 0) fs ps' (foldr TypeArrow ty tys)
-    (Lambda spi ts' e')
+  return (ps', foldr TypeArrow ty tys, Lambda spi ts' e')
 tcExpr p (Let spi ds e) = do
-  fs <- computeFsEnv
   (ps, ds', ps', ty, e') <- withLocalValueEnv $ do
     (ps, ds') <- tcDecls ds
     (ps', ty, e') <- tcExpr p e
     return (ps, ds', ps', ty, e')
   ps'' <- reducePredSet p "expression" (ppExpr 0 e') (ps `Set.union` ps')
-  checkSkolems p "Expression" (ppExpr 0) fs ps'' ty (Let spi ds' e')
+  return (ps'', ty, Let spi ds' e')
 tcExpr p (Do spi sts e) = do
-  fs <- computeFsEnv
   (sts', ty, ps', e') <- withLocalValueEnv $ do
     ((ps, mTy), sts') <-
       mapAccumM (uncurry (tcStmt p)) (emptyPredSet, Nothing) sts
     ty <- liftM (maybe id TypeApply mTy) freshTypeVar
     (ps', e') <- tcExpr p e >>- unify p "statement" (ppExpr 0 e) ps ty
     return (sts', ty, ps', e')
-  checkSkolems p "Expression" (ppExpr 0) fs ps' ty (Do spi sts' e')
+  return (ps', ty, Do spi sts' e')
 tcExpr p e@(IfThenElse spi e1 e2 e3) = do
   (ps, e1') <- tcArg p "expression" (ppExpr 0 e) emptyPredSet boolType e1
   (ps', ty, e2') <- tcExpr p e2
@@ -1232,8 +1223,7 @@ tcExpr p e@(IfThenElse spi e1 e2 e3) = do
 tcExpr p (Case spi ct e as) = do
   (ps, tyLhs, e') <- tcExpr p e
   tyRhs <- freshTypeVar
-  fs <- computeFsEnv
-  (ps', as') <- mapAccumM (tcAlt fs tyLhs tyRhs) ps as
+  (ps', as') <- mapAccumM (tcAlt tyLhs tyRhs) ps as
   return (ps', tyRhs, Case spi ct e' as')
 
 tcArg :: HasPosition p => p -> String -> Doc -> PredSet -> Type -> Expression a
@@ -1241,15 +1231,15 @@ tcArg :: HasPosition p => p -> String -> Doc -> PredSet -> Type -> Expression a
 tcArg p what doc ps ty e =
   tcExpr p e >>- unify p what (doc $-$ text "Term:" <+> ppExpr 0 e) ps ty
 
-tcAlt :: Set.Set Int -> Type -> Type -> PredSet -> Alt a
+tcAlt :: Type -> Type -> PredSet -> Alt a
       -> TCM (PredSet, Alt PredType)
-tcAlt fs tyLhs tyRhs ps a@(Alt p t rhs) =
-  tcAltern fs tyLhs p t rhs >>-
+tcAlt tyLhs tyRhs ps a@(Alt p t rhs) =
+  tcAltern tyLhs p t rhs >>-
     unify p "case alternative" (ppAlt a) ps tyRhs
 
-tcAltern :: Set.Set Int -> Type -> SpanInfo -> Pattern a
+tcAltern :: Type -> SpanInfo -> Pattern a
          -> Rhs a -> TCM (PredSet, Type, Alt PredType)
-tcAltern fs tyLhs p t rhs = do
+tcAltern tyLhs p t rhs = do
   (ps, t', ps', ty', rhs') <- withLocalValueEnv $ do
     bindLambdaVars t
     (ps, t') <-
@@ -1258,7 +1248,7 @@ tcAltern fs tyLhs p t rhs = do
     return (ps, t', ps', ty', rhs')
   ps'' <- reducePredSet p "alternative" (ppAlt (Alt p t' rhs'))
                         (ps `Set.union` ps')
-  checkSkolems p "Alternative" ppAlt fs ps'' ty' (Alt p t' rhs')
+  return (ps'', ty', Alt p t' rhs')
 
 tcQual :: HasPosition p => p -> PredSet -> Statement a
        -> TCM (PredSet, Statement PredType)
@@ -1407,8 +1397,6 @@ unifyTypes m (TypeArrow ty11 ty12) ty2@(TypeApply _ _) =
   unifyTypes m (TypeApply (TypeApply (TypeConstructor qArrowId) ty11) ty12) ty2
 unifyTypes m (TypeArrow ty11 ty12) (TypeArrow ty21 ty22) =
   unifyTypeLists m [ty11, ty12] [ty21, ty22]
-unifyTypes _ (TypeSkolem k1) (TypeSkolem k2)
-  | k1 == k2 = Right idSubst
 unifyTypes m ty1 ty2 = Left (errIncompatibleTypes m ty1 ty2)
 
 unifyTypeLists :: ModuleIdent -> [Type] -> [Type] -> Either Doc TypeSubst
@@ -1533,33 +1521,6 @@ defaultType _ _ _ = id
 
 isNumClass :: ClassEnv -> QualIdent -> Bool
 isNumClass = (elem qNumId .) . flip allSuperClasses
-
--- Whenever type inference succeeds for a function equation, case alternative,
--- etc., which may open an existentially quantified data type and thus bring
--- fresh skolem constants into scope, the compiler checks that none of those
--- skolem constants escape their scope through the result type or the type
--- environment. E.g., for the program
---
--- data Key a = forall b . Key b (b -> a)
--- f (Key x _) = x
--- g k x = fcase k of { Key _ f -> f x }
---
--- a skolem constant escapes in the (result) type of 'f' and in the type of the
--- environment variable 'x' for the fcase expression in the definition of 'g'.
-
-checkSkolems :: HasPosition p => p -> String -> (a -> Doc) -> Set.Set Int
-             -> PredSet -> Type -> a -> TCM (PredSet, Type, a)
-checkSkolems p what pp fs ps ty x = do
-  m <- getModuleIdent
-  vEnv <- getValueEnv
-  theta <- getTypeSubst
-  let escape = any (`Set.notMember` fs) . typeSkolems . snd
-      esc    = filter escape $ [ (v, subst theta pty)
-                               | (v, pty) <- (empty, PredType ps ty) : ptys ]
-      ptys   = [ (text "Variable:" <+> ppIdent v, pty)
-               | (v, Value _ _ _ (ForAll _ pty)) <- localBindings vEnv ]
-  mapM_ (report . errSkolemEscapingScope p m what (pp x)) esc
-  return (ps, ty, x)
 
 -- Instantiation and Generalization:
 -- We use negative offsets for fresh type variables.
@@ -1719,15 +1680,6 @@ computeFvEnv = do
   vEnv <- getValueEnv
   return $ fvEnv (subst theta vEnv)
 
-fsEnv :: ValueEnv -> Set.Set Int
-fsEnv = Set.unions . map (Set.fromList . typeSkolems) . localTypes
-
-computeFsEnv :: TCM (Set.Set Int)
-computeFsEnv = do
-  theta <- getTypeSubst
-  vEnv <- getValueEnv
-  return $ fsEnv (subst theta vEnv)
-
 localTypes :: ValueEnv -> [TypeScheme]
 localTypes vEnv = [tySc | (_, Value _ _ _ tySc) <- localBindings vEnv]
 
@@ -1783,14 +1735,6 @@ errTypeMismatch p what doc m ty1 ty2 reason = posMessage p $ vcat
 errSkolemFieldLabel :: HasPosition a => a -> Ident -> Message
 errSkolemFieldLabel p l = posMessage p $ hsep $ map text
   ["Existential type escapes with type of record selector", escName l]
-
-errSkolemEscapingScope :: HasPosition a => a -> ModuleIdent -> String -> Doc
-                       -> (Doc, PredType) -> Message
-errSkolemEscapingScope p m what doc (whence, pty) = posMessage p $ vcat
-  [ text "Existential type escapes out of its scope"
-  , sep [text what <> colon, nest 2 doc], whence
-  , text "Type:" <+> ppPredType m pty
-  ]
 
 errRecursiveType :: ModuleIdent -> Int -> Type -> Doc
 errRecursiveType m tv ty = errIncompatibleTypes m (TypeVariable tv) ty

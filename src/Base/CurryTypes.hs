@@ -127,7 +127,7 @@ toQualPredType m tvs = qualifyPredType m . toPredType tvs
 
 toConstrType :: QualIdent -> [Ident] -> CS.Context -> [CS.TypeExpr] -> PredType
 toConstrType tc tvs cx tys = toPredType tvs $
-  CS.QualTypeExpr NoSpanInfo cx' ty' 
+  CS.QualTypeExpr NoSpanInfo cx' ty'
   where tvs' = nub (fv tys)
         cx'  = restrictContext tvs' cx
         ty'  = foldr (CS.ArrowType NoSpanInfo) ty0 tys
@@ -173,9 +173,6 @@ fromType' tvs (TypeArrow     ty1 ty2) tys =
   foldl (CS.ApplyType NoSpanInfo)
     (CS.ArrowType NoSpanInfo (fromType tvs ty1) (fromType tvs ty2)) tys
 fromType' tvs (TypeConstrained tys _) tys' = fromType' tvs (head tys) tys'
-fromType' _   (TypeSkolem          k) tys =
-  foldl (CS.ApplyType NoSpanInfo)
-    (CS.VariableType NoSpanInfo $ mkIdent $ "_?" ++ show k) tys
 fromType' tvs (TypeForall    tvs' ty) tys
   | null tvs' = fromType' tvs ty tys
   | otherwise = foldl (CS.ApplyType NoSpanInfo)
