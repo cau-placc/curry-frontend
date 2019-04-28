@@ -420,9 +420,8 @@ checkTypeLhs = checkTypeVars "left hand side of type declaration"
 
 checkExistVars :: [Ident] -> TSCM ()
 checkExistVars evs = do
-  unless (null evs) $ checkUsedExtension (getPosition $ head evs)
-    "Existentially quantified types" ExistentialQuantification
-  checkTypeVars "list of existentially quantified type variables" evs
+  unless (null evs) $ report $
+    errExistentialQuantification (getPosition $ head evs)
 
 -- |Checks a list of type variables for
 -- * Anonymous type variables are allowed
@@ -641,6 +640,11 @@ errMissingLanguageExtension p what ext = posMessage p $
   text what <+> text "are not supported in standard Curry." $+$
   nest 2 (text "Use flag -X" <+> text (show ext)
           <+> text "to enable this extension.")
+
+errExistentialQuantification :: Position -> Message
+errExistentialQuantification p = posMessage p $
+  text "Support for Existential Quantification was removed from Curry." $+$
+  text "It may be readded in a future version."
 
 errUndefined :: String -> QualIdent -> Message
 errUndefined what qident = posMessage qident $ hsep $ map text
