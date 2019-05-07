@@ -273,24 +273,15 @@ checkDecl _                             = ok
 
 --TODO: shadowing und context etc.
 checkConstrDecl :: ConstrDecl -> WCM ()
-checkConstrDecl (ConstrDecl     _ vs _ c tys) = inNestedScope $ do
-  mapM_ checkTypeShadowing vs
-  mapM_ insertTypeVar vs
+checkConstrDecl (ConstrDecl     _ c tys) = inNestedScope $ do
   visitId c
   mapM_ checkTypeExpr tys
-  reportUnusedTypeVars vs
-checkConstrDecl (ConOpDecl _ vs _ ty1 op ty2) = inNestedScope $ do
-  mapM_ checkTypeShadowing vs
-  mapM_ insertTypeVar vs
+checkConstrDecl (ConOpDecl _ ty1 op ty2) = inNestedScope $ do
   visitId op
   mapM_ checkTypeExpr [ty1, ty2]
-  reportUnusedTypeVars vs
-checkConstrDecl (RecordDecl      _ vs _ c fs) = inNestedScope $ do
-  mapM_ checkTypeShadowing vs
-  mapM_ insertTypeVar vs
+checkConstrDecl (RecordDecl      _ c fs) = inNestedScope $ do
   visitId c
   mapM_ checkTypeExpr tys
-  reportUnusedTypeVars vs
   where
     tys = [ty | FieldDecl _ _ ty <- fs]
 
@@ -1018,9 +1009,9 @@ insertTypeExpr (ParenType         _ ty) = insertTypeExpr ty
 insertTypeExpr (ForallType      _ _ ty) = insertTypeExpr ty
 
 insertConstrDecl :: ConstrDecl -> WCM ()
-insertConstrDecl (ConstrDecl _ _ _    c _) = insertConsId c
-insertConstrDecl (ConOpDecl  _ _ _ _ op _) = insertConsId op
-insertConstrDecl (RecordDecl _ _ _    c _) = insertConsId c
+insertConstrDecl (ConstrDecl _    c _) = insertConsId c
+insertConstrDecl (ConOpDecl  _ _ op _) = insertConsId op
+insertConstrDecl (RecordDecl _    c _) = insertConsId c
 
 insertNewConstrDecl :: NewConstrDecl -> WCM ()
 insertNewConstrDecl (NewConstrDecl _ c _) = insertConsId c
@@ -1250,20 +1241,14 @@ checkCaseModeDecl (InstanceDecl _ cx _ inst ds) = do
 checkCaseModeDecl _ = ok
 
 checkCaseModeConstr :: ConstrDecl -> WCM ()
-checkCaseModeConstr (ConstrDecl _ evs cx c tys) = do
-  mapM_ (checkCaseModeID isVarName) evs
-  checkCaseModeContext cx
+checkCaseModeConstr (ConstrDecl _ c tys) = do
   checkCaseModeID isConstrName c
   mapM_ checkCaseModeTypeExpr tys
-checkCaseModeConstr (ConOpDecl  _ evs cx ty1 c ty2) = do
-  mapM_ (checkCaseModeID isVarName) evs
-  checkCaseModeContext cx
+checkCaseModeConstr (ConOpDecl  _ ty1 c ty2) = do
   checkCaseModeTypeExpr ty1
   checkCaseModeID isConstrName c
   checkCaseModeTypeExpr ty2
-checkCaseModeConstr (RecordDecl _ evs cx c fs) = do
-  mapM_ (checkCaseModeID isVarName) evs
-  checkCaseModeContext cx
+checkCaseModeConstr (RecordDecl _ c fs) = do
   checkCaseModeID isConstrName c
   mapM_ checkCaseModeFieldDecl fs
 

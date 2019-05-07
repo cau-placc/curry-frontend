@@ -160,9 +160,9 @@ trConstrDecl d = do
   ty' <- arrowArgs <$> constrType c'
   return $ IL.ConstrDecl c' (map transType ty')
   where
-  constr (ConstrDecl    _ _ _ c _) = c
-  constr (ConOpDecl  _ _ _ _ op _) = op
-  constr (RecordDecl    _ _ _ c _) = c
+  constr (ConstrDecl    _ c _) = c
+  constr (ConOpDecl  _ _ op _) = op
+  constr (RecordDecl    _ c _) = c
 
 trExternalData :: Ident -> [Ident] -> TransM IL.Decl
 trExternalData tc tvs = flip IL.ExternalDataDecl (length tvs) <$> trQualify tc

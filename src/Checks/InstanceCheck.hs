@@ -142,9 +142,9 @@ declDeriveInfo :: TCEnv -> ClassEnv -> Decl a -> INCM DeriveInfo
 declDeriveInfo tcEnv clsEnv (DataDecl p tc tvs cs clss) =
   mkDeriveInfo tcEnv clsEnv p tc tvs (concat cxs) (concat tyss) clss
   where (cxs, tyss) = unzip (map constrDeclTypes cs)
-        constrDeclTypes (ConstrDecl     _ _ cx _ tys) = (cx, tys)
-        constrDeclTypes (ConOpDecl  _ _ cx ty1 _ ty2) = (cx, [ty1, ty2])
-        constrDeclTypes (RecordDecl      _ _ cx _ fs) = (cx, tys)
+        constrDeclTypes (ConstrDecl     _ _ tys) = ([], tys)
+        constrDeclTypes (ConOpDecl  _ ty1 _ ty2) = ([], [ty1, ty2])
+        constrDeclTypes (RecordDecl      _ _ fs) = ([], tys)
           where tys = [ty | FieldDecl _ ls ty <- fs, _ <- ls]
 declDeriveInfo tcEnv clsEnv (NewtypeDecl p tc tvs nc clss) =
   mkDeriveInfo tcEnv clsEnv p tc tvs [] [nconstrType nc] clss

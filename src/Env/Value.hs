@@ -161,11 +161,11 @@ lookupTuple c | isTupleId c = [tupleDCs !! (tupleArity c - 2)]
 
 tupleDCs :: [ValueInfo]
 tupleDCs = map dataInfo tupleData
-  where dataInfo (DataConstr _ _ tys) =
+  where dataInfo (DataConstr _ tys) =
           let n = length tys
           in  DataConstructor (qTupleId n) n (replicate n anonId) $
                 ForAll n $ predType $ foldr TypeArrow (tupleType tys) tys
-        dataInfo (RecordConstr _ _ _ _) =
+        dataInfo (RecordConstr _ _ _) =
           internalError $ "Env.Value.tupleDCs: " ++ show tupleDCs
 
 -- Since all predefined types are free of existentially quantified type
@@ -175,7 +175,7 @@ tupleDCs = map dataInfo tupleData
 initDCEnv :: ValueEnv
 initDCEnv = foldr predefDC emptyTopEnv
   [ (c, length tys, constrType (polyType ty) tys)
-  | (ty, cs) <- predefTypes, DataConstr c _ tys <- cs ]
+  | (ty, cs) <- predefTypes, DataConstr c tys <- cs ]
   where predefDC (c, a, ty) = predefTopEnv c' (DataConstructor c' a ls ty)
           where ls = replicate a anonId
                 c' = qualify c

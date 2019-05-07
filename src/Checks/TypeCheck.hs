@@ -256,22 +256,22 @@ bindConstrs' m tcEnv vEnv = foldr (bindData . snd) vEnv $ localBindings tcEnv
     bindData _ vEnv' = vEnv'
 
 bindConstr :: ModuleIdent -> Int -> Type -> DataConstr -> ValueEnv -> ValueEnv
-bindConstr m n ty (DataConstr c ps tys) =
+bindConstr m n ty (DataConstr c tys) =
   bindGlobalInfo (\qc tyScheme -> DataConstructor qc arity ls tyScheme) m c
-                 (ForAll n (PredType ps (foldr TypeArrow ty tys)))
+                 (ForAll n (PredType emptyPredSet (foldr TypeArrow ty tys)))
   where arity = length tys
         ls    = replicate arity anonId
-bindConstr m n ty (RecordConstr c ps ls tys) =
+bindConstr m n ty (RecordConstr c ls tys) =
   bindGlobalInfo (\qc tyScheme -> DataConstructor qc arity ls tyScheme) m c
-                 (ForAll n (PredType ps (foldr TypeArrow ty tys)))
+                 (ForAll n (PredType emptyPredSet (foldr TypeArrow ty tys)))
   where arity = length tys
 
 bindNewConstr :: ModuleIdent -> Int -> Type -> DataConstr -> ValueEnv
               -> ValueEnv
-bindNewConstr m n cty (DataConstr c _ [lty]) =
+bindNewConstr m n cty (DataConstr c [lty]) =
   bindGlobalInfo (\qc tyScheme -> NewtypeConstructor qc anonId tyScheme) m c
                  (ForAll n (predType (TypeArrow lty cty)))
-bindNewConstr m n cty (RecordConstr c _ [l] [lty]) =
+bindNewConstr m n cty (RecordConstr c [l] [lty]) =
   bindGlobalInfo (\qc tyScheme -> NewtypeConstructor qc l tyScheme) m c
                  (ForAll n (predType (TypeArrow lty cty)))
 bindNewConstr _ _ _ _ = internalError
@@ -293,7 +293,7 @@ checkFieldLabel :: Decl a -> TCM ()
 checkFieldLabel (DataDecl _ _ tvs cs _) = do
   ls' <- mapM (tcFieldLabel tvs) labels
   mapM_ tcFieldLabels (groupLabels ls')
-  where labels = [(l, p, ty) | RecordDecl _ _ _ _ fs <- cs,
+  where labels = [(l, p, ty) | RecordDecl _ _ fs <- cs,
                                FieldDecl p ls ty <- fs, l <- ls]
 checkFieldLabel (NewtypeDecl _ _ tvs (NewRecordDecl p _ (l, ty)) _) = do
   _ <- tcFieldLabel tvs (l, p, ty)
@@ -342,12 +342,12 @@ bindLabels' m tcEnv vEnv = foldr (bindData . snd) vEnv $ localBindings tcEnv
         constr l = map (qualifyLike tc) $
           [constrIdent c | c <- cs, l `elem` recLabels c]
         sameLabel (l1,_,_) (l2,_,_) = l1 == l2
-    bindData (RenamingType tc k (RecordConstr c _ [l] [lty])) vEnv' =
+    bindData (RenamingType tc k (RecordConstr c [l] [lty])) vEnv' =
       bindLabel m n (constrType' tc n) (l, [qc], lty) vEnv'
       where
         n = kindArity k
         qc = qualifyLike tc c
-    bindData (RenamingType _ _ (RecordConstr _ _ _ _)) _ =
+    bindData (RenamingType _ _ (RecordConstr _ _ _)) _ =
       internalError $ "Checks.TypeCheck.bindLabels'.bindData: " ++
         "RenamingType with more than one record label"
     bindData _ vEnv' = vEnv'

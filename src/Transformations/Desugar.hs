@@ -222,9 +222,9 @@ genSelEqn p l qc = do
 
 -- Remove any labels from a data constructor declaration
 unlabelConstr :: ConstrDecl -> ConstrDecl
-unlabelConstr (RecordDecl p evs cx c fs) = ConstrDecl p evs cx c tys
+unlabelConstr (RecordDecl p c fs) = ConstrDecl p c tys
   where tys = [ty | FieldDecl _ ls ty <- fs, _ <- ls]
-unlabelConstr c                          = c
+unlabelConstr c                   = c
 
 -- Remove any labels from a newtype constructor declaration
 unlabelNewConstr :: NewConstrDecl -> NewConstrDecl
@@ -677,7 +677,7 @@ dsExpr p (RecordUpdate _ e fs) = do
   where ty = typeOf e
         pty = predType ty
         tc = rootOfType (arrowBase ty)
-        updateAlt (RecordConstr c _ ls _)
+        updateAlt (RecordConstr c ls _)
           | all (`elem` qls2) (map fieldLabel fs)= do
             let qc = qualifyLike tc c
             vEnv <- getValueEnv

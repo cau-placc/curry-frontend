@@ -331,15 +331,12 @@ idsDecl (InstanceDecl  _ cx c ty ds) = idsContext cx ++
   TypeCons TypeRefer False c : idsTypeExpr ty ++ concatMap idsInstanceDecl ds
 
 idsConstrDecl :: ConstrDecl -> [Code]
-idsConstrDecl (ConstrDecl     _ vs cx c tys) =
-  map (Identifier IdDeclare False . qualify) vs ++ idsContext cx ++
-    DataCons ConsDeclare False (qualify c) : concatMap idsTypeExpr tys
-idsConstrDecl (ConOpDecl _ vs cx ty1 op ty2) =
-  map (Identifier IdDeclare False . qualify) vs ++ idsContext cx ++
+idsConstrDecl (ConstrDecl     _ c tys) =
+  DataCons ConsDeclare False (qualify c) : concatMap idsTypeExpr tys
+idsConstrDecl (ConOpDecl _ ty1 op ty2) =
   idsTypeExpr ty1 ++ (DataCons ConsDeclare False $ qualify op) : idsTypeExpr ty2
-idsConstrDecl (RecordDecl      _ vs cx c fs) =
-  map (Identifier IdDeclare False . qualify) vs ++ idsContext cx ++
-    DataCons ConsDeclare False (qualify c) : concatMap idsFieldDecl fs
+idsConstrDecl (RecordDecl      _ c fs) =
+  DataCons ConsDeclare False (qualify c) : concatMap idsFieldDecl fs
 
 idsNewConstrDecl :: NewConstrDecl -> [Code]
 idsNewConstrDecl (NewConstrDecl _ c     ty) =

@@ -380,7 +380,7 @@ createClassDictConstrDecl cls tv ds = do
       tvs  = tv : filter (unRenameIdent tv /=) identSupply
       mtys = map (fromType tvs . generalizeMethodType . transformMethodPredType)
                  [toMethodType cls tv qty | TypeSig _ fs qty <- ds, _ <- fs]
-  return $ ConstrDecl NoSpanInfo [] cx (dictConstrId cls) mtys
+  return $ ConstrDecl NoSpanInfo (dictConstrId cls) mtys
 
 classDictConstrPredType :: ValueEnv -> ClassEnv -> QualIdent -> PredType
 classDictConstrPredType vEnv clsEnv cls = PredType ps $ foldr TypeArrow ty mtys
@@ -561,7 +561,7 @@ bindDictType :: ModuleIdent -> ClassEnv -> TypeInfo -> TCEnv -> TCEnv
 bindDictType m clsEnv (TypeClass cls k ms) = bindEntity m tc ti
   where ti    = DataType tc (KindArrow k KindStar) [c]
         tc    = qDictTypeId cls
-        c     = DataConstr (dictConstrId cls) ps tys
+        c     = DataConstr (dictConstrId cls) (map dictType (Set.toAscList ps) ++ tys)
         sclss = superClasses cls clsEnv
         ps    = Set.fromList [Pred scls (TypeVariable 0) | scls <- sclss]
         tys   = map (generalizeMethodType . transformMethodPredType . methodType) ms
@@ -675,10 +675,9 @@ dictTransTypeInfo (TypeVar _) =
   internalError "Dictionary.dictTransTypeInfo: type variable"
 
 dictTransDataConstr :: DataConstr -> DataConstr
-dictTransDataConstr (DataConstr c ps tys) =
-  DataConstr c emptyPredSet $ map dictType (Set.toAscList ps) ++ tys
-dictTransDataConstr (RecordConstr c ps _ tys) =
-  dictTransDataConstr $ DataConstr c ps tys
+dictTransDataConstr (DataConstr c tys) = DataConstr c tys
+dictTransDataConstr (RecordConstr c _ tys) =
+  dictTransDataConstr $ DataConstr c tys
 
 -- For the same reason as in 'bindClassEntities' it is safe to use 'fromMaybe 0'
 -- in 'dictTransClassMethod'. Note that type classes are removed anyway in the
@@ -798,12 +797,12 @@ instance DictTrans Decl where
     internalError $ "Dictionary.dictTrans: " ++ show d
 
 dictTransConstrDecl :: [Ident] -> ConstrDecl -> DataConstr -> ConstrDecl
-dictTransConstrDecl tvs (ConstrDecl p evs _ c tes) dc =
-  ConstrDecl p evs [] c $ map (fromType $ tvs ++ evs ++ bvs) tys
-  where DataConstr _ _ tys = dictTransDataConstr dc
+dictTransConstrDecl tvs (ConstrDecl p c tes) dc =
+  ConstrDecl p c $ map (fromType $ tvs ++ bvs) tys
+  where DataConstr _ tys = dictTransDataConstr dc
         bvs = nub $ bv tes
-dictTransConstrDecl tvs (ConOpDecl p evs cx ty1 op ty2) dc =
-  dictTransConstrDecl tvs (ConstrDecl p evs cx op [ty1, ty2]) dc
+dictTransConstrDecl tvs (ConOpDecl p ty1 op ty2) dc =
+  dictTransConstrDecl tvs (ConstrDecl p op [ty1, ty2]) dc
 dictTransConstrDecl _ d _ = internalError $ "Dictionary.dictTrans: " ++ show d
 
 instance DictTrans Equation where
@@ -1160,13 +1159,12 @@ dictTransIDecl m vEnv clsEnv (IInstanceDecl _ _ cls ty _ mm) =
         ms   = classMethods qcls clsEnv
 
 dictTransIConstrDecl :: ModuleIdent -> [Ident] -> ConstrDecl -> ConstrDecl
-dictTransIConstrDecl m tvs (ConstrDecl     p evs cx c tys) =
-  ConstrDecl p evs [] c $ transformIContext m (tvs ++ evs) cx ++ tys
-dictTransIConstrDecl m tvs (ConOpDecl p evs cx ty1 op ty2) =
-  dictTransIConstrDecl m tvs (ConstrDecl p evs cx op [ty1, ty2])
-dictTransIConstrDecl m tvs (RecordDecl      p evs cx c fs) =
-  RecordDecl p evs [] c $
-    map toFieldDecl (transformIContext m (tvs ++ evs) cx) ++ fs
+dictTransIConstrDecl m tvs (ConstrDecl     p c tys) =
+  ConstrDecl p c tys
+dictTransIConstrDecl m tvs (ConOpDecl p ty1 op ty2) =
+  dictTransIConstrDecl m tvs (ConstrDecl p op [ty1, ty2])
+dictTransIConstrDecl m tvs (RecordDecl      p c fs) =
+  RecordDecl p c fs
   where toFieldDecl = FieldDecl NoSpanInfo [anonId]
 
 transformIContext :: ModuleIdent -> [Ident] -> Context -> [TypeExpr]
@@ -1184,7 +1182,7 @@ iConstrDeclFromDataConstructor :: ModuleIdent -> ValueEnv -> QualIdent
                                -> ConstrDecl
 iConstrDeclFromDataConstructor m vEnv c = case qualLookupValue c vEnv of
   [DataConstructor _ _ _ (ForAll n pty)] ->
-    ConstrDecl NoSpanInfo [] [] (unqualify c) tys
+    ConstrDecl NoSpanInfo (unqualify c) tys
     where tys = map (fromQualType m identSupply) $ arrowArgs $ unpredType pty
   _ -> internalError $ "Dictionary.iConstrDeclFromDataConstructor: " ++ show c
 

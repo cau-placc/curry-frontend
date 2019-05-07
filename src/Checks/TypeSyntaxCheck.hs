@@ -205,16 +205,12 @@ instance Rename (Decl a) where
     InstanceDecl p <$> rename cx <*> pure cls <*> rename ty <*> renameReset ds
 
 instance Rename ConstrDecl where
-  rename (ConstrDecl p evs cx c tys) = withLocalEnv $ do
-    bindVars evs
-    ConstrDecl p <$> rename evs <*> rename cx <*> pure c <*> rename tys
-  rename (ConOpDecl p evs cx ty1 op ty2) = withLocalEnv $ do
-    bindVars evs
-    ConOpDecl p <$> rename evs <*> rename cx <*> rename ty1 <*> pure op
-                <*> rename ty2
-  rename (RecordDecl p evs cx c fs) = withLocalEnv $ do
-    bindVars evs
-    RecordDecl p <$> rename evs <*> rename cx <*> pure c <*> rename fs
+  rename (ConstrDecl p c tys) = withLocalEnv $ do
+    ConstrDecl p <$> pure c <*> rename tys
+  rename (ConOpDecl p ty1 op ty2) = withLocalEnv $ do
+    ConOpDecl p <$> rename ty1 <*> pure op <*> rename ty2
+  rename (RecordDecl p c fs) = withLocalEnv $ do
+    RecordDecl p <$> pure c <*> rename fs
 
 instance Rename FieldDecl where
   rename (FieldDecl p ls ty) = FieldDecl p ls <$> rename ty
@@ -358,26 +354,16 @@ checkDecl (InstanceDecl p cx qcls inst ds) = do
 checkDecl d = return d
 
 checkConstrDecl :: [Ident] -> ConstrDecl -> TSCM ConstrDecl
-checkConstrDecl tvs (ConstrDecl p evs cx c tys) = do
-  checkExistVars evs
-  tys' <- mapM (checkClosedType (evs ++ tvs)) tys
-  checkConstrContext cx
-  return $ ConstrDecl p evs cx c tys'
-checkConstrDecl tvs (ConOpDecl p evs cx ty1 op ty2) = do
-  checkExistVars evs
-  tys' <- mapM (checkClosedType (evs ++ tvs)) [ty1, ty2]
+checkConstrDecl tvs (ConstrDecl p c tys) = do
+  tys' <- mapM (checkClosedType tvs) tys
+  return $ ConstrDecl p c tys'
+checkConstrDecl tvs (ConOpDecl p ty1 op ty2) = do
+  tys' <- mapM (checkClosedType tvs) [ty1, ty2]
   let [ty1', ty2'] = tys'
-  checkConstrContext cx
-  return $ ConOpDecl p evs cx ty1' op ty2'
-checkConstrDecl tvs (RecordDecl p evs cx c fs) = do
-  checkExistVars evs
-  fs' <- mapM (checkFieldDecl (evs ++ tvs)) fs
-  checkConstrContext cx
-  return $ RecordDecl p evs cx c fs'
-
-checkConstrContext :: Context -> TSCM ()
-checkConstrContext cx = unless (null cx) $ report $
-  errExistentialQuantification (getPosition $ head cx)
+  return $ ConOpDecl p ty1' op ty2'
+checkConstrDecl tvs (RecordDecl p c fs) = do
+  fs' <- mapM (checkFieldDecl tvs) fs
+  return $ RecordDecl p c fs'
 
 checkFieldDecl :: [Ident] -> FieldDecl -> TSCM FieldDecl
 checkFieldDecl tvs (FieldDecl p ls ty) =
@@ -421,11 +407,6 @@ checkInstanceType p inst = do
 
 checkTypeLhs :: [Ident] -> TSCM ()
 checkTypeLhs = checkTypeVars "left hand side of type declaration"
-
-checkExistVars :: [Ident] -> TSCM ()
-checkExistVars evs = do
-  unless (null evs) $ report $
-    errExistentialQuantification (getPosition $ head evs)
 
 -- |Checks a list of type variables for
 -- * Anonymous type variables are allowed
@@ -644,11 +625,6 @@ errMissingLanguageExtension p what ext = posMessage p $
   text what <+> text "are not supported in standard Curry." $+$
   nest 2 (text "Use flag -X" <+> text (show ext)
           <+> text "to enable this extension.")
-
-errExistentialQuantification :: Position -> Message
-errExistentialQuantification p = posMessage p $
-  text "Support for Existential Quantification was removed from Curry." $+$
-  text "It may be readded in a future version."
 
 errUndefined :: String -> QualIdent -> Message
 errUndefined what qident = posMessage qident $ hsep $ map text

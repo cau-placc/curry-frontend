@@ -506,9 +506,9 @@ constructors m tc tcEnv =  zipWith (mkConstrInfo m) [1 ..] $
     _                     -> internalError $ "Derive.constructors: " ++ show tc
 
 mkConstrInfo :: ModuleIdent -> Int -> DataConstr -> ConstrInfo
-mkConstrInfo m i (DataConstr   c _    tys) =
+mkConstrInfo m i (DataConstr   c    tys) =
   (i, qualifyWith m c, Nothing, tys)
-mkConstrInfo m i (RecordConstr c _ ls tys) =
+mkConstrInfo m i (RecordConstr c ls tys) =
   (i, qualifyWith m c, Just ls, tys)
 
 showsConstr :: Ident -> ShowS
