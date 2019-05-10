@@ -189,7 +189,7 @@ checkConstrImport tc tvs (ConstrDecl p c tys) = do
   let qc = qualifyLike tc c
       check (DataConstructor c' _ _ (ForAll uqvs pty)) =
         qc == c' && length tvs == uqvs &&
-        qualifyPredType m (toConstrType tc tvs [] tys) == pty
+        qualifyPredType m (toConstrType tc tvs tys) == pty
       check _ = False
   checkValueInfo "data constructor" check p qc
 checkConstrImport tc tvs (ConOpDecl p ty1 op ty2) = do
@@ -197,7 +197,7 @@ checkConstrImport tc tvs (ConOpDecl p ty1 op ty2) = do
   let qc = qualifyLike tc op
       check (DataConstructor c' _ _ (ForAll uqvs pty)) =
         qc == c' && length tvs == uqvs &&
-        qualifyPredType m (toConstrType tc tvs [] [ty1, ty2]) == pty
+        qualifyPredType m (toConstrType tc tvs [ty1, ty2]) == pty
       check _ = False
   checkValueInfo "data constructor" check p qc
 checkConstrImport tc tvs (RecordDecl p c fs) = do
@@ -206,7 +206,7 @@ checkConstrImport tc tvs (RecordDecl p c fs) = do
       (ls, tys) = unzip [(l, ty) | FieldDecl _ labels ty <- fs, l <- labels]
       check (DataConstructor c' _ ls' (ForAll uqvs pty)) =
         qc == c' && length tvs == uqvs && ls == ls' &&
-        qualifyPredType m (toConstrType tc tvs [] tys) == pty
+        qualifyPredType m (toConstrType tc tvs tys) == pty
       check _ = False
   checkValueInfo "data constructor" check p qc
 

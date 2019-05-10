@@ -304,7 +304,7 @@ recLabel m tc tvs ty0 (l, cs, lty) = Label ql qcs tySc
 
 constrType' :: ModuleIdent -> QualIdent -> [Ident] -> [TypeExpr] -> TypeScheme
 constrType' m tc tvs tys = ForAll (length tvs) pty
-  where pty  = qualifyPredType m $ toConstrType tc tvs [] tys
+  where pty  = qualifyPredType m $ toConstrType tc tvs tys
 
 constrType :: QualIdent -> [Ident] -> TypeExpr
 constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)

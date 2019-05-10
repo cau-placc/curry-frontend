@@ -125,12 +125,10 @@ toQualPredType m tvs = qualifyPredType m . toPredType tvs
 -- constructor. Hereby, it restricts the context to those type variables
 -- which are free in the argument types.
 
-toConstrType :: QualIdent -> [Ident] -> CS.Context -> [CS.TypeExpr] -> PredType
-toConstrType tc tvs cx tys = toPredType tvs $
-  CS.QualTypeExpr NoSpanInfo cx' ty'
-  where tvs' = nub (fv tys)
-        cx'  = restrictContext tvs' cx
-        ty'  = foldr (CS.ArrowType NoSpanInfo) ty0 tys
+toConstrType :: QualIdent -> [Ident] -> [CS.TypeExpr] -> PredType
+toConstrType tc tvs tys = toPredType tvs $
+  CS.QualTypeExpr NoSpanInfo [] ty'
+  where ty'  = foldr (CS.ArrowType NoSpanInfo) ty0 tys
         ty0  = foldl (CS.ApplyType NoSpanInfo)
                      (CS.ConstructorType NoSpanInfo tc)
                      (map (CS.VariableType NoSpanInfo) tvs)

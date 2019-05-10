@@ -97,7 +97,7 @@ expandConstrType :: ModuleIdent -> TCEnv -> ClassEnv -> QualIdent -> [Ident]
 expandConstrType m tcEnv clsEnv tc tvs tys =
   normalize n $ expandPredType m tcEnv clsEnv pty
   where n = length tvs
-        pty = toConstrType tc tvs [] tys
+        pty = toConstrType tc tvs tys
 
 -- The function 'expandMethodType' converts the type of a type class method
 -- Similar to function 'toMethodType' from 'CurryTypes', the implicit class
