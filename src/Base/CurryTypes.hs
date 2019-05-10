@@ -133,14 +133,6 @@ toConstrType tc tvs tys = toPredType tvs $
                      (CS.ConstructorType NoSpanInfo tc)
                      (map (CS.VariableType NoSpanInfo) tvs)
 
-restrictContext :: [Ident] -> CS.Context -> CS.Context
-restrictContext tvs cx =
-  [CS.Constraint spi cls ty
-    | CS.Constraint spi cls ty <- cx, classVar ty `elem` tvs]
-  where classVar (CS.VariableType _ tv) = tv
-        classVar (CS.ApplyType  _ ty _) = classVar ty
-        classVar _ = internalError "Base.CurryTypes.restrictContext.classVar"
-
 -- The function 'toMethodType' returns the type of a type class method.
 -- It adds the implicit type class constraint to the method's type signature
 -- and ensures that the class' type variable is always assigned index 0.
