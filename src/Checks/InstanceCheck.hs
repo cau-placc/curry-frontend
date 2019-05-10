@@ -157,7 +157,7 @@ mkDeriveInfo tcEnv clsEnv spi tc tvs tys clss = do
   m <- getModuleIdent
   let otc = qualifyWith m tc
       oclss = map (flip (getOrigName m) tcEnv) clss
-      PredType ps ty = expandConstrType m tcEnv clsEnv otc tvs [] tys
+      PredType ps ty = expandConstrType m tcEnv clsEnv otc tvs tys
       (tys', ty') = arrowUnapply ty
   return $ DeriveInfo p otc (PredType ps ty') tys' $ sortClasses clsEnv oclss
   where p = spanInfo2Pos spi

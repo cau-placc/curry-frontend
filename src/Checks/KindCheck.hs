@@ -321,12 +321,12 @@ bindKind m tcEnv' clsEnv tcEnv (DataDecl _ tc tvs cs _) =
       in  mkRec c labels tys
     mkData' c tys = DataConstr c tys'
       where qtc = qualifyWith m tc
-            PredType ps ty = expandConstrType m tcEnv' clsEnv qtc tvs [] tys
+            PredType ps ty = expandConstrType m tcEnv' clsEnv qtc tvs tys
             tys' = arrowArgs ty
     mkRec c ls tys =
       RecordConstr c ls tys'
       where qtc = qualifyWith m tc
-            PredType ps ty = expandConstrType m tcEnv' clsEnv qtc tvs [] tys
+            PredType ps ty = expandConstrType m tcEnv' clsEnv qtc tvs tys
             tys' = arrowArgs ty
 bindKind _ _     _       tcEnv (ExternalDataDecl _ tc tvs) =
   bindTypeConstructor DataType tc tvs (Just KindStar) [] tcEnv
