@@ -28,8 +28,8 @@ import Curry.Base.Monad
 import Curry.Syntax
 
 import Base.CurryKinds (toKind')
-import Base.CurryTypes ( toQualType, toQualTypes, toQualPredSet, toQualPredType
-                       , toConstrType, toMethodType )
+import Base.CurryTypes ( toQualType, toQualTypes, toQualPredType, toConstrType
+                       , toMethodType )
 
 import Base.Kinds
 import Base.Messages

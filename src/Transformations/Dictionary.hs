@@ -1167,7 +1167,7 @@ iFunctionDeclFromValue m vEnv f = case qualLookupValue f vEnv of
 iConstrDeclFromDataConstructor :: ModuleIdent -> ValueEnv -> QualIdent
                                -> ConstrDecl
 iConstrDeclFromDataConstructor m vEnv c = case qualLookupValue c vEnv of
-  [DataConstructor _ _ _ (ForAll n pty)] ->
+  [DataConstructor _ _ _ (ForAll _ pty)] ->
     ConstrDecl NoSpanInfo (unqualify c) tys
     where tys = map (fromQualType m identSupply) $ arrowArgs $ unpredType pty
   _ -> internalError $ "Dictionary.iConstrDeclFromDataConstructor: " ++ show c

@@ -31,7 +31,7 @@ import Curry.Base.Ident
 import Curry.Syntax
 
 import Base.CurryKinds (fromKind')
-import Base.CurryTypes (fromQualType, fromQualPredSet, fromQualPredType)
+import Base.CurryTypes (fromQualType, fromQualPredType)
 import Base.Messages
 import Base.Types
 
@@ -147,13 +147,13 @@ iTypeDecl f m tvs tc k x hs = f NoPos (qualUnqualify m tc) k' (take n tvs) x hs
         k' = fromKind' k n
 
 constrDecl :: ModuleIdent -> Int -> [Ident] -> DataConstr -> ConstrDecl
-constrDecl m n tvs (DataConstr c [ty1, ty2])
+constrDecl m tvs (DataConstr c [ty1, ty2])
   | isInfixOp c = ConOpDecl NoSpanInfo ty1' c ty2'
   where [ty1', ty2'] = map (fromQualType m tvs) [ty1, ty2]
-constrDecl m n tvs (DataConstr c tys) =
+constrDecl m tvs (DataConstr c tys) =
   ConstrDecl NoSpanInfo c tys'
   where tys' = map (fromQualType m tvs) tys
-constrDecl m n tvs (RecordConstr c ls tys) =
+constrDecl m tvs (RecordConstr c ls tys) =
   RecordDecl NoSpanInfo c fs
   where
     tys' = map (fromQualType m tvs) tys
