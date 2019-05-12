@@ -794,9 +794,8 @@ instance DictTrans Decl where
 
 dictTransConstrDecl :: [Ident] -> ConstrDecl -> DataConstr -> ConstrDecl
 dictTransConstrDecl tvs (ConstrDecl p c tes) dc =
-  ConstrDecl p c $ map (fromType $ tvs ++ bvs) tys
-  where DataConstr _ tys = dictTransDataConstr dc
-        bvs = nub $ bv tes
+  ConstrDecl p c $ map (fromType $ tvs ++ bvs) (constrTypes dc)
+  where bvs = nub $ bv tes
 dictTransConstrDecl tvs (ConOpDecl p ty1 op ty2) dc =
   dictTransConstrDecl tvs (ConstrDecl p op [ty1, ty2]) dc
 dictTransConstrDecl _ d _ = internalError $ "Dictionary.dictTrans: " ++ show d
