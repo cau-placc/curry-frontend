@@ -1162,10 +1162,6 @@ dictTransIConstrDecl m tvs (RecordDecl      p c fs) =
   RecordDecl p c fs
   where toFieldDecl = FieldDecl NoSpanInfo [anonId]
 
-transformIContext :: ModuleIdent -> [Ident] -> Context -> [TypeExpr]
-transformIContext m tvs cx =
-   map (fromQualType m tvs . dictType) (Set.toAscList $ toQualPredSet m tvs cx)
-
 iFunctionDeclFromValue :: ModuleIdent -> ValueEnv -> QualIdent -> IDecl
 iFunctionDeclFromValue m vEnv f = case qualLookupValue f vEnv of
   [Value _ _ a (ForAll _ pty)] ->
