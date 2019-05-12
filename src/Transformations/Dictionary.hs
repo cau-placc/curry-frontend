@@ -1155,7 +1155,7 @@ dictTransIDecl m vEnv clsEnv (IInstanceDecl _ _ cls ty _ mm) =
 
 dictTransIConstrDecl :: ModuleIdent -> [Ident] -> ConstrDecl -> ConstrDecl
 dictTransIConstrDecl _ _ (ConOpDecl p ty1 op ty2) = ConstrDecl p op [ty1, ty2]
-dictTransIConstrDecl cd                           = cd
+dictTransIConstrDecl _ _ cd                       = cd
 
 iFunctionDeclFromValue :: ModuleIdent -> ValueEnv -> QualIdent -> IDecl
 iFunctionDeclFromValue m vEnv f = case qualLookupValue f vEnv of
