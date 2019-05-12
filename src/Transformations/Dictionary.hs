@@ -1154,13 +1154,8 @@ dictTransIDecl m vEnv clsEnv (IInstanceDecl _ _ cls ty _ mm) =
         ms   = classMethods qcls clsEnv
 
 dictTransIConstrDecl :: ModuleIdent -> [Ident] -> ConstrDecl -> ConstrDecl
-dictTransIConstrDecl m tvs (ConstrDecl     p c tys) =
-  ConstrDecl p c tys
-dictTransIConstrDecl m tvs (ConOpDecl p ty1 op ty2) =
-  dictTransIConstrDecl m tvs (ConstrDecl p op [ty1, ty2])
-dictTransIConstrDecl m tvs (RecordDecl      p c fs) =
-  RecordDecl p c fs
-  where toFieldDecl = FieldDecl NoSpanInfo [anonId]
+dictTransIConstrDecl _ _ (ConOpDecl p ty1 op ty2) = ConstrDecl p op [ty1, ty2]
+dictTransIConstrDecl cd                           = cd
 
 iFunctionDeclFromValue :: ModuleIdent -> ValueEnv -> QualIdent -> IDecl
 iFunctionDeclFromValue m vEnv f = case qualLookupValue f vEnv of
