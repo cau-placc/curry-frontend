@@ -373,11 +373,7 @@ createClassDictDecl cls tv ds = do
 
 createClassDictConstrDecl :: QualIdent -> Ident -> [Decl a] -> DTM ConstrDecl
 createClassDictConstrDecl cls tv ds = do
-  clsEnv <- getClassEnv
-  let sclss = superClasses cls clsEnv
-      cx    = [Constraint NoSpanInfo scls (VariableType NoSpanInfo tv)
-              | scls <- sclss]
-      tvs  = tv : filter (unRenameIdent tv /=) identSupply
+  let tvs  = tv : filter (unRenameIdent tv /=) identSupply
       mtys = map (fromType tvs . generalizeMethodType . transformMethodPredType)
                  [toMethodType cls tv qty | TypeSig _ fs qty <- ds, _ <- fs]
   return $ ConstrDecl NoSpanInfo (dictConstrId cls) mtys
