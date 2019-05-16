@@ -139,9 +139,6 @@ checkHidden err tc csls hs =
 checkTypeLhs :: [Ident] -> ISC ()
 checkTypeLhs = checkTypeVars "left hand side of type declaration"
 
-checkExistVars :: [Ident] -> ISC ()
-checkExistVars = checkTypeVars "list of existentially quantified type variables"
-
 checkTypeVars :: String -> [Ident] -> ISC ()
 checkTypeVars what tvs = do
   tyEnv <- getTypeEnv
@@ -151,23 +148,14 @@ checkTypeVars what tvs = do
   mapM_ (report . flip errNonLinear what . head) (findMultiples tvs')
 
 checkConstrDecl :: [Ident] -> ConstrDecl -> ISC ConstrDecl
-checkConstrDecl tvs (ConstrDecl p evs cx c tys) = do
-  checkExistVars evs
-  cx' <- checkClosedContext tvs' cx
-  liftM (ConstrDecl p evs cx' c) (mapM (checkClosedType tvs') tys)
-  where tvs' = evs ++ tvs
-checkConstrDecl tvs (ConOpDecl p evs cx ty1 op ty2) = do
-  checkExistVars evs
-  cx' <- checkClosedContext tvs' cx
-  liftM2 (\t1 t2 -> ConOpDecl p evs cx' t1 op t2)
-         (checkClosedType tvs' ty1)
-         (checkClosedType tvs' ty2)
-  where tvs' = evs ++ tvs
-checkConstrDecl tvs (RecordDecl p evs cx c fs) = do
-  checkExistVars evs
-  cx' <- checkClosedContext tvs' cx
-  liftM (RecordDecl p evs cx' c) (mapM (checkFieldDecl tvs') fs)
-  where tvs' = evs ++ tvs
+checkConstrDecl tvs (ConstrDecl p c tys) = do
+  liftM (ConstrDecl p c) (mapM (checkClosedType tvs) tys)
+checkConstrDecl tvs (ConOpDecl p ty1 op ty2) = do
+  liftM2 (\t1 t2 -> ConOpDecl p t1 op t2)
+         (checkClosedType tvs ty1)
+         (checkClosedType tvs ty2)
+checkConstrDecl tvs (RecordDecl p c fs) = do
+  liftM (RecordDecl p c) (mapM (checkFieldDecl tvs) fs)
 
 checkFieldDecl :: [Ident] -> FieldDecl -> ISC FieldDecl
 checkFieldDecl tvs (FieldDecl p ls ty) =

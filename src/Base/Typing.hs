@@ -127,8 +127,6 @@ matchType' (TypeConstructor tc1) (TypeConstructor tc2)
   | tc1 == tc2 = Just id
 matchType' (TypeConstrained _ tv1) (TypeConstrained _ tv2)
   | tv1 == tv2 = Just id
-matchType' (TypeSkolem k1) (TypeSkolem k2)
-  | k1 == k2 = Just id
 matchType' (TypeApply ty11 ty12) (TypeApply ty21 ty22) =
   fmap (. matchType ty12 ty22) (matchType' ty11 ty21)
 matchType' (TypeArrow ty11 ty12) (TypeArrow ty21 ty22) =

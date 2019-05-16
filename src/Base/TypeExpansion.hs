@@ -57,7 +57,6 @@ expandType' _ _     tv@(TypeVariable      _) tys = applyType tv tys
 expandType' _ _     tc@(TypeConstrained _ _) tys = applyType tc tys
 expandType' m tcEnv (TypeArrow      ty1 ty2) tys =
   applyType (TypeArrow (expandType m tcEnv ty1) (expandType m tcEnv ty2)) tys
-expandType' _ _     ts@(TypeSkolem        _) tys = applyType ts tys
 expandType' m tcEnv (TypeForall      tvs ty) tys =
   applyType (TypeForall tvs (expandType m tcEnv ty)) tys
 
@@ -94,11 +93,11 @@ expandPolyType m tcEnv clsEnv =
 -- definition.
 
 expandConstrType :: ModuleIdent -> TCEnv -> ClassEnv -> QualIdent -> [Ident]
-                 -> Context -> [TypeExpr] -> PredType
-expandConstrType m tcEnv clsEnv tc tvs cx tys =
+                 -> [TypeExpr] -> PredType
+expandConstrType m tcEnv clsEnv tc tvs tys =
   normalize n $ expandPredType m tcEnv clsEnv pty
   where n = length tvs
-        pty = toConstrType tc tvs cx tys
+        pty = toConstrType tc tvs tys
 
 -- The function 'expandMethodType' converts the type of a type class method
 -- Similar to function 'toMethodType' from 'CurryTypes', the implicit class

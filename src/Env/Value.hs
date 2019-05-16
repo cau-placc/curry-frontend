@@ -48,10 +48,10 @@ import Text.PrettyPrint
 
 data ValueInfo
   -- |Data constructor with original name, arity, list of record labels and type
-  = DataConstructor    QualIdent      Int [Ident] ExistTypeScheme
+  = DataConstructor    QualIdent      Int [Ident] TypeScheme
   -- |Newtype constructor with original name, record label and type
   -- (arity is always 1)
-  | NewtypeConstructor QualIdent          Ident   ExistTypeScheme
+  | NewtypeConstructor QualIdent          Ident   TypeScheme
   -- |Value with original name, class method flag, arity and type
   | Value              QualIdent Bool Int         TypeScheme
   -- |Record label with original name, list of constructors for which label
@@ -161,11 +161,11 @@ lookupTuple c | isTupleId c = [tupleDCs !! (tupleArity c - 2)]
 
 tupleDCs :: [ValueInfo]
 tupleDCs = map dataInfo tupleData
-  where dataInfo (DataConstr _ _ _ tys) =
+  where dataInfo (DataConstr _ tys) =
           let n = length tys
           in  DataConstructor (qTupleId n) n (replicate n anonId) $
-                ForAllExist n 0 $ predType $ foldr TypeArrow (tupleType tys) tys
-        dataInfo (RecordConstr _ _ _ _ _) =
+                ForAll n $ predType $ foldr TypeArrow (tupleType tys) tys
+        dataInfo (RecordConstr _ _ _) =
           internalError $ "Env.Value.tupleDCs: " ++ show tupleDCs
 
 -- Since all predefined types are free of existentially quantified type
@@ -175,12 +175,12 @@ tupleDCs = map dataInfo tupleData
 initDCEnv :: ValueEnv
 initDCEnv = foldr predefDC emptyTopEnv
   [ (c, length tys, constrType (polyType ty) tys)
-  | (ty, cs) <- predefTypes, DataConstr c _ _ tys <- cs ]
+  | (ty, cs) <- predefTypes, DataConstr c tys <- cs ]
   where predefDC (c, a, ty) = predefTopEnv c' (DataConstructor c' a ls ty)
           where ls = replicate a anonId
                 c' = qualify c
         constrType (ForAll n (PredType ps ty)) =
-          ForAllExist n 0 . PredType ps . foldr TypeArrow ty
+          ForAll n . PredType ps . foldr TypeArrow ty
 
 -- The functions 'bindLocalVar' and 'bindLocalVars' add the type of one or
 -- many local variables or functions to the value environment. In contrast

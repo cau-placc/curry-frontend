@@ -125,23 +125,13 @@ toQualPredType m tvs = qualifyPredType m . toPredType tvs
 -- constructor. Hereby, it restricts the context to those type variables
 -- which are free in the argument types.
 
-toConstrType :: QualIdent -> [Ident] -> CS.Context -> [CS.TypeExpr] -> PredType
-toConstrType tc tvs cx tys = toPredType tvs $
-  CS.QualTypeExpr NoSpanInfo cx' ty' 
-  where tvs' = nub (fv tys)
-        cx'  = restrictContext tvs' cx
-        ty'  = foldr (CS.ArrowType NoSpanInfo) ty0 tys
+toConstrType :: QualIdent -> [Ident] -> [CS.TypeExpr] -> PredType
+toConstrType tc tvs tys = toPredType tvs $
+  CS.QualTypeExpr NoSpanInfo [] ty'
+  where ty'  = foldr (CS.ArrowType NoSpanInfo) ty0 tys
         ty0  = foldl (CS.ApplyType NoSpanInfo)
                      (CS.ConstructorType NoSpanInfo tc)
                      (map (CS.VariableType NoSpanInfo) tvs)
-
-restrictContext :: [Ident] -> CS.Context -> CS.Context
-restrictContext tvs cx =
-  [CS.Constraint spi cls ty
-    | CS.Constraint spi cls ty <- cx, classVar ty `elem` tvs]
-  where classVar (CS.VariableType _ tv) = tv
-        classVar (CS.ApplyType  _ ty _) = classVar ty
-        classVar _ = internalError "Base.CurryTypes.restrictContext.classVar"
 
 -- The function 'toMethodType' returns the type of a type class method.
 -- It adds the implicit type class constraint to the method's type signature
@@ -173,9 +163,6 @@ fromType' tvs (TypeArrow     ty1 ty2) tys =
   foldl (CS.ApplyType NoSpanInfo)
     (CS.ArrowType NoSpanInfo (fromType tvs ty1) (fromType tvs ty2)) tys
 fromType' tvs (TypeConstrained tys _) tys' = fromType' tvs (head tys) tys'
-fromType' _   (TypeSkolem          k) tys =
-  foldl (CS.ApplyType NoSpanInfo)
-    (CS.VariableType NoSpanInfo $ mkIdent $ "_?" ++ show k) tys
 fromType' tvs (TypeForall    tvs' ty) tys
   | null tvs' = fromType' tvs ty tys
   | otherwise = foldl (CS.ApplyType NoSpanInfo)
