@@ -157,20 +157,21 @@ trTypeDecl (ExternalDataDecl _ t vs) =
   <$> trGlobalIdent t <*> getTypeVisibility t <*> mapM genTVarIndex vs
 trTypeDecl _                       = return []
 
+
+-- TODO: Remove context and existential quantified type variables.
 trConsDecl :: ConstrDecl -> GAC CConsDecl
-trConsDecl (ConstrDecl  _ vs cx c tys) = inNestedTScope $ CCons
-  <$> mapM genTVarIndex vs <*> trContext cx <*> trGlobalIdent c
-  <*> getVisibility c <*> mapM trTypeExpr tys
-trConsDecl (ConOpDecl p vs cx ty1 op ty2) = inNestedTScope $ trConsDecl $
-  ConstrDecl p vs cx op [ty1, ty2]
-trConsDecl (RecordDecl   _ vs cx c fs) = inNestedTScope $ CRecord
-  <$> mapM genTVarIndex vs <*> trContext cx <*> trGlobalIdent c
-  <*> getVisibility c <*> concatMapM trFieldDecl fs
+trConsDecl (ConstrDecl  _ c tys) = inNestedTScope $ CCons [] (CContext [])
+  <$> trGlobalIdent c <*> getVisibility c <*> mapM trTypeExpr tys
+trConsDecl (ConOpDecl p ty1 op ty2) = inNestedTScope $ trConsDecl $
+  ConstrDecl p op [ty1, ty2]
+trConsDecl (RecordDecl   _ c fs) = inNestedTScope $ CRecord [] (CContext [])
+  <$> trGlobalIdent c <*> getVisibility c <*> concatMapM trFieldDecl fs
 
 trFieldDecl :: FieldDecl -> GAC [CFieldDecl]
 trFieldDecl (FieldDecl _ ls ty) = T.forM ls $ \l ->
   CField <$> trGlobalIdent l <*> getVisibility l <*> trTypeExpr ty
 
+-- TODO: Remove context and existential quantified type variables.
 trNewConsDecl :: NewConstrDecl -> GAC CConsDecl
 trNewConsDecl (NewConstrDecl _ nc      ty) = CCons [] (CContext [])
   <$> trGlobalIdent nc <*> getVisibility nc <*> ((:[]) <$> trTypeExpr ty)

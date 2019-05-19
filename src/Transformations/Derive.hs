@@ -274,8 +274,8 @@ enumFromThenExpr v1 v2 c1 c2 =
 
 deriveBoundedMethods :: Type -> [ConstrInfo] -> PredSet -> DVM [Decl PredType]
 deriveBoundedMethods ty cis ps = sequence
-  [ deriveMaxOrMinBound qMaxBoundId ty (head cis) ps
-  , deriveMaxOrMinBound qMinBoundId ty (last cis) ps
+  [ deriveMaxOrMinBound qMinBoundId ty (head cis) ps
+  , deriveMaxOrMinBound qMaxBoundId ty (last cis) ps
   ]
 
 deriveMaxOrMinBound :: QualIdent -> Type -> ConstrInfo -> PredSet
@@ -506,9 +506,9 @@ constructors m tc tcEnv =  zipWith (mkConstrInfo m) [1 ..] $
     _                     -> internalError $ "Derive.constructors: " ++ show tc
 
 mkConstrInfo :: ModuleIdent -> Int -> DataConstr -> ConstrInfo
-mkConstrInfo m i (DataConstr   c _ _    tys) =
+mkConstrInfo m i (DataConstr   c    tys) =
   (i, qualifyWith m c, Nothing, tys)
-mkConstrInfo m i (RecordConstr c _ _ ls tys) =
+mkConstrInfo m i (RecordConstr c ls tys) =
   (i, qualifyWith m c, Just ls, tys)
 
 showsConstr :: Ident -> ShowS

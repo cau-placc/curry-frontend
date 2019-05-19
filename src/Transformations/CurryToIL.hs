@@ -127,8 +127,8 @@ constrType :: QualIdent -> TransM Type
 constrType c = do
   vEnv <- getValueEnv
   case qualLookupValue c vEnv of
-    [DataConstructor  _ _ _ (ForAllExist _ _ (PredType _ ty))] -> return ty
-    [NewtypeConstructor _ _ (ForAllExist _ _ (PredType _ ty))] -> return ty
+    [DataConstructor  _ _ _ (ForAll _ (PredType _ ty))] -> return ty
+    [NewtypeConstructor _ _ (ForAll _ (PredType _ ty))] -> return ty
     _ -> internalError $ "CurryToIL.constrType: " ++ show c
 
 -- -----------------------------------------------------------------------------
@@ -160,9 +160,9 @@ trConstrDecl d = do
   ty' <- arrowArgs <$> constrType c'
   return $ IL.ConstrDecl c' (map transType ty')
   where
-  constr (ConstrDecl    _ _ _ c _) = c
-  constr (ConOpDecl  _ _ _ _ op _) = op
-  constr (RecordDecl    _ _ _ c _) = c
+  constr (ConstrDecl    _ c _) = c
+  constr (ConOpDecl  _ _ op _) = op
+  constr (RecordDecl    _ c _) = c
 
 trExternalData :: Ident -> [Ident] -> TransM IL.Decl
 trExternalData tc tvs = flip IL.ExternalDataDecl (length tvs) <$> trQualify tc
@@ -186,8 +186,6 @@ transType' (TypeConstructor    tc) = IL.TypeConstructor tc
 transType' (TypeApply     ty1 ty2) = transType' ty1 . (transType ty2 :)
 transType' (TypeVariable       tv) = foldl applyType' (IL.TypeVariable tv)
 transType' (TypeConstrained tys _) = transType' (head tys)
-transType' (TypeSkolem          k) =
-  foldl applyType' (IL.TypeConstructor (qualify (mkIdent ("_" ++ show k))) [])
 transType' (TypeArrow     ty1 ty2) =
   foldl applyType' (IL.TypeArrow (transType ty1) (transType ty2))
 transType' (TypeForall     tvs ty) =

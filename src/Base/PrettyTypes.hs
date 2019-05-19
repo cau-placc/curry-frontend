@@ -40,9 +40,9 @@ instance Pretty PredType where
   pPrint = ppQualTypeExpr . fromPredType identSupply
 
 instance Pretty DataConstr where
-  pPrint (DataConstr i _ _ tys)      = pPrint i <+> hsep (map pPrint tys)
-  pPrint (RecordConstr i _ _ ls tys) =     pPrint i
-                                       <+> braces (hsep (punctuate comma pLs))
+  pPrint (DataConstr i tys)      = pPrint i <+> hsep (map pPrint tys)
+  pPrint (RecordConstr i ls tys) =     pPrint i
+                                   <+> braces (hsep (punctuate comma pLs))
     where
       pLs = zipWith (\l ty -> pPrint l <+> colon <> colon <+> pPrint ty) ls tys
 
@@ -53,6 +53,3 @@ instance Pretty ClassMethod where
 
 instance Pretty TypeScheme where
   pPrint (ForAll _ ty) = pPrint ty
-
-instance Pretty ExistTypeScheme where
-  pPrint (ForAllExist _ _ ty) = pPrint ty
