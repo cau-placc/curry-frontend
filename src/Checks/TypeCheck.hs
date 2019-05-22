@@ -1647,9 +1647,9 @@ expandPoly qty = do
 splitPredSet :: Set.Set Int -> PredSet -> (PredSet, PredSet)
 splitPredSet fvs = Set.partition (all (`Set.member` fvs) . typeVars)
 
--- The functions 'fvEnv' and 'fsEnv' compute the set of free type variables
--- and free skolems of a type environment, respectively. We ignore the types
--- of data constructors here because we know that they are closed.
+-- The functions 'fvEnv' computes the set of free type variables of a type
+-- environment. We ignore the types of data constructors here because we know
+-- that they are closed.
 
 fvEnv :: ValueEnv -> Set.Set Int
 fvEnv vEnv =

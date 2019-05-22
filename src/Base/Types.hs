@@ -117,7 +117,7 @@ unapplyType dflt ty = unapply ty []
 
 -- The function 'rootOfType' returns the name of the type constructor at the
 -- root of a type. This function must not be applied to a type whose root is
--- a type variable or a skolem type.
+-- a type variable.
 
 rootOfType :: Type -> QualIdent
 rootOfType ty = case fst (unapplyType True ty) of
@@ -291,9 +291,9 @@ unqualifyPredSet m = Set.map (unqualifyPred m)
 data PredType = PredType PredSet Type
   deriving (Eq, Show)
 
--- When enumarating the type variables and skolems of a predicated type, we
--- consider the type variables occuring in the predicate set after the ones
--- occuring in the type itself.
+-- When enumarating the type variables of a predicated type, we consider the
+-- type variables occuring in the predicate set after the ones occuring in the
+-- type itself.
 
 instance IsType PredType where
   typeVars (PredType ps ty) = typeVars ty ++ typeVars ps
