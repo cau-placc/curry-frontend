@@ -30,7 +30,7 @@ module Base.CurryTypes
   , fromType, fromQualType
   , fromPred, fromQualPred, fromPredSet, fromQualPredSet, fromPredType
   , fromQualPredType
-  , ppType, ppPred, ppPredType, ppTypeScheme
+  , ppType, ppPred, ppPredType
   ) where
 
 import Data.List (nub)
@@ -208,6 +208,3 @@ ppPred m = ppConstraint . fromQualPred m identSupply
 
 ppPredType :: ModuleIdent -> PredType -> Doc
 ppPredType m = ppQualTypeExpr . fromQualPredType m identSupply
-
-ppTypeScheme :: ModuleIdent -> TypeScheme -> Doc
-ppTypeScheme m (ForAll _ pty) = ppPredType m pty

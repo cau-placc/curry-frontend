@@ -1674,17 +1674,17 @@ errPolymorphicVar v = posMessage v $ hsep $ map text
 
 errTypeSigTooGeneral :: HasPosition a => a -> ModuleIdent -> Doc -> QualTypeExpr
                      -> TypeScheme -> Message
-errTypeSigTooGeneral p m what qty tySc = posMessage p $ vcat
+errTypeSigTooGeneral p m what qty (ForAll _ pty) = posMessage p $ vcat
   [ text "Type signature too general", what
-  , text "Inferred type:"  <+> ppTypeScheme m tySc
+  , text "Inferred type:"  <+> ppPredType m pty
   , text "Type signature:" <+> ppQualTypeExpr qty
   ]
 
 errMethodTypeTooSpecific :: HasPosition a => a -> ModuleIdent -> Doc -> PredType
                          -> TypeScheme -> Message
-errMethodTypeTooSpecific p m what pty tySc = posMessage p $ vcat
+errMethodTypeTooSpecific p m what pty (ForAll _ pty2) = posMessage p $ vcat
   [ text "Method type too specific", what
-  , text "Inferred type:" <+> ppTypeScheme m tySc
+  , text "Inferred type:" <+> ppPredType m pty2
   , text "Expected type:" <+> ppPredType m pty
   ]
 

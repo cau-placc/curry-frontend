@@ -41,7 +41,7 @@ import Curry.Base.SpanInfo
 import Curry.Syntax
 import Curry.Syntax.Pretty (ppDecl, ppPattern, ppExpr, ppIdent)
 
-import Base.CurryTypes (ppTypeScheme)
+import Base.CurryTypes (ppPredType)
 import Base.Messages   (Message, posMessage, internalError)
 import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                        , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv
@@ -502,9 +502,9 @@ getTyScheme q = do
     _ -> internalError $ "Checks.WarnCheck.getTyScheme: " ++ show q
 
 warnMissingTypeSignature :: ModuleIdent -> Ident -> TypeScheme -> Message
-warnMissingTypeSignature mid i tys = posMessage i $ fsep
+warnMissingTypeSignature mid i (ForAll _ pty) = posMessage i $ fsep
   [ text "Top-level binding with no type signature:"
-  , nest 2 $ text (showIdent i) <+> text "::" <+> ppTypeScheme mid tys
+  , nest 2 $ text (showIdent i) <+> text "::" <+> ppPredType mid pty
   ]
 
 -- -----------------------------------------------------------------------------
