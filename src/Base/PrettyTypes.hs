@@ -50,6 +50,3 @@ instance Pretty ClassMethod where
   pPrint (ClassMethod f mar pty) =     pPrint f
                                    <>  text "/" <> int (fromMaybe 0 mar)
                                    <+> colon <> colon <+> pPrint pty
-
-instance Pretty TypeScheme where
-  pPrint (ForAll _ ty) = pPrint ty

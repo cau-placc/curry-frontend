@@ -81,16 +81,18 @@ instance Entity ValueInfo where
   merge _ _ = Nothing
 
 instance Pretty ValueInfo where
-  pPrint (DataConstructor qid ar _ tySc) =     text "data" <+> pPrint qid
-                                           <>  text "/" <> int ar
-                                           <+> equals <+> pPrint tySc
-  pPrint (NewtypeConstructor qid _ tySc) =     text "newtype" <+> pPrint qid
-                                           <+> equals <+> pPrint tySc
-  pPrint (Value qid _ ar tySc)           =     pPrint qid
-                                           <>  text "/" <> int ar
-                                           <+> equals <+> pPrint tySc
-  pPrint (Label qid _ tySc)              =     text "label" <+> pPrint qid
-                                           <+> equals <+> pPrint tySc
+  pPrint (DataConstructor qid ar _ (ForAll _ pty))
+    = text "data" <+> pPrint qid
+                  <>  text "/" <> int ar
+                  <+> equals <+> pPrint pty
+  pPrint (NewtypeConstructor qid _ (ForAll _ pty))
+    = text "newtype" <+> pPrint qid
+                     <+> equals <+> pPrint pty
+  pPrint (Value qid _ ar (ForAll _ pty))
+    = pPrint qid <>  text "/" <> int ar
+                 <+> equals <+> pPrint pty
+  pPrint (Label qid _ (ForAll _ pty))
+    = text "label" <+> pPrint qid <+> equals <+> pPrint pty
 
 mergeLabel :: Ident -> Ident -> Maybe Ident
 mergeLabel l1 l2
