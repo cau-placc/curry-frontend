@@ -1003,7 +1003,7 @@ tcPattern _ (VariablePattern spi _ v) = do
 tcPattern p t@(ConstructorPattern spi _ c ts) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  (ps, (tys, ty')) <- liftM (fmap arrowUnapply) (skol (constrType m c vEnv))
+  (ps, (tys, ty')) <- liftM (fmap arrowUnapply) (inst (constrType m c vEnv))
   (ps', ts') <- mapAccumM (uncurry . tcPatternArg p "pattern" (ppPattern 0 t))
                           ps (zip tys ts)
   return (ps', ty', ConstructorPattern spi (predType ty') c ts')
@@ -1017,7 +1017,7 @@ tcPattern p (ParenPattern spi t) = do
 tcPattern _ t@(RecordPattern spi _ c fs) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  (ps, ty) <- liftM (fmap arrowBase) (skol (constrType m c vEnv))
+  (ps, ty) <- liftM (fmap arrowBase) (inst (constrType m c vEnv))
   (ps', fs') <- mapAccumM (tcField tcPattern "pattern"
     (\t' -> ppPattern 0 t $-$ text "Term:" <+> ppPattern 0 t') ty) ps fs
   return (ps', ty, RecordPattern spi (predType ty) c fs')
@@ -1558,25 +1558,6 @@ inst :: TypeScheme -> TCM (PredSet, Type)
 inst (ForAll n (PredType ps ty)) = do
   tys <- replicateM n freshTypeVar
   return (expandAliasType tys ps, expandAliasType tys ty)
-
--- The function 'skol' instantiates the type of data and newtype
--- constructors in patterns. All universally quantified type variables
--- are instantiated with fresh type variables and all existentially
--- quantified type variables are instantiated with fresh skolem types.
--- All constraints that appear on the right hand side of the
--- constructor's declaration are added to the dynamic instance
--- environment.
-
-skol :: TypeScheme -> TCM (PredSet, Type)
-skol (ForAll n (PredType ps ty)) = do
-  tys <- replicateM n freshTypeVar
-  clsEnv <- getClassEnv
-  modifyInstEnv $
-    fmap $ bindSkolemInsts $ expandAliasType tys $ maxPredSet clsEnv ps
-  return (emptyPredSet, expandAliasType tys ty)
-  where bindSkolemInsts = flip (foldr bindSkolemInst) . Set.toList
-        bindSkolemInst (Pred qcls ty') dInEnv =
-          Map.insert qcls (ty' : fromMaybe [] (Map.lookup qcls dInEnv)) dInEnv
 
 -- The function 'gen' generalizes a predicate set ps and a type tau into
 -- a type scheme forall alpha . ps -> tau by universally quantifying all
