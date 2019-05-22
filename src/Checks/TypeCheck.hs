@@ -1653,7 +1653,7 @@ splitPredSet fvs = Set.partition (all (`Set.member` fvs) . typeVars)
 
 fvEnv :: ValueEnv -> Set.Set Int
 fvEnv vEnv =
-  Set.fromList [tv | tySc <- localTypes vEnv, tv <- typeVars tySc, tv < 0]
+  Set.fromList [tv | ForAll _ pty <- localTypes vEnv, tv <- typeVars pty, tv < 0]
 
 computeFvEnv :: TCM (Set.Set Int)
 computeFvEnv = do

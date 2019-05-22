@@ -374,9 +374,6 @@ methodType (ClassMethod _ _ pty) = pty
 
 data TypeScheme = ForAll Int PredType deriving (Eq, Show)
 
-instance IsType TypeScheme where
-  typeVars (ForAll _ pty) = [tv | tv <- typeVars pty, tv < 0]
-
 -- The functions 'monoType' and 'polyType' translate a type tau into a
 -- monomorphic type scheme and a polymorphic type scheme, respectively.
 -- 'polyType' assumes that all universally quantified variables in the type are
