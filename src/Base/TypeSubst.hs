@@ -64,15 +64,13 @@ instance SubstType Pred where
 instance SubstType PredType where
   subst sigma (PredType ps ty) = PredType (subst sigma ps) (subst sigma ty)
 
-instance SubstType TypeScheme where
-  subst sigma (ForAll n ty) =
-    ForAll n (subst (foldr unbindSubst sigma [0 .. n-1]) ty)
-
 instance SubstType ValueInfo where
   subst _     dc@(DataConstructor  _ _ _ _) = dc
   subst _     nc@(NewtypeConstructor _ _ _) = nc
-  subst theta (Value             v cm a ty) = Value v cm a (subst theta ty)
-  subst theta (Label                l r ty) = Label l r (subst theta ty)
+  subst theta (Value             v cm a (ForAll n ty)) =
+    Value v cm a (ForAll n (subst (foldr unbindSubst theta [0 .. n-1]) ty))
+  subst theta (Label                l r (ForAll n ty)) =
+    Label l r (ForAll n (subst (foldr unbindSubst theta [0 .. n-1]) ty))
 
 instance SubstType a => SubstType (TopEnv a) where
   subst = fmap . subst
