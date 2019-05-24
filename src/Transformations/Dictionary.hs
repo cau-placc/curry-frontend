@@ -167,8 +167,8 @@ emptyAugEnv = []
 
 initAugEnv :: ValueEnv -> AugmentEnv
 initAugEnv = foldr (bindValue . snd) emptyAugEnv . allBindings
-  where bindValue (Value f True _ (ForAll _ (PredType _ ty)))
-          | arrowArity ty == 0 = (f :)
+  where bindValue (Value f True _ pty)
+          | arrowArity (rawType pty) == 0 = (f :)
         bindValue _ = id
 
 isAugmented :: AugmentEnv -> QualIdent -> Bool
@@ -178,8 +178,8 @@ augmentValues :: ValueEnv -> ValueEnv
 augmentValues = fmap augmentValueInfo
 
 augmentValueInfo :: ValueInfo -> ValueInfo
-augmentValueInfo (Value f True a (ForAll n (PredType ps ty)))
-  | arrowArity ty == 0 = Value f True a $ ForAll n $ PredType ps ty'
+augmentValueInfo (Value f True a (PredType ps (TypeForall vs ty)))
+  | arrowArity ty == 0 = Value f True a $ PredType ps (TypeForall vs ty')
   where ty' = augmentType ty
 augmentValueInfo vi = vi
 
@@ -429,8 +429,7 @@ getClassMethodType cls f = do
   return $ classMethodType vEnv cls f
 
 classMethodType :: ValueEnv -> QualIdent -> Ident -> PredType
-classMethodType vEnv cls f = pty
-  where ForAll _ pty = funType (qualifyLike cls f) vEnv
+classMethodType vEnv cls f = rawPredType $ funType (qualifyLike cls f) vEnv
 
 createInstMethodDecl :: PredSet -> QualIdent -> Type -> MethodMap -> Ident
                      -> DTM (Decl PredType)
@@ -587,7 +586,7 @@ bindClassDict m clsEnv cls vEnv = bindEntity m c dc vEnv
         dc = DataConstructor c a (replicate a anonId) tySc
         a  = Set.size ps + arrowArity ty
         pty@(PredType ps ty) = classDictConstrPredType vEnv clsEnv cls
-        tySc = ForAll 1 pty
+        tySc = PredType ps (TypeForall [0] ty)
 
 bindDefaultMethods :: ModuleIdent -> QualIdent -> [(Ident, Int)] -> ValueEnv
                    -> ValueEnv
@@ -688,19 +687,19 @@ dictTransValues :: ValueEnv -> ValueEnv
 dictTransValues = fmap dictTransValueInfo
 
 dictTransValueInfo :: ValueInfo -> ValueInfo
-dictTransValueInfo (DataConstructor c a ls (ForAll n pty)) =
-  DataConstructor c a' ls' $ ForAll n $ predType ty
-  where a'  = arrowArity ty
+dictTransValueInfo (DataConstructor c a ls (PredType ps (TypeForall vs ty))) =
+  DataConstructor c a' ls' $ predType (TypeForall vs ty')
+  where a'  = arrowArity ty'
         ls' = replicate (a' - a) anonId ++ ls
-        ty  = transformPredType pty
-dictTransValueInfo (NewtypeConstructor c l (ForAll n pty)) =
-  NewtypeConstructor c l (ForAll n (predType (unpredType pty)))
-dictTransValueInfo (Value f cm a (ForAll n pty)) =
-  Value f False a' $ ForAll n $ predType ty
-  where a' = a + if cm then 1 else arrowArity ty - arrowArity (unpredType pty)
-        ty = transformPredType pty
-dictTransValueInfo (Label l cs (ForAll n pty)) =
-  Label l cs $ ForAll n $ predType $ unpredType pty
+        ty'  = transformPredType (PredType ps ty)
+dictTransValueInfo (NewtypeConstructor c l pty) =
+  NewtypeConstructor c l $ predType $ unpredType pty
+dictTransValueInfo (Value f cm a (PredType ps (TypeForall vs ty))) =
+  Value f False a' $ predType (TypeForall vs ty')
+  where a' = a + if cm then 1 else arrowArity ty' - arrowArity ty
+        ty' = transformPredType (PredType ps ty)
+dictTransValueInfo (Label l cs pty) =
+  Label l cs $ predType $ unpredType pty
 
 -- -----------------------------------------------------------------------------
 -- Adding exports
@@ -937,11 +936,11 @@ instPredList (Pred cls ty) = case unapplyType True ty of
 -- tries to find a suffix of the context whose transformation matches the
 -- initial arrows of the instance type.
 
-matchPredList :: (ValueEnv -> TypeScheme) -> Type -> DTM [Pred]
+matchPredList :: (ValueEnv -> PredType) -> Type -> DTM [Pred]
 matchPredList tySc ty2 = do
-  ForAll _ (PredType ps ty1) <- tySc <$> getValueEnv
+  tySc@(PredType ps _) <- tySc <$> getValueEnv
   return $ foldr (\(pls1, pls2) pls' ->
-                   fromMaybe pls' $ qualMatch pls1 ty1 pls2 ty2)
+                   fromMaybe pls' $ qualMatch pls1 (rawType tySc) pls2 ty2)
                  (internalError $ "Dictionary.matchPredList: " ++ show ps)
                  (splits $ Set.toAscList ps)
 
@@ -1159,17 +1158,17 @@ dictTransIConstrDecl _ _ cd                       = cd
 
 iFunctionDeclFromValue :: ModuleIdent -> ValueEnv -> QualIdent -> IDecl
 iFunctionDeclFromValue m vEnv f = case qualLookupValue f vEnv of
-  [Value _ _ a (ForAll _ pty)] ->
+  [Value _ _ a pty] ->
     IFunctionDecl NoPos (qualUnqualify m f) Nothing a $
-      fromQualPredType m identSupply pty
+      fromQualPredType m identSupply (rawPredType pty)
   _ -> internalError $ "Dictionary.iFunctionDeclFromValue: " ++ show f
 
 iConstrDeclFromDataConstructor :: ModuleIdent -> ValueEnv -> QualIdent
                                -> ConstrDecl
 iConstrDeclFromDataConstructor m vEnv c = case qualLookupValue c vEnv of
-  [DataConstructor _ _ _ (ForAll _ pty)] ->
+  [DataConstructor _ _ _ pty] ->
     ConstrDecl NoSpanInfo (unqualify c) tys
-    where tys = map (fromQualType m identSupply) $ arrowArgs $ unpredType pty
+    where tys = map (fromQualType m identSupply) $ arrowArgs $ rawType pty
   _ -> internalError $ "Dictionary.iConstrDeclFromDataConstructor: " ++ show c
 
 -- -----------------------------------------------------------------------------
@@ -1294,7 +1293,7 @@ stringExpr = foldr (consExpr . Literal NoSpanInfo (predType charType) . Char)
 -- only visible under their original name whereas local declarations are always
 -- entered unqualified.
 
-varType :: ModuleIdent -> Ident -> ValueEnv -> TypeScheme
+varType :: ModuleIdent -> Ident -> ValueEnv -> PredType
 varType m v vEnv = case qualLookupValue (qualify v) vEnv of
   Value _ _ _ tySc : _ -> tySc
   Label _ _   tySc : _ -> tySc
@@ -1303,22 +1302,22 @@ varType m v vEnv = case qualLookupValue (qualify v) vEnv of
     Label _ _   tySc : _ -> tySc
     _ -> internalError $ "Dictionary.varType: " ++ show v
 
-conType :: QualIdent -> ValueEnv -> TypeScheme
+conType :: QualIdent -> ValueEnv -> PredType
 conType c vEnv = case qualLookupValue c vEnv of
-  [DataConstructor  _ _ _ (ForAll n pty)] -> ForAll n pty
-  [NewtypeConstructor _ _ (ForAll n pty)] -> ForAll n pty
+  [DataConstructor  _ _ _ pty] -> pty
+  [NewtypeConstructor _ _ pty] -> pty
   _ -> internalError $ "Dictionary.conType: " ++ show c
 
-funType :: QualIdent -> ValueEnv -> TypeScheme
+funType :: QualIdent -> ValueEnv -> PredType
 funType f vEnv = case qualLookupValue f vEnv of
   [Value _ _ _ tySc] -> tySc
   [Label _ _   tySc] -> tySc
   _ -> internalError $ "Dictionary.funType " ++ show f
 
-opType :: QualIdent -> ValueEnv -> TypeScheme
+opType :: QualIdent -> ValueEnv -> PredType
 opType op vEnv = case qualLookupValue op vEnv of
-  [DataConstructor  _ _ _ (ForAll n pty)] -> ForAll n pty
-  [NewtypeConstructor _ _ (ForAll n pty)] -> ForAll n pty
-  [Value _ _ _                             tySc] -> tySc
-  [Label _ _                               tySc] -> tySc
+  [DataConstructor  _ _ _ pty]  -> pty
+  [NewtypeConstructor _ _ pty]  -> pty
+  [Value _ _ _            tySc] -> tySc
+  [Label _ _              tySc] -> tySc
   _ -> internalError $ "Dictionary.opType " ++ show op

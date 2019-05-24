@@ -118,8 +118,8 @@ varType :: QualIdent -> TransM Type
 varType f = do
   tyEnv <- getValueEnv
   case qualLookupValue f tyEnv of
-    [Value _ _ _ (ForAll _ (PredType _ ty))] -> return ty
-    [Label _ _ (ForAll _ (PredType _ ty))] -> return ty
+    [Value _ _ _ tySc] -> return $ rawType tySc
+    [Label _ _ tySc] -> return $ rawType tySc
     _ -> internalError $ "CurryToIL.varType: " ++ show f
 
 -- Return the type of a constructor
@@ -127,8 +127,8 @@ constrType :: QualIdent -> TransM Type
 constrType c = do
   vEnv <- getValueEnv
   case qualLookupValue c vEnv of
-    [DataConstructor  _ _ _ (ForAll _ (PredType _ ty))] -> return ty
-    [NewtypeConstructor _ _ (ForAll _ (PredType _ ty))] -> return ty
+    [DataConstructor  _ _ _ tySc] -> return $ rawType tySc
+    [NewtypeConstructor _ _ tySc] -> return $ rawType tySc
     _ -> internalError $ "CurryToIL.constrType: " ++ show c
 
 -- -----------------------------------------------------------------------------

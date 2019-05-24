@@ -493,7 +493,7 @@ checkMissingTypeSignatures ds = warnFor WarnMissingSignatures $ do
     tyScs <- mapM getTyScheme untypedFs
     mapM_ report $ zipWith (warnMissingTypeSignature mid) untypedFs tyScs
 
-getTyScheme :: Ident -> WCM TypeScheme
+getTyScheme :: Ident -> WCM PredType
 getTyScheme q = do
   m     <- getModuleIdent
   tyEnv <- gets valueEnv
@@ -501,10 +501,11 @@ getTyScheme q = do
     [Value  _ _ _ tys] -> tys
     _ -> internalError $ "Checks.WarnCheck.getTyScheme: " ++ show q
 
-warnMissingTypeSignature :: ModuleIdent -> Ident -> TypeScheme -> Message
-warnMissingTypeSignature mid i (ForAll _ pty) = posMessage i $ fsep
+warnMissingTypeSignature :: ModuleIdent -> Ident -> PredType -> Message
+warnMissingTypeSignature mid i pty = posMessage i $ fsep
   [ text "Top-level binding with no type signature:"
-  , nest 2 $ text (showIdent i) <+> text "::" <+> ppPredType mid pty
+  , nest 2 $ text (showIdent i) <+> text "::"
+                                <+> ppPredType mid (rawPredType pty)
   ]
 
 -- -----------------------------------------------------------------------------
@@ -784,8 +785,8 @@ getConTy q = do
   tyEnv <- gets valueEnv
   tcEnv <- gets tyConsEnv
   case qualLookupValue q tyEnv of
-    [DataConstructor  _ _ _ (ForAll _ (PredType _ ty))] -> return ty
-    [NewtypeConstructor _ _ (ForAll _ (PredType _ ty))] -> return ty
+    [DataConstructor  _ _ _ tySc] -> return $ rawType tySc
+    [NewtypeConstructor _ _ tySc] -> return $ rawType tySc
     _ -> case qualLookupTypeInfo q tcEnv of
       [AliasType _ _ _ ty] -> return ty
       _ -> internalError $ "Checks.WarnCheck.getConTy: " ++ show q

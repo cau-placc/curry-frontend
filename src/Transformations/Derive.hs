@@ -540,7 +540,7 @@ getInstMethodType ps cls ty f = do
 instMethodType :: ValueEnv -> PredSet -> QualIdent -> Type -> Ident -> PredType
 instMethodType vEnv ps cls ty f = PredType (ps `Set.union` ps'') ty''
   where PredType ps' ty' = case qualLookupValue (qualifyLike cls f) vEnv of
-          [Value _ _ _ (ForAll _ pty)] -> pty
+          [Value _ _ _ pty] -> rawPredType pty
           _ -> internalError $ "Derive.instMethodType"
         PredType ps'' ty'' = instanceType ty $ PredType (Set.deleteMin ps') ty'
 

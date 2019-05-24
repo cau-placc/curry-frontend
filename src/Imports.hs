@@ -302,9 +302,9 @@ recLabel m tc tvs ty0 (l, cs, lty) = Label ql qcs tySc
         qcs  = map (qualifyLike tc) cs
         tySc = polyType (toQualType m tvs (ArrowType NoSpanInfo ty0 lty))
 
-constrType' :: ModuleIdent -> QualIdent -> [Ident] -> [TypeExpr] -> TypeScheme
-constrType' m tc tvs tys = ForAll (length tvs) pty
-  where pty  = qualifyPredType m $ toConstrType tc tvs tys
+constrType' :: ModuleIdent -> QualIdent -> [Ident] -> [TypeExpr] -> PredType
+constrType' m tc tvs tys = PredType ps (TypeForall [0.. length tvs - 1] ty)
+  where PredType ps ty = qualifyPredType m $ toConstrType tc tvs tys
 
 constrType :: QualIdent -> [Ident] -> TypeExpr
 constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)

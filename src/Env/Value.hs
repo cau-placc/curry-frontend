@@ -48,15 +48,15 @@ import Text.PrettyPrint
 
 data ValueInfo
   -- |Data constructor with original name, arity, list of record labels and type
-  = DataConstructor    QualIdent      Int [Ident] TypeScheme
+  = DataConstructor    QualIdent      Int [Ident] PredType
   -- |Newtype constructor with original name, record label and type
   -- (arity is always 1)
-  | NewtypeConstructor QualIdent          Ident   TypeScheme
+  | NewtypeConstructor QualIdent          Ident   PredType
   -- |Value with original name, class method flag, arity and type
-  | Value              QualIdent Bool Int         TypeScheme
+  | Value              QualIdent Bool Int         PredType
   -- |Record label with original name, list of constructors for which label
   -- is valid field and type (arity is always 1)
-  | Label              QualIdent [QualIdent]      TypeScheme
+  | Label              QualIdent [QualIdent]      PredType
     deriving Show
 
 instance Entity ValueInfo where
@@ -81,18 +81,18 @@ instance Entity ValueInfo where
   merge _ _ = Nothing
 
 instance Pretty ValueInfo where
-  pPrint (DataConstructor qid ar _ (ForAll _ pty))
+  pPrint (DataConstructor qid ar _ pty)
     = text "data" <+> pPrint qid
                   <>  text "/" <> int ar
-                  <+> equals <+> pPrint pty
-  pPrint (NewtypeConstructor qid _ (ForAll _ pty))
+                  <+> equals <+> pPrint (rawPredType pty)
+  pPrint (NewtypeConstructor qid _ pty)
     = text "newtype" <+> pPrint qid
-                     <+> equals <+> pPrint pty
-  pPrint (Value qid _ ar (ForAll _ pty))
+                     <+> equals <+> pPrint (rawPredType pty)
+  pPrint (Value qid _ ar pty)
     = pPrint qid <>  text "/" <> int ar
-                 <+> equals <+> pPrint pty
-  pPrint (Label qid _ (ForAll _ pty))
-    = text "label" <+> pPrint qid <+> equals <+> pPrint pty
+                 <+> equals <+> pPrint (rawPredType pty)
+  pPrint (Label qid _ pty)
+    = text "label" <+> pPrint qid <+> equals <+> pPrint (rawPredType pty)
 
 mergeLabel :: Ident -> Ident -> Maybe Ident
 mergeLabel l1 l2
@@ -117,7 +117,7 @@ bindGlobalInfo f m c ty = bindTopEnv c v . qualBindTopEnv qc v
   where qc = qualifyWith m c
         v  = f qc ty
 
-bindFun :: ModuleIdent -> Ident -> Bool -> Int -> TypeScheme -> ValueEnv
+bindFun :: ModuleIdent -> Ident -> Bool -> Int -> PredType -> ValueEnv
         -> ValueEnv
 bindFun m f cm a ty
   | hasGlobalScope f = bindTopEnv f v . qualBindTopEnv qf v
@@ -125,12 +125,12 @@ bindFun m f cm a ty
   where qf = qualifyWith m f
         v  = Value qf cm a ty
 
-qualBindFun :: ModuleIdent -> Ident -> Bool -> Int -> TypeScheme -> ValueEnv
+qualBindFun :: ModuleIdent -> Ident -> Bool -> Int -> PredType -> ValueEnv
             -> ValueEnv
 qualBindFun m f cm a ty = qualBindTopEnv qf $ Value qf cm a ty
   where qf = qualifyWith m f
 
-rebindFun :: ModuleIdent -> Ident -> Bool -> Int -> TypeScheme -> ValueEnv
+rebindFun :: ModuleIdent -> Ident -> Bool -> Int -> PredType -> ValueEnv
           -> ValueEnv
 rebindFun m f cm a ty
   | hasGlobalScope f = rebindTopEnv f v . qualRebindTopEnv qf v
@@ -165,8 +165,9 @@ tupleDCs :: [ValueInfo]
 tupleDCs = map dataInfo tupleData
   where dataInfo (DataConstr _ tys) =
           let n = length tys
+              PredType ps ty = predType $ foldr TypeArrow (tupleType tys) tys
           in  DataConstructor (qTupleId n) n (replicate n anonId) $
-                ForAll n $ predType $ foldr TypeArrow (tupleType tys) tys
+                PredType ps (TypeForall [0..n-1] ty)
         dataInfo (RecordConstr _ _ _) =
           internalError $ "Env.Value.tupleDCs: " ++ show tupleDCs
 
@@ -181,8 +182,8 @@ initDCEnv = foldr predefDC emptyTopEnv
   where predefDC (c, a, ty) = predefTopEnv c' (DataConstructor c' a ls ty)
           where ls = replicate a anonId
                 c' = qualify c
-        constrType (ForAll n (PredType ps ty)) =
-          ForAll n . PredType ps . foldr TypeArrow ty
+        constrType (PredType ps (TypeForall vs ty)) =
+          PredType ps . TypeForall vs . foldr TypeArrow ty
 
 -- The functions 'bindLocalVar' and 'bindLocalVars' add the type of one or
 -- many local variables or functions to the value environment. In contrast

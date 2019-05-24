@@ -67,10 +67,16 @@ instance SubstType PredType where
 instance SubstType ValueInfo where
   subst _     dc@(DataConstructor  _ _ _ _) = dc
   subst _     nc@(NewtypeConstructor _ _ _) = nc
-  subst theta (Value             v cm a (ForAll n ty)) =
-    Value v cm a (ForAll n (subst (foldr unbindSubst theta [0 .. n-1]) ty))
-  subst theta (Label                l r (ForAll n ty)) =
-    Label l r (ForAll n (subst (foldr unbindSubst theta [0 .. n-1]) ty))
+  subst theta (Value             v cm a (PredType ps (TypeForall vs ty))) =
+    let n = length vs
+        PredType ps' ty' = subst (foldr unbindSubst theta [0 .. n-1])
+                                 (PredType ps ty)
+    in Value v cm a (PredType ps' (TypeForall vs ty'))
+  subst theta (Label                l r (PredType ps (TypeForall vs ty))) =
+    let n = length vs
+        PredType ps' ty' = subst (foldr unbindSubst theta [0 .. n-1])
+                                 (PredType ps ty)
+    in Label l r (PredType ps' (TypeForall vs ty'))
 
 instance SubstType a => SubstType (TopEnv a) where
   subst = fmap . subst
@@ -131,5 +137,5 @@ normalize n ty = expandAliasType [TypeVariable (occur tv) | tv <- [0..]] ty
 -- so that they do not conflict with the type variables of the first argument.
 
 instanceType :: ExpandAliasType a => Type -> a -> a
-instanceType ty = expandAliasType (ty : map TypeVariable [n ..])
-  where ForAll n _ = polyType ty
+instanceType ty = expandAliasType (ty : map TypeVariable [length vs ..])
+  where PredType _ (TypeForall vs _) = polyType ty

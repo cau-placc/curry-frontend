@@ -176,7 +176,7 @@ methodDecl m tvs (ClassMethod f a (PredType ps ty)) = IMethodDecl NoPos f a $
 
 valueDecl :: ModuleIdent -> ValueEnv -> [Ident] -> Export -> [IDecl] -> [IDecl]
 valueDecl m vEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
-  [Value _ cm a (ForAll _ pty)] ->
+  [Value _ cm a tySc] -> let pty = rawPredType tySc in
     IFunctionDecl NoPos (qualUnqualify m f)
       (if cm then Just (head tvs) else Nothing) a (fromQualPredType m tvs pty) : ds
   _ -> internalError $ "Exports.valueDecl: " ++ show f

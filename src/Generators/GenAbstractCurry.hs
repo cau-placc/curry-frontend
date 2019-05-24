@@ -38,7 +38,7 @@ import Base.CurryTypes (fromPredType, toType, toPredType)
 import Base.Expr       (bv)
 import Base.Messages   (internalError)
 import Base.NestEnv
-import Base.Types      (arrowArity, PredType, unpredType, TypeScheme (..))
+import Base.Types      (arrowArity, PredType, unpredType, rawPredType)
 import Base.TypeSubst
 
 import Env.Value       (ValueEnv, ValueInfo (..), qualLookupValue)
@@ -527,10 +527,10 @@ getQualType' f = do
   m     <- S.gets moduleId
   tyEnv <- S.gets typeEnv
   return $ case qualLookupValue f tyEnv of
-    [Value _ _ _ (ForAll _ pty)] -> fromPredType identSupply pty
-    _                          -> case qualLookupValue (qualQualify m f) tyEnv of
-      [Value _ _ _ (ForAll _ pty)] -> fromPredType identSupply pty
-      _                          ->
+    [Value _ _ _ pty] -> fromPredType identSupply (rawPredType pty)
+    _                  -> case qualLookupValue (qualQualify m f) tyEnv of
+      [Value _ _ _ pty] -> fromPredType identSupply (rawPredType pty)
+      _                 ->
         internalError $ "GenAbstractCurry.getQualType': " ++ show f
 
 getTypeVisibility :: Ident -> GAC CVisibility

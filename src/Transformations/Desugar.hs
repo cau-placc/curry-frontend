@@ -203,7 +203,7 @@ genSelFun :: SpanInfo -> [QualIdent] -> Ident -> DsM (Decl PredType)
 genSelFun p qcs l = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  let ForAll _ pty = varType (qualifyWith m l) vEnv
+  let pty = rawPredType $ varType (qualifyWith m l) vEnv
   FunctionDecl p pty l <$> concatMapM (genSelEqn p l) qcs
 
 -- Generate a selector equation for a label and a constructor if the label
@@ -1042,13 +1042,13 @@ falsePat = ConstructorPattern NoSpanInfo predBoolType qFalseId []
 -- Auxiliary definitions
 -- ---------------------------------------------------------------------------
 
-conType :: QualIdent -> ValueEnv -> ([Ident], TypeScheme)
+conType :: QualIdent -> ValueEnv -> ([Ident], PredType)
 conType c vEnv = case qualLookupValue c vEnv of
   [DataConstructor _ _ ls ty] -> (ls , ty)
   [NewtypeConstructor _ l ty] -> ([l], ty)
   _                           -> internalError $ "Desguar.conType: " ++ show c
 
-varType :: QualIdent -> ValueEnv -> TypeScheme
+varType :: QualIdent -> ValueEnv -> PredType
 varType v vEnv = case qualLookupValue v vEnv of
   Value _ _ _ tySc : _ -> tySc
   Label _ _   tySc : _ -> tySc
@@ -1071,8 +1071,8 @@ applyConstr pty c tys =
 -- variables are allowed for records), the compiler can reuse the same
 -- monomorphic type variables for every instantiated type.
 
-instType :: TypeScheme -> Type
-instType (ForAll _ pty) = inst $ unpredType pty
+instType :: PredType -> Type
+instType pty = inst $ unpredType (rawPredType pty)
   where inst (TypeConstructor     tc) = TypeConstructor tc
         inst (TypeApply      ty1 ty2) = TypeApply (inst ty1) (inst ty2)
         inst (TypeVariable        tv) = TypeVariable (-1 - tv)
@@ -1094,5 +1094,5 @@ constructors tc = getTyConsEnv >>= \tcEnv -> return $
 argumentTypes :: Type -> QualIdent -> ValueEnv -> ([QualIdent], [Type])
 argumentTypes ty c vEnv =
   (map (qualifyLike c) ls, map (subst (matchType ty0 ty idSubst)) tys)
-  where (ls, ForAll _ (PredType _ ty')) = conType c vEnv
-        (tys, ty0) = arrowUnapply ty'
+  where (ls, pty) = conType c vEnv
+        (tys, ty0) = arrowUnapply (rawType pty)

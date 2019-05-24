@@ -34,8 +34,8 @@ module Base.Types
     -- * Representation of class methods
   , ClassMethod (..), methodName, methodArity, methodType
     -- * Representation of quantification
-  , TypeScheme (..), monoType, polyType, typeScheme
-  , rawType
+  , monoType, polyType, typeScheme
+  , rawType, rawPredType
     -- * Predefined types
   , arrowType, unitType, predUnitType, boolType, predBoolType, charType
   , intType, predIntType, floatType, predFloatType, stringType, predStringType
@@ -367,32 +367,28 @@ methodType (ClassMethod _ _ pty) = pty
 -- Quantification
 -- ---------------------------------------------------------------------------
 
--- We support only universally quantified type schemes
--- (forall alpha . tau(alpha)). Quantified type variables are assigned
--- ascending indices starting from 0. Therefore it is sufficient to record the
--- numbers of quantified type variables in the 'ForAll' constructor.
-
-data TypeScheme = ForAll Int PredType deriving (Eq, Show)
-
 -- The functions 'monoType' and 'polyType' translate a type tau into a
 -- monomorphic type scheme and a polymorphic type scheme, respectively.
 -- 'polyType' assumes that all universally quantified variables in the type are
 -- assigned indices starting with 0 and does not renumber the variables.
 
-monoType :: Type -> TypeScheme
-monoType = ForAll 0 . predType
+monoType :: Type -> PredType
+monoType = predType . TypeForall []
 
-polyType :: Type -> TypeScheme
+polyType :: Type -> PredType
 polyType = typeScheme . predType
 
-typeScheme :: PredType -> TypeScheme
-typeScheme pty = ForAll (maximum (-1 : typeVars pty) + 1) pty
+typeScheme :: PredType -> PredType
+typeScheme (PredType ps ty) = PredType ps (TypeForall (typeVars ty) ty)
 
 -- The function 'rawType' strips the quantifier and predicate set from a
 -- type scheme.
 
-rawType :: TypeScheme -> Type
-rawType (ForAll _ (PredType _ ty)) = ty
+rawType :: PredType -> Type
+rawType (PredType _ (TypeForall _ ty)) = ty
+
+rawPredType :: PredType -> PredType
+rawPredType (PredType ps (TypeForall _ ty)) = PredType ps ty
 
 -- ---------------------------------------------------------------------------
 -- Predefined types
