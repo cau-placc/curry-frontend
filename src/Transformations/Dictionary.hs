@@ -585,7 +585,7 @@ bindClassDict m clsEnv cls vEnv = bindEntity m c dc vEnv
   where c  = qDictConstrId cls
         dc = DataConstructor c a (replicate a anonId) tySc
         a  = Set.size ps + arrowArity ty
-        pty@(PredType ps ty) = classDictConstrPredType vEnv clsEnv cls
+        PredType ps ty = classDictConstrPredType vEnv clsEnv cls
         tySc = PredType ps (TypeForall [0] ty)
 
 bindDefaultMethods :: ModuleIdent -> QualIdent -> [(Ident, Int)] -> ValueEnv
@@ -700,6 +700,7 @@ dictTransValueInfo (Value f cm a (PredType ps (TypeForall vs ty))) =
         ty' = transformPredType (PredType ps ty)
 dictTransValueInfo (Label l cs pty) =
   Label l cs $ predType $ unpredType pty
+dictTransValueInfo vi = internalError $ "Transformations.Dictionary.dictTransValueInfo: " ++ show vi
 
 -- -----------------------------------------------------------------------------
 -- Adding exports
@@ -938,9 +939,9 @@ instPredList (Pred cls ty) = case unapplyType True ty of
 
 matchPredList :: (ValueEnv -> PredType) -> Type -> DTM [Pred]
 matchPredList tySc ty2 = do
-  tySc@(PredType ps _) <- tySc <$> getValueEnv
+  pty@(PredType ps _) <- tySc <$> getValueEnv
   return $ foldr (\(pls1, pls2) pls' ->
-                   fromMaybe pls' $ qualMatch pls1 (rawType tySc) pls2 ty2)
+                   fromMaybe pls' $ qualMatch pls1 (rawType pty) pls2 ty2)
                  (internalError $ "Dictionary.matchPredList: " ++ show ps)
                  (splits $ Set.toAscList ps)
 

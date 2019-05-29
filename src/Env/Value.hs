@@ -184,6 +184,7 @@ initDCEnv = foldr predefDC emptyTopEnv
                 c' = qualify c
         constrType (PredType ps (TypeForall vs ty)) =
           PredType ps . TypeForall vs . foldr TypeArrow ty
+        constrType pty = internalError $ "Env.Value.initDCEnv: " ++ show pty
 
 -- The functions 'bindLocalVar' and 'bindLocalVars' add the type of one or
 -- many local variables or functions to the value environment. In contrast

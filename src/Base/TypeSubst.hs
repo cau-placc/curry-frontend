@@ -20,6 +20,7 @@ import           Data.List       (nub)
 import           Data.Maybe      (fromMaybe)
 import qualified Data.Set as Set (Set, map)
 
+import Base.Messages (internalError)
 import Base.Subst
 import Base.TopEnv
 import Base.Types
@@ -77,6 +78,7 @@ instance SubstType ValueInfo where
         PredType ps' ty' = subst (foldr unbindSubst theta [0 .. n-1])
                                  (PredType ps ty)
     in Label l r (PredType ps' (TypeForall vs ty'))
+  subst _ vi = internalError $ "Base.TypeSubst.subst: " ++ show vi
 
 instance SubstType a => SubstType (TopEnv a) where
   subst = fmap . subst

@@ -50,7 +50,7 @@ import qualified Control.Monad.State as S   (State, runState, gets, modify)
 import           Data.List                  (nub, nubBy, partition, sortBy)
 import           Data.Function              (on)
 import qualified Data.Map            as Map (Map, empty, insert, lookup)
-import           Data.Maybe                 (fromJust, fromMaybe, isJust)
+import           Data.Maybe                 (fromJust, isJust)
 import qualified Data.Set.Extra      as Set ( Set, concatMap, deleteMin, empty
                                             , fromList, insert, member
                                             , notMember, partition, singleton
@@ -176,9 +176,6 @@ getClassEnv = S.gets classEnv
 
 getInstEnv :: TCM InstEnv'
 getInstEnv = S.gets instEnv
-
-modifyInstEnv :: (InstEnv' -> InstEnv') -> TCM ()
-modifyInstEnv f = S.modify $ \s -> s { instEnv = f $ instEnv s }
 
 getDefaultTypes :: TCM [Type]
 getDefaultTypes = S.gets defaultTypes
@@ -664,6 +661,7 @@ checkTypeSig (PredType sigPs sigTy) (PredType ps (TypeForall _ ty)) = do
   return $
     ty `eqTypes` sigTy &&
     all (`Set.member` maxPredSet clsEnv sigPs) (Set.toList ps)
+checkTypeSig _ pty = internalError $ "Checks.TypeCheck.checkTypeSig: " ++ show pty
 
 -- The function 'equTypes' computes whether two types are equal modulo
 -- renaming of type variables.
@@ -1558,6 +1556,7 @@ inst :: PredType -> TCM (PredSet, Type)
 inst (PredType ps (TypeForall vs ty)) = do
   tys <- replicateM (length vs) freshTypeVar
   return (expandAliasType tys ps, expandAliasType tys ty)
+inst pty = internalError $ "Checks.TypeCheck.inst: " ++ show pty
 
 -- The function 'gen' generalizes a predicate set ps and a type tau into
 -- a type scheme forall alpha . ps -> tau by universally quantifying all

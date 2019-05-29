@@ -386,9 +386,11 @@ typeScheme (PredType ps ty) = PredType ps (TypeForall (typeVars ty) ty)
 
 rawType :: PredType -> Type
 rawType (PredType _ (TypeForall _ ty)) = ty
+rawType pty = internalError $ "Base.Types.rawType: " ++ show pty
 
 rawPredType :: PredType -> PredType
 rawPredType (PredType ps (TypeForall _ ty)) = PredType ps ty
+rawPredType pty = internalError $ "Base.Types.rawPredType: " ++ show pty
 
 -- ---------------------------------------------------------------------------
 -- Predefined types
