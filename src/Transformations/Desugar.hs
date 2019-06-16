@@ -661,7 +661,7 @@ dsExpr _ var@(Variable _ pty v)
 dsExpr _ c@(Constructor _ _ _) = return c
 dsExpr p (Paren           _ e) = dsExpr p e
 dsExpr p (Typed       _ e qty) = Typed NoSpanInfo
-  <$> dsExpr p e <*> dsQualTypeExpr qty
+  <$> dsExpr p e <*> dsTypeExpr qty
 dsExpr p (Record   _ pty c fs) = do
   vEnv <- getValueEnv
   --TODO: Rework
@@ -747,17 +747,8 @@ dsExpr p (IfThenElse _ e1 e2 e3) = do
              [caseAlt p truePat e2', caseAlt p falsePat e3']
 dsExpr p (Case _ ct e alts) = dsCase p ct e alts
 
--- We ignore the context in the type signature of a typed expression, since
--- there should be no possibility to provide an non-empty context without
--- scoped type-variables.
--- TODO: Verify
-
-dsQualTypeExpr :: TypeExpr -> DsM TypeExpr
-dsQualTypeExpr (ContextType _ cx ty) =
-  ContextType NoSpanInfo cx <$> dsTypeExpr ty
-dsQualTypeExpr _ = internalError "Desugar.dsQualTypeExpr"
-
 dsTypeExpr :: TypeExpr -> DsM TypeExpr
+dsTypeExpr (ContextType spi cx ty) = ContextType spi cx <$> dsTypeExpr ty
 dsTypeExpr ty = do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv

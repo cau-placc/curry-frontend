@@ -846,7 +846,7 @@ instance DictTrans Expression where
   dictTrans (Apply       _ e1 e2) =
     Apply NoSpanInfo <$> dictTrans e1 <*> dictTrans e2
   dictTrans (Typed       _ e qty) =
-    Typed NoSpanInfo <$> dictTrans e <*> dictTransQualTypeExpr qty
+    Typed NoSpanInfo <$> dictTrans e <*> return qty
   dictTrans (Lambda       _ ts e) = withLocalValueEnv $ withLocalDictEnv $ do
     ts' <- mapM dictTrans ts
     modifyValueEnv $ bindPatterns ts'
@@ -858,15 +858,6 @@ instance DictTrans Expression where
     Case NoSpanInfo ct <$> dictTrans e <*> mapM dictTrans as
   dictTrans e                   =
     internalError $ "Dictionary.dictTrans: " ++ show e
-
--- Just like before in desugaring, we ignore the context in the type signature
--- of a typed expression, since there should be no possibility to provide an
--- non-empty context without scoped type-variables.
--- TODO: Verify
-
-dictTransQualTypeExpr :: TypeExpr -> DTM TypeExpr
-dictTransQualTypeExpr (ContextType spi _ ty) = return $ ContextType spi [] ty
-dictTransQualTypeExpr _ = internalError "Dictionary.dictTransQualTypeExpr"
 
 instance DictTrans Alt where
   dictTrans (Alt p t rhs) = withLocalValueEnv $ withLocalDictEnv $ do

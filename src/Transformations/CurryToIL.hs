@@ -311,7 +311,9 @@ trExpr (v:vs) env (Case _ ct e alts) = do
         -- subject is referenced -> introduce binding for v as subject
       | v `elem` fv expr                -> IL.Let (IL.Binding v e') expr
       | otherwise                       -> expr
-trExpr  vs env (Typed _ e (ContextType _ _ ty)) =
+trExpr  vs env (Typed spi e (ContextType _ _ ty))
+  = trExpr vs env (Typed spi e ty)
+trExpr  vs env (Typed _ e ty) =
   flip IL.Typed ty' <$> trExpr vs env e
   where ty' = transType (toType [] ty)
 trExpr _ _ _ = internalError "CurryToIL.trExpr"
