@@ -133,7 +133,7 @@ instanceCheck _ (env, Module spi ps m es is ds)
 -- * Declarations: Type annotations are added to all expressions.
 -- * Environment:  The value environment is updated.
 typeCheck :: Monad m => Options -> CompEnv (Module a)
-          -> CYT m (CompEnv (Module PredType))
+          -> CYT m (CompEnv (Module Type))
 typeCheck _ (env, Module spi ps m es is ds)
   | null msgs = ok (env { valueEnv = vEnv' }, Module spi ps m es is ds')
   | otherwise = failMessages msgs

@@ -59,6 +59,7 @@ expandType' m tcEnv (TypeArrow      ty1 ty2) tys =
   applyType (TypeArrow (expandType m tcEnv ty1) (expandType m tcEnv ty2)) tys
 expandType' m tcEnv (TypeForall      tvs ty) tys =
   applyType (TypeForall tvs (expandType m tcEnv ty)) tys
+expandType' _ _ _ _ = internalError "Base.TypeExpansion.expandType"
 
 expandPred :: ModuleIdent -> TCEnv -> Pred -> Pred
 expandPred m tcEnv (Pred qcls ty) = case qualLookupTypeInfo qcls tcEnv of
@@ -70,9 +71,10 @@ expandPred m tcEnv (Pred qcls ty) = case qualLookupTypeInfo qcls tcEnv of
 expandPredSet :: ModuleIdent -> TCEnv -> ClassEnv -> PredSet -> PredSet
 expandPredSet m tcEnv clsEnv = minPredSet clsEnv . Set.map (expandPred m tcEnv)
 
-expandPredType :: ModuleIdent -> TCEnv -> ClassEnv -> PredType -> PredType
-expandPredType m tcEnv clsEnv (PredType ps ty) =
-  PredType (expandPredSet m tcEnv clsEnv ps) (expandType m tcEnv ty)
+expandPredType :: ModuleIdent -> TCEnv -> ClassEnv -> Type -> Type
+expandPredType m tcEnv clsEnv (TypeContext ps ty) =
+  TypeContext (expandPredSet m tcEnv clsEnv ps) (expandType m tcEnv ty)
+expandPredType _ _ _ _ = internalError "Base.TypeExpansion.expandPredType"
 
 -- The functions 'expandMonoType' and 'expandPolyType' convert (qualified)
 -- type expressions into (predicated) types and also expand all type synonyms
@@ -81,7 +83,7 @@ expandPredType m tcEnv clsEnv (PredType ps ty) =
 expandMonoType :: ModuleIdent -> TCEnv -> [Ident] -> TypeExpr -> Type
 expandMonoType m tcEnv tvs = expandType m tcEnv . toType tvs
 
-expandPolyType :: ModuleIdent -> TCEnv -> ClassEnv -> QualTypeExpr -> PredType
+expandPolyType :: ModuleIdent -> TCEnv -> ClassEnv -> TypeExpr -> Type
 expandPolyType m tcEnv clsEnv =
   normalize 0 . expandPredType m tcEnv clsEnv . toPredType []
 
@@ -93,7 +95,7 @@ expandPolyType m tcEnv clsEnv =
 -- definition.
 
 expandConstrType :: ModuleIdent -> TCEnv -> ClassEnv -> QualIdent -> [Ident]
-                 -> [TypeExpr] -> PredType
+                 -> [TypeExpr] -> Type
 expandConstrType m tcEnv clsEnv tc tvs tys =
   normalize n $ expandPredType m tcEnv clsEnv pty
   where n = length tvs
@@ -107,6 +109,6 @@ expandConstrType m tcEnv clsEnv tc tvs tys =
 -- definition.
 
 expandMethodType :: ModuleIdent -> TCEnv -> ClassEnv -> QualIdent -> Ident
-                 -> QualTypeExpr -> PredType
+                 -> TypeExpr -> Type
 expandMethodType m tcEnv clsEnv qcls tv =
   normalize 1 . expandPredType m tcEnv clsEnv . toMethodType qcls tv

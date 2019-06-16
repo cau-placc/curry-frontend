@@ -27,7 +27,7 @@ module Base.Types
   , Pred (..), qualifyPred, unqualifyPred
   , PredSet, emptyPredSet, partitionPredSet, minPredSet, maxPredSet
   , qualifyPredSet, unqualifyPredSet
-  , PredType (..), predType, unpredType, qualifyPredType, unqualifyPredType
+  , predType, unpredType
     -- * Representation of data constructors
   , DataConstr (..), constrIdent, constrTypes, recLabels, recLabelTypes
   , tupleData
@@ -87,6 +87,7 @@ data Type
   | TypeConstrained [Type] Int
   | TypeApply Type Type
   | TypeArrow Type Type
+  | TypeContext PredSet Type
   | TypeForall [Int] Type
   deriving (Eq, Ord, Show)
 
@@ -114,6 +115,7 @@ unapplyType dflt ty = unapply ty []
       | dflt      = unapply (head tys) tys'
       | otherwise = (TypeConstrained tys tv, tys')
     unapply (TypeForall     tvs ty') tys  = (TypeForall tvs ty', tys)
+    unapply _ _  = internalError "Base.Types.unapplyType"
 
 -- The function 'rootOfType' returns the name of the type constructor at the
 -- root of a type. This function must not be applied to a type whose root is
@@ -159,6 +161,7 @@ typeConstrs ty = constrs ty [] where
   constrs (TypeConstrained _ _) tcs = tcs
   constrs (TypeArrow   ty1 ty2) tcs = constrs ty1 (constrs ty2 tcs)
   constrs (TypeForall    _ ty') tcs = constrs ty' tcs
+  constrs _ _  = internalError "Base.Types.typeConstrs"
 
 -- The method 'typeVars' returns a list of all type variables occurring in a
 -- type t. Note that 'TypeConstrained' variables are not included in the set of
@@ -168,7 +171,12 @@ class IsType t where
   typeVars :: t -> [Int]
 
 instance IsType Type where
-  typeVars = typeVars'
+  typeVars (TypeContext ps ty) = typeVars ty ++ typeVars ps
+  typeVars ty = typeVars' ty
+
+-- When enumarating the type variables of a predicated type, we consider the
+-- type variables occuring in the predicate set after the ones occuring in the
+-- type itself.
 
 typeVars' :: Type -> [Int]
 typeVars' ty = vars ty [] where
@@ -178,6 +186,7 @@ typeVars' ty = vars ty [] where
   vars (TypeConstrained _ _) tvs = tvs
   vars (TypeArrow   ty1 ty2) tvs = vars ty1 (vars ty2 tvs)
   vars (TypeForall tvs' ty') tvs = filter (`notElem` tvs') (typeVars' ty') ++ tvs
+  vars _ _ = internalError "Base.Types.typeVars'"
 
 -- The functions 'qualifyType' and 'unqualifyType' add/remove the
 -- qualification with a module identifier for type constructors.
@@ -191,6 +200,8 @@ qualifyType m (TypeConstrained tys tv) =
   TypeConstrained (map (qualifyType m) tys) tv
 qualifyType m (TypeArrow      ty1 ty2) =
   TypeArrow (qualifyType m ty1) (qualifyType m ty2)
+qualifyType m (TypeContext      ps ty) =
+  TypeContext (qualifyPredSet m ps) (qualifyType m ty)
 qualifyType m (TypeForall      tvs ty) = TypeForall tvs (qualifyType m ty)
 
 unqualifyType :: ModuleIdent -> Type -> Type
@@ -202,6 +213,8 @@ unqualifyType m (TypeConstrained tys tv) =
   TypeConstrained (map (unqualifyType m) tys) tv
 unqualifyType m (TypeArrow      ty1 ty2) =
   TypeArrow (unqualifyType m ty1) (unqualifyType m ty2)
+unqualifyType m (TypeContext      ps ty) =
+  TypeContext (unqualifyPredSet m ps) (unqualifyType m ty)
 unqualifyType m (TypeForall      tvs ty) = TypeForall tvs (unqualifyType m ty)
 
 qualifyTC :: ModuleIdent -> QualIdent -> QualIdent
@@ -288,29 +301,12 @@ unqualifyPredSet m = Set.map (unqualifyPred m)
 -- Predicated types
 -- ---------------------------------------------------------------------------
 
-data PredType = PredType PredSet Type
-  deriving (Eq, Show)
+predType :: Type -> Type
+predType = TypeContext emptyPredSet
 
--- When enumarating the type variables of a predicated type, we consider the
--- type variables occuring in the predicate set after the ones occuring in the
--- type itself.
-
-instance IsType PredType where
-  typeVars (PredType ps ty) = typeVars ty ++ typeVars ps
-
-predType :: Type -> PredType
-predType = PredType emptyPredSet
-
-unpredType :: PredType -> Type
-unpredType (PredType _ ty) = ty
-
-qualifyPredType :: ModuleIdent -> PredType -> PredType
-qualifyPredType m (PredType ps ty) =
-  PredType (qualifyPredSet m ps) (qualifyType m ty)
-
-unqualifyPredType :: ModuleIdent -> PredType -> PredType
-unqualifyPredType m (PredType ps ty) =
-  PredType (unqualifyPredSet m ps) (unqualifyType m ty)
+unpredType :: Type -> Type
+unpredType (TypeContext _ ty) = ty
+unpredType ty = ty
 
 -- ---------------------------------------------------------------------------
 -- Data constructors
@@ -351,7 +347,7 @@ tupleData = [DataConstr (tupleId n) (take n tvs) | n <- [2 ..]]
 -- by class declarations. The 'Maybe Int' denotes the arity of the provided
 -- default implementation.
 
-data ClassMethod = ClassMethod Ident (Maybe Int) PredType
+data ClassMethod = ClassMethod Ident (Maybe Int) Type
   deriving (Eq, Show)
 
 methodName :: ClassMethod -> Ident
@@ -360,7 +356,7 @@ methodName (ClassMethod f _ _) = f
 methodArity :: ClassMethod -> Maybe Int
 methodArity (ClassMethod _ a _) = a
 
-methodType :: ClassMethod -> PredType
+methodType :: ClassMethod -> Type
 methodType (ClassMethod _ _ pty) = pty
 
 -- ---------------------------------------------------------------------------
@@ -372,25 +368,25 @@ methodType (ClassMethod _ _ pty) = pty
 -- 'polyType' assumes that all universally quantified variables in the type are
 -- assigned indices starting with 0 and does not renumber the variables.
 
-monoType :: Type -> PredType
-monoType = predType . TypeForall []
+monoType :: Type -> Type
+monoType = TypeForall [] . predType
 
-polyType :: Type -> PredType
+polyType :: Type -> Type
 polyType = typeScheme . predType
 
-typeScheme :: PredType -> PredType
-typeScheme (PredType ps ty) = PredType ps (TypeForall (typeVars ty) ty)
+typeScheme :: Type -> Type
+typeScheme pty@(TypeContext ps ty) = TypeForall (typeVars ty) pty
 
 -- The function 'rawType' strips the quantifier and predicate set from a
 -- type scheme.
 
-rawType :: PredType -> Type
-rawType (PredType _ (TypeForall _ ty)) = ty
-rawType pty = internalError $ "Base.Types.rawType: " ++ show pty
+rawType :: Type -> Type
+rawType (TypeForall _ (TypeContext _ ty)) = ty
+rawType ty = internalError $ "Base.Types.rawType: " ++ show ty
 
-rawPredType :: PredType -> PredType
-rawPredType (PredType ps (TypeForall _ ty)) = PredType ps ty
-rawPredType pty = internalError $ "Base.Types.rawPredType: " ++ show pty
+rawPredType :: Type -> Type
+rawPredType (TypeForall _ (TypeContext ps ty)) = TypeContext ps ty
+rawPredType ty = internalError $ "Base.Types.rawPredType: " ++ show ty
 
 -- ---------------------------------------------------------------------------
 -- Predefined types
@@ -405,13 +401,13 @@ arrowType ty1 ty2 = primType qArrowId [ty1, ty2]
 unitType :: Type
 unitType = primType qUnitId []
 
-predUnitType :: PredType
+predUnitType :: Type
 predUnitType = predType unitType
 
 boolType :: Type
 boolType = primType qBoolId []
 
-predBoolType :: PredType
+predBoolType :: Type
 predBoolType = predType boolType
 
 charType :: Type
@@ -420,19 +416,19 @@ charType = primType qCharId []
 intType :: Type
 intType = primType qIntId []
 
-predIntType :: PredType
+predIntType :: Type
 predIntType = predType intType
 
 floatType :: Type
 floatType = primType qFloatId []
 
-predFloatType :: PredType
+predFloatType :: Type
 predFloatType = predType floatType
 
 stringType :: Type
 stringType = listType charType
 
-predStringType :: PredType
+predStringType :: Type
 predStringType = predType stringType
 
 listType :: Type -> Type

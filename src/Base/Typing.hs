@@ -40,10 +40,8 @@ class Typeable a where
   typeOf :: a -> Type
 
 instance Typeable Type where
-  typeOf = id
-
-instance Typeable PredType where
-  typeOf = unpredType
+  typeOf (TypeContext _ ty) = ty
+  typeOf ty = ty
 
 instance Typeable a => Typeable (Rhs a) where
   typeOf (SimpleRhs  _ e _ ) = typeOf e

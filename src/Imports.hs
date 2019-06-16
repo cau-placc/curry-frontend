@@ -176,7 +176,7 @@ importInstances m = flip $ foldr (bindInstance m)
 bindInstance :: ModuleIdent -> IDecl -> InstEnv -> InstEnv
 bindInstance m (IInstanceDecl _ cx qcls ty is mm) = bindInstInfo
   (qualQualify m qcls, qualifyTC m $ typeConstr ty) (fromMaybe m mm, ps, is)
-  where PredType ps _ = toQualPredType m [] $ QualTypeExpr NoSpanInfo cx ty
+  where TypeContext ps _ = toQualPredType m [] $ ContextType NoSpanInfo cx ty
 bindInstance _ _ = id
 
 -- ---------------------------------------------------------------------------
@@ -223,7 +223,7 @@ types m (IClassDecl _ _ qcls k tv ds _) =
   [typeCls m qcls k (map mkMethod ds)]
   where
     mkMethod (IMethodDecl _ f a qty) = ClassMethod f a $
-      qualifyPredType m $ normalize 1 $ toMethodType qcls tv qty
+      qualifyType m $ normalize 1 $ toMethodType qcls tv qty
 types _ _ = []
 
 -- type constructors
@@ -302,9 +302,9 @@ recLabel m tc tvs ty0 (l, cs, lty) = Label ql qcs tySc
         qcs  = map (qualifyLike tc) cs
         tySc = polyType (toQualType m tvs (ArrowType NoSpanInfo ty0 lty))
 
-constrType' :: ModuleIdent -> QualIdent -> [Ident] -> [TypeExpr] -> PredType
-constrType' m tc tvs tys = PredType ps (TypeForall [0.. length tvs - 1] ty)
-  where PredType ps ty = qualifyPredType m $ toConstrType tc tvs tys
+constrType' :: ModuleIdent -> QualIdent -> [Ident] -> [TypeExpr] -> Type
+constrType' m tc tvs tys = TypeForall [0.. length tvs - 1] (TypeContext ps ty)
+  where TypeContext ps ty = qualifyType m $ toConstrType tc tvs tys
 
 constrType :: QualIdent -> [Ident] -> TypeExpr
 constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)
@@ -316,7 +316,7 @@ constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)
 classMethod :: ModuleIdent -> QualIdent -> Ident -> IMethodDecl -> ValueInfo
 classMethod m qcls tv (IMethodDecl _ f _ qty) =
   Value (qualifyLike qcls f) True 0 $
-    typeScheme $ qualifyPredType m $ toMethodType qcls tv qty
+    typeScheme $ qualifyType m $ toMethodType qcls tv qty
 
 -- ---------------------------------------------------------------------------
 

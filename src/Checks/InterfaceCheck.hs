@@ -180,33 +180,33 @@ checkImport (IClassDecl p cx cls k clsvar ms _) = do
   checkTypeInfo "type class" check p cls
 checkImport (IInstanceDecl p cx cls ty is m) =
   checkInstInfo check p (cls, typeConstr ty) m
-  where PredType ps _ = toPredType [] $ QualTypeExpr NoSpanInfo cx ty
+  where TypeContext ps _ = toPredType [] $ ContextType NoSpanInfo cx ty
         check ps' is' = ps == ps' && sort is == sort is'
 
 checkConstrImport :: QualIdent -> [Ident] -> ConstrDecl -> IC ()
 checkConstrImport tc tvs (ConstrDecl p c tys) = do
   m <- getModuleIdent
   let qc = qualifyLike tc c
-      check (DataConstructor c' _ _ (PredType ps (TypeForall vs ty))) =
+      check (DataConstructor c' _ _ (TypeForall vs (TypeContext ps ty))) =
         qc == c' && length tvs == length vs &&
-        qualifyPredType m (toConstrType tc tvs tys) == PredType ps ty
+        qualifyType m (toConstrType tc tvs tys) == TypeContext ps ty
       check _ = False
   checkValueInfo "data constructor" check p qc
 checkConstrImport tc tvs (ConOpDecl p ty1 op ty2) = do
   m <- getModuleIdent
   let qc = qualifyLike tc op
-      check (DataConstructor c' _ _ (PredType ps (TypeForall vs ty))) =
+      check (DataConstructor c' _ _ (TypeForall vs (TypeContext ps ty))) =
         qc == c' && length tvs == length vs &&
-        qualifyPredType m (toConstrType tc tvs [ty1, ty2]) == PredType ps ty
+        qualifyType m (toConstrType tc tvs [ty1, ty2]) == TypeContext ps ty
       check _ = False
   checkValueInfo "data constructor" check p qc
 checkConstrImport tc tvs (RecordDecl p c fs) = do
   m <- getModuleIdent
   let qc = qualifyLike tc c
       (ls, tys) = unzip [(l, ty) | FieldDecl _ labels ty <- fs, l <- labels]
-      check (DataConstructor c' _ ls' (PredType ps (TypeForall vs ty))) =
+      check (DataConstructor c' _ ls' (TypeForall vs (TypeContext ps ty))) =
         qc == c' && length tvs == length vs && ls == ls' &&
-        qualifyPredType m (toConstrType tc tvs tys) == PredType ps ty
+        qualifyType m (toConstrType tc tvs tys) == TypeContext ps ty
       check _ = False
   checkValueInfo "data constructor" check p qc
 
@@ -214,14 +214,14 @@ checkNewConstrImport :: QualIdent -> [Ident] -> NewConstrDecl -> IC ()
 checkNewConstrImport tc tvs (NewConstrDecl p c ty) = do
   m <- getModuleIdent
   let qc = qualifyLike tc c
-      check (NewtypeConstructor c' _ (PredType _ (TypeForall uqvs ty'))) =
+      check (NewtypeConstructor c' _ (TypeForall uqvs (TypeContext _ ty'))) =
         qc == c' && length tvs == length uqvs && toQualType m tvs ty == head (arrowArgs ty')
       check _ = False
   checkValueInfo "newtype constructor" check p qc
 checkNewConstrImport tc tvs (NewRecordDecl p c (l, ty)) = do
   m <- getModuleIdent
   let qc = qualifyLike tc c
-      check (NewtypeConstructor c' l' (PredType _ (TypeForall uqvs ty'))) =
+      check (NewtypeConstructor c' l' (TypeForall uqvs (TypeContext _ ty'))) =
         qc == c' && length tvs == length uqvs && l == l' &&
         toQualType m tvs ty == head (arrowArgs ty')
       check _ = False

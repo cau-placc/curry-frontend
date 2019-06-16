@@ -50,7 +50,7 @@ import Curry.Syntax
 
 import Base.Messages       (Message, internalError, posMessage)
 import Base.TopEnv         (allEntities, origName, localBindings, moduleImports)
-import Base.Types          ( Type (..), unapplyType, arrowBase, PredType (..)
+import Base.Types          ( Type (..), unapplyType, arrowBase
                            , DataConstr (..), constrIdent, recLabels
                            , ClassMethod, methodName
                            , rawType )
@@ -168,7 +168,7 @@ checkThing' f tcExport = do
 
   getTc (DataConstructor  _ _ _ pty) = getTc' $ rawType pty
   getTc (NewtypeConstructor _ _ pty) = getTc' $ rawType pty
-  getTc (Label _ _ (PredType _ (TypeForall _ (TypeArrow tc' _)))) =
+  getTc (Label _ _ (TypeForall _ (TypeContext _ (TypeArrow tc' _)))) =
     let (TypeConstructor tc, _) = unapplyType False tc' in tc
   getTc err = internalError $ currentModuleName ++ ".checkThing'.getTc: " ++ show err
 

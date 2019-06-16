@@ -36,9 +36,6 @@ instance Pretty Pred where
 instance Pretty a => Pretty (Set.Set a) where
   pPrint = parens . list . map pPrint . Set.toAscList
 
-instance Pretty PredType where
-  pPrint = ppQualTypeExpr . fromPredType identSupply
-
 instance Pretty DataConstr where
   pPrint (DataConstr i tys)      = pPrint i <+> hsep (map pPrint tys)
   pPrint (RecordConstr i ls tys) =     pPrint i

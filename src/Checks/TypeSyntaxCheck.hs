@@ -222,9 +222,6 @@ instance Rename NewConstrDecl where
 instance Rename Constraint where
   rename (Constraint spi cls ty) = Constraint spi cls <$> rename ty
 
-instance Rename QualTypeExpr where
-  rename (QualTypeExpr spi cx ty) = QualTypeExpr spi <$> rename cx <*> rename ty
-
 instance Rename TypeExpr where
   rename (ConstructorType spi tc) = return $ ConstructorType spi tc
   rename (ApplyType spi ty1 ty2) = ApplyType spi <$> rename ty1 <*> rename ty2
@@ -233,6 +230,7 @@ instance Rename TypeExpr where
   rename (ListType spi ty) = ListType spi <$> rename ty
   rename (ArrowType spi ty1 ty2) = ArrowType spi <$> rename ty1 <*> rename ty2
   rename (ParenType spi ty) = ParenType spi <$> rename ty
+  rename (ContextType spi cx ty) = ContextType spi <$> rename cx <*> rename ty
   rename (ForallType spi vs ty) = do
     bindVars vs
     ForallType spi <$> mapM rename vs <*> rename ty
@@ -332,7 +330,7 @@ checkDecl (TypeDecl p tc tvs ty) = do
   ty' <- checkClosedType tvs ty
   return $ TypeDecl p tc tvs ty'
 checkDecl (TypeSig p vs qty) =
-  TypeSig p vs <$> checkQualType qty
+  TypeSig p vs <$> checkType qty
 checkDecl (FunctionDecl a p f eqs) =
   FunctionDecl a p f <$> mapM checkEquation eqs
 checkDecl (PatternDecl p t rhs) =
@@ -347,7 +345,8 @@ checkDecl (ClassDecl p cx cls clsvar ds) = do
   return $ ClassDecl p cx' cls clsvar ds'
 checkDecl (InstanceDecl p cx qcls inst ds) = do
   checkClass qcls
-  QualTypeExpr _ cx' inst' <- checkQualType $ QualTypeExpr NoSpanInfo cx inst
+  cxty <- checkType $ ContextType NoSpanInfo cx inst
+  let ContextType _ cx' inst' = cxty
   checkSimpleContext cx'
   checkInstanceType p inst'
   InstanceDecl p cx' qcls inst' <$> mapM checkDecl ds
@@ -391,8 +390,10 @@ checkSimpleConstraint c@(Constraint _ _ ty) =
 checkClassMethod :: Ident -> Decl a -> TSCM ()
 checkClassMethod tv (TypeSig spi _ qty) = do
   unless (tv `elem` fv qty) $ report $ errAmbiguousType p tv
-  let QualTypeExpr _ cx _ = qty
-  when (tv `elem` fv cx) $ report $ errConstrainedClassVariable p tv
+  let cxvs = case qty of
+               ContextType _ cx _ -> fv cx
+               _                  -> []
+  when (tv `elem` cxvs) $ report $ errConstrainedClassVariable p tv
   where p = spanInfo2Pos spi
 checkClassMethod _ _ = ok
 
@@ -443,7 +444,7 @@ checkExpr v@(Variable            _ _ _) = return v
 checkExpr c@(Constructor         _ _ _) = return c
 checkExpr (Paren                 spi e) = Paren spi <$> checkExpr e
 checkExpr (Typed             spi e qty) = Typed spi <$> checkExpr e
-                                                    <*> checkQualType qty
+                                                    <*> checkType qty
 checkExpr (Record           spi a c fs) =
   Record spi a c <$> mapM checkFieldExpr fs
 checkExpr (RecordUpdate       spi e fs) =
@@ -495,12 +496,6 @@ checkFieldExpr (Field spi l e) = Field spi l <$> checkExpr e
 -- and type variables. Therefore, if the compiler finds an unbound
 -- identifier in a position where a type variable is admissible, it will
 -- interpret the identifier as such.
-
-checkQualType :: QualTypeExpr -> TSCM QualTypeExpr
-checkQualType (QualTypeExpr spi cx ty) = do
-  ty' <- checkType ty
-  cx' <- checkClosedContext (fv ty') cx
-  return $ QualTypeExpr spi cx' ty'
 
 checkClosedContext :: [Ident] -> Context -> TSCM Context
 checkClosedContext tvs cx = do
@@ -565,6 +560,10 @@ checkType (ListType       spi ty) = ListType   spi    <$> checkType ty
 checkType (ArrowType spi ty1 ty2) = ArrowType  spi    <$> checkType ty1
                                                       <*> checkType ty2
 checkType (ParenType      spi ty) = ParenType  spi    <$> checkType ty
+checkType (ContextType spi cx ty) = do
+  ty' <- checkType ty
+  cx' <- checkClosedContext (fv ty') cx
+  return $ ContextType spi cx' ty'
 checkType (ForallType  spi vs ty) = do
   checkUsedExtension (getPosition spi) "Arbitrary-rank types" RankNTypes
   ForallType spi vs <$> checkType ty
@@ -579,6 +578,7 @@ checkClosed tvs (ListType       _ ty) = checkClosed tvs ty
 checkClosed tvs (ArrowType _ ty1 ty2) = mapM_ (checkClosed tvs) [ty1, ty2]
 checkClosed tvs (ParenType      _ ty) = checkClosed tvs ty
 checkClosed tvs (ForallType  _ vs ty) = checkClosed (tvs ++ vs) ty
+checkClosed _ _ = internalError "Checks.TypeSyntaxCheck.checkClosed"
 
 checkUsedExtension :: Position -> String -> KnownExtension -> TSCM ()
 checkUsedExtension pos msg ext = do

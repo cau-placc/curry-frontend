@@ -493,7 +493,7 @@ checkMissingTypeSignatures ds = warnFor WarnMissingSignatures $ do
     tyScs <- mapM getTyScheme untypedFs
     mapM_ report $ zipWith (warnMissingTypeSignature mid) untypedFs tyScs
 
-getTyScheme :: Ident -> WCM PredType
+getTyScheme :: Ident -> WCM Type
 getTyScheme q = do
   m     <- getModuleIdent
   tyEnv <- gets valueEnv
@@ -501,7 +501,7 @@ getTyScheme q = do
     [Value  _ _ _ tys] -> tys
     _ -> internalError $ "Checks.WarnCheck.getTyScheme: " ++ show q
 
-warnMissingTypeSignature :: ModuleIdent -> Ident -> PredType -> Message
+warnMissingTypeSignature :: ModuleIdent -> Ident -> Type -> Message
 warnMissingTypeSignature mid i pty = posMessage i $ fsep
   [ text "Top-level binding with no type signature:"
   , nest 2 $ text (showIdent i) <+> text "::"
@@ -1218,7 +1218,7 @@ checkCaseModeDecl (TypeDecl _ tc vs ty) = do
   checkCaseModeTypeExpr ty
 checkCaseModeDecl (TypeSig _ fs qty) = do
   mapM_ (checkCaseModeID isFuncName) fs
-  checkCaseModeQualTypeExpr qty
+  checkCaseModeTypeExpr qty
 checkCaseModeDecl (FunctionDecl _ _ f eqs) = do
   checkCaseModeID isFuncName f
   mapM_ checkCaseModeEquation eqs
@@ -1284,15 +1284,13 @@ checkCaseModeTypeExpr (ArrowType _ ty1 ty2) = do
   checkCaseModeTypeExpr ty1
   checkCaseModeTypeExpr ty2
 checkCaseModeTypeExpr (ParenType _ ty) = checkCaseModeTypeExpr ty
+checkCaseModeTypeExpr (ContextType _ cx ty) = do
+  checkCaseModeContext cx
+  checkCaseModeTypeExpr ty
 checkCaseModeTypeExpr (ForallType _ tvs ty) = do
   mapM_ (checkCaseModeID isVarName) tvs
   checkCaseModeTypeExpr ty
 checkCaseModeTypeExpr _ = ok
-
-checkCaseModeQualTypeExpr :: QualTypeExpr -> WCM ()
-checkCaseModeQualTypeExpr (QualTypeExpr _ cx ty) = do
-  checkCaseModeContext cx
-  checkCaseModeTypeExpr ty
 
 checkCaseModeEquation :: Equation a -> WCM ()
 checkCaseModeEquation (Equation _ lhs rhs) = do
@@ -1350,7 +1348,7 @@ checkCaseModeExpr :: Expression a -> WCM ()
 checkCaseModeExpr (Paren _ e) = checkCaseModeExpr e
 checkCaseModeExpr (Typed _ e qty) = do
   checkCaseModeExpr e
-  checkCaseModeQualTypeExpr qty
+  checkCaseModeTypeExpr qty
 checkCaseModeExpr (Record _ _ _ fs) = mapM_ checkCaseModeFieldExpr fs
 checkCaseModeExpr (RecordUpdate _ e fs) = do
   checkCaseModeExpr e

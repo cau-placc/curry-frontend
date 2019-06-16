@@ -190,6 +190,8 @@ transType' (TypeArrow     ty1 ty2) =
   foldl applyType' (IL.TypeArrow (transType ty1) (transType ty2))
 transType' (TypeForall     tvs ty) =
   foldl applyType' (IL.TypeForall tvs (transType ty))
+transType' (TypeContext       _ _)
+  = internalError "Transformation.CurryToIL.transType'"
 
 applyType' :: IL.Type -> IL.Type -> IL.Type
 applyType' ty1 ty2 =
@@ -309,7 +311,7 @@ trExpr (v:vs) env (Case _ ct e alts) = do
         -- subject is referenced -> introduce binding for v as subject
       | v `elem` fv expr                -> IL.Let (IL.Binding v e') expr
       | otherwise                       -> expr
-trExpr  vs env (Typed _ e (QualTypeExpr _ _ ty)) =
+trExpr  vs env (Typed _ e (ContextType _ _ ty)) =
   flip IL.Typed ty' <$> trExpr vs env e
   where ty' = transType (toType [] ty)
 trExpr _ _ _ = internalError "CurryToIL.trExpr"

@@ -48,15 +48,15 @@ import Text.PrettyPrint
 
 data ValueInfo
   -- |Data constructor with original name, arity, list of record labels and type
-  = DataConstructor    QualIdent      Int [Ident] PredType
+  = DataConstructor    QualIdent      Int [Ident] Type
   -- |Newtype constructor with original name, record label and type
   -- (arity is always 1)
-  | NewtypeConstructor QualIdent          Ident   PredType
+  | NewtypeConstructor QualIdent          Ident   Type
   -- |Value with original name, class method flag, arity and type
-  | Value              QualIdent Bool Int         PredType
+  | Value              QualIdent Bool Int         Type
   -- |Record label with original name, list of constructors for which label
   -- is valid field and type (arity is always 1)
-  | Label              QualIdent [QualIdent]      PredType
+  | Label              QualIdent [QualIdent]      Type
     deriving Show
 
 instance Entity ValueInfo where
@@ -117,7 +117,7 @@ bindGlobalInfo f m c ty = bindTopEnv c v . qualBindTopEnv qc v
   where qc = qualifyWith m c
         v  = f qc ty
 
-bindFun :: ModuleIdent -> Ident -> Bool -> Int -> PredType -> ValueEnv
+bindFun :: ModuleIdent -> Ident -> Bool -> Int -> Type -> ValueEnv
         -> ValueEnv
 bindFun m f cm a ty
   | hasGlobalScope f = bindTopEnv f v . qualBindTopEnv qf v
@@ -125,12 +125,12 @@ bindFun m f cm a ty
   where qf = qualifyWith m f
         v  = Value qf cm a ty
 
-qualBindFun :: ModuleIdent -> Ident -> Bool -> Int -> PredType -> ValueEnv
+qualBindFun :: ModuleIdent -> Ident -> Bool -> Int -> Type -> ValueEnv
             -> ValueEnv
 qualBindFun m f cm a ty = qualBindTopEnv qf $ Value qf cm a ty
   where qf = qualifyWith m f
 
-rebindFun :: ModuleIdent -> Ident -> Bool -> Int -> PredType -> ValueEnv
+rebindFun :: ModuleIdent -> Ident -> Bool -> Int -> Type -> ValueEnv
           -> ValueEnv
 rebindFun m f cm a ty
   | hasGlobalScope f = rebindTopEnv f v . qualRebindTopEnv qf v
@@ -165,9 +165,9 @@ tupleDCs :: [ValueInfo]
 tupleDCs = map dataInfo tupleData
   where dataInfo (DataConstr _ tys) =
           let n = length tys
-              PredType ps ty = predType $ foldr TypeArrow (tupleType tys) tys
+              TypeContext ps ty = predType $ foldr TypeArrow (tupleType tys) tys
           in  DataConstructor (qTupleId n) n (replicate n anonId) $
-                PredType ps (TypeForall [0..n-1] ty)
+                TypeForall [0..n-1] (TypeContext ps ty)
         dataInfo (RecordConstr _ _ _) =
           internalError $ "Env.Value.tupleDCs: " ++ show tupleDCs
 
@@ -182,8 +182,8 @@ initDCEnv = foldr predefDC emptyTopEnv
   where predefDC (c, a, ty) = predefTopEnv c' (DataConstructor c' a ls ty)
           where ls = replicate a anonId
                 c' = qualify c
-        constrType (PredType ps (TypeForall vs ty)) =
-          PredType ps . TypeForall vs . foldr TypeArrow ty
+        constrType (TypeForall vs (TypeContext ps ty)) =
+          TypeForall vs . TypeContext ps . foldr TypeArrow ty
         constrType pty = internalError $ "Env.Value.initDCEnv: " ++ show pty
 
 -- The functions 'bindLocalVar' and 'bindLocalVars' add the type of one or
@@ -193,15 +193,12 @@ initDCEnv = foldr predefDC emptyTopEnv
 
 class ValueType t where
   toValueType :: Type -> t
-  fromValueType :: t -> PredType
+  fromValueType :: t -> Type
 
 instance ValueType Type where
   toValueType = id
-  fromValueType = predType
-
-instance ValueType PredType where
-  toValueType = predType
-  fromValueType = id
+  fromValueType ty@(TypeContext _ _) = ty
+  fromValueType ty = predType ty
 
 bindLocalVars :: ValueType t => [(Ident, Int, t)] -> ValueEnv -> ValueEnv
 bindLocalVars = flip $ foldr bindLocalVar

@@ -41,7 +41,7 @@ import Curry.Base.Ident
 import Curry.Base.Pretty (Doc)
 import Curry.Base.SpanInfo
 import qualified Curry.Syntax as CS
-import Curry.Syntax.Pretty (ppConstraint, ppTypeExpr, ppQualTypeExpr)
+import Curry.Syntax.Pretty (ppConstraint, ppTypeExpr)
 
 import Base.Expr
 import Base.Messages (internalError)
@@ -81,6 +81,7 @@ toType' tvs (CS.ForallType _ tvs' ty) tys
   | otherwise = applyType (TypeForall (map (toVar tvs) tvs')
                                       (toType' tvs ty []))
                           tys
+toType' _ _ _ = internalError "Base.CurryTypes.toType'"
 
 toVar :: Map.Map Ident Int -> Ident -> Int
 toVar tvs tv = case Map.lookup tv tvs of
@@ -111,23 +112,24 @@ toPredSet' tvs = Set.fromList . map (toPred' tvs)
 toQualPredSet :: ModuleIdent -> [Ident] -> CS.Context -> PredSet
 toQualPredSet m tvs = qualifyPredSet m . toPredSet tvs
 
-toPredType :: [Ident] -> CS.QualTypeExpr -> PredType
-toPredType tvs qty = toPredType' (enumTypeVars tvs qty) qty
+toPredType :: [Ident] -> CS.TypeExpr -> Type
+toPredType tvs ty = toPredType' (enumTypeVars tvs ty) ty
 
-toPredType' :: Map.Map Ident Int -> CS.QualTypeExpr -> PredType
-toPredType' tvs (CS.QualTypeExpr _ cx ty) =
-  PredType (toPredSet' tvs cx) (toType' tvs ty [])
+toPredType' :: Map.Map Ident Int -> CS.TypeExpr -> Type
+toPredType' tvs (CS.ContextType _ cx ty) =
+  TypeContext (toPredSet' tvs cx) (toType' tvs ty [])
+toPredType' _ _ = internalError "Base.CurryTypes.toPredType'"
 
-toQualPredType :: ModuleIdent -> [Ident] -> CS.QualTypeExpr -> PredType
-toQualPredType m tvs = qualifyPredType m . toPredType tvs
+toQualPredType :: ModuleIdent -> [Ident] -> CS.TypeExpr -> Type
+toQualPredType m tvs = qualifyType m . toPredType tvs
 
 -- The function 'toConstrType' returns the type of a data or newtype
 -- constructor. Hereby, it restricts the context to those type variables
 -- which are free in the argument types.
 
-toConstrType :: QualIdent -> [Ident] -> [CS.TypeExpr] -> PredType
+toConstrType :: QualIdent -> [Ident] -> [CS.TypeExpr] -> Type
 toConstrType tc tvs tys = toPredType tvs $
-  CS.QualTypeExpr NoSpanInfo [] ty'
+  CS.ContextType NoSpanInfo [] ty'
   where ty'  = foldr (CS.ArrowType NoSpanInfo) ty0 tys
         ty0  = foldl (CS.ApplyType NoSpanInfo)
                      (CS.ConstructorType NoSpanInfo tc)
@@ -137,11 +139,12 @@ toConstrType tc tvs tys = toPredType tvs $
 -- It adds the implicit type class constraint to the method's type signature
 -- and ensures that the class' type variable is always assigned index 0.
 
-toMethodType :: QualIdent -> Ident -> CS.QualTypeExpr -> PredType
-toMethodType qcls clsvar (CS.QualTypeExpr spi cx ty) =
-  toPredType [clsvar] (CS.QualTypeExpr spi cx' ty)
+toMethodType :: QualIdent -> Ident -> CS.TypeExpr -> Type
+toMethodType qcls clsvar (CS.ContextType spi cx ty) =
+  toPredType [clsvar] (CS.ContextType spi cx' ty)
   where cx' = CS.Constraint NoSpanInfo qcls
                 (CS.VariableType NoSpanInfo clsvar) : cx
+toMethodType _ _ _ = internalError "Base.CurryTypes.toMethodType"
 
 fromType :: [Ident] -> Type -> CS.TypeExpr
 fromType tvs ty = fromType' tvs ty []
@@ -169,6 +172,7 @@ fromType' tvs (TypeForall    tvs' ty) tys
                       (CS.ForallType NoSpanInfo (map (fromVar tvs) tvs')
                                                 (fromType tvs ty))
                       tys
+fromType' _ _ _ = internalError "Base.CurryTypes.fromType'"
 
 fromVar :: [Ident] -> Int -> Ident
 fromVar tvs tv = if tv >= 0 then tvs !! tv else mkIdent ('_' : show (-tv))
@@ -191,12 +195,13 @@ fromPredSet tvs = map (fromPred tvs) . Set.toAscList
 fromQualPredSet :: ModuleIdent -> [Ident] -> PredSet -> CS.Context
 fromQualPredSet m tvs = fromPredSet tvs . unqualifyPredSet m
 
-fromPredType :: [Ident] -> PredType -> CS.QualTypeExpr
-fromPredType tvs (PredType ps ty) =
-  CS.QualTypeExpr NoSpanInfo (fromPredSet tvs ps) (fromType tvs ty)
+fromPredType :: [Ident] -> Type -> CS.TypeExpr
+fromPredType tvs (TypeContext ps ty) =
+  CS.ContextType NoSpanInfo (fromPredSet tvs ps) (fromType tvs ty)
+fromPredType _ _ = internalError "Base.CurryTypes.fromPredType: wrong type"
 
-fromQualPredType :: ModuleIdent -> [Ident] -> PredType -> CS.QualTypeExpr
-fromQualPredType m tvs = fromPredType tvs . unqualifyPredType m
+fromQualPredType :: ModuleIdent -> [Ident] -> Type -> CS.TypeExpr
+fromQualPredType m tvs = fromPredType tvs . unqualifyType m
 
 -- The following functions implement pretty-printing for types.
 
@@ -206,5 +211,5 @@ ppType m = ppTypeExpr 0 . fromQualType m identSupply
 ppPred :: ModuleIdent -> Pred -> Doc
 ppPred m = ppConstraint . fromQualPred m identSupply
 
-ppPredType :: ModuleIdent -> PredType -> Doc
-ppPredType m = ppQualTypeExpr . fromQualPredType m identSupply
+ppPredType :: ModuleIdent -> Type -> Doc
+ppPredType m = ppTypeExpr 0 . fromQualPredType m identSupply

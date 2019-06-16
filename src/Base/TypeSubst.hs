@@ -45,6 +45,8 @@ instance SubstType a => SubstType [a] where
   subst sigma = map (subst sigma)
 
 instance SubstType Type where
+  subst sigma (TypeContext ps ty)
+    = TypeContext (subst sigma ps) (subst sigma ty)
   subst sigma ty = subst' sigma ty []
 
 subst' :: TypeSubst -> Type -> [Type] -> Type
@@ -58,26 +60,24 @@ subst' sigma (TypeConstrained tys tv) = case substVar sigma tv of
   ty               -> foldl TypeApply ty
 subst' sigma (TypeForall      tvs ty) =
   applyType (TypeForall tvs (subst sigma ty))
+subst' _ _ = internalError "Base.TypeSubst.subst'"
 
 instance SubstType Pred where
   subst sigma (Pred qcls ty) = Pred qcls (subst sigma ty)
 
-instance SubstType PredType where
-  subst sigma (PredType ps ty) = PredType (subst sigma ps) (subst sigma ty)
-
 instance SubstType ValueInfo where
   subst _     dc@(DataConstructor  _ _ _ _) = dc
   subst _     nc@(NewtypeConstructor _ _ _) = nc
-  subst theta (Value             v cm a (PredType ps (TypeForall vs ty))) =
+  subst theta (Value             v cm a (TypeForall vs (TypeContext ps ty))) =
     let n = length vs
-        PredType ps' ty' = subst (foldr unbindSubst theta [0 .. n-1])
-                                 (PredType ps ty)
-    in Value v cm a (PredType ps' (TypeForall vs ty'))
-  subst theta (Label                l r (PredType ps (TypeForall vs ty))) =
+        TypeContext ps' ty' = subst (foldr unbindSubst theta [0 .. n-1])
+                                    (TypeContext ps ty)
+    in Value v cm a (TypeForall vs (TypeContext ps' ty'))
+  subst theta (Label                l r (TypeForall vs (TypeContext ps ty))) =
     let n = length vs
-        PredType ps' ty' = subst (foldr unbindSubst theta [0 .. n-1])
-                                 (PredType ps ty)
-    in Label l r (PredType ps' (TypeForall vs ty'))
+        TypeContext ps' ty' = subst (foldr unbindSubst theta [0 .. n-1])
+                                    (TypeContext ps ty)
+    in Label l r (TypeForall vs (TypeContext ps' ty'))
   subst _ vi = internalError $ "Base.TypeSubst.subst: " ++ show vi
 
 instance SubstType a => SubstType (TopEnv a) where
@@ -96,6 +96,8 @@ instance (Ord a, ExpandAliasType a) => ExpandAliasType (Set.Set a) where
   expandAliasType tys = Set.map (expandAliasType tys)
 
 instance ExpandAliasType Type where
+  expandAliasType tys (TypeContext ps ty)
+    = TypeContext (expandAliasType tys ps) (expandAliasType tys ty)
   expandAliasType tys ty = expandAliasType' tys ty []
 
 expandAliasType' :: [Type] -> Type -> [Type] -> Type
@@ -110,13 +112,10 @@ expandAliasType' tys (TypeArrow      ty1 ty2) =
   applyType (TypeArrow (expandAliasType tys ty1) (expandAliasType tys ty2))
 expandAliasType' tys (TypeForall      tvs ty) =
   applyType (TypeForall tvs (expandAliasType tys ty))
+expandAliasType' _ _ = internalError "Base.TypeSubst.sexpandAliasType'"
 
 instance ExpandAliasType Pred where
   expandAliasType tys (Pred qcls ty) = Pred qcls (expandAliasType tys ty)
-
-instance ExpandAliasType PredType where
-  expandAliasType tys (PredType ps ty) =
-    PredType (expandAliasType tys ps) (expandAliasType tys ty)
 
 -- After the expansion we have to reassign the type indices for all type
 -- variables. Otherwise, expanding a type synonym like type 'Pair a b = (b,a)'
@@ -127,7 +126,7 @@ instance ExpandAliasType PredType where
 -- of a type declaration and in the head of a type class declaration,
 -- respectively.
 
-normalize :: Int -> PredType -> PredType
+normalize :: Int -> Type -> Type
 normalize n ty = expandAliasType [TypeVariable (occur tv) | tv <- [0..]] ty
   where tvs = zip (nub (filter (>= n) (typeVars ty))) [n..]
         occur tv = fromMaybe tv (lookup tv tvs)
@@ -140,4 +139,4 @@ normalize n ty = expandAliasType [TypeVariable (occur tv) | tv <- [0..]] ty
 
 instanceType :: ExpandAliasType a => Type -> a -> a
 instanceType ty = expandAliasType (ty : map TypeVariable [length vs ..])
-  where PredType _ (TypeForall vs _) = polyType ty
+  where TypeForall vs (TypeContext _ _) = polyType ty

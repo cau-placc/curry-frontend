@@ -107,7 +107,7 @@ checkIDecl (ITypeDecl p tc k tvs ty) = do
   checkTypeLhs tvs
   liftM (ITypeDecl p tc k tvs) (checkClosedType tvs ty)
 checkIDecl (IFunctionDecl p f cm n qty) =
-  liftM (IFunctionDecl p f cm n) (checkQualType qty)
+  liftM (IFunctionDecl p f cm n) (checkType qty)
 checkIDecl (HidingClassDecl p cx qcls k clsvar) = do
   checkTypeVars "hiding class declaration" [clsvar]
   cx' <- checkClosedContext [clsvar] cx
@@ -122,7 +122,8 @@ checkIDecl (IClassDecl p cx qcls k clsvar ms hs) = do
   return $ IClassDecl p cx' qcls k clsvar ms' hs
 checkIDecl (IInstanceDecl p cx qcls inst is m) = do
   checkClass qcls
-  QualTypeExpr _ cx' inst' <- checkQualType $ QualTypeExpr NoSpanInfo cx inst
+  cxty <- checkType $ ContextType NoSpanInfo cx inst
+  let ContextType _ cx' inst' = cxty
   checkSimpleContext cx'
   checkInstanceType p inst'
   mapM_ (report . errMultipleImplementation . head) $ findMultiples $ map fst is
@@ -177,10 +178,12 @@ checkSimpleConstraint c@(Constraint _ _ ty) =
 
 checkIMethodDecl :: Ident -> IMethodDecl -> ISC IMethodDecl
 checkIMethodDecl tv (IMethodDecl p f a qty) = do
-  qty' <- checkQualType qty
+  qty' <- checkType qty
   unless (tv `elem` fv qty') $ report $ errAmbiguousType p tv
-  let QualTypeExpr _ cx _ = qty'
-  when (tv `elem` fv cx) $ report $ errConstrainedClassVariable p tv
+  let cxvs = case qty' of
+               ContextType _ cx _ -> fv cx
+               _                  -> []
+  when (tv `elem` cxvs) $ report $ errConstrainedClassVariable p tv
   return $ IMethodDecl p f a qty'
 
 checkInstanceType :: Position -> InstanceType -> ISC ()
@@ -191,12 +194,6 @@ checkInstanceType p inst = do
     null (filter isAnonId $ typeVars inst) &&
     isNothing (findDouble $ fv inst)) $
       report $ errIllegalInstanceType p inst
-
-checkQualType :: QualTypeExpr -> ISC QualTypeExpr
-checkQualType (QualTypeExpr spi cx ty) = do
-  ty' <- checkType ty
-  cx' <- checkClosedContext (fv ty') cx
-  return $ QualTypeExpr spi cx' ty'
 
 checkClosedContext :: [Ident] -> Context -> ISC Context
 checkClosedContext tvs cx = do
@@ -239,6 +236,10 @@ checkType (ListType        spi ty) = liftM (ListType spi) (checkType ty)
 checkType (ArrowType  spi ty1 ty2) =
   liftM2 (ArrowType spi) (checkType ty1) (checkType ty2)
 checkType (ParenType      spi  ty) = liftM (ParenType spi) (checkType ty)
+checkType (ContextType  spi cx ty) = do
+  ty' <- checkType ty
+  cx' <- checkClosedContext (fv ty') cx
+  return $ ContextType spi cx' ty'
 checkType (ForallType   spi vs ty) = liftM (ForallType spi vs) (checkType ty)
 
 checkClosed :: [Ident] -> TypeExpr -> ISC ()
@@ -251,6 +252,7 @@ checkClosed tvs (ListType       _ ty) = checkClosed tvs ty
 checkClosed tvs (ArrowType _ ty1 ty2) = mapM_ (checkClosed tvs) [ty1, ty2]
 checkClosed tvs (ParenType      _ ty) = checkClosed tvs ty
 checkClosed tvs (ForallType  _ vs ty) = checkClosed (tvs ++ vs) ty
+checkClosed _ _ = internalError "Checks.InterfaceSyntaxCheck.checkClosed"
 
 checkTypeConstructor :: SpanInfo -> QualIdent -> ISC TypeExpr
 checkTypeConstructor spi tc = do
@@ -280,6 +282,7 @@ typeVars (ListType            _ ty) = typeVars ty
 typeVars (ArrowType      _ ty1 ty2) = typeVars ty1 ++ typeVars ty2
 typeVars (ParenType           _ ty) = typeVars ty
 typeVars (ForallType       _ vs ty) = vs ++ typeVars ty
+typeVars _ = internalError "Checks.InterfaceSyntaxCheck.typeVars"
 
 isTypeSyn :: QualIdent -> TypeEnv -> Bool
 isTypeSyn tc tEnv = case qualLookupTypeKind tc tEnv of

@@ -85,12 +85,12 @@ import Env.Value
 -- value definitions is performed.
 
 typeCheck :: ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv -> InstEnv -> [Decl a]
-          -> ([Decl PredType], ValueEnv, [Message])
+          -> ([Decl Type], ValueEnv, [Message])
 typeCheck m tcEnv vEnv clsEnv inEnv ds = runTCM (checkDecls ds) initState
   where initState = TcState m tcEnv vEnv clsEnv (inEnv, Map.empty)
                             [intType, floatType] idSubst emptySigEnv 1 []
 
-checkDecls :: [Decl a] -> TCM [Decl PredType]
+checkDecls :: [Decl a] -> TCM [Decl Type]
 checkDecls ds = do
   bindConstrs
   mapM_ checkFieldLabel (filter isTypeDecl ds) &&> bindLabels
@@ -255,22 +255,22 @@ bindConstrs' m tcEnv vEnv = foldr (bindData . snd) vEnv $ localBindings tcEnv
 bindConstr :: ModuleIdent -> Int -> Type -> DataConstr -> ValueEnv -> ValueEnv
 bindConstr m n ty (DataConstr c tys) =
   bindGlobalInfo (\qc tyScheme -> DataConstructor qc arity ls tyScheme) m c
-                 (predType (TypeForall [0..n-1] (foldr TypeArrow ty tys)))
+                 (TypeForall [0..n-1] (predType (foldr TypeArrow ty tys)))
   where arity = length tys
         ls    = replicate arity anonId
 bindConstr m n ty (RecordConstr c ls tys) =
   bindGlobalInfo (\qc tyScheme -> DataConstructor qc arity ls tyScheme) m c
-                 (predType (TypeForall [0..n-1] (foldr TypeArrow ty tys)))
+                 (TypeForall [0..n-1] (predType (foldr TypeArrow ty tys)))
   where arity = length tys
 
 bindNewConstr :: ModuleIdent -> Int -> Type -> DataConstr -> ValueEnv
               -> ValueEnv
 bindNewConstr m n cty (DataConstr c [lty]) =
   bindGlobalInfo (\qc tyScheme -> NewtypeConstructor qc anonId tyScheme) m c
-                 (predType (TypeForall [0..n-1] (TypeArrow lty cty)))
+                 (TypeForall [0..n-1] (predType (TypeArrow lty cty)))
 bindNewConstr m n cty (RecordConstr c [l] [lty]) =
   bindGlobalInfo (\qc tyScheme -> NewtypeConstructor qc l tyScheme) m c
-                 (predType (TypeForall [0..n-1] (TypeArrow lty cty)))
+                 (TypeForall [0..n-1] (predType (TypeArrow lty cty)))
 bindNewConstr _ _ _ _ = internalError
   "TypeCheck.bindConstrs'.bindNewConstr: newtype with illegal constructors"
 
@@ -302,7 +302,7 @@ tcFieldLabel :: HasPosition p => [Ident] -> (Ident, p, TypeExpr)
 tcFieldLabel tvs (l, p, ty) = do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv
-  let PredType _ (TypeForall vs ty') = polyType $ expandMonoType m tcEnv tvs ty
+  let TypeForall vs (TypeContext _ ty') = polyType $ expandMonoType m tcEnv tvs ty
   unless (length vs <= length tvs) $ report $ errSkolemFieldLabel p l
   return (l, p, ty')
 
@@ -353,7 +353,7 @@ bindLabel :: ModuleIdent -> Int -> Type -> (Ident, [QualIdent], Type)
           -> ValueEnv -> ValueEnv
 bindLabel m n ty (l, lcs, lty) =
   bindGlobalInfo (\qc tyScheme -> Label qc lcs tyScheme) m l
-                 (predType (TypeForall [0..n-1] (TypeArrow ty lty)))
+                 (TypeForall [0..n-1] (predType (TypeArrow ty lty)))
 
 -- Defining class methods:
 -- Last, the types of all class methods are added to the value environment.
@@ -388,7 +388,7 @@ setDefaults (DefaultDecl _ tys) = mapM toDefaultType tys >>= setDefaultTypes
   where
     toDefaultType =
       liftM snd . (inst =<<) . liftM typeScheme
-                . expandPoly . QualTypeExpr NoSpanInfo []
+                . expandPoly . ContextType NoSpanInfo []
 setDefaults _ = ok
 
 -- Type Signatures:
@@ -397,12 +397,12 @@ setDefaults _ = ok
 -- use in the error message that is printed when the inferred type is
 -- less general than the signature.
 
-type SigEnv = Map.Map Ident QualTypeExpr
+type SigEnv = Map.Map Ident TypeExpr
 
 emptySigEnv :: SigEnv
 emptySigEnv = Map.empty
 
-bindTypeSig :: Ident -> QualTypeExpr -> SigEnv -> SigEnv
+bindTypeSig :: Ident -> TypeExpr -> SigEnv -> SigEnv
 bindTypeSig = Map.insert
 
 bindTypeSigs :: Decl a -> SigEnv -> SigEnv
@@ -410,7 +410,7 @@ bindTypeSigs (TypeSig _ vs qty) env =
   foldr (flip bindTypeSig qty) env vs
 bindTypeSigs _                  env = env
 
-lookupTypeSig :: Ident -> SigEnv -> Maybe QualTypeExpr
+lookupTypeSig :: Ident -> SigEnv -> Maybe TypeExpr
 lookupTypeSig = Map.lookup
 
 -- Declaration groups:
@@ -428,19 +428,19 @@ lookupTypeSig = Map.lookup
 -- whose type cannot be generalized must not be generalized in the other
 -- declarations of that group as well.
 
-tcDecls :: [Decl a] -> TCM (PredSet, [Decl PredType])
+tcDecls :: [Decl a] -> TCM (PredSet, [Decl Type])
 tcDecls = liftM (fmap fromPDecls) . tcPDecls . toPDecls
 
-tcPDecls :: [PDecl a] -> TCM (PredSet, [PDecl PredType])
+tcPDecls :: [PDecl a] -> TCM (PredSet, [PDecl Type])
 tcPDecls pds = withLocalSigEnv $ do
   let (vpds, opds) = partition (isValueDecl . snd) pds
   setSigEnv $ foldr (bindTypeSigs . snd) emptySigEnv $ opds
   m <- getModuleIdent
   (ps, vpdss') <-
     mapAccumM tcPDeclGroup emptyPredSet $ scc (bv . snd) (qfv m . snd) vpds
-  return (ps, map untyped opds ++ concat (vpdss' :: [[PDecl PredType]]))
+  return (ps, map untyped opds ++ concat (vpdss' :: [[PDecl Type]]))
 
-tcPDeclGroup :: PredSet -> [PDecl a] -> TCM (PredSet, [PDecl PredType])
+tcPDeclGroup :: PredSet -> [PDecl a] -> TCM (PredSet, [PDecl Type])
 tcPDeclGroup ps [(i, ExternalDecl p fs)] = do
   tys <- mapM (tcExternal . varIdent) fs
   return (ps, [(i, ExternalDecl p (zipWith (fmap . const . predType) tys fs))])
@@ -469,7 +469,7 @@ tcPDeclGroup ps pds = do
   (ps'', expPds') <- mapAccumM (uncurry . tcCheckPDecl) gps expPds
   return (ps'', impPds'' ++ expPds')
 
-partitionPDecls :: SigEnv -> [PDecl a] -> ([PDecl a], [(QualTypeExpr, PDecl a)])
+partitionPDecls :: SigEnv -> [PDecl a] -> ([PDecl a], [(TypeExpr, PDecl a)])
 partitionPDecls sigs =
   foldr (\pd -> maybe (implicit pd) (explicit pd) (typeSig $ snd pd)) ([], [])
   where implicit pd ~(impPds, expPds) = (pd : impPds, expPds)
@@ -478,13 +478,13 @@ partitionPDecls sigs =
         typeSig (PatternDecl _ (VariablePattern _ _ v) _) = lookupTypeSig v sigs
         typeSig _ = Nothing
 
-bindVars :: ModuleIdent -> ValueEnv -> [(Ident, Int, PredType)] -> ValueEnv
+bindVars :: ModuleIdent -> ValueEnv -> [(Ident, Int, Type)] -> ValueEnv
 bindVars m = foldr $ uncurry3 $ flip (bindFun m) False
 
-rebindVars :: ModuleIdent -> ValueEnv -> [(Ident, Int, PredType)] -> ValueEnv
+rebindVars :: ModuleIdent -> ValueEnv -> [(Ident, Int, Type)] -> ValueEnv
 rebindVars m = foldr $ uncurry3 $ flip (rebindFun m) False
 
-tcDeclVars :: Decl a -> TCM [(Ident, Int, PredType)]
+tcDeclVars :: Decl a -> TCM [(Ident, Int, Type)]
 tcDeclVars (FunctionDecl _ _ f eqs) = do
   sigs <- getSigEnv
   let n = eqnArity $ head eqs
@@ -500,7 +500,7 @@ tcDeclVars (PatternDecl _ t _) = case t of
   _ -> mapM (tcDeclVar False) (bv t)
 tcDeclVars _ = internalError "TypeCheck.tcDeclVars"
 
-tcDeclVar :: Bool -> Ident -> TCM (Ident, Int, PredType)
+tcDeclVar :: Bool -> Ident -> TCM (Ident, Int, Type)
 tcDeclVar poly v = do
   sigs <- getSigEnv
   case lookupTypeSig v sigs of
@@ -513,7 +513,7 @@ tcDeclVar poly v = do
         lambdaVar v
     Nothing -> lambdaVar v
 
-tcPDecl :: PredSet -> PDecl a -> TCM (PredSet, (Type, PDecl PredType))
+tcPDecl :: PredSet -> PDecl a -> TCM (PredSet, (Type, PDecl Type))
 tcPDecl ps (i, FunctionDecl p _ f eqs) = do
   vEnv <- getValueEnv
   tcFunctionPDecl i ps (varType f vEnv) p f eqs
@@ -528,20 +528,20 @@ tcPDecl _ _ = internalError "TypeCheck.tcPDecl"
 -- signature. This prevents missing instance errors when the inferred type
 -- of a function is less general than the declared type.
 
-tcFunctionPDecl :: Int -> PredSet -> PredType -> SpanInfo -> Ident
-                -> [Equation a] -> TCM (PredSet, (Type, PDecl PredType))
+tcFunctionPDecl :: Int -> PredSet -> Type -> SpanInfo -> Ident
+                -> [Equation a] -> TCM (PredSet, (Type, PDecl Type))
 tcFunctionPDecl i ps tySc p f eqs = do
   (_, ty) <- inst tySc
   (ps', eqs') <- mapAccumM (tcEquation ty) ps eqs
   return (ps', (ty, (i, FunctionDecl p (rawPredType tySc) f eqs')))
 
 tcEquation :: Type -> PredSet -> Equation a
-           -> TCM (PredSet, Equation PredType)
+           -> TCM (PredSet, Equation Type)
 tcEquation ty ps eqn@(Equation p lhs rhs) =
   tcEqn p lhs rhs >>- unifyDecl p "equation" (ppEquation eqn) ps ty
 
 tcEqn :: SpanInfo -> Lhs a -> Rhs a
-      -> TCM (PredSet, Type, Equation PredType)
+      -> TCM (PredSet, Type, Equation Type)
 tcEqn p lhs rhs = do
   (ps, tys, lhs', ps', ty, rhs') <- withLocalValueEnv $ do
     bindLambdaVars lhs
@@ -558,7 +558,7 @@ bindLambdaVars t = do
   vs <- mapM lambdaVar (nub $ bv t)
   modifyValueEnv $ flip (bindVars m) vs
 
-lambdaVar :: Ident -> TCM (Ident, Int, PredType)
+lambdaVar :: Ident -> TCM (Ident, Int, Type)
 lambdaVar v = do
   ty <- freshTypeVar
   return (v, 0, monoType ty)
@@ -601,16 +601,16 @@ applyDefaultsDecl p what doc fvs ps ty = do
 -- Recall that the compiler generalizes only the types of variable and
 -- function declarations.
 
-fixType :: PredType -> PDecl PredType -> PDecl PredType
-fixType ~(PredType ps (TypeForall _ ty)) (i, FunctionDecl p _ f eqs) =
-  (i, FunctionDecl p (PredType ps ty) f eqs)
-fixType ~(PredType ps (TypeForall _ ty)) pd@(i, PatternDecl p t rhs) = case t of
+fixType :: Type -> PDecl Type -> PDecl Type
+fixType ~(TypeForall _ (TypeContext ps ty)) (i, FunctionDecl p _ f eqs) =
+  (i, FunctionDecl p (TypeContext ps ty) f eqs)
+fixType ~(TypeForall _ (TypeContext ps ty)) pd@(i, PatternDecl p t rhs) = case t of
   VariablePattern spi _ v
-    -> (i, PatternDecl p (VariablePattern spi (PredType ps ty) v) rhs)
+    -> (i, PatternDecl p (VariablePattern spi (TypeContext ps ty) v) rhs)
   _ -> pd
 fixType _ _ = internalError "TypeCheck.fixType"
 
-declVars :: Decl PredType -> [(Ident, Int, PredType)]
+declVars :: Decl Type -> [(Ident, Int, Type)]
 declVars (FunctionDecl _ pty f eqs) = [(f, eqnArity $ head eqs, typeScheme pty)]
 declVars (PatternDecl _ t _) = case t of
   VariablePattern _ pty v -> [(v, 0, typeScheme pty)]
@@ -627,8 +627,8 @@ declVars _ = internalError "TypeCheck.declVars"
 -- because the context of a function's type signature is ignored in the
 -- function 'tcFunctionPDecl' above.
 
-tcCheckPDecl :: PredSet -> QualTypeExpr -> PDecl a
-             -> TCM (PredSet, PDecl PredType)
+tcCheckPDecl :: PredSet -> TypeExpr -> PDecl a
+             -> TCM (PredSet, PDecl Type)
 tcCheckPDecl ps qty pd = do
   (ps', (ty, pd')) <- tcPDecl ps pd
   fvs <- computeFvEnv
@@ -639,8 +639,8 @@ tcCheckPDecl ps qty pd = do
       tySc = if poly then gen fvs lps ty' else monoType ty'
   checkPDeclType qty gps tySc pd'
 
-checkPDeclType :: QualTypeExpr -> PredSet -> PredType -> PDecl PredType
-               -> TCM (PredSet, PDecl PredType)
+checkPDeclType :: TypeExpr -> PredSet -> Type -> PDecl Type
+               -> TCM (PredSet, PDecl Type)
 checkPDeclType qty ps tySc (i, FunctionDecl p _ f eqs) = do
   pty <- expandPoly qty
   unlessM (checkTypeSig pty tySc) $ do
@@ -655,8 +655,8 @@ checkPDeclType qty ps tySc (i, PatternDecl p (VariablePattern spi _ v) rhs) = do
   return (ps, (i, PatternDecl p (VariablePattern spi pty v) rhs))
 checkPDeclType _ _ _ _ = internalError "TypeCheck.checkPDeclType"
 
-checkTypeSig :: PredType -> PredType -> TCM Bool
-checkTypeSig (PredType sigPs sigTy) (PredType ps (TypeForall _ ty)) = do
+checkTypeSig :: Type -> Type -> TCM Bool
+checkTypeSig (TypeContext sigPs sigTy) (TypeForall _ (TypeContext ps ty)) = do
   clsEnv <- getClassEnv
   return $
     ty `eqTypes` sigTy &&
@@ -847,7 +847,7 @@ bindArity v n = bindTopEnv v (Value (qualify v) False n undefined)
 -- that the compiler has to add the class constraint explicitly to the type
 -- signature.
 
-tcTopPDecl :: PDecl a -> TCM (PDecl PredType)
+tcTopPDecl :: PDecl a -> TCM (PDecl Type)
 tcTopPDecl (i, DataDecl p tc tvs cs clss) =
   return (i, DataDecl p tc tvs cs clss)
 tcTopPDecl (i, ExternalDataDecl p tc tvs) =
@@ -863,7 +863,7 @@ tcTopPDecl (i, ClassDecl p cx cls tv ds) = withLocalSigEnv $ do
   where (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
 tcTopPDecl (i, InstanceDecl p cx qcls ty ds) = do
   tcEnv <- getTyConsEnv
-  pty <- expandPoly $ QualTypeExpr NoSpanInfo cx ty
+  pty <- expandPoly $ ContextType NoSpanInfo cx ty
   mid <- getModuleIdent
   let origCls = getOrigName mid qcls tcEnv
       clsQual = head $ filter isQualified $ reverseLookupByOrigName origCls tcEnv
@@ -873,26 +873,25 @@ tcTopPDecl (i, InstanceDecl p cx qcls ty ds) = do
   where (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
 tcTopPDecl _ = internalError "Checks.TypeCheck.tcTopDecl"
 
-tcClassMethodPDecl :: QualIdent -> Ident -> PDecl a -> TCM (PDecl PredType)
+tcClassMethodPDecl :: QualIdent -> Ident -> PDecl a -> TCM (PDecl Type)
 tcClassMethodPDecl qcls tv pd@(_, FunctionDecl _ _ f _) = do
   methTy <- classMethodType qualify f
   (tySc, pd') <- tcMethodPDecl methTy pd
   sigs <- getSigEnv
-  let QualTypeExpr spi cx ty = fromJust $ lookupTypeSig f sigs
-      qty = QualTypeExpr spi
+  let ContextType spi cx ty = fromJust $ lookupTypeSig f sigs
+      qty = ContextType spi
               (Constraint NoSpanInfo qcls (VariableType NoSpanInfo tv) : cx) ty
   checkClassMethodType qty tySc pd'
 tcClassMethodPDecl _ _ _ = internalError "TypeCheck.tcClassMethodPDecl"
 
-tcInstanceMethodPDecl :: QualIdent -> PredType -> PDecl a
-                      -> TCM (PDecl PredType)
+tcInstanceMethodPDecl :: QualIdent -> Type -> PDecl a -> TCM (PDecl Type)
 tcInstanceMethodPDecl qcls pty pd@(_, FunctionDecl _ _ f _) = do
   methTy <- instMethodType (qualifyLike qcls) pty f
   (tySc, pd') <- tcMethodPDecl (typeScheme methTy) pd
   checkInstMethodType (normalize 0 methTy) tySc pd'
 tcInstanceMethodPDecl _ _ _ = internalError "TypeCheck.tcInstanceMethodPDecl"
 
-tcMethodPDecl :: PredType -> PDecl a -> TCM (PredType, PDecl PredType)
+tcMethodPDecl :: Type -> PDecl a -> TCM (Type, PDecl Type)
 tcMethodPDecl tySc (i, FunctionDecl p _ f eqs) = withLocalValueEnv $ do
   m <- getModuleIdent
   modifyValueEnv $ bindFun m f True (eqnArity $ head eqs) tySc
@@ -901,8 +900,8 @@ tcMethodPDecl tySc (i, FunctionDecl p _ f eqs) = withLocalValueEnv $ do
   return (gen Set.empty ps $ subst theta ty, pd)
 tcMethodPDecl _ _ = internalError "TypeCheck.tcMethodPDecl"
 
-checkClassMethodType :: QualTypeExpr -> PredType -> PDecl PredType
-                     -> TCM (PDecl PredType)
+checkClassMethodType :: TypeExpr -> Type -> PDecl Type
+                     -> TCM (PDecl Type)
 checkClassMethodType qty tySc pd@(_, FunctionDecl p _ f _) = do
   pty <- expandPoly qty
   unlessM (checkTypeSig pty tySc) $ do
@@ -911,8 +910,7 @@ checkClassMethodType qty tySc pd@(_, FunctionDecl p _ f _) = do
   return pd
 checkClassMethodType _ _ _ = internalError "TypeCheck.checkClassMethodType"
 
-checkInstMethodType :: PredType -> PredType -> PDecl PredType
-                    -> TCM (PDecl PredType)
+checkInstMethodType :: Type -> Type -> PDecl Type -> TCM (PDecl Type)
 checkInstMethodType pty tySc pd@(_, FunctionDecl p _ f _) = do
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
@@ -921,7 +919,7 @@ checkInstMethodType pty tySc pd@(_, FunctionDecl p _ f _) = do
   return pd
 checkInstMethodType _ _ _ = internalError "TypeCheck.checkInstMethodType"
 
-classMethodType :: (Ident -> QualIdent) -> Ident -> TCM PredType
+classMethodType :: (Ident -> QualIdent) -> Ident -> TCM Type
 classMethodType qual f = do
   m <- getModuleIdent
   vEnv <- getValueEnv
@@ -931,11 +929,13 @@ classMethodType qual f = do
 -- element as this is guaranteed to be the class constraint (see module 'Types'
 -- for more information).
 
-instMethodType :: (Ident -> QualIdent) -> PredType -> Ident -> TCM PredType
-instMethodType qual (PredType ps ty) f = do
-  tySc@(PredType ps' _) <- classMethodType qual f
-  let PredType ps'' ty'' = instanceType ty (PredType (Set.deleteMin ps') (rawType tySc))
-  return $ PredType (ps `Set.union` ps'') ty''
+instMethodType :: (Ident -> QualIdent) -> Type -> Ident -> TCM Type
+instMethodType qual (TypeContext ps ty) f = do
+  tySc <- classMethodType qual f
+  let TypeForall _ (TypeContext ps' _) = tySc
+      TypeContext ps'' ty'' = instanceType ty (TypeContext (Set.deleteMin ps') (rawType tySc))
+  return $ TypeContext (ps `Set.union` ps'') ty''
+instMethodType _ _ _ = internalError "TypeCheck.instMethodType"
 
 -- External functions:
 
@@ -944,11 +944,13 @@ tcExternal f = do
   sigs <- getSigEnv
   case lookupTypeSig f sigs of
     Nothing -> internalError "TypeCheck.tcExternal: type signature not found"
-    Just (QualTypeExpr _ _ ty) -> do
+    Just (ContextType _ _ ty) -> do
       m <- getModuleIdent
-      PredType _ ty' <- expandPoly $ QualTypeExpr NoSpanInfo [] ty
+      tyCtx <- expandPoly $ ContextType NoSpanInfo [] ty
+      let TypeContext _ ty' = tyCtx
       modifyValueEnv $ bindFun m f False (arrowArity ty') (polyType ty')
       return ty'
+    _ -> internalError "TypeCheck.tcExternal"
 
 -- Patterns and Expressions:
 -- Note that the type attribute associated with a constructor or infix
@@ -966,7 +968,7 @@ tcLiteral poly (Float _)
   | otherwise = liftM ((,) emptyPredSet) (freshConstrained fractionalTypes)
 tcLiteral _ (String _) = return (emptyPredSet, stringType)
 
-tcLhs :: HasPosition p => p -> Lhs a -> TCM (PredSet, [Type], Lhs PredType)
+tcLhs :: HasPosition p => p -> Lhs a -> TCM (PredSet, [Type], Lhs Type)
 tcLhs p (FunLhs spi f ts) = do
   (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern p) ts
   return (Set.unions pss, tys, FunLhs spi f ts')
@@ -987,7 +989,7 @@ tcLhs p (ApLhs spi lhs ts) = do
 -- in slighty misleading error messages if the type check fails.
 
 tcPattern :: HasPosition p => p -> Pattern a
-          -> TCM (PredSet, Type, Pattern PredType)
+          -> TCM (PredSet, Type, Pattern Type)
 tcPattern _ (LiteralPattern spi _ l) = do
   (ps, ty) <- tcLiteral False l
   return (ps, ty, LiteralPattern spi (predType ty) l)
@@ -1047,9 +1049,9 @@ tcPattern p (InfixFuncPattern spi a t1 op t2) = do
   return (ps, ty, InfixFuncPattern spi a' t1' op' t2')
 
 tcFuncPattern :: HasPosition p => p -> SpanInfo -> Doc -> QualIdent
-              -> ([Pattern PredType] -> [Pattern PredType])
+              -> ([Pattern Type] -> [Pattern Type])
               -> PredSet -> Type -> [Pattern a]
-              -> TCM (PredSet, Type, Pattern PredType)
+              -> TCM (PredSet, Type, Pattern Type)
 tcFuncPattern _ spi _ f ts ps ty [] =
   return (ps, ty, FunctionPattern spi (predType ty) f (ts []))
 tcFuncPattern p spi doc f ts ps ty (t':ts') = do
@@ -1060,12 +1062,12 @@ tcFuncPattern p spi doc f ts ps ty (t':ts') = do
   where t = FunctionPattern spi (predType ty) f (ts [])
 
 tcPatternArg :: HasPosition p => p -> String -> Doc -> PredSet -> Type
-             -> Pattern a -> TCM (PredSet, Pattern PredType)
+             -> Pattern a -> TCM (PredSet, Pattern Type)
 tcPatternArg p what doc ps ty t =
   tcPattern p t >>-
     unify p what (doc $-$ text "Term:" <+> ppPattern 0 t) ps ty
 
-tcRhs :: Rhs a -> TCM (PredSet, Type, Rhs PredType)
+tcRhs :: Rhs a -> TCM (PredSet, Type, Rhs Type)
 tcRhs (SimpleRhs p e ds) = do
   (ps, ds', ps', ty, e') <- withLocalValueEnv $ do
     (ps, ds') <- tcDecls ds
@@ -1079,14 +1081,14 @@ tcRhs (GuardedRhs spi es ds) = withLocalValueEnv $ do
   (ps', es') <- mapAccumM (tcCondExpr ty) ps es
   return (ps', ty, GuardedRhs spi es' ds')
 
-tcCondExpr :: Type -> PredSet -> CondExpr a -> TCM (PredSet, CondExpr PredType)
+tcCondExpr :: Type -> PredSet -> CondExpr a -> TCM (PredSet, CondExpr Type)
 tcCondExpr ty ps (CondExpr p g e) = do
   (ps', g') <- tcExpr p g >>- unify p "guard" (ppExpr 0 g) ps boolType
   (ps'', e') <- tcExpr p e >>- unify p "guarded expression" (ppExpr 0 e) ps' ty
   return (ps'', CondExpr p g' e')
 
 tcExpr :: HasPosition p => p -> Expression a
-       -> TCM (PredSet, Type, Expression PredType)
+       -> TCM (PredSet, Type, Expression Type)
 tcExpr _ (Literal spi _ l) = do
   (ps, ty) <- tcLiteral True l
   return (ps, ty, Literal spi (predType ty) l)
@@ -1225,18 +1227,18 @@ tcExpr p (Case spi ct e as) = do
   return (ps', tyRhs, Case spi ct e' as')
 
 tcArg :: HasPosition p => p -> String -> Doc -> PredSet -> Type -> Expression a
-      -> TCM (PredSet, Expression PredType)
+      -> TCM (PredSet, Expression Type)
 tcArg p what doc ps ty e =
   tcExpr p e >>- unify p what (doc $-$ text "Term:" <+> ppExpr 0 e) ps ty
 
 tcAlt :: Type -> Type -> PredSet -> Alt a
-      -> TCM (PredSet, Alt PredType)
+      -> TCM (PredSet, Alt Type)
 tcAlt tyLhs tyRhs ps a@(Alt p t rhs) =
   tcAltern tyLhs p t rhs >>-
     unify p "case alternative" (ppAlt a) ps tyRhs
 
 tcAltern :: Type -> SpanInfo -> Pattern a
-         -> Rhs a -> TCM (PredSet, Type, Alt PredType)
+         -> Rhs a -> TCM (PredSet, Type, Alt Type)
 tcAltern tyLhs p t rhs = do
   (ps, t', ps', ty', rhs') <- withLocalValueEnv $ do
     bindLambdaVars t
@@ -1249,7 +1251,7 @@ tcAltern tyLhs p t rhs = do
   return (ps'', ty', Alt p t' rhs')
 
 tcQual :: HasPosition p => p -> PredSet -> Statement a
-       -> TCM (PredSet, Statement PredType)
+       -> TCM (PredSet, Statement Type)
 tcQual p ps (StmtExpr spi e) = do
   (ps', e') <- tcExpr p e >>- unify p "guard" (ppExpr 0 e) ps boolType
   return (ps', StmtExpr spi e')
@@ -1264,7 +1266,7 @@ tcQual p ps q@(StmtBind spi t e) = do
   return (ps'', StmtBind spi t' e')
 
 tcStmt :: HasPosition p => p -> PredSet -> Maybe Type -> Statement a
-       -> TCM ((PredSet, Maybe Type), Statement PredType)
+       -> TCM ((PredSet, Maybe Type), Statement Type)
 tcStmt p ps mTy (StmtExpr spi e) = do
   (ps', ty) <- maybe freshMonadType (return . (,) emptyPredSet) mTy
   alpha <- freshTypeVar
@@ -1283,7 +1285,7 @@ tcStmt p ps mTy st@(StmtBind spi t e) = do
   (ps''', t') <- tcPatternArg p "statement" (ppStmt st) ps'' alpha t
   return ((ps''', Just ty), StmtBind spi t' e')
 
-tcInfixOp :: InfixOp a -> TCM (PredSet, Type, InfixOp PredType)
+tcInfixOp :: InfixOp a -> TCM (PredSet, Type, InfixOp Type)
 tcInfixOp (InfixOp _ op) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
@@ -1298,9 +1300,9 @@ tcInfixOp (InfixConstr _ op) = do
 -- The first unification in 'tcField' cannot fail; it serves only for
 -- instantiating the type variables in the field label's type.
 
-tcField :: (Position -> a b -> TCM (PredSet, Type, a PredType))
+tcField :: (Position -> a b -> TCM (PredSet, Type, a Type))
         -> String -> (a b -> Doc) -> Type -> PredSet -> Field (a b)
-        -> TCM (PredSet, Field (a PredType))
+        -> TCM (PredSet, Field (a Type))
 tcField check what doc ty ps (Field p l x) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
@@ -1552,8 +1554,8 @@ freshMonadType = freshPredType [qMonadId]
 freshConstrained :: [Type] -> TCM Type
 freshConstrained = freshVar . TypeConstrained
 
-inst :: PredType -> TCM (PredSet, Type)
-inst (PredType ps (TypeForall vs ty)) = do
+inst :: Type -> TCM (PredSet, Type)
+inst (TypeForall vs (TypeContext ps ty)) = do
   tys <- replicateM (length vs) freshTypeVar
   return (expandAliasType tys ps, expandAliasType tys ty)
 inst pty = internalError $ "Checks.TypeCheck.inst: " ++ show pty
@@ -1563,12 +1565,12 @@ inst pty = internalError $ "Checks.TypeCheck.inst: " ++ show pty
 -- type variables that are free in tau and not fixed by the environment.
 -- The set of the latter is given by gvs.
 
-gen :: Set.Set Int -> PredSet -> Type -> PredType
-gen gvs ps ty = PredType ps' (TypeForall tvs ty')
+gen :: Set.Set Int -> PredSet -> Type -> Type
+gen gvs ps ty = TypeForall tvs (TypeContext ps' ty')
   where tvs = [tv | tv <- nub (typeVars ty), tv `Set.notMember` gvs]
         tvs' = map TypeVariable [0 ..]
         theta = foldr2 bindSubst idSubst tvs tvs'
-        PredType ps' ty' = subst theta (PredType ps ty)
+        TypeContext ps' ty' = subst theta (TypeContext ps ty)
 
 -- Auxiliary Functions:
 -- The functions 'constrType', 'varType', 'funType' and 'labelType' are used
@@ -1586,7 +1588,7 @@ gen gvs ps ty = PredType ps' (TypeForall tvs ty')
 -- data constructor. The function 'varArity' works like 'varType' but returns
 -- a variable's arity instead of its type.
 
-constrType :: ModuleIdent -> QualIdent -> ValueEnv -> PredType
+constrType :: ModuleIdent -> QualIdent -> ValueEnv -> Type
 constrType m c vEnv = case qualLookupValue c vEnv of
   [DataConstructor  _ _ _ tySc] -> tySc
   [NewtypeConstructor _ _ tySc] -> tySc
@@ -1604,7 +1606,7 @@ constrLabels m c vEnv = case qualLookupValue c vEnv of
     [NewtypeConstructor _ l _] -> [l]
     _ -> internalError $ "TypeCheck.constrLabels: " ++ show c
 
-varType :: Ident -> ValueEnv -> PredType
+varType :: Ident -> ValueEnv -> Type
 varType v vEnv = case lookupValue v vEnv of
   Value _ _ _ tySc : _ -> tySc
   _ -> internalError $ "TypeCheck.varType: " ++ show v
@@ -1615,7 +1617,7 @@ varArity v vEnv = case qualLookupValue v vEnv of
   Label   _ _ _ : _ -> 1
   _ -> internalError $ "TypeCheck.varArity: " ++ show v
 
-funType :: ModuleIdent -> QualIdent -> ValueEnv -> PredType
+funType :: ModuleIdent -> QualIdent -> ValueEnv -> Type
 funType m f vEnv = case qualLookupValue f vEnv of
   [Value _ _ _ tySc] -> tySc
   [Label _ _ tySc] -> tySc
@@ -1624,7 +1626,7 @@ funType m f vEnv = case qualLookupValue f vEnv of
     [Label _ _ tySc] -> tySc
     _ -> internalError $ "TypeCheck.funType: " ++ show f
 
-labelType :: ModuleIdent -> QualIdent -> ValueEnv -> PredType
+labelType :: ModuleIdent -> QualIdent -> ValueEnv -> Type
 labelType m l vEnv = case qualLookupValue l vEnv of
   [Label _ _ tySc] -> tySc
   _ -> case qualLookupValue (qualQualify m l) vEnv of
@@ -1633,7 +1635,7 @@ labelType m l vEnv = case qualLookupValue l vEnv of
 
 -- The function 'expandPoly' handles the expansion of type aliases.
 
-expandPoly :: QualTypeExpr -> TCM PredType
+expandPoly :: TypeExpr -> TCM Type
 expandPoly qty = do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv
@@ -1661,7 +1663,7 @@ computeFvEnv = do
   vEnv <- getValueEnv
   return $ fvEnv (subst theta vEnv)
 
-localTypes :: ValueEnv -> [PredType]
+localTypes :: ValueEnv -> [Type]
 localTypes vEnv = [tySc | (_, Value _ _ _ tySc) <- localBindings vEnv]
 
 -- ---------------------------------------------------------------------------
@@ -1672,16 +1674,16 @@ errPolymorphicVar :: Ident -> Message
 errPolymorphicVar v = posMessage v $ hsep $ map text
   ["Variable", idName v, "has a polymorphic type"]
 
-errTypeSigTooGeneral :: HasPosition a => a -> ModuleIdent -> Doc -> QualTypeExpr
-                     -> PredType -> Message
+errTypeSigTooGeneral :: HasPosition a => a -> ModuleIdent -> Doc -> TypeExpr
+                     -> Type -> Message
 errTypeSigTooGeneral p m what qty pty = posMessage p $ vcat
   [ text "Type signature too general", what
   , text "Inferred type:"  <+> ppPredType m (rawPredType pty)
-  , text "Type signature:" <+> ppQualTypeExpr qty
+  , text "Type signature:" <+> ppTypeExpr 0 qty
   ]
 
-errMethodTypeTooSpecific :: HasPosition a => a -> ModuleIdent -> Doc -> PredType
-                         -> PredType -> Message
+errMethodTypeTooSpecific :: HasPosition a => a -> ModuleIdent -> Doc -> Type
+                         -> Type -> Message
 errMethodTypeTooSpecific p m what pty pty2 = posMessage p $ vcat
   [ text "Method type too specific", what
   , text "Inferred type:" <+> ppPredType m (rawPredType pty2)
@@ -1747,7 +1749,7 @@ errAmbiguousTypeVariable :: HasPosition a => ModuleIdent -> a -> String -> Doc
                          -> PredSet -> Type -> Int -> Message
 errAmbiguousTypeVariable m p what doc ps ty tv = posMessage p $ vcat
   [ text "Ambiguous type variable" <+> ppType m (TypeVariable tv)
-  , text "in type" <+> ppPredType m (PredType ps ty)
+  , text "in type" <+> ppPredType m (TypeContext ps ty)
   , text "inferred for" <+> text what
   , doc
   ]

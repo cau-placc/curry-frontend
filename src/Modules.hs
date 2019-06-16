@@ -109,7 +109,7 @@ compileModule opts m fn = do
   withFlat = any (`elem` optTargetTypes opts) [TypedFlatCurry, FlatCurry]
 
 loadAndCheckModule :: Options -> ModuleIdent -> FilePath
-                   -> CYIO (CompEnv (CS.Module PredType))
+                   -> CYIO (CompEnv (CS.Module Type))
 loadAndCheckModule opts m fn = do
   ce <- loadModule opts m fn >>= checkModule opts
   warnMessages $ uncurry (warnCheck opts) ce
@@ -236,7 +236,7 @@ importSyntaxCheck iEnv (CS.Module _ _ _ _ imps _) = mapM checkImportDecl imps
 
 -- TODO: The order of the checks should be improved!
 checkModule :: Options -> CompEnv (CS.Module ())
-            -> CYIO (CompEnv (CS.Module PredType))
+            -> CYIO (CompEnv (CS.Module Type))
 checkModule opts mdl = do
   _   <- dumpCS DumpParsed mdl
   exc <- extensionCheck  opts mdl >>= dumpCS DumpExtensionChecked
@@ -258,7 +258,7 @@ checkModule opts mdl = do
 -- Translating a module
 -- ---------------------------------------------------------------------------
 
-transModule :: Options -> CompEnv (CS.Module PredType)
+transModule :: Options -> CompEnv (CS.Module Type)
             -> CYIO (CompEnv IL.Module, CompEnv (CS.Module Type))
 transModule opts mdl = do
   derived    <- dumpCS DumpDerived       $ derive         mdl
@@ -377,7 +377,7 @@ writeFlatIntf opts env prog
   useSubDir       = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
   outputInterface = liftIO $ FC.writeFlatCurry (useSubDir targetFile) fint
 
-writeAbstractCurry :: Options -> CompEnv (CS.Module PredType) -> CYIO ()
+writeAbstractCurry :: Options -> CompEnv (CS.Module Type) -> CYIO ()
 writeAbstractCurry opts (env, mdl) = do
   when acyTarget  $ liftIO
                   $ AC.writeCurry (useSubDir $ acyName (filePath env))
