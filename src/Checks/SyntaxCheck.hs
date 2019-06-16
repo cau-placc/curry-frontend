@@ -375,7 +375,9 @@ bindFuncDecl _   _ (FunctionDecl _ _ _ []) _
 bindFuncDecl tcc m (FunctionDecl _ _ f (eq:_)) env
   = let arty = length $ snd $ getFlatLhs eq
     in  bindGlobal tcc m f (GlobalVar (qualifyWith m f) arty) env
-bindFuncDecl tcc m (TypeSig _ fs (ContextType _ _ ty)) env
+bindFuncDecl tcc m (TypeSig spi fs (ContextType _ _ ty)) env
+  = bindFuncDecl tcc m (TypeSig spi fs ty) env
+bindFuncDecl tcc m (TypeSig _ fs ty) env
   = foldr bindTS env $ map (qualifyWith m) fs
   where
     bindTS qf env'

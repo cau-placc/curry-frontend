@@ -118,7 +118,7 @@ toPredType tvs ty = toPredType' (enumTypeVars tvs ty) ty
 toPredType' :: Map.Map Ident Int -> CS.TypeExpr -> Type
 toPredType' tvs (CS.ContextType _ cx ty) =
   TypeContext (toPredSet' tvs cx) (toType' tvs ty [])
-toPredType' _ _ = internalError "Base.CurryTypes.toPredType'"
+toPredType' tvs ty = TypeContext (toPredSet' tvs []) (toType' tvs ty [])
 
 toQualPredType :: ModuleIdent -> [Ident] -> CS.TypeExpr -> Type
 toQualPredType m tvs = qualifyType m . toPredType tvs
@@ -144,7 +144,9 @@ toMethodType qcls clsvar (CS.ContextType spi cx ty) =
   toPredType [clsvar] (CS.ContextType spi cx' ty)
   where cx' = CS.Constraint NoSpanInfo qcls
                 (CS.VariableType NoSpanInfo clsvar) : cx
-toMethodType _ _ _ = internalError "Base.CurryTypes.toMethodType"
+toMethodType qcls clsvar ty =
+  toPredType [clsvar] (CS.ContextType NoSpanInfo cx' ty)
+  where cx' = [CS.Constraint NoSpanInfo qcls (CS.VariableType NoSpanInfo clsvar)]
 
 fromType :: [Ident] -> Type -> CS.TypeExpr
 fromType tvs ty = fromType' tvs ty []

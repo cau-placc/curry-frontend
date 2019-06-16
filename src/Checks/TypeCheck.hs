@@ -878,11 +878,15 @@ tcClassMethodPDecl qcls tv pd@(_, FunctionDecl _ _ f _) = do
   methTy <- classMethodType qualify f
   (tySc, pd') <- tcMethodPDecl methTy pd
   sigs <- getSigEnv
-  let ContextType spi cx ty = fromJust $ lookupTypeSig f sigs
-      qty = ContextType spi
-              (Constraint NoSpanInfo qcls (VariableType NoSpanInfo tv) : cx) ty
+  let qty = toClassMethodTypeExpr qcls tv $ fromJust $ lookupTypeSig f sigs
   checkClassMethodType qty tySc pd'
 tcClassMethodPDecl _ _ _ = internalError "TypeCheck.tcClassMethodPDecl"
+
+toClassMethodTypeExpr :: QualIdent -> Ident -> TypeExpr -> TypeExpr
+toClassMethodTypeExpr qcls clsvar (ContextType spi cx ty)
+  = ContextType spi (Constraint NoSpanInfo qcls (VariableType NoSpanInfo clsvar) : cx) ty
+toClassMethodTypeExpr qcls clsvar ty
+  = ContextType NoSpanInfo [Constraint NoSpanInfo qcls (VariableType NoSpanInfo clsvar)] ty
 
 tcInstanceMethodPDecl :: QualIdent -> Type -> PDecl a -> TCM (PDecl Type)
 tcInstanceMethodPDecl qcls pty pd@(_, FunctionDecl _ _ f _) = do
@@ -944,13 +948,16 @@ tcExternal f = do
   sigs <- getSigEnv
   case lookupTypeSig f sigs of
     Nothing -> internalError "TypeCheck.tcExternal: type signature not found"
-    Just (ContextType _ _ ty) -> do
+    Just ty -> do
       m <- getModuleIdent
-      tyCtx <- expandPoly $ ContextType NoSpanInfo [] ty
+      tyCtx <- expandPoly $ createContext ty
       let TypeContext _ ty' = tyCtx
       modifyValueEnv $ bindFun m f False (arrowArity ty') (polyType ty')
       return ty'
     _ -> internalError "TypeCheck.tcExternal"
+  where
+    createContext (ContextType _ _ ty) = ContextType NoSpanInfo [] ty
+    createContext ty                   = ContextType NoSpanInfo [] ty
 
 -- Patterns and Expressions:
 -- Note that the type attribute associated with a constructor or infix
