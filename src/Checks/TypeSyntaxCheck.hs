@@ -402,14 +402,27 @@ checkSimpleConstraint c@(Constraint _ _ ty)
 -- must not contain any additional constraints for that class variable.
 
 checkClassMethod :: Ident -> Decl a -> TSCM ()
-checkClassMethod tv (TypeSig spi _ ty@(ContextType _ cx _)) = do
+checkClassMethod tv (TypeSig spi _ ty) = do
   unless (tv `elem` fv ty) $ report $ errAmbiguousType p tv
-  when (tv `elem` fv cx) $ report $ errConstrainedClassVariable p tv
+  constrainedClsVar <- checkConstrainedClsVar tv ty
+  when constrainedClsVar $ report $ errConstrainedClassVariable p tv
   where
     p = spanInfo2Pos spi
-checkClassMethod tv (TypeSig spi _ ty)
-  = unless (tv `elem` fv ty) $ report $ errAmbiguousType (spanInfo2Pos spi) tv
-checkClassMethod _  _                                       = ok
+checkClassMethod _  _                  = ok
+
+checkConstrainedClsVar :: Ident -> TypeExpr -> TSCM Bool
+checkConstrainedClsVar tv (ApplyType _ ty1 ty2)
+  = or <$> mapM (checkConstrainedClsVar tv) [ty1, ty2]
+checkConstrainedClsVar tv (TupleType _ tys)
+  = or <$> mapM (checkConstrainedClsVar tv) tys
+checkConstrainedClsVar tv (ListType _ ty)       = checkConstrainedClsVar tv ty
+checkConstrainedClsVar tv (ArrowType _ ty1 ty2)
+  = or <$> mapM (checkConstrainedClsVar tv) [ty1, ty2]
+checkConstrainedClsVar tv (ParenType _ ty)      = checkConstrainedClsVar tv ty
+checkConstrainedClsVar tv (ContextType _ cx ty)
+  = (||) <$> return (tv `elem` fv cx) <*> checkConstrainedClsVar tv ty
+checkConstrainedClsVar tv (ForallType _ _ ty)   = checkConstrainedClsVar tv ty
+checkConstrainedClsVar _  _                     = return False
 
 checkInstanceType :: SpanInfo -> InstanceType -> TSCM ()
 checkInstanceType p inst = do
