@@ -178,9 +178,9 @@ augmentValues :: ValueEnv -> ValueEnv
 augmentValues = fmap augmentValueInfo
 
 augmentValueInfo :: ValueInfo -> ValueInfo
-augmentValueInfo (Value f True a (TypeForall vs (TypeContext ps ty)))
-  | arrowArity ty == 0 = Value f True a $ TypeForall vs (TypeContext ps ty')
-  where ty' = augmentType ty
+augmentValueInfo (Value f True a (TypeForall vs ty))
+  | arrowArity (unpredType ty) == 0
+    = Value f True a $ TypeForall vs $ augmentType ty
 augmentValueInfo vi = vi
 
 augmentTypes :: TCEnv -> TCEnv
@@ -192,9 +192,9 @@ augmentTypeInfo (TypeClass cls k ms) =
 augmentTypeInfo ti = ti
 
 augmentClassMethod :: ClassMethod -> ClassMethod
-augmentClassMethod mthd@(ClassMethod f a (TypeContext ps ty))
-  | arrowArity ty == 0 =
-    ClassMethod f (Just $ fromMaybe 0 a + 1) $ TypeContext ps $ augmentType ty
+augmentClassMethod mthd@(ClassMethod f a ty)
+  | arrowArity (unpredType ty) == 0 =
+    ClassMethod f (Just $ fromMaybe 0 a + 1) $ augmentType ty
   | otherwise = mthd
 
 augmentInstances :: AugmentEnv -> InstEnv -> InstEnv
@@ -248,7 +248,7 @@ augmentDecl mm (FunctionDecl    p pty f eqs) = do
     m <- maybe getModuleIdent return mm
     augEnv <- getAugEnv
     if isAugmented augEnv (qualifyWith m $ unRenameIdentIf (isJust mm) f)
-      then return $ FunctionDecl p (augmentPredType pty) f eqs'
+      then return $ FunctionDecl p (augmentType pty) f eqs'
       else return $ FunctionDecl p pty f eqs'
 augmentDecl _  (PatternDecl         p t rhs) = PatternDecl p t <$> augment rhs
 augmentDecl _  (ClassDecl    p cx cls tv ds) = do
@@ -284,7 +284,7 @@ instance Augment Expression where
   augment v@(Variable _ pty v') = do
     augEnv <- getAugEnv
     return $ if isAugmented augEnv v'
-               then apply (Variable NoSpanInfo (augmentPredType pty) v')
+               then apply (Variable NoSpanInfo (augmentType pty) v')
                       [Constructor NoSpanInfo predUnitType qUnitId]
                else v
   augment c@(Constructor _ _ _) = return c
@@ -301,11 +301,9 @@ instance Augment Expression where
 instance Augment Alt where
   augment (Alt p t rhs) = Alt p t <$> augment rhs
 
-augmentPredType :: Type -> Type
-augmentPredType (TypeContext ps ty) = TypeContext ps $ augmentType ty
-
 augmentType :: Type -> Type
-augmentType = TypeArrow unitType
+augmentType (TypeContext ps ty) = TypeContext ps $ augmentType ty
+augmentType ty                  = TypeArrow unitType ty
 
 augmentTypeExpr :: TypeExpr -> TypeExpr
 augmentTypeExpr (ContextType spi cx ty) =
@@ -412,7 +410,7 @@ createClassMethodDecl cls =
 defaultClassMethodDecl :: QualIdent -> Ident -> DTM (Decl Type)
 defaultClassMethodDecl cls f = do
   pty <- getClassMethodType cls f
-  let TypeContext _ ty = pty
+  let ty = unpredType pty
   augEnv <- getAugEnv
   let augmented = isAugmented augEnv (qualifyLike cls f)
       pats = if augmented
@@ -512,8 +510,7 @@ createStubs _ = return []
 
 computeMethodDictTypes :: QualIdent -> Ident -> Type -> DTM [Type]
 computeMethodDictTypes cls f ty = do
-  cmty <- getClassMethodType cls f
-  let TypeContext _ ty' = cmty
+  ty' <- unpredType <$> getClassMethodType cls f
   return $ take (length tys - arrowArity ty') tys
   where tys = arrowArgs ty
 
