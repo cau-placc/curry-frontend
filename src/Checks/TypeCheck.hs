@@ -280,11 +280,7 @@ constrType' tc n =
 
 -- When a field label occurs in more than one constructor declaration of
 -- a data type, the compiler ensures that the label is defined
--- consistently, i.e. both occurrences have the same type. In addition,
--- the compiler ensures that no existentially quantified type variable occurs
--- in the type of a field label because such type variables necessarily escape
--- their scope with the type of the record selection function associated with
--- the field label.
+-- consistently, i.e. both occurrences have the same type.
 
 checkFieldLabel :: Decl a -> TCM ()
 checkFieldLabel (DataDecl _ _ tvs cs _) = do
@@ -302,9 +298,7 @@ tcFieldLabel :: HasPosition p => [Ident] -> (Ident, p, TypeExpr)
 tcFieldLabel tvs (l, p, ty) = do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv
-  let TypeForall vs (TypeContext _ ty') = polyType $ expandMonoType m tcEnv tvs ty
-  unless (length vs <= length tvs) $ report $ errSkolemFieldLabel p l
-  return (l, p, ty')
+  return (l, p, expandMonoType m tcEnv tvs ty)
 
 groupLabels :: Eq a => [(a, b, c)] -> [(a, b, [c])]
 groupLabels []               = []
@@ -1721,10 +1715,6 @@ errTypeMismatch p what doc m ty1 ty2 reason = posMessage p $ vcat
   , text "Expected type:" <+> ppType m ty1
   , reason
   ]
-
-errSkolemFieldLabel :: HasPosition a => a -> Ident -> Message
-errSkolemFieldLabel p l = posMessage p $ hsep $ map text
-  ["Existential type escapes with type of record selector", escName l]
 
 errRecursiveType :: ModuleIdent -> Int -> Type -> Doc
 errRecursiveType m tv ty = errIncompatibleTypes m (TypeVariable tv) ty
