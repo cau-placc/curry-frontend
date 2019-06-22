@@ -1602,39 +1602,42 @@ gen gvs ps ty = TypeForall tvs (TypeContext ps' ty')
         theta = foldr2 bindSubst idSubst tvs tvs'
         TypeContext ps' ty' = subst theta (TypeContext ps ty)
 
--- Auxiliary Functions:
--- The functions 'constrType', 'varType', 'funType' and 'labelType' are used
--- to retrieve the type of constructors, pattern variables, variables and
--- labels in expressions, respectively, from the value environment. Because
--- the syntactical correctness has already been verified by the syntax checker,
--- none of these functions should fail.
+-- -----------------------------------------------------------------------------
+-- Auxiliary functions
+-- -----------------------------------------------------------------------------
+
+-- The functions 'constrType', 'varType', 'funType' and 'labelType' are used to
+-- retrieve the type of constructors, pattern variables, variables and labels
+-- in expressions, respectively, from the value environment. Because the
+-- syntactical correctness has already been verified by the syntax checker, none
+-- of these functions should fail.
 
 -- Note that 'varType' can handle ambiguous identifiers and returns the first
 -- available type. This function is used for looking up the type of an
--- identifier on the left hand side of a rule where it unambiguously refers
--- to the local definition.
+-- identifier on the left hand side of a rule where it unambiguously refers to
+-- the local definition.
 
--- The function 'constrLabels' returns a list of all labels belonging to a
--- data constructor. The function 'varArity' works like 'varType' but returns
--- a variable's arity instead of its type.
+-- The function 'constrLabels' returns a list of all labels belonging to a data
+-- constructor. The function 'varArity' works like 'varType' but returns a
+-- variable's arity instead of its type.
 
 constrType :: ModuleIdent -> QualIdent -> ValueEnv -> Type
 constrType m c vEnv = case qualLookupValue c vEnv of
-  [DataConstructor  _ _ _ tySc] -> tySc
+  [DataConstructor _ _ _ tySc]  -> tySc
   [NewtypeConstructor _ _ tySc] -> tySc
   _ -> case qualLookupValue (qualQualify m c) vEnv of
-    [DataConstructor  _ _ _ tySc] -> tySc
-    [NewtypeConstructor _ _ tySc] -> tySc
-    _ -> internalError $ "TypeCheck.constrType: " ++ show c
+         [DataConstructor _ _ _ tySc]  -> tySc
+         [NewtypeConstructor _ _ tySc] -> tySc
+         _ -> internalError $ "TypeCheck.constrType: " ++ show c
 
 constrLabels :: ModuleIdent -> QualIdent -> ValueEnv -> [Ident]
 constrLabels m c vEnv = case qualLookupValue c vEnv of
   [DataConstructor _ _ ls _] -> ls
   [NewtypeConstructor _ l _] -> [l]
   _ -> case qualLookupValue (qualQualify m c) vEnv of
-    [DataConstructor _ _ ls _] -> ls
-    [NewtypeConstructor _ l _] -> [l]
-    _ -> internalError $ "TypeCheck.constrLabels: " ++ show c
+         [DataConstructor _ _ ls _] -> ls
+         [NewtypeConstructor _ l _] -> [l]
+         _ -> internalError $ "TypeCheck.constrLabels: " ++ show c
 
 varType :: Ident -> ValueEnv -> Type
 varType v vEnv = case lookupValue v vEnv of
@@ -1644,48 +1647,44 @@ varType v vEnv = case lookupValue v vEnv of
 varArity :: QualIdent -> ValueEnv -> Int
 varArity v vEnv = case qualLookupValue v vEnv of
   Value _ _ n _ : _ -> n
-  Label   _ _ _ : _ -> 1
+  Label _ _ _ : _   -> 1
   _                 -> internalError $ "TypeCheck.varArity: " ++ show v
 
 funType :: ModuleIdent -> QualIdent -> ValueEnv -> Type
 funType m f vEnv = case qualLookupValue f vEnv of
   [Value _ _ _ tySc] -> tySc
-  [Label _ _ tySc] -> tySc
+  [Label _ _ tySc]   -> tySc
   _ -> case qualLookupValue (qualQualify m f) vEnv of
-    [Value _ _ _ tySc] -> tySc
-    [Label _ _ tySc]   -> tySc
-    _                  -> internalError $ "TypeCheck.funType: " ++ show f
+         [Value _ _ _ tySc] -> tySc
+         [Label _ _ tySc]   -> tySc
+         _                  -> internalError $ "TypeCheck.funType: " ++ show f
 
 labelType :: ModuleIdent -> QualIdent -> ValueEnv -> Type
 labelType m l vEnv = case qualLookupValue l vEnv of
   [Label _ _ tySc] -> tySc
   _ -> case qualLookupValue (qualQualify m l) vEnv of
-    [Label _ _ tySc] -> tySc
-    _                -> internalError $ "TypeCheck.labelType: " ++ show l
+         [Label _ _ tySc] -> tySc
+         _                -> internalError $ "TypeCheck.labelType: " ++ show l
 
--- The function 'expandPoly' handles the expansion of type aliases.
-
+-- | Handles the expansion of type aliases.
 expandPoly :: TypeExpr -> TCM Type
-expandPoly qty = do
+expandPoly ty = do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv
   clsEnv <- getClassEnv
-  return $ expandPolyType m tcEnv clsEnv qty
+  return $ expandPolyType m tcEnv clsEnv ty
 
--- The function 'splitPredSet' splits a predicate set into a pair of predicate
--- set such that all type variables that appear in the types of the predicates
--- in the first predicate set are elements of a given set of type variables.
-
+-- | Splits a predicate set into a pair of predicate sets such that all type
+-- variables that appear in the types of the predicates in the first predicate
+-- set are elements of a given set of type variables.
 splitPredSet :: Set.Set Int -> PredSet -> (PredSet, PredSet)
 splitPredSet fvs = Set.partition (all (`Set.member` fvs) . typeVars)
 
--- The functions 'fvEnv' computes the set of free type variables of a type
--- environment. We ignore the types of data constructors here because we know
--- that they are closed.
-
+-- | Computes the set of free type variables of a type environment. We ignore
+-- the types of data constructors here because we know that they are closed.
 fvEnv :: ValueEnv -> Set.Set Int
-fvEnv vEnv =
-  Set.fromList [tv | tySc <- localTypes vEnv, tv <- typeVars (rawPredType tySc), tv < 0]
+fvEnv vEnv = Set.fromList [tv | tySc <- localTypes vEnv,
+                                tv <- typeVars (rawPredType tySc), tv < 0]
 
 computeFvEnv :: TCM (Set.Set Int)
 computeFvEnv = do
