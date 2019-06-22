@@ -168,13 +168,16 @@ fromType' tvs (TypeArrow     ty1 ty2) tys =
   foldl (CS.ApplyType NoSpanInfo)
     (CS.ArrowType NoSpanInfo (fromType tvs ty1) (fromType tvs ty2)) tys
 fromType' tvs (TypeConstrained tys _) tys' = fromType' tvs (head tys) tys'
+fromType' tvs (TypeContext ps ty) tys
+  = foldl (CS.ApplyType NoSpanInfo)
+          (CS.ContextType NoSpanInfo (fromPredSet tvs ps) (fromType tvs ty))
+          tys
 fromType' tvs (TypeForall    tvs' ty) tys
   | null tvs' = fromType' tvs ty tys
   | otherwise = foldl (CS.ApplyType NoSpanInfo)
                       (CS.ForallType NoSpanInfo (map (fromVar tvs) tvs')
                                                 (fromType tvs ty))
                       tys
-fromType' _ _ _ = internalError "Base.CurryTypes.fromType'"
 
 fromVar :: [Ident] -> Int -> Ident
 fromVar tvs tv = if tv >= 0 then tvs !! tv else mkIdent ('_' : show (-tv))
