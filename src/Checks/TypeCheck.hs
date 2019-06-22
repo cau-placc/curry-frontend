@@ -665,13 +665,15 @@ checkPDeclType qty ps tySc (i, FunctionDecl p _ f eqs) = do
   pty <- expandPoly qty
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
-    report $ errTypeSigTooGeneral p m (text "Function:" <+> ppIdent f) qty tySc
+    report $ errTypeSigTooGeneral p m (text "Function:" <+> ppIdent f) qty
+                                  (rawPredType tySc)
   return (ps, (i, FunctionDecl p pty f eqs))
 checkPDeclType qty ps tySc (i, PatternDecl p (VariablePattern spi _ v) rhs) = do
   pty <- expandPoly qty
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
-    report $ errTypeSigTooGeneral p m (text "Variable:" <+> ppIdent v) qty tySc
+    report $ errTypeSigTooGeneral p m (text "Variable:" <+> ppIdent v) qty
+                                  (rawPredType tySc)
   return (ps, (i, PatternDecl p (VariablePattern spi pty v) rhs))
 checkPDeclType _ _ _ _ = internalError "TypeCheck.checkPDeclType"
 
@@ -930,7 +932,8 @@ checkClassMethodType qty tySc pd@(_, FunctionDecl p _ f _) = do
   pty <- expandPoly qty
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
-    report $ errTypeSigTooGeneral p m (text "Method:" <+> ppIdent f) qty tySc
+    report $ errTypeSigTooGeneral p m (text "Method:" <+> ppIdent f) qty
+                                  (rawPredType tySc)
   return pd
 checkClassMethodType _ _ _ = internalError "TypeCheck.checkClassMethodType"
 
@@ -939,7 +942,8 @@ checkInstMethodType pty tySc pd@(_, FunctionDecl p _ f _) = do
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
     report $
-      errMethodTypeTooSpecific p m (text "Method:" <+> ppIdent f) pty tySc
+      errMethodTypeTooSpecific p m (text "Method:" <+> ppIdent f) pty
+                               (rawPredType tySc)
   return pd
 checkInstMethodType _ _ _ = internalError "TypeCheck.checkInstMethodType"
 
@@ -1143,7 +1147,8 @@ tcExpr p (Typed spi e qty) = do
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
     report $
-      errTypeSigTooGeneral p m (text "Expression:" <+> ppExpr 0 e) qty tySc
+      errTypeSigTooGeneral p m (text "Expression:" <+> ppExpr 0 e) qty
+                           (rawPredType tySc)
   return (ps `Set.union` gps, ty, Typed spi e' qty)
 tcExpr _ e@(Record spi _ c fs) = do
   m <- getModuleIdent
@@ -1691,9 +1696,9 @@ computeFvEnv = do
 localTypes :: ValueEnv -> [Type]
 localTypes vEnv = [tySc | (_, Value _ _ _ tySc) <- localBindings vEnv]
 
--- ---------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
 -- Error functions
--- ---------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
 
 errPolymorphicVar :: Ident -> Message
 errPolymorphicVar v = posMessage v $ hsep $ map text
@@ -1701,76 +1706,67 @@ errPolymorphicVar v = posMessage v $ hsep $ map text
 
 errTypeSigTooGeneral :: HasPosition a => a -> ModuleIdent -> Doc -> TypeExpr
                      -> Type -> Message
-errTypeSigTooGeneral p m what qty pty = posMessage p $ vcat
+errTypeSigTooGeneral p m what qty ty = posMessage p $ vcat
   [ text "Type signature too general", what
-  , text "Inferred type:"  <+> ppPredType m (rawPredType pty)
-  , text "Type signature:" <+> ppTypeExpr 0 qty
-  ]
+  , text "Inferred type:" <+> ppType m ty
+  , text "Type signature:" <+> ppTypeExpr 0 qty ]
 
 errMethodTypeTooSpecific :: HasPosition a => a -> ModuleIdent -> Doc -> Type
                          -> Type -> Message
-errMethodTypeTooSpecific p m what pty pty2 = posMessage p $ vcat
+errMethodTypeTooSpecific p m what ety ity = posMessage p $ vcat
   [ text "Method type too specific", what
-  , text "Inferred type:" <+> ppPredType m (rawPredType pty2)
-  , text "Expected type:" <+> ppPredType m pty
-  ]
+  , text "Inferred type:" <+> ppType m ity
+  , text "Expected type:" <+> ppType m ety ]
 
 errNonFunctionType :: HasPosition a => a -> String -> Doc -> ModuleIdent -> Type
                    -> Message
 errNonFunctionType p what doc m ty = posMessage p $ vcat
   [ text "Type error in" <+> text what, doc
   , text "Type:" <+> ppType m ty
-  , text "Cannot be applied"
-  ]
+  , text "Cannot be applied" ]
 
 errNonBinaryOp :: HasPosition a => a -> String -> Doc -> ModuleIdent -> Type
                -> Message
 errNonBinaryOp p what doc m ty = posMessage p $ vcat
   [ text "Type error in" <+> text what, doc
   , text "Type:" <+> ppType m ty
-  , text "Cannot be used as binary operator"
-  ]
+  , text "Cannot be used as binary operator" ]
 
 errTypeMismatch :: HasPosition a => a -> String -> Doc -> ModuleIdent -> Type
                 -> Type -> Doc -> Message
-errTypeMismatch p what doc m ty1 ty2 reason = posMessage p $ vcat
-  [ text "Type error in"  <+> text what, doc
-  , text "Inferred type:" <+> ppType m ty2
-  , text "Expected type:" <+> ppType m ty1
-  , reason
-  ]
+errTypeMismatch p what doc m ety ity reason = posMessage p $ vcat
+  [ text "Type error in" <+> text what, doc
+  , text "Inferred type:" <+> ppType m ity
+  , text "Expected type:" <+> ppType m ety
+  , reason ]
 
 errRecursiveType :: ModuleIdent -> Int -> Type -> Doc
-errRecursiveType m tv ty = errIncompatibleTypes m (TypeVariable tv) ty
+errRecursiveType m tv = errIncompatibleTypes m (TypeVariable tv)
 
 errIncompatibleTypes :: ModuleIdent -> Type -> Type -> Doc
 errIncompatibleTypes m ty1 ty2 = sep
   [ text "Types" <+> ppType m ty1
   , nest 2 $ text "and" <+> ppType m ty2
-  , text "are incompatible"
-  ]
+  , text "are incompatible" ]
 
 errIncompatibleLabelTypes :: HasPosition a => a -> ModuleIdent -> Ident -> Type
                           -> Type -> Message
 errIncompatibleLabelTypes p m l ty1 ty2 = posMessage p $ sep
   [ text "Labeled types" <+> ppIdent l <+> text "::" <+> ppType m ty1
   , nest 10 $ text "and" <+> ppIdent l <+> text "::" <+> ppType m ty2
-  , text "are incompatible"
-  ]
+  , text "are incompatible" ]
 
 errMissingInstance :: HasPosition a => ModuleIdent -> a -> String -> Doc -> Pred
                    -> Message
 errMissingInstance m p what doc pr = posMessage p $ vcat
   [ text "Missing instance for" <+> ppPred m pr
   , text "in" <+> text what
-  , doc
-  ]
+  , doc ]
 
 errAmbiguousTypeVariable :: HasPosition a => ModuleIdent -> a -> String -> Doc
                          -> PredSet -> Type -> Int -> Message
 errAmbiguousTypeVariable m p what doc ps ty tv = posMessage p $ vcat
   [ text "Ambiguous type variable" <+> ppType m (TypeVariable tv)
-  , text "in type" <+> ppPredType m (TypeContext ps ty)
+  , text "in type" <+> ppType m (TypeContext ps ty)
   , text "inferred for" <+> text what
-  , doc
-  ]
+  , doc ]
