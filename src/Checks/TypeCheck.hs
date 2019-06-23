@@ -218,6 +218,10 @@ report err = S.modify $ \s -> s { errors = err : errors s }
 ok :: TCM ()
 ok = return ()
 
+-- -----------------------------------------------------------------------------
+-- Numbered declarations
+-- -----------------------------------------------------------------------------
+
 -- Because the type check may mess up the order of the declarations, we
 -- associate each declaration with a number. At the end of the type check, we
 -- can use these numbers to restore the original declaration order.
@@ -357,7 +361,7 @@ bindLabels' m tcEnv vEnv = foldr (bindData . snd) vEnv $ localBindings tcEnv
         n = kindArity k
         qc = qualifyLike tc c
     bindData (RenamingType _ _ (RecordConstr _ _ _))        _
-      = internalError $ "Checks.TypeCheck.bindLabels'.bindData: " ++
+      = internalError $ "TypeCheck.bindLabels'.bindData: " ++
           "RenamingType with more than one record label"
     bindData _                                              vEnv' = vEnv'
 
@@ -424,8 +428,8 @@ bindTypeSig :: Ident -> TypeExpr -> SigEnv -> SigEnv
 bindTypeSig = Map.insert
 
 bindTypeSigs :: Decl a -> SigEnv -> SigEnv
-bindTypeSigs (TypeSig _ vs qty) env = foldr (flip bindTypeSig qty) env vs
-bindTypeSigs _                  env = env
+bindTypeSigs (TypeSig _ vs ty) env = foldr (flip bindTypeSig ty) env vs
+bindTypeSigs _                 env = env
 
 lookupTypeSig :: Ident -> SigEnv -> Maybe TypeExpr
 lookupTypeSig = Map.lookup
@@ -463,13 +467,14 @@ tcPDecls pds = withLocalSigEnv $ do
 tcPDeclGroup :: PredSet -> [PDecl a] -> TCM (PredSet, [PDecl Type])
 tcPDeclGroup ps [(i, ExternalDecl p fs)] = do
   tys <- mapM (tcExternal . varIdent) fs
-  return (ps, [(i, ExternalDecl p (zipWith (fmap . const . predType) tys fs))])
-tcPDeclGroup ps [(i, FreeDecl p fvs)] = do
+  return (ps, [(i, ExternalDecl p (zipWith (fmap . const) tys fs))])
+tcPDeclGroup ps [(i, FreeDecl p fvs)]    = do
   vs <- mapM (tcDeclVar False) (bv fvs)
   m <- getModuleIdent
   modifyValueEnv $ flip (bindVars m) vs
-  return (ps, [(i, FreeDecl p (map (\(v, _, tySc) -> Var (rawPredType tySc) v) vs))])
-tcPDeclGroup ps pds = do
+  return (ps, [(i, FreeDecl p (map (\(v, _, tySc) -> Var (rawPredType tySc) v)
+                                   vs))])
+tcPDeclGroup ps pds                      = do
   vEnv <- getValueEnv
   vss <- mapM (tcDeclVars . snd) pds
   m <- getModuleIdent
@@ -988,14 +993,14 @@ tcExternal f = do
 -- patterns.
 
 tcLiteral :: Bool -> Literal -> TCM (PredSet, Type)
-tcLiteral _ (Char _) = return (emptyPredSet, charType)
+tcLiteral _    (Char _)   = return (emptyPredSet, charType)
 tcLiteral poly (Int _)
-  | poly = freshNumType
+  | poly      = freshNumType
   | otherwise = liftM ((,) emptyPredSet) (freshConstrained numTypes)
 tcLiteral poly (Float _)
-  | poly = freshFractionalType
+  | poly      = freshFractionalType
   | otherwise = liftM ((,) emptyPredSet) (freshConstrained fractionalTypes)
-tcLiteral _ (String _) = return (emptyPredSet, stringType)
+tcLiteral _    (String _) = return (emptyPredSet, stringType)
 
 tcLhs :: HasPosition p => p -> Lhs a -> TCM (PredSet, [Type], Lhs Type)
 tcLhs p (FunLhs spi f ts) = do
@@ -1380,7 +1385,10 @@ tcBinary p what doc ty = tcArrow p what doc ty >>= uncurry binaryArrow
     report $ errNonBinaryOp p what doc m (TypeArrow ty1 ty2)
     (,,) <$> return ty1 <*> freshTypeVar <*> freshTypeVar
 
--- Unification: The unification uses Robinson's algorithm.
+
+-- -----------------------------------------------------------------------------
+-- Unification (Robinson's algorithm)
+-- -----------------------------------------------------------------------------
 
 unify :: HasPosition p => p -> String -> Doc -> PredSet -> Type -> PredSet
       -> Type -> TCM PredSet
@@ -1395,62 +1403,67 @@ unify p what doc ps1 ty1 ps2 ty2 = do
   reducePredSet p what doc $ ps1 `Set.union` ps2
 
 unifyTypes :: ModuleIdent -> Type -> Type -> Either Doc TypeSubst
-unifyTypes _ (TypeVariable tv1) (TypeVariable tv2)
-  | tv1 == tv2            = Right idSubst
-  | otherwise             = Right (singleSubst tv1 (TypeVariable tv2))
-unifyTypes m (TypeVariable tv) ty
-  | tv `elem` typeVars ty = Left  (errRecursiveType m tv ty)
+unifyTypes _ (TypeVariable tv1)         ty@(TypeVariable tv2)
+  | tv1 == tv2 = Right idSubst
+  | otherwise  = Right (singleSubst tv1 ty)
+unifyTypes m (TypeVariable tv)          ty
+  | tv `elem` typeVars ty = Left (errRecursiveType m tv ty)
   | otherwise             = Right (singleSubst tv ty)
-unifyTypes m ty (TypeVariable tv)
-  | tv `elem` typeVars ty = Left  (errRecursiveType m tv ty)
+unifyTypes m ty                         (TypeVariable tv)
+  | tv `elem` typeVars ty = Left (errRecursiveType m tv ty)
   | otherwise             = Right (singleSubst tv ty)
-unifyTypes _ (TypeConstrained tys1 tv1) (TypeConstrained tys2 tv2)
-  | tv1  == tv2           = Right idSubst
-  | tys1 == tys2          = Right (singleSubst tv1 (TypeConstrained tys2 tv2))
-unifyTypes m (TypeConstrained tys tv) ty =
-  foldr (choose . unifyTypes m ty) (Left (errIncompatibleTypes m ty (head tys)))
-        tys
-  where choose (Left _) theta' = theta'
-        choose (Right theta) _ = Right (bindSubst tv ty theta)
-unifyTypes m ty (TypeConstrained tys tv) =
-  foldr (choose . unifyTypes m ty) (Left (errIncompatibleTypes m ty (head tys)))
-        tys
-  where choose (Left _) theta' = theta'
-        choose (Right theta) _ = Right (bindSubst tv ty theta)
-unifyTypes _ (TypeConstructor tc1) (TypeConstructor tc2)
+unifyTypes _ (TypeConstrained tys1 tv1) ty@(TypeConstrained tys2 tv2)
+  | tv1 == tv2   = Right idSubst
+  | tys1 == tys2 = Right (singleSubst tv1 ty)
+unifyTypes m (TypeConstrained tys tv)   ty
+  = foldr (choose . unifyTypes m ty)
+          (Left (errIncompatibleTypes m ty (head tys)))
+          tys
+  where
+    choose (Left _)      theta' = theta'
+    choose (Right theta) _      = Right (bindSubst tv ty theta)
+unifyTypes m ty                         (TypeConstrained tys tv)
+  = foldr (choose . unifyTypes m ty)
+          (Left (errIncompatibleTypes m ty (head tys)))
+          tys
+  where
+    choose (Left _)      theta' = theta'
+    choose (Right theta) _      = Right (bindSubst tv ty theta)
+unifyTypes _ (TypeConstructor tc1)      (TypeConstructor tc2)
   | tc1 == tc2 = Right idSubst
-unifyTypes m (TypeApply ty11 ty12) (TypeApply ty21 ty22) =
-  unifyTypeLists m [ty11, ty12] [ty21, ty22]
-unifyTypes m ty1@(TypeApply _ _) (TypeArrow ty21 ty22) =
-  unifyTypes m ty1 (TypeApply (TypeApply (TypeConstructor qArrowId) ty21) ty22)
-unifyTypes m (TypeArrow ty11 ty12) ty2@(TypeApply _ _) =
-  unifyTypes m (TypeApply (TypeApply (TypeConstructor qArrowId) ty11) ty12) ty2
-unifyTypes m (TypeArrow ty11 ty12) (TypeArrow ty21 ty22) =
-  unifyTypeLists m [ty11, ty12] [ty21, ty22]
-unifyTypes m ty1 ty2 = Left (errIncompatibleTypes m ty1 ty2)
+unifyTypes m (TypeApply ty11 ty12)      (TypeApply ty21 ty22)
+  = unifyTypeLists m [ty11, ty12] [ty21, ty22]
+unifyTypes m ty@(TypeApply _ _)         (TypeArrow ty21 ty22)
+  = unifyTypes m ty (TypeApply (TypeApply (TypeConstructor qArrowId) ty21) ty22)
+unifyTypes m (TypeArrow ty11 ty12)      ty@(TypeApply _ _)
+  = unifyTypes m (TypeApply (TypeApply (TypeConstructor qArrowId) ty11) ty12) ty
+unifyTypes m (TypeArrow ty11 ty12)      (TypeArrow ty21 ty22)
+  = unifyTypeLists m [ty11, ty12] [ty21, ty22]
+unifyTypes m ty1                        ty2
+  = Left (errIncompatibleTypes m ty1 ty2)
 
 unifyTypeLists :: ModuleIdent -> [Type] -> [Type] -> Either Doc TypeSubst
-unifyTypeLists _ []           _            = Right idSubst
-unifyTypeLists _ _            []           = Right idSubst
-unifyTypeLists m (ty1 : tys1) (ty2 : tys2) =
-  either Left unifyTypesTheta (unifyTypeLists m tys1 tys2)
+unifyTypeLists _ []         _          = Right idSubst
+unifyTypeLists _ _          []         = Right idSubst
+unifyTypeLists m (ty1:tys1) (ty2:tys2)
+  = either Left unifyTypesTheta (unifyTypeLists m tys1 tys2)
   where
-    unifyTypesTheta theta =
-      either Left (Right . flip compose theta)
-                  (unifyTypes m (subst theta ty1) (subst theta ty2))
+    unifyTypesTheta theta
+      = either Left (Right . flip compose theta)
+                    (unifyTypes m (subst theta ty1) (subst theta ty2))
 
--- After performing a unification, the resulting substitution is applied
--- to the current predicate set and the resulting predicate set is subject
--- to a reduction. This predicate set reduction retains all predicates whose
--- types are simple variables and which are not implied but other
--- predicates in the predicate set. For all other predicates, the compiler
--- checks whether an instance exists and replaces them by applying the
--- instances' predicate set to the respective types. A minor complication
--- arises due to constrained types, which at present are used to
--- implement overloading of guard expressions and of numeric literals in
--- patterns. The set of admissible types of a constrained type may be
--- restricted by the current predicate set after the reduction and thus
--- may cause a further extension of the current type substitution.
+-- After performing a unification, the resulting substitution is applied to the
+-- current predicate set and the resulting predicate set is subject to a
+-- reduction. This predicate set reduction retains all predicates whose types
+-- are simple variables and which are not implied by other predicates in the
+-- predicate set. For all other predicates, the compiler checks whether an
+-- instance exists and replaces them by applying the instances' predicate set
+-- to the respective types. A minor complication arises due to constrained
+-- types, which at present are used to implement overloading of guard
+-- expressions and of numeric literals in patterns. The set of admissible types
+-- of a constrained type may be restricted by the current predicate set after
+-- the reduction and thus may cause a further extension of the current type
+-- substitution.
 
 reducePredSet :: HasPosition p => p -> String -> Doc -> PredSet -> TCM PredSet
 reducePredSet p what doc ps = do
@@ -1460,42 +1473,39 @@ reducePredSet p what doc ps = do
   inEnv <- (fmap $ fmap $ subst theta) <$> getInstEnv
   let ps' = subst theta ps
       (ps1, ps2) = partitionPredSet $ minPredSet clsEnv $ reducePreds inEnv ps'
-  theta' <-
-    foldM (reportMissingInstance m p what doc inEnv) idSubst $ Set.toList ps2
+  theta' <- foldM (reportMissingInstance m p what doc inEnv) idSubst
+                  (Set.toList ps2)
   modifyTypeSubst $ compose theta'
   return ps1
   where
     reducePreds inEnv = Set.concatMap $ reducePred inEnv
-    reducePred inEnv pr@(Pred qcls ty) =
-      maybe (Set.singleton pr) (reducePreds inEnv) (instPredSet inEnv qcls ty)
+    reducePred inEnv pr@(Pred qcls ty) = maybe (Set.singleton pr)
+                                               (reducePreds inEnv)
+                                               (instPredSet inEnv qcls ty)
 
 instPredSet :: InstEnv' -> QualIdent -> Type -> Maybe PredSet
 instPredSet inEnv qcls ty = case Map.lookup qcls $ snd inEnv of
   Just tys | ty `elem` tys -> Just emptyPredSet
-  _ -> case unapplyType False ty of
-    (TypeConstructor tc, tys) ->
-      fmap (expandAliasType tys . snd3) (lookupInstInfo (qcls, tc) $ fst inEnv)
-    _ -> Nothing
+  _                        -> case unapplyType False ty of
+    (TypeConstructor tc, tys) -> fmap (expandAliasType tys . snd3)
+                                      (lookupInstInfo (qcls, tc) $ fst inEnv)
+    _                         -> Nothing
 
 reportMissingInstance :: HasPosition p => ModuleIdent -> p -> String -> Doc
                       -> InstEnv' -> TypeSubst -> Pred -> TCM TypeSubst
 reportMissingInstance m p what doc inEnv theta (Pred qcls ty) =
   case subst theta ty of
-    ty'@(TypeConstrained tys tv) ->
-      case filter (hasInstance inEnv qcls) tys of
-        [] -> do
-          report $ errMissingInstance m p what doc (Pred qcls ty')
-          return theta
-        [ty''] -> return (bindSubst tv ty'' theta)
-        tys'
-          | length tys == length tys' -> return theta
-          | otherwise ->
-              liftM (flip (bindSubst tv) theta) (freshConstrained tys')
-    ty'
-      | hasInstance inEnv qcls ty' -> return theta
-      | otherwise -> do
-        report $ errMissingInstance m p what doc (Pred qcls ty')
-        return theta
+    ty'@(TypeConstrained tys tv) -> case filter (hasInstance inEnv qcls) tys of
+      []     -> do report $ errMissingInstance m p what doc (Pred qcls ty')
+                   return theta
+      [ty''] -> return (bindSubst tv ty'' theta)
+      tys' | length tys == length tys' -> return theta
+           | otherwise                 -> liftM (flip (bindSubst tv) theta)
+                                                (freshConstrained tys')
+    ty' | hasInstance inEnv qcls ty' -> return theta
+        | otherwise                  -> do
+      report $ errMissingInstance m p what doc (Pred qcls ty')
+      return theta
 
 hasInstance :: InstEnv' -> QualIdent -> Type -> Bool
 hasInstance inEnv qcls = isJust . instPredSet inEnv qcls
@@ -1528,11 +1538,11 @@ applyDefaults p what doc fvs ps ty = do
   inEnv <- getInstEnv
   defs <- getDefaultTypes
   let theta = foldr (bindDefault defs inEnv ps) idSubst $ nub
-                [ tv | Pred qcls (TypeVariable tv) <- Set.toList ps
-                     , tv `Set.notMember` fvs, isNumClass clsEnv qcls ]
-      ps'   = fst (partitionPredSet (subst theta ps))
-      ty'   = subst theta ty
-      tvs'  = nub $ filter (`Set.notMember` fvs) (typeVars ps')
+                [tv | Pred qcls (TypeVariable tv) <- Set.toList ps
+                    , tv `Set.notMember` fvs, isNumClass clsEnv qcls]
+      ps' = fst (partitionPredSet (subst theta ps))
+      ty' = subst theta ty
+      tvs' = nub $ filter (`Set.notMember` fvs) (typeVars ps')
   mapM_ (report . errAmbiguousTypeVariable m p what doc ps' ty') tvs'
   modifyTypeSubst $ compose theta
   return ps'
@@ -1547,12 +1557,15 @@ defaultType :: InstEnv' -> Int -> Pred -> [Type] -> [Type]
 defaultType inEnv tv (Pred qcls (TypeVariable tv'))
   | tv == tv' = filter (hasInstance inEnv qcls)
   | otherwise = id
-defaultType _ _ _ = id
+defaultType _     _  _ = id
 
 isNumClass :: ClassEnv -> QualIdent -> Bool
 isNumClass = (elem qNumId .) . flip allSuperClasses
 
--- Instantiation and Generalization:
+-- -----------------------------------------------------------------------------
+-- Instantiation and Generalization
+-- -----------------------------------------------------------------------------
+
 -- We use negative offsets for fresh type variables.
 
 fresh :: (Int -> a) -> TCM a
