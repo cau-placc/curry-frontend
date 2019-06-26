@@ -45,8 +45,6 @@ instance SubstType a => SubstType [a] where
   subst sigma = map (subst sigma)
 
 instance SubstType Type where
-  subst sigma (TypeContext ps ty)
-    = TypeContext (subst sigma ps) (subst sigma ty)
   subst sigma ty = subst' sigma ty []
 
 subst' :: TypeSubst -> Type -> [Type] -> Type
@@ -58,9 +56,10 @@ subst' sigma (TypeArrow      ty1 ty2) =
 subst' sigma (TypeConstrained tys tv) = case substVar sigma tv of
   TypeVariable tv' -> foldl TypeApply (TypeConstrained tys tv')
   ty               -> foldl TypeApply ty
+subst' sigma (TypeContext ps ty)
+  = applyType (TypeContext (subst sigma ps) (subst sigma ty))
 subst' sigma (TypeForall      tvs ty) =
   applyType (TypeForall tvs (subst sigma ty))
-subst' _ _ = internalError "Base.TypeSubst.subst'"
 
 instance SubstType Pred where
   subst sigma (Pred qcls ty) = Pred qcls (subst sigma ty)
