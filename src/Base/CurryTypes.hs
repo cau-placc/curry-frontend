@@ -76,12 +76,16 @@ toType' tvs (CS.ArrowType  _ ty1 ty2) tys
   | null tys = TypeArrow (toType' tvs ty1 []) (toType' tvs ty2 [])
   | otherwise = internalError "Base.CurryTypes.toType': arrow type application"
 toType' tvs (CS.ParenType       _ ty) tys = toType' tvs ty tys
+toType' tvs (CS.ContextType _ cx ty)  tys
+  | null cx   = toType' tvs ty tys
+  | otherwise = applyType (TypeContext (toPredSet' tvs cx)
+                                       (toType' tvs ty []))
+                          tys
 toType' tvs (CS.ForallType _ tvs' ty) tys
   | null tvs' = toType' tvs ty tys
   | otherwise = applyType (TypeForall (map (toVar tvs) tvs')
                                       (toType' tvs ty []))
                           tys
-toType' _ _ _ = internalError "Base.CurryTypes.toType'"
 
 toVar :: Map.Map Ident Int -> Ident -> Int
 toVar tvs tv = case Map.lookup tv tvs of
