@@ -318,10 +318,7 @@ checkFieldLabel _ = ok
 
 tcFieldLabel :: HasPosition p => [Ident] -> (Ident, p, TypeExpr)
              -> TCM (Ident, p, Type)
-tcFieldLabel tvs (l, p, ty) = do
-  m <- getModuleIdent
-  tcEnv <- getTyConsEnv
-  return (l, p, expandMonoType m tcEnv tvs ty)
+tcFieldLabel tvs (l, p, ty) = (,,) l p <$> expandMono tvs ty
 
 groupLabels :: Eq a => [(a, b, c)] -> [(a, b, [c])]
 groupLabels []               = []
@@ -407,7 +404,7 @@ bindClassMethod m (ClassMethod f _ ty) =
 setDefaults :: Decl a -> TCM ()
 setDefaults (DefaultDecl _ tys) = mapM toDefaultType tys >>= setDefaultTypes
   where
-    toDefaultType = liftM snd . (inst =<<) . liftM typeScheme . expandPoly
+    toDefaultType = liftM snd . (inst =<<) . liftM typeScheme . expandMono []
 setDefaults _                   = ok
 
 -- -----------------------------------------------------------------------------
@@ -1679,13 +1676,21 @@ labelType m l vEnv = case qualLookupValue l vEnv of
          [Label _ _ tySc] -> tySc
          _                -> internalError $ "TypeCheck.labelType: " ++ show l
 
--- | Handles the expansion of type aliases.
+-- | Handles the expansion of type aliases in a type expression. The resulting
+-- type will start with a predicate set.
 expandPoly :: TypeExpr -> TCM Type
 expandPoly ty = do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv
   clsEnv <- getClassEnv
   return $ expandPolyType m tcEnv clsEnv ty
+
+-- | Handles the expansion of type aliases in a type expression.
+expandMono :: [Ident] -> TypeExpr -> TCM Type
+expandMono tvs ty = do
+  m <- getModuleIdent
+  tcEnv <- getTyConsEnv
+  return $ expandMonoType m tcEnv tvs ty
 
 -- | Splits a predicate set into a pair of predicate sets such that all type
 -- variables that appear in the types of the predicates in the first predicate
