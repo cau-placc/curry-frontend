@@ -631,10 +631,12 @@ kcTypeExpr tcEnv p what doc _ (ArrowType _ ty1 ty2) = do
   kcValueType tcEnv p what doc ty2
   return KindStar
 kcTypeExpr tcEnv p what doc n (ParenType _ ty) = kcTypeExpr tcEnv p what doc n ty
+kcTypeExpr tcEnv p what doc n (ContextType _ cx ty) = do
+  kcContext tcEnv p cx
+  kcTypeExpr tcEnv p what doc n ty
 kcTypeExpr tcEnv p what doc n (ForallType _ vs ty) = do
   tcEnv' <- foldM bindFreshKind tcEnv vs
   kcTypeExpr tcEnv' p what doc n ty
-kcTypeExpr _ _ _ _ _ (ContextType _ _ _) = internalError "Checks.KindCheck.kcTypeExpr"
 
 kcArrow :: HasPosition p => p -> String -> Doc -> Kind -> KCM (Kind, Kind)
 kcArrow p what doc k = do
