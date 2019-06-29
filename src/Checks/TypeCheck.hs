@@ -1548,7 +1548,8 @@ applyDefaults p what doc fvs ps ty = do
       ps' = fst (partitionPredSet (subst theta ps))
       ty' = subst theta ty
       tvs' = nub $ filter (`Set.notMember` fvs) (typeVars ps')
-  mapM_ (report . errAmbiguousTypeVariable m p what doc ps' ty') tvs'
+  mapM_ (report . errAmbiguousTypeVariable m p what doc (TypeContext ps' ty'))
+        tvs'
   modifyTypeSubst $ compose theta
   return ps'
 
@@ -1790,9 +1791,9 @@ errMissingInstance m p what doc pr = posMessage p $ vcat
   , doc ]
 
 errAmbiguousTypeVariable :: HasPosition a => ModuleIdent -> a -> String -> Doc
-                         -> PredSet -> Type -> Int -> Message
-errAmbiguousTypeVariable m p what doc ps ty tv = posMessage p $ vcat
+                         -> Type -> Int -> Message
+errAmbiguousTypeVariable m p what doc ty tv = posMessage p $ vcat
   [ text "Ambiguous type variable" <+> ppType m (TypeVariable tv)
-  , text "in type" <+> ppType m (TypeContext ps ty)
+  , text "in type" <+> ppType m ty
   , text "inferred for" <+> text what
   , doc ]
