@@ -35,53 +35,58 @@ import Env.TypeConstructor
 -- with the name of the module in which the class was defined. The
 -- function 'expandPredSet' minimizes the predicate set after expansion.
 
-expandType :: ModuleIdent -> TCEnv -> Type -> Type
-expandType m tcEnv ty = expandType' m tcEnv ty []
+expandType :: ModuleIdent -> TCEnv -> ClassEnv -> Type -> Type
+expandType m tcEnv clsEnv ty = expandType' ty []
+  where
+    expandType' :: Type -> [Type] -> Type
+    expandType' (TypeConstructor tc)     tys =
+      case qualLookupTypeInfo tc tcEnv of
+        [DataType tc' _ _]     -> applyType (TypeConstructor tc') tys
+        [RenamingType tc' _ _] -> applyType (TypeConstructor tc') tys
+        [AliasType _ _ n ty']  -> let (tys', tys'') = splitAt n tys
+                                   in applyType (expandAliasType tys' ty') tys''
+        _ -> case qualLookupTypeInfo (qualQualify m tc) tcEnv of
+               [DataType tc' _ _]     -> applyType (TypeConstructor tc') tys
+               [RenamingType tc' _ _] -> applyType (TypeConstructor tc') tys
+               [AliasType _ _ n ty']  -> let (tys', tys'') = splitAt n tys in
+                 applyType (expandAliasType tys' ty') tys''
+               _ -> internalError $ "Base.TypeExpansion.expandType: " ++ show tc
+    expandType' (TypeApply ty1 ty2)      tys =
+      expandType' ty1 (expandType' ty2 [] : tys)
+    expandType' tv@(TypeVariable _)      tys = applyType tv tys
+    expandType' tc@(TypeConstrained _ _) tys = applyType tc tys
+    expandType' (TypeArrow ty1 ty2)      tys =
+      applyType (TypeArrow (expandType' ty1 []) (expandType' ty2 [])) tys
+    expandType' (TypeContext ps ty')     tys =
+      applyType (TypeContext (expandPredSet m tcEnv clsEnv ps)
+                             (expandType' ty' []))
+                tys
+    expandType' (TypeForall tvs ty')     tys =
+      applyType (TypeForall tvs (expandType' ty' [])) tys
 
-expandType' :: ModuleIdent -> TCEnv -> Type -> [Type] -> Type
-expandType' m tcEnv (TypeConstructor     tc) tys =
-  case qualLookupTypeInfo tc tcEnv of
-    [DataType       tc' _ _ ] -> applyType (TypeConstructor tc') tys
-    [RenamingType   tc' _ _ ] -> applyType (TypeConstructor tc') tys
-    [AliasType    _ _   n ty] -> let (tys', tys'') = splitAt n tys
-                                 in  applyType (expandAliasType tys' ty) tys''
-    _ -> case qualLookupTypeInfo (qualQualify m tc) tcEnv of
-      [DataType       tc' _ _ ] -> applyType (TypeConstructor tc') tys
-      [RenamingType   tc' _ _ ] -> applyType (TypeConstructor tc') tys
-      [AliasType    _ _   n ty] -> let (tys', tys'') = splitAt n tys
-                                   in  applyType (expandAliasType tys' ty) tys''
-      _ -> internalError $ "Base.TypeExpansion.expandType: " ++ show tc
-expandType' m tcEnv (TypeApply      ty1 ty2) tys =
-  expandType' m tcEnv ty1 (expandType m tcEnv ty2 : tys)
-expandType' _ _     tv@(TypeVariable      _) tys = applyType tv tys
-expandType' _ _     tc@(TypeConstrained _ _) tys = applyType tc tys
-expandType' m tcEnv (TypeArrow      ty1 ty2) tys =
-  applyType (TypeArrow (expandType m tcEnv ty1) (expandType m tcEnv ty2)) tys
-expandType' m tcEnv (TypeForall      tvs ty) tys =
-  applyType (TypeForall tvs (expandType m tcEnv ty)) tys
-expandType' _ _ _ _ = internalError "Base.TypeExpansion.expandType"
-
-expandPred :: ModuleIdent -> TCEnv -> Pred -> Pred
-expandPred m tcEnv (Pred qcls ty) = case qualLookupTypeInfo qcls tcEnv of
-  [TypeClass ocls _ _] -> Pred ocls (expandType m tcEnv ty)
+expandPred :: ModuleIdent -> TCEnv -> ClassEnv -> Pred -> Pred
+expandPred m tcEnv clsEnv (Pred qcls ty) = case qualLookupTypeInfo qcls tcEnv of
+  [TypeClass ocls _ _] -> Pred ocls (expandType m tcEnv clsEnv ty)
   _ -> case qualLookupTypeInfo (qualQualify m qcls) tcEnv of
-    [TypeClass ocls _ _] -> Pred ocls (expandType m tcEnv ty)
+    [TypeClass ocls _ _] -> Pred ocls (expandType m tcEnv clsEnv ty)
     _ -> internalError $ "Base.TypeExpansion.expandPred: " ++ show qcls
 
 expandPredSet :: ModuleIdent -> TCEnv -> ClassEnv -> PredSet -> PredSet
-expandPredSet m tcEnv clsEnv = minPredSet clsEnv . Set.map (expandPred m tcEnv)
+expandPredSet m tcEnv clsEnv
+  = minPredSet clsEnv . Set.map (expandPred m tcEnv clsEnv)
 
 expandPredType :: ModuleIdent -> TCEnv -> ClassEnv -> Type -> Type
 expandPredType m tcEnv clsEnv (TypeContext ps ty) =
-  TypeContext (expandPredSet m tcEnv clsEnv ps) (expandType m tcEnv ty)
+  TypeContext (expandPredSet m tcEnv clsEnv ps) (expandType m tcEnv clsEnv ty)
 expandPredType _ _ _ _ = internalError "Base.TypeExpansion.expandPredType"
 
 -- The functions 'expandMonoType' and 'expandPolyType' convert (qualified)
 -- type expressions into (predicated) types and also expand all type synonyms
 -- and qualify all type constructors during the conversion.
 
-expandMonoType :: ModuleIdent -> TCEnv -> [Ident] -> TypeExpr -> Type
-expandMonoType m tcEnv tvs = expandType m tcEnv . toType tvs
+expandMonoType :: ModuleIdent -> TCEnv -> ClassEnv -> [Ident] -> TypeExpr
+               -> Type
+expandMonoType m tcEnv clsEnv tvs = expandType m tcEnv clsEnv . toType tvs
 
 expandPolyType :: ModuleIdent -> TCEnv -> ClassEnv -> TypeExpr -> Type
 expandPolyType m tcEnv clsEnv =

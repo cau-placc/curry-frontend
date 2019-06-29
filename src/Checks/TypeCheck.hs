@@ -1690,7 +1690,8 @@ expandMono :: [Ident] -> TypeExpr -> TCM Type
 expandMono tvs ty = do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv
-  return $ expandMonoType m tcEnv tvs ty
+  clsEnv <- getClassEnv
+  return $ expandMonoType m tcEnv clsEnv tvs ty
 
 -- | Splits a predicate set into a pair of predicate sets such that all type
 -- variables that appear in the types of the predicates in the first predicate

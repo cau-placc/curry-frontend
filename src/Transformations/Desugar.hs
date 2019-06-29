@@ -81,6 +81,7 @@ import Base.TypeSubst
 import Base.Typing
 import Base.Utils (fst3, mapAccumM)
 
+import Env.Class (initClassEnv)
 import Env.TypeConstructor (TCEnv, TypeInfo (..), qualLookupTypeInfo)
 import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 
@@ -752,7 +753,8 @@ dsTypeExpr (ContextType spi cx ty) = ContextType spi cx <$> dsTypeExpr ty
 dsTypeExpr ty = do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv
-  return $ fromType (typeVariables ty) (expandType m tcEnv (toType [] ty))
+  return $ fromType (typeVariables ty)
+                    (expandType m tcEnv initClassEnv (toType [] ty))
 
 -- -----------------------------------------------------------------------------
 -- Desugaring of case expressions

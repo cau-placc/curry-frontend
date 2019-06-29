@@ -42,6 +42,7 @@ import Base.TypeExpansion
 import Base.Types
 
 import CompilerEnv
+import Env.Class           (initClassEnv)
 import Env.OpPrec          (mkPrec)
 import Env.TypeConstructor (TCEnv)
 import Env.Value           (ValueEnv, ValueInfo (..), qualLookupValue)
@@ -241,7 +242,7 @@ trTypeSynonym (CS.TypeDecl _ t tvs ty) = do
   t'   <- trQualIdent qid
   vis  <- getTypeVisibility qid
   tEnv <- S.gets tcEnv
-  ty'  <- trType (transType $ expandType m tEnv $ toType tvs ty)
+  ty'  <- trType (transType $ expandType m tEnv initClassEnv $ toType tvs ty)
   return [TypeSyn t' vis [0 .. length tvs - 1] ty']
 trTypeSynonym _                        = return []
 

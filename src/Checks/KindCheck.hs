@@ -328,18 +328,18 @@ bindKind m tcEnv' clsEnv tcEnv (DataDecl _ tc tvs cs _) =
             tys' = arrowArgs ty
 bindKind _ _     _       tcEnv (ExternalDataDecl _ tc tvs) =
   bindTypeConstructor DataType tc tvs (Just KindStar) [] tcEnv
-bindKind m tcEnv' _      tcEnv (NewtypeDecl _ tc tvs nc _) =
+bindKind m tcEnv' clsEnv tcEnv (NewtypeDecl _ tc tvs nc _) =
   bindTypeConstructor RenamingType tc tvs (Just KindStar) (mkData nc) tcEnv
   where
     mkData (NewConstrDecl _ c      ty) = DataConstr c [ty']
-      where ty'  = expandMonoType m tcEnv' tvs ty
+      where ty'  = expandMonoType m tcEnv' clsEnv tvs ty
     mkData (NewRecordDecl _ c (l, ty)) = RecordConstr c [l] [ty']
-      where ty'  = expandMonoType m tcEnv' tvs ty
-bindKind m tcEnv' _      tcEnv (TypeDecl _ tc tvs ty) =
+      where ty'  = expandMonoType m tcEnv' clsEnv tvs ty
+bindKind m tcEnv' clsEnv tcEnv (TypeDecl _ tc tvs ty) =
   bindTypeConstructor aliasType tc tvs Nothing ty' tcEnv
   where
     aliasType tc' k = AliasType tc' k $ length tvs
-    ty' = expandMonoType m tcEnv' tvs ty
+    ty' = expandMonoType m tcEnv' clsEnv tvs ty
 bindKind m tcEnv' clsEnv tcEnv (ClassDecl _ _ cls tv ds) =
   bindTypeClass cls (concatMap mkMethods ds) tcEnv
   where
