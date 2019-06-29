@@ -432,6 +432,14 @@ lookupTypeSig :: Ident -> SigEnv -> Maybe TypeExpr
 lookupTypeSig = Map.lookup
 
 -- -----------------------------------------------------------------------------
+-- Type Check Mode
+-- -----------------------------------------------------------------------------
+
+-- | Either infer the type of an expression or check that an expression has a
+-- specific type.
+data CheckMode = Infer | Check Type
+
+-- -----------------------------------------------------------------------------
 -- Declaration groups
 -- -----------------------------------------------------------------------------
 
