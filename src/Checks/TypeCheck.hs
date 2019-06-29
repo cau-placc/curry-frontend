@@ -585,53 +585,55 @@ tcEqn tySig p lhs rhs = do
 
 bindLhsVars :: [Type] -> Lhs a -> TCM ()
 bindLhsVars tys (FunLhs _ _ ts) = do
-  mapM_ (uncurry bindPatternVar) $ zip (map Check tys) ts
+  mapM_ (uncurry bindPatternVars) $ zip (map Check tys) ts
 bindLhsVars tys (OpLhs _ t1 op t2)
   = bindLhsVars tys (FunLhs NoSpanInfo op [t1, t2])
 bindLhsVars tys (ApLhs _ lhs ps)
   = do let (tys1, tys2) = splitAt (length ps) tys
-       mapM_ (uncurry bindPatternVar) $ zip (map Check tys2) ps
+       mapM_ (uncurry bindPatternVars) $ zip (map Check tys2) ps
        bindLhsVars tys1 lhs
 
-bindPatternVar :: CheckMode -> Pattern a -> TCM ()
-bindPatternVar Infer      (VariablePattern _ _ v)       = do
+bindPatternVars :: CheckMode -> Pattern a -> TCM ()
+bindPatternVars Infer      (VariablePattern _ _ v)       = do
   m <- getModuleIdent
   ty <- lambdaVar v
   modifyValueEnv $ flip (bindVars m) [ty]
-bindPatternVar (Check ty) (VariablePattern _ _ v)       = do
+bindPatternVars (Check ty) (VariablePattern _ _ v)       = do
   m <- getModuleIdent
   modifyValueEnv $ flip (bindVars m) [(v, 0, monoType ty)]
-bindPatternVar _          (ConstructorPattern _ _ c ps) = do
+bindPatternVars _          (ConstructorPattern _ _ c ps) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (_, (tys, _)) <- liftM (fmap arrowUnapply) (inst (constrType m c vEnv))
-  mapM_ (uncurry bindPatternVar) $ zip (map Check tys) ps
-bindPatternVar cm         (InfixPattern _ a p1 op p2)
-  = bindPatternVar cm (ConstructorPattern NoSpanInfo a op [p1, p2])
-bindPatternVar cm         (ParenPattern _ p)            = bindPatternVar cm p
-bindPatternVar _          (TuplePattern _ ps)  = mapM_ (bindPatternVar Infer) ps
-bindPatternVar _          (ListPattern _ _ ps) = mapM_ (bindPatternVar Infer) ps
-bindPatternVar cm         (AsPattern _ v p)             = do
-  bindPatternVar cm (VariablePattern undefined undefined v)
-  bindPatternVar cm p
-bindPatternVar cm         (LazyPattern _ p)             = bindPatternVar cm p
-bindPatternVar _          (FunctionPattern _ _ f ps)    = do
+  mapM_ (uncurry bindPatternVars) $ zip (map Check tys) ps
+bindPatternVars cm         (InfixPattern _ a p1 op p2)
+  = bindPatternVars cm (ConstructorPattern NoSpanInfo a op [p1, p2])
+bindPatternVars cm         (ParenPattern _ p)            = bindPatternVars cm p
+bindPatternVars _          (TuplePattern _ ps)
+  = mapM_ (bindPatternVars Infer) ps
+bindPatternVars _          (ListPattern _ _ ps)
+  = mapM_ (bindPatternVars Infer) ps
+bindPatternVars cm         (AsPattern _ v p)             = do
+  bindPatternVars cm (VariablePattern undefined undefined v)
+  bindPatternVars cm p
+bindPatternVars cm         (LazyPattern _ p)             = bindPatternVars cm p
+bindPatternVars _          (FunctionPattern _ _ f ps)    = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (_, (tys, _)) <- liftM (fmap arrowUnapply) (inst (funType m f vEnv))
-  mapM_ (uncurry bindPatternVar) $ zip (map Check tys) ps
-bindPatternVar cm         (InfixFuncPattern spi a p1 op p2)
-  = bindPatternVar cm (FunctionPattern spi a op [p1, p2])
-bindPatternVar _          (RecordPattern       _ _ _ fs) = do
+  mapM_ (uncurry bindPatternVars) $ zip (map Check tys) ps
+bindPatternVars cm         (InfixFuncPattern spi a p1 op p2)
+  = bindPatternVars cm (FunctionPattern spi a op [p1, p2])
+bindPatternVars _          (RecordPattern       _ _ _ fs) = do
   mapM_ bindFieldVars fs
-bindPatternVar _ _ = ok
+bindPatternVars _ _ = ok
 
 bindFieldVars :: Field (Pattern a) -> TCM ()
 bindFieldVars (Field _ l p) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (_, ty) <- liftM (fmap arrowBase) (inst (labelType m l vEnv))
-  bindPatternVar (Check ty) p
+  bindPatternVars (Check ty) p
 
 bindLambdaVars :: QuantExpr t => t -> TCM ()
 bindLambdaVars t = do
