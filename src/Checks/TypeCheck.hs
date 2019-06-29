@@ -568,19 +568,69 @@ tcFunctionPDecl i ps tySc p f eqs = do
 tcEquation :: Type -> PredSet -> Equation a
            -> TCM (PredSet, Equation Type)
 tcEquation ty ps eqn@(Equation p lhs rhs) =
-  tcEqn p lhs rhs >>- unifyDecl p "equation" (ppEquation eqn) ps ty
+  tcEqn ty p lhs rhs >>- unifyDecl p "equation" (ppEquation eqn) ps ty
 
-tcEqn :: SpanInfo -> Lhs a -> Rhs a
+tcEqn :: Type -> SpanInfo -> Lhs a -> Rhs a
       -> TCM (PredSet, Type, Equation Type)
-tcEqn p lhs rhs = do
+tcEqn tySig p lhs rhs = do
   (ps, tys, lhs', ps', ty, rhs') <- withLocalValueEnv $ do
-    bindLambdaVars lhs
+    let (argTys, _) = arrowUnapply tySig
+    bindLhsVars argTys lhs
     (ps, tys, lhs') <- tcLhs p lhs
     (ps', ty, rhs') <- tcRhs rhs
     return (ps, tys, lhs', ps', ty, rhs')
   ps'' <- reducePredSet p "equation" (ppEquation (Equation p lhs' rhs'))
                         (ps `Set.union` ps')
   return (ps'', foldr TypeArrow ty tys, Equation p lhs' rhs')
+
+bindLhsVars :: [Type] -> Lhs a -> TCM ()
+bindLhsVars tys (FunLhs _ _ ts) = do
+  mapM_ (uncurry bindPatternVar) $ zip (map Check tys) ts
+bindLhsVars tys (OpLhs _ t1 op t2)
+  = bindLhsVars tys (FunLhs NoSpanInfo op [t1, t2])
+bindLhsVars tys (ApLhs _ lhs ps)
+  = do let (tys1, tys2) = splitAt (length ps) tys
+       mapM_ (uncurry bindPatternVar) $ zip (map Check tys2) ps
+       bindLhsVars tys1 lhs
+
+bindPatternVar :: CheckMode -> Pattern a -> TCM ()
+bindPatternVar Infer      (VariablePattern _ _ v)       = do
+  m <- getModuleIdent
+  ty <- lambdaVar v
+  modifyValueEnv $ flip (bindVars m) [ty]
+bindPatternVar (Check ty) (VariablePattern _ _ v)       = do
+  m <- getModuleIdent
+  modifyValueEnv $ flip (bindVars m) [(v, 0, monoType ty)]
+bindPatternVar _          (ConstructorPattern _ _ c ps) = do
+  m <- getModuleIdent
+  vEnv <- getValueEnv
+  (_, (tys, _)) <- liftM (fmap arrowUnapply) (inst (constrType m c vEnv))
+  mapM_ (uncurry bindPatternVar) $ zip (map Check tys) ps
+bindPatternVar cm         (InfixPattern _ a p1 op p2)
+  = bindPatternVar cm (ConstructorPattern NoSpanInfo a op [p1, p2])
+bindPatternVar cm         (ParenPattern _ p)            = bindPatternVar cm p
+bindPatternVar _          (TuplePattern _ ps)  = mapM_ (bindPatternVar Infer) ps
+bindPatternVar _          (ListPattern _ _ ps) = mapM_ (bindPatternVar Infer) ps
+bindPatternVar cm         (AsPattern _ v p)             = do
+  bindPatternVar cm (VariablePattern undefined undefined v)
+  bindPatternVar cm p
+bindPatternVar cm         (LazyPattern _ p)             = bindPatternVar cm p
+bindPatternVar _          (FunctionPattern _ _ f ps)    = do
+  m <- getModuleIdent
+  vEnv <- getValueEnv
+  (_, (tys, _)) <- liftM (fmap arrowUnapply) (inst (funType m f vEnv))
+  mapM_ (uncurry bindPatternVar) $ zip (map Check tys) ps
+bindPatternVar cm         (InfixFuncPattern spi a p1 op p2)
+  = bindPatternVar cm (FunctionPattern spi a op [p1, p2])
+bindPatternVar _          (RecordPattern       _ _ _ fs) = do
+  mapM_ bindFieldVars fs
+
+bindFieldVars :: Field (Pattern a) -> TCM ()
+bindFieldVars (Field _ l p) = do
+  m <- getModuleIdent
+  vEnv <- getValueEnv
+  (_, ty) <- liftM (fmap arrowBase) (inst (labelType m l vEnv))
+  bindPatternVar (Check ty) p
 
 bindLambdaVars :: QuantExpr t => t -> TCM ()
 bindLambdaVars t = do
