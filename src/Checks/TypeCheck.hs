@@ -624,6 +624,7 @@ bindPatternVar cm         (InfixFuncPattern spi a p1 op p2)
   = bindPatternVar cm (FunctionPattern spi a op [p1, p2])
 bindPatternVar _          (RecordPattern       _ _ _ fs) = do
   mapM_ bindFieldVars fs
+bindPatternVar _ _ = ok
 
 bindFieldVars :: Field (Pattern a) -> TCM ()
 bindFieldVars (Field _ l p) = do
