@@ -1656,8 +1656,10 @@ freshConstrained = freshVar . TypeConstrained
 inst :: Type -> TCM (PredSet, Type)
 inst (TypeForall vs (TypeContext ps ty)) = do
   tys <- replicateM (length vs) freshTypeVar
-  return (expandAliasType tys ps, expandAliasType tys ty)
-inst pty = internalError $ "Checks.TypeCheck.inst: " ++ show pty
+  let sigma = foldr2 bindSubst idSubst vs tys
+  return (subst sigma ps, subst sigma ty)
+inst (TypeForall vs ty) = inst (TypeForall vs (TypeContext emptyPredSet ty))
+inst ty = return (emptyPredSet, ty)
 
 -- The function 'gen' generalizes a predicate set ps and a type tau into
 -- a type scheme forall alpha . ps -> tau by universally quantifying all
