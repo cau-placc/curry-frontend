@@ -574,8 +574,10 @@ checkType c@(ConstructorType spi tc) = do
       [_]         -> return c
       _           -> do report (errAmbiguousIdent tc $ map origName tks)
                         return c
-checkType (ApplyType spi ty1 ty2)    = ApplyType spi <$> checkType ty1
-                                                     <*> checkType ty2
+checkType te@(ApplyType spi ty1 ty2)    = do
+  unless (all checkImpredPoly [ty1, ty2]) $ do
+    report $ errIllegalPolymorphicType (getPosition spi) te
+  ApplyType spi <$> checkType ty1 <*> checkType ty2
 checkType v@(VariableType spi tv)
   | isAnonId tv = return v
   | otherwise   = checkType $ ConstructorType spi (qualify tv)
