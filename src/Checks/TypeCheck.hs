@@ -1334,7 +1334,7 @@ tcAltern :: Type -> SpanInfo -> Pattern a
          -> Rhs a -> TCM (PredSet, Type, Alt Type)
 tcAltern tyLhs p t rhs = do
   (ps, t', ps', ty', rhs') <- withLocalValueEnv $ do
-    bindLambdaVars t
+    bindPatternVars (Check tyLhs) t
     (ps, t') <-
       tcPatternArg p "case pattern" (ppAlt (Alt p t rhs)) emptyPredSet tyLhs t
     (ps', ty', rhs') <- tcRhs rhs
@@ -1354,7 +1354,7 @@ tcQual _ ps (StmtDecl spi ds) = do
 tcQual p ps q@(StmtBind spi t e) = do
   alpha <- freshTypeVar
   (ps', e') <- tcArg p "generator" (ppStmt q) ps (listType alpha) e
-  bindLambdaVars t
+  bindPatternVars Infer t
   (ps'', t') <- tcPatternArg p "generator" (ppStmt q) ps' alpha t
   return (ps'', StmtBind spi t' e')
 
@@ -1374,7 +1374,7 @@ tcStmt p ps mTy st@(StmtBind spi t e) = do
   alpha <- freshTypeVar
   (ps'', e') <-
     tcArg p "statement" (ppStmt st) (ps `Set.union` ps') (applyType ty [alpha]) e
-  bindLambdaVars t
+  bindPatternVars Infer t
   (ps''', t') <- tcPatternArg p "statement" (ppStmt st) ps'' alpha t
   return ((ps''', Just ty), StmtBind spi t' e')
 
