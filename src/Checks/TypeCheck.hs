@@ -1661,20 +1661,18 @@ inst (TypeForall vs (TypeContext ps ty)) = do
   tys <- replicateM (length vs) freshTypeVar
   let sigma = foldr2 bindSubst idSubst vs tys
   return (subst sigma ps, subst sigma ty)
-inst (TypeForall vs ty) = inst (TypeForall vs (TypeContext emptyPredSet ty))
-inst ty = return (emptyPredSet, ty)
+inst (TypeForall vs ty) = inst (TypeForall vs (predType ty))
+inst ty                 = return (emptyPredSet, ty)
 
--- The function 'gen' generalizes a predicate set ps and a type tau into
--- a type scheme forall alpha . ps -> tau by universally quantifying all
--- type variables that are free in tau and not fixed by the environment.
--- The set of the latter is given by gvs.
-
+-- | Generalizes a predicate set and a type into a type scheme by universally
+-- quantifying all type variables that are free in the type and not fixed by
+-- the environment. The set of the latter is given by the first parameter.
 gen :: Set.Set Int -> PredSet -> Type -> Type
-gen gvs ps ty = TypeForall tvs (TypeContext ps' ty')
-  where tvs = [tv | tv <- nub (typeVars ty), tv `Set.notMember` gvs]
-        tvs' = map TypeVariable [0 ..]
-        theta = foldr2 bindSubst idSubst tvs tvs'
-        TypeContext ps' ty' = subst theta (TypeContext ps ty)
+gen gvs ps ty = TypeForall tvs (subst theta (TypeContext ps ty))
+  where
+    tvs = [tv | tv <- nub (typeVars ty), tv `Set.notMember` gvs]
+    tvs' = map TypeVariable [0..]
+    theta = foldr2 bindSubst idSubst tvs tvs'
 
 -- -----------------------------------------------------------------------------
 -- Auxiliary functions
