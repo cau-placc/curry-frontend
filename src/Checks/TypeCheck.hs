@@ -45,6 +45,7 @@ import           Control.Applicative ((<$>), (<*>))
 import           Control.Monad.Extra (allM, filterM, foldM, liftM, notM,
                                       replicateM, unless, unlessM, (&&^))
 import qualified Control.Monad.State as S (State, gets, modify, runState)
+import           Data.Foldable       (foldrM)
 import           Data.Function       (on)
 import           Data.List           (nub, nubBy, partition, sortBy)
 import qualified Data.Map            as Map (Map, empty, insert, lookup)
@@ -52,7 +53,7 @@ import           Data.Maybe          (fromJust, isJust)
 import qualified Data.Set.Extra      as Set (Set, concatMap, deleteMin, empty,
                                              fromList, insert, member,
                                              notMember, partition, singleton,
-                                             toList, union, unions)
+                                             toList, union, unions, toAscList)
 
 import           Curry.Base.Ident
 import           Curry.Base.Position
@@ -549,7 +550,7 @@ tcPDecl ps (i, FunctionDecl p _ f eqs) = do
   tcFunctionPDecl i ps (varType f vEnv) p f eqs
 tcPDecl ps (i, d@(PatternDecl p t rhs)) = do
   (ps', ty', t') <- tcPattern p t
-  (ps'', rhs') <- tcRhs rhs >>-
+  (ps'', rhs') <- tcRhs Infer rhs >>-
     unifyDecl p "pattern declaration" (ppDecl d) (ps `Set.union` ps') ty'
   return (ps'', (ty', (i, PatternDecl p t' rhs')))
 tcPDecl _ _ = internalError "TypeCheck.tcPDecl"
@@ -577,7 +578,7 @@ tcEqn tySig p lhs rhs = do
     let (argTys, _) = arrowUnapply tySig
     bindLhsVars argTys lhs
     (ps, tys, lhs') <- tcLhs p lhs
-    (ps', ty, rhs') <- tcRhs rhs
+    (ps', ty, rhs') <- tcRhs Infer rhs
     return (ps, tys, lhs', ps', ty, rhs')
   ps'' <- reducePredSet p "equation" (ppEquation (Equation p lhs' rhs'))
                         (ps `Set.union` ps')
@@ -774,6 +775,12 @@ eqTypes t1 t2 = fst (eq [] t1 t2)
    = let (res1, is') = eqs [] (map TypeVariable is1) (map TypeVariable is2)
          (res2, _  ) = eq is' t1' t2'
      in  (res1 && res2, is)
+ eq is (TypeContext ps1 t1') (TypeContext ps2 t2')
+   = let ls1 = map (\(Pred c ty) -> TypeApply (TypeConstructor c) ty) (Set.toAscList ps1)
+         ls2 = map (\(Pred c ty) -> TypeApply (TypeConstructor c) ty) (Set.toAscList ps2)
+         (res1, is') = eqs is ls1 ls2
+         (res2, is'') = eq is' t1' t2'
+     in  (res1 && res2, is'')
  eq is _                        _                        = (False, is)
 
  eqVar is i1 i2 = case lookup i1 is of
@@ -1159,49 +1166,49 @@ tcPatternArg p what doc ps ty t =
   tcPattern p t >>-
     unify p what (doc $-$ text "Term:" <+> ppPattern 0 t) ps ty
 
-tcRhs :: Rhs a -> TCM (PredSet, Type, Rhs Type)
-tcRhs (SimpleRhs p e ds) = do
+tcRhs :: CheckMode -> Rhs a -> TCM (PredSet, Type, Rhs Type)
+tcRhs cm (SimpleRhs p e ds) = do
   (ps, ds', ps', ty, e') <- withLocalValueEnv $ do
     (ps, ds') <- tcDecls ds
-    (ps', ty, e') <- tcExpr p e
+    (ps', ty, e') <- tcExpr cm p e
     return (ps, ds', ps', ty, e')
   ps'' <- reducePredSet p "expression" (ppExpr 0 e') (ps `Set.union` ps')
   return (ps'', ty, SimpleRhs p e' ds')
-tcRhs (GuardedRhs spi es ds) = withLocalValueEnv $ do
+tcRhs cm (GuardedRhs spi es ds) = withLocalValueEnv $ do
   (ps, ds') <- tcDecls ds
   ty <- freshTypeVar
-  (ps', es') <- mapAccumM (tcCondExpr ty) ps es
+  (ps', es') <- mapAccumM (tcCondExpr cm ty) ps es
   return (ps', ty, GuardedRhs spi es' ds')
 
-tcCondExpr :: Type -> PredSet -> CondExpr a -> TCM (PredSet, CondExpr Type)
-tcCondExpr ty ps (CondExpr p g e) = do
-  (ps', g') <- tcExpr p g >>- unify p "guard" (ppExpr 0 g) ps boolType
-  (ps'', e') <- tcExpr p e >>- unify p "guarded expression" (ppExpr 0 e) ps' ty
+tcCondExpr :: CheckMode -> Type -> PredSet -> CondExpr a -> TCM (PredSet, CondExpr Type)
+tcCondExpr cm ty ps (CondExpr p g e) = do
+  (ps', g') <- tcExpr Infer p g >>- unify p "guard" (ppExpr 0 g) ps boolType
+  (ps'', e') <- tcExpr cm p e >>- unify p "guarded expression" (ppExpr 0 e) ps' ty
   return (ps'', CondExpr p g' e')
 
-tcExpr :: HasPosition p => p -> Expression a
+tcExpr :: HasPosition p => CheckMode -> p -> Expression a
        -> TCM (PredSet, Type, Expression Type)
-tcExpr _ (Literal spi _ l) = do
+tcExpr _     _ (Literal spi _ l) = do
   (ps, ty) <- tcLiteral True l
   return (ps, ty, Literal spi (predType ty) l)
-tcExpr _ (Variable spi _ v) = do
+tcExpr _     _ (Variable spi _ v) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- if isAnonId (unqualify v) then freshPredType []
                                         else inst (funType m v vEnv)
   return (ps, ty, Variable spi (predType ty) v)
-tcExpr _ (Constructor spi _ c) = do
+tcExpr _     _ (Constructor spi _ c) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- inst (constrType m c vEnv)
   return (ps, ty, Constructor spi (predType ty) c)
-tcExpr p (Paren spi e) = do
-  (ps, ty, e') <- tcExpr p e
+tcExpr cm    p (Paren spi e) = do
+  (ps, ty, e') <- tcExpr cm p e
   return (ps, ty, Paren spi e')
-tcExpr p (Typed spi e qty) = do
+tcExpr _     p (Typed spi e qty) = do
   pty <- expandPoly qty
   (ps, ty) <- inst (typeScheme pty)
-  (ps', e') <- tcExpr p e >>-
+  (ps', e') <- tcExpr (Check ty) p e >>-
     unifyDecl p "explicitly typed expression" (ppExpr 0 e) emptyPredSet ty
   fvs <- computeFvEnv
   theta <- getTypeSubst
@@ -1213,131 +1220,140 @@ tcExpr p (Typed spi e qty) = do
       errTypeSigTooGeneral p m (text "Expression:" <+> ppExpr 0 e) qty
                            (rawPredType tySc)
   return (ps `Set.union` gps, ty, Typed spi e' qty)
-tcExpr _ e@(Record spi _ c fs) = do
+tcExpr _     _ e@(Record spi _ c fs) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- liftM (fmap arrowBase) (inst (constrType m c vEnv))
-  (ps', fs') <- mapAccumM (tcField tcExpr "construction"
+  (ps', fs') <- mapAccumM (tcField (tcExpr Infer) "construction"
     (\e' -> ppExpr 0 e $-$ text "Term:" <+> ppExpr 0 e') ty) ps fs
   return (ps', ty, Record spi (predType ty) c fs')
-tcExpr p e@(RecordUpdate spi e1 fs) = do
-  (ps, ty, e1') <- tcExpr p e1
-  (ps', fs') <- mapAccumM (tcField tcExpr "update"
+tcExpr _     p e@(RecordUpdate spi e1 fs) = do
+  (ps, ty, e1') <- tcExpr Infer p e1
+  (ps', fs') <- mapAccumM (tcField (tcExpr Infer) "update"
     (\e' -> ppExpr 0 e $-$ text "Term:" <+> ppExpr 0 e') ty) ps fs
   return (ps', ty, RecordUpdate spi e1' fs')
-tcExpr p (Tuple spi es) = do
-  (pss, tys, es') <- liftM unzip3 $ mapM (tcExpr p) es
+tcExpr _     p (Tuple spi es) = do
+  (pss, tys, es') <- liftM unzip3 $ mapM (tcExpr Infer p) es
   return (Set.unions pss, tupleType tys, Tuple spi es')
-tcExpr p e@(List spi _ es) = do
+tcExpr _     p e@(List spi _ es) = do
   ty <- freshTypeVar
   (ps, es') <-
-    mapAccumM (flip (tcArg p "expression" (ppExpr 0 e)) ty) emptyPredSet es
+    mapAccumM (flip (tcArg Infer p "expression" (ppExpr 0 e)) ty) emptyPredSet es
   return (ps, listType ty, List spi (predType $ listType ty) es')
-tcExpr p (ListCompr spi e qs) = do
+tcExpr _     p (ListCompr spi e qs) = do
   (ps, qs', ps', ty, e') <- withLocalValueEnv $ do
     (ps, qs') <- mapAccumM (tcQual p) emptyPredSet qs
-    (ps', ty, e') <- tcExpr p e
+    (ps', ty, e') <- tcExpr Infer p e
     return (ps, qs', ps', ty, e')
   ps'' <- reducePredSet p "expression" (ppExpr 0 e') (ps `Set.union` ps')
   return (ps'', listType ty, ListCompr spi e' qs')
-tcExpr p e@(EnumFrom spi e1) = do
+tcExpr _     p e@(EnumFrom spi e1) = do
   (ps, ty) <- freshEnumType
-  (ps', e1') <- tcArg p "arithmetic sequence" (ppExpr 0 e) ps ty e1
+  (ps', e1') <- tcArg Infer p "arithmetic sequence" (ppExpr 0 e) ps ty e1
   return (ps', listType ty, EnumFrom spi e1')
-tcExpr p e@(EnumFromThen spi e1 e2) = do
+tcExpr _     p e@(EnumFromThen spi e1 e2) = do
   (ps, ty) <- freshEnumType
-  (ps', e1') <- tcArg p "arithmetic sequence" (ppExpr 0 e) ps ty e1
-  (ps'', e2') <- tcArg p "arithmetic sequence" (ppExpr 0 e) ps' ty e2
+  (ps', e1') <- tcArg Infer p "arithmetic sequence" (ppExpr 0 e) ps ty e1
+  (ps'', e2') <- tcArg Infer p "arithmetic sequence" (ppExpr 0 e) ps' ty e2
   return (ps'', listType ty, EnumFromThen spi e1' e2')
-tcExpr p e@(EnumFromTo spi e1 e2) = do
+tcExpr _     p e@(EnumFromTo spi e1 e2) = do
   (ps, ty) <- freshEnumType
-  (ps', e1') <- tcArg p "arithmetic sequence" (ppExpr 0 e) ps ty e1
-  (ps'', e2') <- tcArg p "arithmetic sequence" (ppExpr 0 e) ps' ty e2
+  (ps', e1') <- tcArg Infer p "arithmetic sequence" (ppExpr 0 e) ps ty e1
+  (ps'', e2') <- tcArg Infer p "arithmetic sequence" (ppExpr 0 e) ps' ty e2
   return (ps'', listType ty, EnumFromTo spi e1' e2')
-tcExpr p e@(EnumFromThenTo spi e1 e2 e3) = do
+tcExpr _     p e@(EnumFromThenTo spi e1 e2 e3) = do
   (ps, ty) <- freshEnumType
-  (ps', e1') <- tcArg p "arithmetic sequence" (ppExpr 0 e) ps ty e1
-  (ps'', e2') <- tcArg p "arithmetic sequence" (ppExpr 0 e) ps' ty e2
-  (ps''', e3') <- tcArg p "arithmetic sequence" (ppExpr 0 e) ps'' ty e3
+  (ps', e1') <- tcArg Infer p "arithmetic sequence" (ppExpr 0 e) ps ty e1
+  (ps'', e2') <- tcArg Infer p "arithmetic sequence" (ppExpr 0 e) ps' ty e2
+  (ps''', e3') <- tcArg Infer p "arithmetic sequence" (ppExpr 0 e) ps'' ty e3
   return (ps''', listType ty, EnumFromThenTo spi e1' e2' e3')
-tcExpr p e@(UnaryMinus spi e1) = do
+tcExpr _     p e@(UnaryMinus spi e1) = do
   (ps, ty) <- freshNumType
-  (ps', e1') <- tcArg p "unary negation" (ppExpr 0 e) ps ty e1
+  (ps', e1') <- tcArg Infer p "unary negation" (ppExpr 0 e) ps ty e1
   return (ps', ty, UnaryMinus spi e1')
-tcExpr p e@(Apply spi e1 e2) = do
-  (ps, (alpha, beta), e1') <- tcExpr p e1 >>=-
-    tcArrow p "application" (ppExpr 0 e $-$ text "Term:" <+> ppExpr 0 e1)
-  (ps', e2') <- tcArg p "application" (ppExpr 0 e) ps alpha e2
-  return (ps', beta, Apply spi e1' e2')
-tcExpr p e@(InfixApply spi e1 op e2) = do
+tcExpr _     p e@(Apply spi e1 e2) = do
+  (ps, y, e1') <- tcExpr Infer p e1
+  (ps', y') <- skolemise y
+  (alpha, beta) <- tcArrow p "application" (ppExpr 0 e $-$ text "Term:" <+> ppExpr 0 e1) y'
+  (ps'', e2') <- tcArg Infer p "application" (ppExpr 0 e) (ps `Set.union` ps') alpha e2
+  return (ps'', beta, Apply spi e1' e2')
+tcExpr _     p e@(InfixApply spi e1 op e2) = do
   (ps, (alpha, beta, gamma), op') <- tcInfixOp op >>=-
     tcBinary p "infix application" (ppExpr 0 e $-$ text "Operator:" <+> ppOp op)
-  (ps', e1') <- tcArg p "infix application" (ppExpr 0 e) ps alpha e1
-  (ps'', e2') <- tcArg p "infix application" (ppExpr 0 e) ps' beta e2
+  (aps, alpha') <- skolemise alpha
+  (ps', e1') <- tcArg Infer p "infix application" (ppExpr 0 e) (ps `Set.union` aps) alpha' e1
+  (bps, beta') <- skolemise beta
+  (ps'', e2') <- tcArg Infer p "infix application" (ppExpr 0 e) (ps' `Set.union` bps) beta' e2
   return (ps'', gamma, InfixApply spi e1' op' e2')
-tcExpr p e@(LeftSection spi e1 op) = do
+tcExpr _     p e@(LeftSection spi e1 op) = do
   (ps, (alpha, beta), op') <- tcInfixOp op >>=-
     tcArrow p "left section" (ppExpr 0 e $-$ text "Operator:" <+> ppOp op)
-  (ps', e1') <- tcArg p "left section" (ppExpr 0 e) ps alpha e1
+  (aps, alpha') <- skolemise alpha
+  (ps', e1') <- tcArg Infer p "left section" (ppExpr 0 e) (ps `Set.union` aps) alpha e1
   return (ps', beta, LeftSection spi e1' op')
-tcExpr p e@(RightSection spi op e1) = do
+tcExpr _     p e@(RightSection spi op e1) = do
   (ps, (alpha, beta, gamma), op') <- tcInfixOp op >>=-
     tcBinary p "right section" (ppExpr 0 e $-$ text "Operator:" <+> ppOp op)
-  (ps', e1') <- tcArg p "right section" (ppExpr 0 e) ps beta e1
+  (bps, beta') <- skolemise beta
+  (ps', e1') <- tcArg Infer p "right section" (ppExpr 0 e) (ps `Set.union` bps) beta e1
   return (ps', TypeArrow alpha gamma, RightSection spi op' e1')
-tcExpr p (Lambda spi ts e) = do
-  (pss, tys, ts', ps, ty, e')<- withLocalValueEnv $ do
-    bindLambdaVars ts
+tcExpr cm    p (Lambda spi ts e) = do
+  (pss, tys, ts', ps, ty, e') <- withLocalValueEnv $ do
+    let cmList = (case cm of
+                    Infer    -> map (const Infer) [0..]
+                    Check ty -> let (argTys, _) = arrowUnapply ty
+                                 in map Check argTys ++ map (const Infer) [0..])
+    mapM_ (uncurry bindPatternVars) $ zip cmList ts
     (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern p) ts
-    (ps, ty, e') <- tcExpr p e
+    (ps, ty, e') <- tcExpr Infer p e
     return (pss, tys, ts', ps, ty, e')
   ps' <- reducePredSet p "expression" (ppExpr 0 e') (Set.unions $ ps : pss)
   return (ps', foldr TypeArrow ty tys, Lambda spi ts' e')
-tcExpr p (Let spi ds e) = do
+tcExpr cm    p (Let spi ds e) = do
   (ps, ds', ps', ty, e') <- withLocalValueEnv $ do
     (ps, ds') <- tcDecls ds
-    (ps', ty, e') <- tcExpr p e
+    (ps', ty, e') <- tcExpr cm p e
     return (ps, ds', ps', ty, e')
   ps'' <- reducePredSet p "expression" (ppExpr 0 e') (ps `Set.union` ps')
   return (ps'', ty, Let spi ds' e')
-tcExpr p (Do spi sts e) = do
+tcExpr _     p (Do spi sts e) = do
   (sts', ty, ps', e') <- withLocalValueEnv $ do
     ((ps, mTy), sts') <-
       mapAccumM (uncurry (tcStmt p)) (emptyPredSet, Nothing) sts
     ty <- liftM (maybe id TypeApply mTy) freshTypeVar
-    (ps', e') <- tcExpr p e >>- unify p "statement" (ppExpr 0 e) ps ty
+    (ps', e') <- tcExpr Infer p e >>- unify p "statement" (ppExpr 0 e) ps ty
     return (sts', ty, ps', e')
   return (ps', ty, Do spi sts' e')
-tcExpr p e@(IfThenElse spi e1 e2 e3) = do
-  (ps, e1') <- tcArg p "expression" (ppExpr 0 e) emptyPredSet boolType e1
-  (ps', ty, e2') <- tcExpr p e2
-  (ps'', e3') <- tcArg p "expression" (ppExpr 0 e) (ps `Set.union` ps') ty e3
+tcExpr cm    p e@(IfThenElse spi e1 e2 e3) = do
+  (ps, e1') <- tcArg Infer p "expression" (ppExpr 0 e) emptyPredSet boolType e1
+  (ps', ty, e2') <- tcExpr cm p e2
+  (ps'', e3') <- tcArg cm p "expression" (ppExpr 0 e) (ps `Set.union` ps') ty e3
   return (ps'', ty, IfThenElse spi e1' e2' e3')
-tcExpr p (Case spi ct e as) = do
-  (ps, tyLhs, e') <- tcExpr p e
+tcExpr cm    p (Case spi ct e as) = do
+  (ps, tyLhs, e') <- tcExpr Infer p e
   tyRhs <- freshTypeVar
-  (ps', as') <- mapAccumM (tcAlt tyLhs tyRhs) ps as
+  (ps', as') <- mapAccumM (tcAlt cm tyLhs tyRhs) ps as
   return (ps', tyRhs, Case spi ct e' as')
 
-tcArg :: HasPosition p => p -> String -> Doc -> PredSet -> Type -> Expression a
-      -> TCM (PredSet, Expression Type)
-tcArg p what doc ps ty e =
-  tcExpr p e >>- unify p what (doc $-$ text "Term:" <+> ppExpr 0 e) ps ty
+tcArg :: HasPosition p => CheckMode -> p -> String -> Doc -> PredSet -> Type
+      -> Expression a -> TCM (PredSet, Expression Type)
+tcArg cm p what doc ps ty e =
+  tcExpr cm p e >>- unify p what (doc $-$ text "Term:" <+> ppExpr 0 e) ps ty
 
-tcAlt :: Type -> Type -> PredSet -> Alt a
+tcAlt :: CheckMode -> Type -> Type -> PredSet -> Alt a
       -> TCM (PredSet, Alt Type)
-tcAlt tyLhs tyRhs ps a@(Alt p t rhs) =
-  tcAltern tyLhs p t rhs >>-
+tcAlt cm tyLhs tyRhs ps a@(Alt p t rhs) =
+  tcAltern cm tyLhs p t rhs >>-
     unify p "case alternative" (ppAlt a) ps tyRhs
 
-tcAltern :: Type -> SpanInfo -> Pattern a
+tcAltern :: CheckMode -> Type -> SpanInfo -> Pattern a
          -> Rhs a -> TCM (PredSet, Type, Alt Type)
-tcAltern tyLhs p t rhs = do
+tcAltern cm tyLhs p t rhs = do
   (ps, t', ps', ty', rhs') <- withLocalValueEnv $ do
     bindPatternVars (Check tyLhs) t
     (ps, t') <-
       tcPatternArg p "case pattern" (ppAlt (Alt p t rhs)) emptyPredSet tyLhs t
-    (ps', ty', rhs') <- tcRhs rhs
+    (ps', ty', rhs') <- tcRhs cm rhs
     return (ps, t', ps', ty', rhs')
   ps'' <- reducePredSet p "alternative" (ppAlt (Alt p t' rhs'))
                         (ps `Set.union` ps')
@@ -1346,14 +1362,14 @@ tcAltern tyLhs p t rhs = do
 tcQual :: HasPosition p => p -> PredSet -> Statement a
        -> TCM (PredSet, Statement Type)
 tcQual p ps (StmtExpr spi e) = do
-  (ps', e') <- tcExpr p e >>- unify p "guard" (ppExpr 0 e) ps boolType
+  (ps', e') <- tcExpr Infer p e >>- unify p "guard" (ppExpr 0 e) ps boolType
   return (ps', StmtExpr spi e')
 tcQual _ ps (StmtDecl spi ds) = do
   (ps', ds') <- tcDecls ds
   return (ps `Set.union` ps', StmtDecl spi ds')
 tcQual p ps q@(StmtBind spi t e) = do
   alpha <- freshTypeVar
-  (ps', e') <- tcArg p "generator" (ppStmt q) ps (listType alpha) e
+  (ps', e') <- tcArg Infer p "generator" (ppStmt q) ps (listType alpha) e
   bindPatternVars Infer t
   (ps'', t') <- tcPatternArg p "generator" (ppStmt q) ps' alpha t
   return (ps'', StmtBind spi t' e')
@@ -1363,7 +1379,7 @@ tcStmt :: HasPosition p => p -> PredSet -> Maybe Type -> Statement a
 tcStmt p ps mTy (StmtExpr spi e) = do
   (ps', ty) <- maybe freshMonadType (return . (,) emptyPredSet) mTy
   alpha <- freshTypeVar
-  (ps'', e') <- tcExpr p e >>-
+  (ps'', e') <- tcExpr Infer p e >>-
     unify p "statement" (ppExpr 0 e) (ps `Set.union` ps') (applyType ty [alpha])
   return ((ps'', Just ty), StmtExpr spi e')
 tcStmt _ ps mTy (StmtDecl spi ds) = do
@@ -1373,7 +1389,7 @@ tcStmt p ps mTy st@(StmtBind spi t e) = do
   (ps', ty) <- maybe freshMonadType (return . (,) emptyPredSet) mTy
   alpha <- freshTypeVar
   (ps'', e') <-
-    tcArg p "statement" (ppStmt st) (ps `Set.union` ps') (applyType ty [alpha]) e
+    tcArg Infer p "statement" (ppStmt st) (ps `Set.union` ps') (applyType ty [alpha]) e
   bindPatternVars Infer t
   (ps''', t') <- tcPatternArg p "statement" (ppStmt st) ps'' alpha t
   return ((ps''', Just ty), StmtBind spi t' e')
@@ -1406,9 +1422,8 @@ tcField check what doc ty ps (Field p l x) = do
     unify p ("record " ++ what) (doc x) (ps `Set.union` ps') ty2
   return (ps'', Field p l x')
 
--- The function 'tcArrow' checks that its argument can be used as
--- an arrow type a -> b and returns the pair (a,b).
-
+-- | Checks that its argument can be used as an arrow type @a -> b@ and returns
+-- the pair @(a, b)@.
 tcArrow :: HasPosition p => p -> String -> Doc -> Type -> TCM (Type, Type)
 tcArrow p what doc ty = do
   theta <- getTypeSubst
@@ -1425,9 +1440,8 @@ tcArrow p what doc ty = do
     report $ errNonFunctionType p what doc m ty'
     (,) <$> freshTypeVar <*> freshTypeVar
 
--- The function 'tcBinary' checks that its argument can be used as an arrow type
--- a -> b -> c and returns the triple (a,b,c).
-
+-- | Checks that its argument can be used as an arrow type @a -> b -> c@ and
+-- returns the triple @(a, b, c)@.
 tcBinary :: HasPosition p => p -> String -> Doc -> Type
          -> TCM (Type, Type, Type)
 tcBinary p what doc ty = tcArrow p what doc ty >>= uncurry binaryArrow
@@ -1443,7 +1457,6 @@ tcBinary p what doc ty = tcArrow p what doc ty >>= uncurry binaryArrow
     report $ errNonBinaryOp p what doc m (TypeArrow ty1 ty2)
     (,,) <$> return ty1 <*> freshTypeVar <*> freshTypeVar
 
-
 -- -----------------------------------------------------------------------------
 -- Unification (Robinson's algorithm)
 -- -----------------------------------------------------------------------------
@@ -1455,40 +1468,44 @@ unify p what doc ps1 ty1 ps2 ty2 = do
   let ty1' = subst theta ty1
       ty2' = subst theta ty2
   m <- getModuleIdent
-  case unifyTypes m ty1' ty2' of
-    Left reason -> report $ errTypeMismatch p what doc m ty1' ty2' reason
-    Right sigma -> modifyTypeSubst (compose sigma)
-  reducePredSet p what doc $ ps1 `Set.union` ps2
+  res <- unifyTypes m ty1' ty2'
+  let ps = either (const emptyPredSet) fst res
+  case res of
+    Left reason      -> report $ errTypeMismatch p what doc m ty1' ty2' reason
+    Right (_, sigma) -> modifyTypeSubst (compose sigma)
+  _ <- reducePredSet p what doc ps
+  reducePredSet p what doc $ (ps1 `Set.union` ps2)
 
-unifyTypes :: ModuleIdent -> Type -> Type -> Either Doc TypeSubst
+unifyTypes :: ModuleIdent -> Type -> Type
+           -> TCM (Either Doc (PredSet, TypeSubst))
 unifyTypes _ (TypeVariable tv1)         ty@(TypeVariable tv2)
-  | tv1 == tv2 = Right idSubst
-  | otherwise  = Right (singleSubst tv1 ty)
+  | tv1 == tv2 = return $ Right (emptyPredSet, idSubst)
+  | otherwise  = return $ Right (emptyPredSet, singleSubst tv1 ty)
 unifyTypes m (TypeVariable tv)          ty
-  | tv `elem` typeVars ty = Left (errRecursiveType m tv ty)
-  | otherwise             = Right (singleSubst tv ty)
+  | tv `elem` typeVars ty = return $ Left (errRecursiveType m tv ty)
+  | otherwise             = return $ Right (emptyPredSet, singleSubst tv ty)
 unifyTypes m ty                         (TypeVariable tv)
-  | tv `elem` typeVars ty = Left (errRecursiveType m tv ty)
-  | otherwise             = Right (singleSubst tv ty)
+  | tv `elem` typeVars ty = return $ Left (errRecursiveType m tv ty)
+  | otherwise             = return $ Right (emptyPredSet, singleSubst tv ty)
 unifyTypes _ (TypeConstrained tys1 tv1) ty@(TypeConstrained tys2 tv2)
-  | tv1 == tv2   = Right idSubst
-  | tys1 == tys2 = Right (singleSubst tv1 ty)
+  | tv1 == tv2   = return $ Right (emptyPredSet, idSubst)
+  | tys1 == tys2 = return $ Right (emptyPredSet, singleSubst tv1 ty)
 unifyTypes m (TypeConstrained tys tv)   ty
-  = foldr (choose . unifyTypes m ty)
-          (Left (errIncompatibleTypes m ty (head tys)))
-          tys
+  = foldrM (\ty' s -> liftM (`choose` s) (unifyTypes m ty ty'))
+           (Left (errIncompatibleTypes m ty (head tys)))
+           tys
   where
-    choose (Left _)      theta' = theta'
-    choose (Right theta) _      = Right (bindSubst tv ty theta)
+    choose (Left _)            theta' = theta'
+    choose (Right (ps, theta)) _      = Right (ps, bindSubst tv ty theta)
 unifyTypes m ty                         (TypeConstrained tys tv)
-  = foldr (choose . unifyTypes m ty)
-          (Left (errIncompatibleTypes m ty (head tys)))
-          tys
+  = foldrM (\ty' s -> liftM (`choose` s) (unifyTypes m ty ty'))
+           (Left (errIncompatibleTypes m ty (head tys)))
+           tys
   where
-    choose (Left _)      theta' = theta'
-    choose (Right theta) _      = Right (bindSubst tv ty theta)
+    choose (Left _)            theta' = theta'
+    choose (Right (ps, theta)) _      = Right (ps, bindSubst tv ty theta)
 unifyTypes _ (TypeConstructor tc1)      (TypeConstructor tc2)
-  | tc1 == tc2 = Right idSubst
+  | tc1 == tc2 = return $ Right (emptyPredSet, idSubst)
 unifyTypes m (TypeApply ty11 ty12)      (TypeApply ty21 ty22)
   = unifyTypeLists m [ty11, ty12] [ty21, ty22]
 unifyTypes m ty@(TypeApply _ _)         (TypeArrow ty21 ty22)
@@ -1497,18 +1514,44 @@ unifyTypes m (TypeArrow ty11 ty12)      ty@(TypeApply _ _)
   = unifyTypes m (TypeApply (TypeApply (TypeConstructor qArrowId) ty11) ty12) ty
 unifyTypes m (TypeArrow ty11 ty12)      (TypeArrow ty21 ty22)
   = unifyTypeLists m [ty11, ty12] [ty21, ty22]
+unifyTypes m ty1@(TypeForall _ _)       ty2@(TypeForall _ _)
+  = do (ps1, ty1') <- skolemise ty1
+       (ps2, ty2') <- skolemise ty2
+       res <- unifyTypes m ty1' ty2'
+       let ps = ps1 `Set.union` ps2
+       case res of
+         Left x         -> return $ Left x
+         Right (ps', s) -> return $ Right (ps `Set.union` ps', s)
+unifyTypes m ty1@(TypeForall _ _)       ty2
+  = do (ps1, ty1') <- skolemise ty1
+       res <- unifyTypes m ty1' ty2
+       case res of
+         Left x        -> return $ Left x
+         Right (ps, s) -> return $ Right (ps1 `Set.union` ps, s)
+unifyTypes m ty1                        ty2@(TypeForall _ _)
+  = do (ps2, ty2') <- skolemise ty2
+       res <- unifyTypes m ty1 ty2'
+       case res of
+         Left x        -> return $ Left x
+         Right (ps, s) -> return $ Right (ps2 `Set.union` ps, s)
 unifyTypes m ty1                        ty2
-  = Left (errIncompatibleTypes m ty1 ty2)
+  = return $ Left (errIncompatibleTypes m ty1 ty2)
 
-unifyTypeLists :: ModuleIdent -> [Type] -> [Type] -> Either Doc TypeSubst
-unifyTypeLists _ []         _          = Right idSubst
-unifyTypeLists _ _          []         = Right idSubst
-unifyTypeLists m (ty1:tys1) (ty2:tys2)
-  = either Left unifyTypesTheta (unifyTypeLists m tys1 tys2)
+unifyTypeLists :: ModuleIdent -> [Type] -> [Type]
+               -> TCM (Either Doc (PredSet, TypeSubst))
+unifyTypeLists _ []         _          = return $ Right (emptyPredSet, idSubst)
+unifyTypeLists _ _          []         = return $ Right (emptyPredSet, idSubst)
+unifyTypeLists m (ty1:tys1) (ty2:tys2) = do
+  res <- unifyTypeLists m tys1 tys2
+  case res of
+    Left x        -> return $ Left x
+    Right (ps, s) -> unifyTypesTheta ps s
   where
-    unifyTypesTheta theta
-      = either Left (Right . flip compose theta)
-                    (unifyTypes m (subst theta ty1) (subst theta ty2))
+    unifyTypesTheta ps theta = do
+      res <- unifyTypes m (subst theta ty1) (subst theta ty2)
+      case res of
+        Left x        -> return $ Left x
+        Right (ps', s) -> return $ Right (ps `Set.union` ps', compose s theta)
 
 -- After performing a unification, the resulting substitution is applied to the
 -- current predicate set and the resulting predicate set is subject to a
@@ -1673,6 +1716,22 @@ gen gvs ps ty = TypeForall tvs (subst theta (TypeContext ps ty))
     tvs = [tv | tv <- nub (typeVars ty), tv `Set.notMember` gvs]
     tvs' = map TypeVariable [0..]
     theta = foldr2 bindSubst idSubst tvs tvs'
+
+skolemise :: Type -> TCM (PredSet, Type)
+skolemise (TypeForall tvs (TypeContext ps ty)) = do
+  tvs' <- replicateM (length tvs) freshTypeVar
+  let sigma = foldr2 bindSubst idSubst tvs tvs'
+  let ps' = subst sigma ps
+  (ps'', ty'') <- skolemise (subst sigma ty)
+  return (Set.union ps' ps'', ty'')
+skolemise (TypeForall tvs ty) = do
+  tvs' <- replicateM (length tvs) freshTypeVar
+  let sigma = foldr2 bindSubst idSubst tvs tvs'
+  skolemise (subst sigma ty)
+skolemise (TypeArrow ty1 ty2) = do
+  (ps, ty2') <- skolemise ty2
+  return (ps, TypeArrow ty1 ty2')
+skolemise ty                  = return (emptyPredSet, ty)
 
 -- -----------------------------------------------------------------------------
 -- Auxiliary functions
