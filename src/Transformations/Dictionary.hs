@@ -815,13 +815,13 @@ instance DictTrans Rhs where
 
 instance DictTrans Pattern where
   dictTrans (LiteralPattern        _ pty l) =
-    return $ LiteralPattern NoSpanInfo (unpredType pty) l
+    return $ LiteralPattern NoSpanInfo (transformPredType $ unpredType pty) l
   dictTrans (VariablePattern       _ pty v) =
-    return $ VariablePattern NoSpanInfo (unpredType pty) v
+    return $ VariablePattern NoSpanInfo (transformPredType $ unpredType pty) v
   dictTrans (ConstructorPattern _ pty c ts) = do
     pls <- matchPredList (conType c) $
-             foldr (TypeArrow . typeOf) (unpredType pty) ts
-    ConstructorPattern NoSpanInfo (unpredType pty) c <$> addDictArgs pls ts
+             foldr (TypeArrow . typeOf) (transformPredType $ unpredType pty) ts
+    ConstructorPattern NoSpanInfo (transformPredType $ unpredType pty) c <$> addDictArgs pls ts
   dictTrans (AsPattern               _ v t) =
     AsPattern NoSpanInfo v <$> dictTrans t
   dictTrans t                               =
@@ -829,16 +829,16 @@ instance DictTrans Pattern where
 
 instance DictTrans Expression where
   dictTrans (Literal     _ pty l) =
-    return $ Literal NoSpanInfo (unpredType pty) l
+    return $ Literal NoSpanInfo (transformPredType $ unpredType pty) l
   dictTrans (Variable    _ pty v) = do
-    pls <- matchPredList (funType v) (unpredType pty)
+    pls <- matchPredList (funType v) (transformPredType $ unpredType pty)
     es <- mapM dictArg pls
-    let ty = foldr (TypeArrow . typeOf) (unpredType pty) es
+    let ty = foldr (TypeArrow . typeOf) (transformPredType $ unpredType pty) es
     return $ apply (Variable NoSpanInfo ty v) es
   dictTrans (Constructor _ pty c) = do
-    pls <- matchPredList (conType c) (unpredType pty)
+    pls <- matchPredList (conType c) (transformPredType $ unpredType pty)
     es <- mapM dictArg pls
-    let ty = foldr (TypeArrow . typeOf) (unpredType pty) es
+    let ty = foldr (TypeArrow . typeOf) (transformPredType $ unpredType pty) es
     return $ apply (Constructor NoSpanInfo ty c) es
   dictTrans (Apply       _ e1 e2) =
     Apply NoSpanInfo <$> dictTrans e1 <*> dictTrans e2
@@ -1226,8 +1226,14 @@ dictType (Pred cls ty) = TypeApply (TypeConstructor $ qDictTypeId cls) ty
 -- dictionary type argument.
 
 transformPredType :: Type -> Type
-transformPredType (TypeContext ps ty) =
-  foldr (TypeArrow . dictType) ty $ Set.toList ps
+transformPredType (TypeApply ty1 ty2) = TypeApply (transformPredType ty1)
+                                                  (transformPredType ty2)
+transformPredType (TypeArrow ty1 ty2) = TypeArrow (transformPredType ty1)
+                                                  (transformPredType ty2)
+transformPredType (TypeForall  tvs ty) = TypeForall tvs (transformPredType ty)
+transformPredType (TypeContext ps ty)
+  = foldr (TypeArrow . dictType) (transformPredType ty) $ Set.toList ps
+transformPredType ty = ty
 
 -- The function 'transformMethodPredType' first deletes the implicit class
 -- constraint and then transforms the resulting predicated type as above.
