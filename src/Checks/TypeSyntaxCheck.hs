@@ -344,7 +344,8 @@ checkDecl (TypeDecl p tc tvs ty)           = do
   checkTypeLhs tvs
   ty' <- checkClosedType tvs ty
   return $ TypeDecl p tc tvs ty'
-checkDecl (TypeSig p vs ty)                = TypeSig p vs <$> checkType ty
+checkDecl (TypeSig p vs ty)                = TypeSig p vs
+                                               <$> checkClosedTypeSig ty
 checkDecl (FunctionDecl a p f eqs)         = FunctionDecl a p f <$>
   mapM checkEquation eqs
 checkDecl (PatternDecl p t rhs)            = PatternDecl p t <$> checkRhs rhs
@@ -467,7 +468,7 @@ checkCondExpr (CondExpr spi g e) = CondExpr spi <$> checkExpr g <*> checkExpr e
 checkExpr :: Expression a -> TSCM (Expression a)
 checkExpr (Paren spi e)                 = Paren spi <$> checkExpr e
 checkExpr (Typed spi e qty)             = Typed spi <$> checkExpr e
-                                                    <*> checkType qty
+                                                    <*> checkClosedTypeSig qty
 checkExpr (Record spi a c fs)           = Record spi a c <$>
   mapM checkFieldExpr fs
 checkExpr (RecordUpdate spi e fs)       = RecordUpdate spi <$> checkExpr e <*>
@@ -558,6 +559,10 @@ checkClosedType tvs ty = do
   ty' <- checkType ty
   checkClosed tvs ty'
   return ty'
+
+checkClosedTypeSig :: TypeExpr -> TSCM TypeExpr
+checkClosedTypeSig ty@(ForallType _ _ _) = checkClosedType [] ty
+checkClosedTypeSig ty                    = checkType ty
 
 checkType :: TypeExpr -> TSCM TypeExpr
 checkType c@(ConstructorType spi tc) = do
