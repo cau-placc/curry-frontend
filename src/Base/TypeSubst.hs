@@ -59,7 +59,7 @@ subst' sigma (TypeConstrained tys tv) = case substVar sigma tv of
 subst' sigma (TypeContext ps ty)
   = applyType (TypeContext (subst sigma ps) (subst sigma ty))
 subst' sigma (TypeForall      tvs ty) =
-  applyType (TypeForall tvs (subst sigma ty))
+  applyType (TypeForall tvs (subst (foldr unbindSubst sigma tvs) ty))
 
 instance SubstType Pred where
   subst sigma (Pred qcls ty) = Pred qcls (subst sigma ty)
