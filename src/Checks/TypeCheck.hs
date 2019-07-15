@@ -586,7 +586,7 @@ tcEqn tySig p lhs rhs = do
 
 bindLhsVars :: [Type] -> Lhs a -> TCM ()
 bindLhsVars tys (FunLhs _ _ ts) = do
-  mapM_ (uncurry bindPatternVars) $ zip (map Check tys) ts
+  mapM_ (uncurry bindPatternVars) $ zip (map Check tys ++ repeat Infer) ts
 bindLhsVars tys (OpLhs _ t1 op t2)
   = bindLhsVars tys (FunLhs NoSpanInfo op [t1, t2])
 bindLhsVars tys (ApLhs _ lhs ps)
