@@ -236,7 +236,7 @@ instance Rename TypeExpr where
   rename (ArrowType spi ty1 ty2)  = ArrowType spi <$> rename ty1 <*> rename ty2
   rename (ParenType spi ty)       = ParenType spi <$> rename ty
   rename (ContextType spi cx ty)  = ContextType spi <$> rename cx <*> rename ty
-  rename (ForallType spi vs ty)   = do
+  rename (ForallType spi vs ty)   = withLocalEnv $ do
     bindVars vs
     ForallType spi <$> mapM rename vs <*> rename ty
 
