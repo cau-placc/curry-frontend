@@ -766,9 +766,10 @@ eqTypes t1 t2 = fst (eq [] t1 t2)
          (res2, is2) = eq is1 tt1 tt2
      in  (res1 && res2, is2)
  eq is (TypeForall     is1 t1') (TypeForall     is2 t2')
-   = let (res1, is') = eqs [] (map TypeVariable is1) (map TypeVariable is2)
-         (res2, _  ) = eq is' t1' t2'
-     in  (res1 && res2, is)
+   = let (res1, is') = eqs (eqUnbound is1 is) (map TypeVariable is1)
+                                              (map TypeVariable is2)
+         (res2, is'') = eq is' t1' t2'
+     in  (res1 && res2, is ++ eqUnbound is1 is'')
  eq is (TypeContext ps1 t1') (TypeContext ps2 t2')
    = let ls1 = map (\(Pred c ty) -> TypeApply (TypeConstructor c) ty) (Set.toAscList ps1)
          ls2 = map (\(Pred c ty) -> TypeApply (TypeConstructor c) ty) (Set.toAscList ps2)
@@ -776,6 +777,8 @@ eqTypes t1 t2 = fst (eq [] t1 t2)
          (res2, is'') = eq is' t1' t2'
      in  (res1 && res2, is'')
  eq is _                        _                        = (False, is)
+
+ eqUnbound tvs = filter (not . (`elem` tvs) . fst)
 
  eqVar is i1 i2 = case lookup i1 is of
    Nothing  -> (True, (i1, i2) : is)
