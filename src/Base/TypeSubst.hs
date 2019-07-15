@@ -110,8 +110,13 @@ expandAliasType' _   tc@(TypeConstrained _ _) = applyType tc
 expandAliasType' tys (TypeArrow      ty1 ty2) =
   applyType (TypeArrow (expandAliasType tys ty1) (expandAliasType tys ty2))
 expandAliasType' tys (TypeForall      tvs ty) =
-  applyType (TypeForall tvs (expandAliasType tys ty))
+  applyType (TypeForall (map (expandVar tys) tvs) (expandAliasType tys ty))
 expandAliasType' _ _ = internalError "Base.TypeSubst.sexpandAliasType'"
+
+expandVar :: [Type] -> Int -> Int
+expandVar tys tv = case tys !! tv of
+  TypeVariable tv' -> tv'
+  _                -> tv
 
 instance ExpandAliasType Pred where
   expandAliasType tys (Pred qcls ty) = Pred qcls (expandAliasType tys ty)
