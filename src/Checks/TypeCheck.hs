@@ -636,12 +636,6 @@ bindFieldVars (Field _ l p) = do
   (_, ty) <- liftM (fmap arrowBase) (inst (labelType m l vEnv))
   bindPatternVars (Check ty) p
 
-bindLambdaVars :: QuantExpr t => t -> TCM ()
-bindLambdaVars t = do
-  m <- getModuleIdent
-  vs <- mapM lambdaVar (nub $ bv t)
-  modifyValueEnv $ flip (bindVars m) vs
-
 lambdaVar :: Ident -> TCM (Ident, Int, Type)
 lambdaVar v = do
   ty <- freshTypeVar
