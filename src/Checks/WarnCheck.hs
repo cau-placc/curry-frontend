@@ -301,6 +301,7 @@ checkTypeExpr (TupleType           _ tys) = mapM_ checkTypeExpr tys
 checkTypeExpr (ListType             _ ty) = checkTypeExpr ty
 checkTypeExpr (ArrowType       _ ty1 ty2) = mapM_ checkTypeExpr [ty1, ty2]
 checkTypeExpr (ParenType            _ ty) = checkTypeExpr ty
+checkTypeExpr (ContextType        _ _ ty) = checkTypeExpr ty
 checkTypeExpr (ForallType        _ vs ty) = do
   mapM_ insertTypeVar vs
   checkTypeExpr ty
