@@ -1008,6 +1008,7 @@ insertTypeExpr (TupleType        _ tys) = mapM_ insertTypeExpr tys
 insertTypeExpr (ListType          _ ty) = insertTypeExpr ty
 insertTypeExpr (ArrowType    _ ty1 ty2) = mapM_ insertTypeExpr [ty1,ty2]
 insertTypeExpr (ParenType         _ ty) = insertTypeExpr ty
+insertTypeExpr (ContextType     _ _ ty) = insertTypeExpr ty
 insertTypeExpr (ForallType      _ _ ty) = insertTypeExpr ty
 
 insertConstrDecl :: ConstrDecl -> WCM ()
