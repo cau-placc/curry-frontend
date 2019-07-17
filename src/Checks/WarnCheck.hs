@@ -269,6 +269,7 @@ checkDecl (InstanceDecl p cx cls ty ds) = do
   checkOrphanInstance p cx cls ty
   checkMissingMethodImplementations p cls ds
   mapM_ checkDecl ds
+checkDecl (TypeSig              _ _ ty) = checkTypeExpr ty
 checkDecl _                             = ok
 
 --TODO: shadowing und context etc.
@@ -302,9 +303,10 @@ checkTypeExpr (ListType             _ ty) = checkTypeExpr ty
 checkTypeExpr (ArrowType       _ ty1 ty2) = mapM_ checkTypeExpr [ty1, ty2]
 checkTypeExpr (ParenType            _ ty) = checkTypeExpr ty
 checkTypeExpr (ContextType        _ _ ty) = checkTypeExpr ty
-checkTypeExpr (ForallType        _ vs ty) = do
+checkTypeExpr (ForallType        _ vs ty) = inNestedScope $ do
   mapM_ insertTypeVar vs
   checkTypeExpr ty
+  reportUnusedTypeVars vs
 
 -- Checks locally declared identifiers (i.e. functions and logic variables)
 -- for shadowing
@@ -384,7 +386,9 @@ checkCondExpr (CondExpr _ c e) = checkExpr c >> checkExpr e
 checkExpr :: Expression () -> WCM ()
 checkExpr (Variable            _ _ v) = visitQId v
 checkExpr (Paren                 _ e) = checkExpr e
-checkExpr (Typed               _ e _) = checkExpr e
+checkExpr (Typed              _ e ty) = do
+  checkExpr e
+  checkTypeExpr ty
 checkExpr (Record           _ _ _ fs) = mapM_ (checkField checkExpr) fs
 checkExpr (RecordUpdate       _ e fs) = do
   checkExpr e
