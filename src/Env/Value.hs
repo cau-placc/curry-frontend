@@ -182,8 +182,8 @@ initDCEnv = foldr predefDC emptyTopEnv
   where predefDC (c, a, ty) = predefTopEnv c' (DataConstructor c' a ls ty)
           where ls = replicate a anonId
                 c' = qualify c
-        constrType (TypeForall vs (TypeContext ps ty)) =
-          TypeForall vs . TypeContext ps . foldr TypeArrow ty
+        constrType (TypeForall vs ty) =
+          TypeForall vs . foldr TypeArrow ty
         constrType pty = internalError $ "Env.Value.initDCEnv: " ++ show pty
 
 -- The functions 'bindLocalVar' and 'bindLocalVars' add the type of one or

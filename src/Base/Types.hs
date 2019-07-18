@@ -372,13 +372,13 @@ methodType (ClassMethod _ _ ty) = ty
 
 -- | Translates a type into a monomorphic type scheme.
 monoType :: Type -> Type
-monoType = TypeForall [] . predType
+monoType = TypeForall []
 
 -- | Translates a type into a polymorphic type scheme. It assumes that all
 -- universally quantified type variables in the type are assigned indices
 -- starting with 0 and does not renumber the variables.
 polyType :: Type -> Type
-polyType = typeScheme . predType
+polyType = typeScheme
 
 -- | Translates a type into a type scheme.
 typeScheme :: Type -> Type

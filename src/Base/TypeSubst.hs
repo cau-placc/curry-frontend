@@ -139,4 +139,4 @@ normalize n ty = expandAliasType [TypeVariable (occur tv) | tv <- [0..]] ty
 
 instanceType :: ExpandAliasType a => Type -> a -> a
 instanceType ty = expandAliasType (ty : map TypeVariable [length vs ..])
-  where TypeForall vs (TypeContext _ _) = polyType ty
+  where TypeForall vs _ = polyType ty
