@@ -408,7 +408,7 @@ bindClassMethod m (ClassMethod f _ ty) =
 setDefaults :: Decl a -> TCM ()
 setDefaults (DefaultDecl _ tys) = mapM toDefaultType tys >>= setDefaultTypes
   where
-    toDefaultType = liftM snd . (inst =<<) . liftM typeScheme . expandMono []
+    toDefaultType ty = snd <$> (inst =<< typeScheme <$> expandMono [] ty)
 setDefaults _                   = ok
 
 -- -----------------------------------------------------------------------------
@@ -498,7 +498,7 @@ tcPDeclGroup ps pds                      = do
       (gps, lps) = splitPredSet fvs ps'
   lps' <- foldM (uncurry . defaultPDecl fvs) lps impPds'
   theta' <- getTypeSubst
-  let impPds'' = map (uncurry (fixType . gen fvs lps' . subst theta')) impPds'
+  let impPds'' = map (uncurry (fixType . gen fvs . TypeContext lps' . subst theta')) impPds'
   modifyValueEnv $ flip (rebindVars m) (concatMap (declVars . snd) impPds'')
   (ps'', expPds') <- mapAccumM (uncurry . tcCheckPDecl) gps expPds
   return (ps'', impPds'' ++ expPds')
@@ -717,7 +717,7 @@ tcCheckPDecl ps qty pd = do
   poly <- isNonExpansive $ snd pd
   let (gps, lps) = splitPredSet fvs ps'
       ty' = subst theta ty
-      tySc = if poly then gen fvs lps ty' else monoType ty'
+      tySc = if poly then gen fvs (TypeContext lps ty') else monoType ty'
   checkPDeclType qty gps tySc pd'
 
 checkPDeclType :: TypeExpr -> PredSet -> Type -> PDecl Type
@@ -993,7 +993,7 @@ tcMethodPDecl tySc (i, FunctionDecl p _ f eqs) = withLocalValueEnv $ do
   modifyValueEnv $ bindFun m f True (eqnArity $ head eqs) tySc
   (ps, (ty, pd)) <- tcFunctionPDecl i emptyPredSet tySc p f eqs
   theta <- getTypeSubst
-  return (gen Set.empty ps $ subst theta ty, pd)
+  return (gen Set.empty $ TypeContext ps $ subst theta ty, pd)
 tcMethodPDecl _ _ = internalError "TypeCheck.tcMethodPDecl"
 
 checkClassMethodType :: TypeExpr -> Type -> PDecl Type
@@ -1213,7 +1213,7 @@ tcExpr _     p (Typed spi e qty) = do
   fvs <- computeFvEnv
   theta <- getTypeSubst
   let (gps, lps) = splitPredSet fvs ps'
-      tySc = gen fvs lps (subst theta ty)
+      tySc = gen fvs (TypeContext lps (subst theta ty))
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
     report $
@@ -1273,28 +1273,28 @@ tcExpr _     p e@(UnaryMinus spi e1) = do
   return (ps', ty, UnaryMinus spi e1')
 tcExpr _     p e@(Apply spi e1 e2) = do
   (ps, y, e1') <- tcExpr Infer p e1
-  (ps', y') <- skolemise y
+  (ps', y') <- inst y
   (alpha, beta) <- tcArrow p "application" (ppExpr 0 e $-$ text "Term:" <+> ppExpr 0 e1) y'
   (ps'', e2') <- tcArg Infer p "application" (ppExpr 0 e) (ps `Set.union` ps') alpha e2
   return (ps'', beta, Apply spi e1' e2')
 tcExpr _     p e@(InfixApply spi e1 op e2) = do
   (ps, (alpha, beta, gamma), op') <- tcInfixOp op >>=-
     tcBinary p "infix application" (ppExpr 0 e $-$ text "Operator:" <+> ppOp op)
-  (aps, alpha') <- skolemise alpha
+  (aps, alpha') <- inst alpha
   (ps', e1') <- tcArg Infer p "infix application" (ppExpr 0 e) (ps `Set.union` aps) alpha' e1
-  (bps, beta') <- skolemise beta
+  (bps, beta') <- inst beta
   (ps'', e2') <- tcArg Infer p "infix application" (ppExpr 0 e) (ps' `Set.union` bps) beta' e2
   return (ps'', gamma, InfixApply spi e1' op' e2')
 tcExpr _     p e@(LeftSection spi e1 op) = do
   (ps, (alpha, beta), op') <- tcInfixOp op >>=-
     tcArrow p "left section" (ppExpr 0 e $-$ text "Operator:" <+> ppOp op)
-  (aps, alpha') <- skolemise alpha
+  (aps, alpha') <- inst alpha
   (ps', e1') <- tcArg Infer p "left section" (ppExpr 0 e) (ps `Set.union` aps) alpha e1
   return (ps', beta, LeftSection spi e1' op')
 tcExpr _     p e@(RightSection spi op e1) = do
   (ps, (alpha, beta, gamma), op') <- tcInfixOp op >>=-
     tcBinary p "right section" (ppExpr 0 e $-$ text "Operator:" <+> ppOp op)
-  (bps, beta') <- skolemise beta
+  (bps, beta') <- inst beta
   (ps', e1') <- tcArg Infer p "right section" (ppExpr 0 e) (ps `Set.union` bps) beta e1
   return (ps', TypeArrow alpha gamma, RightSection spi op' e1')
 tcExpr cm    p (Lambda spi ts e) = do
@@ -1515,21 +1515,21 @@ unifyTypes m (TypeArrow ty11 ty12)      ty@(TypeApply _ _)
 unifyTypes m (TypeArrow ty11 ty12)      (TypeArrow ty21 ty22)
   = unifyTypeLists m [ty11, ty12] [ty21, ty22]
 unifyTypes m ty1@(TypeForall _ _)       ty2@(TypeForall _ _)
-  = do (ps1, ty1') <- skolemise ty1
-       (ps2, ty2') <- skolemise ty2
+  = do (ps1, ty1') <- inst ty1
+       (ps2, ty2') <- inst ty2
        res <- unifyTypes m ty1' ty2'
        let ps = ps1 `Set.union` ps2
        case res of
          Left x         -> return $ Left x
          Right (ps', s) -> return $ Right (ps `Set.union` ps', s)
 unifyTypes m ty1@(TypeForall _ _)       ty2
-  = do (ps1, ty1') <- skolemise ty1
+  = do (ps1, ty1') <- inst ty1
        res <- unifyTypes m ty1' ty2
        case res of
          Left x        -> return $ Left x
          Right (ps, s) -> return $ Right (ps1 `Set.union` ps, s)
 unifyTypes m ty1                        ty2@(TypeForall _ _)
-  = do (ps2, ty2') <- skolemise ty2
+  = do (ps2, ty2') <- inst ty2
        res <- unifyTypes m ty1 ty2'
        case res of
          Left x        -> return $ Left x
@@ -1665,6 +1665,26 @@ isNumClass :: ClassEnv -> QualIdent -> Bool
 isNumClass = (elem qNumId .) . flip allSuperClasses
 
 -- -----------------------------------------------------------------------------
+-- Type Expansion
+-- -----------------------------------------------------------------------------
+
+-- | Handles the expansion of type aliases in a type expression. The resulting
+-- type will start with a predicate set.
+expandPoly :: TypeExpr -> TCM Type
+expandPoly ty = do
+  m <- getModuleIdent
+  tcEnv <- getTyConsEnv
+  clsEnv <- getClassEnv
+  return $ expandPolyType m tcEnv clsEnv ty
+
+-- | Handles the expansion of type aliases in a type expression.
+expandMono :: [Ident] -> TypeExpr -> TCM Type
+expandMono tvs ty = do
+  m <- getModuleIdent
+  tcEnv <- getTyConsEnv
+  clsEnv <- getClassEnv
+  return $ expandMonoType m tcEnv clsEnv tvs ty
+-- -----------------------------------------------------------------------------
 -- Instantiation and Generalization
 -- -----------------------------------------------------------------------------
 
@@ -1699,39 +1719,27 @@ freshMonadType = freshPredType [qMonadId]
 freshConstrained :: [Type] -> TCM Type
 freshConstrained = freshVar . TypeConstrained
 
-inst :: Type -> TCM (PredSet, Type)
-inst (TypeForall vs (TypeContext ps ty)) = do
-  tys <- replicateM (length vs) freshTypeVar
-  let sigma = foldr2 bindSubst idSubst vs tys
-  return (subst sigma ps, subst sigma ty)
-inst (TypeForall vs ty) = inst (TypeForall vs (predType ty))
-inst ty                 = return (emptyPredSet, ty)
-
--- | Generalizes a predicate set and a type into a type scheme by universally
--- quantifying all type variables that are free in the type and not fixed by
--- the environment. The set of the latter is given by the first parameter.
-gen :: Set.Set Int -> PredSet -> Type -> Type
-gen gvs ps ty = TypeForall tvs (subst theta (TypeContext ps ty))
+-- | Generalizes a type into a type scheme by universally quantifying all type
+-- variables that are free in the type and not fixed by the environment. The set
+-- of the latter is given by the first parameter.
+gen :: Set.Set Int -> Type -> Type
+gen gvs ty = TypeForall tvs (subst theta ty)
   where
     tvs = [tv | tv <- nub (typeVars ty), tv `Set.notMember` gvs]
-    tvs' = map TypeVariable [0..]
-    theta = foldr2 bindSubst idSubst tvs tvs'
+    theta = foldr2 bindSubst idSubst tvs $  map TypeVariable [0..]
 
-skolemise :: Type -> TCM (PredSet, Type)
-skolemise (TypeForall tvs (TypeContext ps ty)) = do
-  tvs' <- replicateM (length tvs) freshTypeVar
-  let sigma = foldr2 bindSubst idSubst tvs tvs'
-  let ps' = subst sigma ps
-  (ps'', ty'') <- skolemise (subst sigma ty)
-  return (Set.union ps' ps'', ty'')
-skolemise (TypeForall tvs ty) = do
-  tvs' <- replicateM (length tvs) freshTypeVar
-  let sigma = foldr2 bindSubst idSubst tvs tvs'
-  skolemise (subst sigma ty)
-skolemise (TypeArrow ty1 ty2) = do
-  (ps, ty2') <- skolemise ty2
+-- | Instantiates the given type with fresh type variables.
+inst :: Type -> TCM (PredSet, Type)
+inst (TypeForall tvs ty) = do
+  tys <- replicateM (length tvs) freshTypeVar
+  inst $ subst (foldr2 bindSubst idSubst tvs tys) ty
+inst (TypeContext ps ty) = do
+  (ps', ty') <- inst ty
+  return (Set.union ps ps', ty')
+inst (TypeArrow ty1 ty2) = do
+  (ps, ty2') <- inst ty2
   return (ps, TypeArrow ty1 ty2')
-skolemise ty                  = return (emptyPredSet, ty)
+inst ty                  = return (emptyPredSet, ty)
 
 -- -----------------------------------------------------------------------------
 -- Auxiliary functions
@@ -1797,34 +1805,18 @@ labelType m l vEnv = case qualLookupValue l vEnv of
          [Label _ _ tySc] -> tySc
          _                -> internalError $ "TypeCheck.labelType: " ++ show l
 
--- | Handles the expansion of type aliases in a type expression. The resulting
--- type will start with a predicate set.
-expandPoly :: TypeExpr -> TCM Type
-expandPoly ty = do
-  m <- getModuleIdent
-  tcEnv <- getTyConsEnv
-  clsEnv <- getClassEnv
-  return $ expandPolyType m tcEnv clsEnv ty
-
--- | Handles the expansion of type aliases in a type expression.
-expandMono :: [Ident] -> TypeExpr -> TCM Type
-expandMono tvs ty = do
-  m <- getModuleIdent
-  tcEnv <- getTyConsEnv
-  clsEnv <- getClassEnv
-  return $ expandMonoType m tcEnv clsEnv tvs ty
-
 -- | Splits a predicate set into a pair of predicate sets such that all type
 -- variables that appear in the types of the predicates in the first predicate
 -- set are elements of a given set of type variables.
 splitPredSet :: Set.Set Int -> PredSet -> (PredSet, PredSet)
 splitPredSet fvs = Set.partition (all (`Set.member` fvs) . typeVars)
 
--- | Computes the set of free type variables of a type environment. We ignore
--- the types of data constructors here because we know that they are closed.
+-- | Computes the set of free type variables in the given value environment. We
+-- ignore the types of data constructors here because we know that they are
+-- closed.
 fvEnv :: ValueEnv -> Set.Set Int
-fvEnv vEnv = Set.fromList [tv | tySc <- localTypes vEnv,
-                                tv <- typeVars (rawPredType tySc), tv < 0]
+fvEnv vEnv = Set.fromList [tv | TypeForall _ ty <- localTypes vEnv,
+                                tv <- typeVars ty, tv < 0]
 
 computeFvEnv :: TCM (Set.Set Int)
 computeFvEnv = do
@@ -1845,15 +1837,15 @@ errPolymorphicVar v = posMessage v $ hsep $ map text
 
 errTypeSigTooGeneral :: HasPosition a => a -> ModuleIdent -> Doc -> TypeExpr
                      -> Type -> Message
-errTypeSigTooGeneral p m what qty ty = posMessage p $ vcat
+errTypeSigTooGeneral p m what tySc ty = posMessage p $ vcat
   [ text "Type signature too general", what
   , text "Inferred type:" <+> ppType m ty
-  , text "Type signature:" <+> ppTypeExpr 0 qty ]
+  , text "Type signature:" <+> ppTypeExpr 0 tySc ]
 
 errMethodTypeTooSpecific :: HasPosition a => a -> ModuleIdent -> Doc -> Type
                          -> Type -> Message
-errMethodTypeTooSpecific p m what ety ity = posMessage p $ vcat
-  [ text "Method type too specific", what
+errMethodTypeTooSpecific p m doc ety ity = posMessage p $ vcat
+  [ text "Method type too specific", doc
   , text "Inferred type:" <+> ppType m ity
   , text "Expected type:" <+> ppType m ety ]
 
