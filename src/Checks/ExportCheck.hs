@@ -168,7 +168,7 @@ checkThing' f tcExport = do
 
   getTc (DataConstructor  _ _ _ pty) = getTc' $ rawType pty
   getTc (NewtypeConstructor _ _ pty) = getTc' $ rawType pty
-  getTc (Label _ _ (TypeForall _ (TypeContext _ (TypeArrow tc' _)))) =
+  getTc (Label _ _ (TypeForall _ (TypeArrow tc' _))) =
     let (TypeConstructor tc, _) = unapplyType False tc' in tc
   getTc err = internalError $ currentModuleName ++ ".checkThing'.getTc: " ++ show err
 
