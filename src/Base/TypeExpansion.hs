@@ -78,7 +78,7 @@ expandPredSet m tcEnv clsEnv
 expandPredType :: ModuleIdent -> TCEnv -> ClassEnv -> Type -> Type
 expandPredType m tcEnv clsEnv (TypeContext ps ty) =
   TypeContext (expandPredSet m tcEnv clsEnv ps) (expandType m tcEnv clsEnv ty)
-expandPredType _ _ _ _ = internalError "Base.TypeExpansion.expandPredType"
+expandPredType m tcEnv clsEnv ty = expandType m tcEnv clsEnv ty
 
 -- The functions 'expandMonoType' and 'expandPolyType' convert (qualified)
 -- type expressions into (predicated) types and also expand all type synonyms

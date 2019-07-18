@@ -207,7 +207,7 @@ fromQualPredSet m tvs = fromPredSet tvs . unqualifyPredSet m
 fromPredType :: [Ident] -> Type -> CS.TypeExpr
 fromPredType tvs (TypeContext ps ty) =
   CS.ContextType NoSpanInfo (fromPredSet tvs ps) (fromType tvs ty)
-fromPredType _ _ = internalError "Base.CurryTypes.fromPredType: wrong type"
+fromPredType tvs ty = fromType tvs ty
 
 fromQualPredType :: ModuleIdent -> [Ident] -> Type -> CS.TypeExpr
 fromQualPredType m tvs = fromPredType tvs . unqualifyType m

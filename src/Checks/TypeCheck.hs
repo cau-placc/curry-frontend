@@ -322,7 +322,7 @@ checkFieldLabel _ = ok
 
 tcFieldLabel :: HasPosition p => [Ident] -> (Ident, p, TypeExpr)
              -> TCM (Ident, p, Type)
-tcFieldLabel tvs (l, p, ty) = (,,) l p <$> expandMono tvs ty
+tcFieldLabel tvs (l, p, ty) = (,,) l p <$> expandTypeExpr ty
 
 groupLabels :: Eq a => [(a, b, c)] -> [(a, b, [c])]
 groupLabels []               = []
@@ -408,7 +408,7 @@ bindClassMethod m (ClassMethod f _ ty) =
 setDefaults :: Decl a -> TCM ()
 setDefaults (DefaultDecl _ tys) = mapM toDefaultType tys >>= setDefaultTypes
   where
-    toDefaultType ty = snd <$> (inst =<< typeScheme <$> expandMono [] ty)
+    toDefaultType ty = snd <$> (inst =<< typeScheme <$> expandTypeExpr ty)
 setDefaults _                   = ok
 
 -- -----------------------------------------------------------------------------
@@ -524,7 +524,7 @@ tcDeclVars (FunctionDecl _ _ f eqs) = do
   let n = eqnArity $ head eqs
   case lookupTypeSig f sigs of
     Just qty -> do
-      pty <- expandPoly qty
+      pty <- expandTypeExpr qty
       return [(f, n, typeScheme pty)]
     Nothing -> do
       tys <- replicateM (n + 1) freshTypeVar
@@ -540,7 +540,7 @@ tcDeclVar poly v = do
   case lookupTypeSig v sigs of
     Just qty
       | poly || null (fv qty) -> do
-        pty <- expandPoly qty
+        pty <- expandTypeExpr qty
         return (v, 0, typeScheme pty)
       | otherwise -> do
         report $ errPolymorphicVar v
@@ -723,14 +723,14 @@ tcCheckPDecl ps qty pd = do
 checkPDeclType :: TypeExpr -> PredSet -> Type -> PDecl Type
                -> TCM (PredSet, PDecl Type)
 checkPDeclType qty ps tySc (i, FunctionDecl p _ f eqs) = do
-  pty <- expandPoly qty
+  pty <- expandTypeExpr qty
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
     report $ errTypeSigTooGeneral p m (text "Function:" <+> ppIdent f) qty
                                   (rawPredType tySc)
   return (ps, (i, FunctionDecl p pty f eqs))
 checkPDeclType qty ps tySc (i, PatternDecl p (VariablePattern spi _ v) rhs) = do
-  pty <- expandPoly qty
+  pty <- expandTypeExpr qty
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
     report $ errTypeSigTooGeneral p m (text "Variable:" <+> ppIdent v) qty
@@ -955,7 +955,7 @@ tcTopPDecl (i, ClassDecl p cx cls tv ds) = withLocalSigEnv $ do
   where (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
 tcTopPDecl (i, InstanceDecl p cx qcls ty ds) = do
   tcEnv <- getTyConsEnv
-  pty <- expandPoly $ ContextType NoSpanInfo cx ty
+  pty <- expandTypeExpr $ ContextType NoSpanInfo cx ty
   mid <- getModuleIdent
   let origCls = getOrigName mid qcls tcEnv
       clsQual = head $ filter isQualified $ reverseLookupByOrigName origCls tcEnv
@@ -999,7 +999,7 @@ tcMethodPDecl _ _ = internalError "TypeCheck.tcMethodPDecl"
 checkClassMethodType :: TypeExpr -> Type -> PDecl Type
                      -> TCM (PDecl Type)
 checkClassMethodType qty tySc pd@(_, FunctionDecl p _ f _) = do
-  pty <- expandPoly qty
+  pty <- expandTypeExpr qty
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
     report $ errTypeSigTooGeneral p m (text "Method:" <+> ppIdent f) qty
@@ -1033,7 +1033,7 @@ instMethodType qual (TypeContext ps ty) f = do
   let TypeForall _ (TypeContext ps' _) = tySc
       TypeContext ps'' ty'' = instanceType ty (TypeContext (Set.deleteMin ps') (rawType tySc))
   return $ TypeContext (ps `Set.union` ps'') ty''
-instMethodType _ _ _ = internalError "TypeCheck.instMethodType"
+instMethodType qual ty f = instMethodType qual (TypeContext emptyPredSet ty) f
 
 -- External functions:
 
@@ -1044,7 +1044,7 @@ tcExternal f = do
     Nothing -> internalError "TypeCheck.tcExternal: type signature not found"
     Just ty -> do
       m <- getModuleIdent
-      ty' <- unpredType <$> (expandPoly $ createContext ty)
+      ty' <- unpredType <$> expandTypeExpr ty
       modifyValueEnv $ bindFun m f False (arrowArity ty') (polyType ty')
       return ty'
   where
@@ -1206,7 +1206,7 @@ tcExpr cm    p (Paren spi e) = do
   (ps, ty, e') <- tcExpr cm p e
   return (ps, ty, Paren spi e')
 tcExpr _     p (Typed spi e qty) = do
-  pty <- expandPoly qty
+  pty <- expandTypeExpr qty
   (ps, ty) <- inst (typeScheme pty)
   (ps', e') <- tcExpr (Check ty) p e >>-
     unifyDecl p "explicitly typed expression" (ppExpr 0 e) emptyPredSet ty
@@ -1668,22 +1668,15 @@ isNumClass = (elem qNumId .) . flip allSuperClasses
 -- Type Expansion
 -- -----------------------------------------------------------------------------
 
--- | Handles the expansion of type aliases in a type expression. The resulting
--- type will start with a predicate set.
-expandPoly :: TypeExpr -> TCM Type
-expandPoly ty = do
+-- | Converts the given type expression into a type and expands all type
+-- aliases.
+expandTypeExpr :: TypeExpr -> TCM Type
+expandTypeExpr ty = do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv
   clsEnv <- getClassEnv
-  return $ expandPolyType m tcEnv clsEnv ty
+  return $ expandType m tcEnv clsEnv $ toType [] ty
 
--- | Handles the expansion of type aliases in a type expression.
-expandMono :: [Ident] -> TypeExpr -> TCM Type
-expandMono tvs ty = do
-  m <- getModuleIdent
-  tcEnv <- getTyConsEnv
-  clsEnv <- getClassEnv
-  return $ expandMonoType m tcEnv clsEnv tvs ty
 -- -----------------------------------------------------------------------------
 -- Instantiation and Generalization
 -- -----------------------------------------------------------------------------
