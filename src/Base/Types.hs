@@ -301,7 +301,8 @@ unqualifyPredSet m = Set.map (unqualifyPred m)
 
 -- | Transforms a type into a predicated type with an empty predicate set.
 predType :: Type -> Type
-predType = TypeContext emptyPredSet
+predType ty@(TypeContext _ _) = ty
+predType ty                   = TypeContext emptyPredSet ty
 
 -- | Removes the predicate set from a predicated type.
 unpredType :: Type -> Type

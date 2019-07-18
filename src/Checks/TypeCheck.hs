@@ -53,7 +53,7 @@ import           Data.Maybe          (fromJust, isJust)
 import qualified Data.Set.Extra      as Set (Set, concatMap, deleteMin, empty,
                                              fromList, insert, member,
                                              notMember, partition, singleton,
-                                             toList, union, unions, toAscList)
+                                             toAscList, toList, union, unions)
 
 import           Curry.Base.Ident
 import           Curry.Base.Position
@@ -96,7 +96,7 @@ checkDecls ds = do
   mapM_ checkFieldLabel (filter isTypeDecl ds) &&> bindLabels
   bindClassMethods
   mapM_ setDefaults $ filter isDefaultDecl ds
-  (_, bpds') <- tcPDecls bpds
+  bpds' <- snd <$> tcPDecls bpds
   tpds' <- mapM tcTopPDecl tpds
   theta <- getTypeSubst
   return $ map (fmap $ subst theta) $ fromPDecls $ tpds' ++ bpds'
@@ -124,7 +124,7 @@ type TCM = S.State TcState
 type InstEnv' = (InstEnv, Map.Map QualIdent [Type])
 
 data TcState = TcState
-  { moduleIdent  :: ModuleIdent -- read only
+  { moduleIdent  :: ModuleIdent -- read-only
   , tyConsEnv    :: TCEnv
   , valueEnv     :: ValueEnv
   , classEnv     :: ClassEnv
@@ -209,9 +209,9 @@ withLocalSigEnv act = do
 
 getNextId :: TCM Int
 getNextId = do
-  nid <- S.gets nextId
-  S.modify $ \s -> s { nextId = succ nid }
-  return nid
+  n <- S.gets nextId
+  S.modify $ \s -> s { nextId = succ n }
+  return n
 
 report :: Message -> TCM ()
 report err = S.modify $ \s -> s { errors = err : errors s }
@@ -236,7 +236,7 @@ fromPDecls :: [PDecl a] -> [Decl a]
 fromPDecls = map snd . sortBy (compare `on` fst)
 
 -- During the type check we also have to convert the type of declarations
--- without annotations which is done by the function 'untyped' below.
+-- without annotations, which is done by the function 'untyped' below.
 
 untyped :: PDecl a -> PDecl b
 untyped = fmap $ fmap $ internalError "TypeCheck.untyped"
@@ -255,9 +255,20 @@ bindConstrs = do
   tcEnv <- getTyConsEnv
   modifyValueEnv $ bindConstrs' m tcEnv
 
+-- | Returns the type for the given type constructor with the given arity.
 constrType' :: QualIdent -> Int -> Type
 constrType' tc n
   = applyType (TypeConstructor tc) $ map TypeVariable [0 .. n - 1]
+
+-- | Returns the type of the data constructor with the given result type and
+-- the given argument types.
+dataConstrType :: Int -> Type -> [Type] -> Type
+dataConstrType n ty tys = TypeForall [0 .. n - 1] $ foldr TypeArrow ty tys
+
+-- | Returns the type of the newtype data constructor with the given result
+-- type and the given argument type.
+newConstrType :: Int -> Type -> Type -> Type
+newConstrType n lty cty = TypeForall [0 .. n - 1] $ TypeArrow lty cty
 
 bindConstrs' :: ModuleIdent -> TCEnv -> ValueEnv -> ValueEnv
 bindConstrs' m tcEnv vEnv = foldr (bindData . snd) vEnv $ localBindings tcEnv
@@ -267,10 +278,6 @@ bindConstrs' m tcEnv vEnv = foldr (bindData . snd) vEnv $ localBindings tcEnv
     bindData (RenamingType tc k c) vEnv' = let n = kindArity k in
       bindNewConstr m n (constrType' tc n) c vEnv'
     bindData _                     vEnv' = vEnv'
-
-dataConstrType :: Int -> Type -> [Type] -> Type
-dataConstrType n ty tys
-  = TypeForall [0 .. n - 1] $ predType (foldr TypeArrow ty tys)
 
 bindConstr :: ModuleIdent -> Int -> Type -> DataConstr -> ValueEnv -> ValueEnv
 bindConstr m n ty (DataConstr c tys)
@@ -282,9 +289,6 @@ bindConstr m n ty (DataConstr c tys)
 bindConstr m n ty (RecordConstr c ls tys)
   = bindGlobalInfo (\qc tySc -> DataConstructor qc (length tys) ls tySc) m c
                    (dataConstrType n ty tys)
-
-newConstrType :: Int -> Type -> Type -> Type
-newConstrType n lty cty = TypeForall [0 .. n - 1] $ predType (TypeArrow lty cty)
 
 bindNewConstr :: ModuleIdent -> Int -> Type -> DataConstr -> ValueEnv
               -> ValueEnv

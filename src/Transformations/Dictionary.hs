@@ -684,17 +684,16 @@ dictTransValues :: ValueEnv -> ValueEnv
 dictTransValues = fmap dictTransValueInfo
 
 dictTransValueInfo :: ValueInfo -> ValueInfo
-dictTransValueInfo (DataConstructor c a ls (TypeForall vs (TypeContext ps ty))) =
-  DataConstructor c a' ls' $ TypeForall vs (predType ty')
+dictTransValueInfo (DataConstructor c a ls (TypeForall vs ty)) =
+  DataConstructor c a' ls' $ TypeForall vs ty'
   where a'  = arrowArity ty'
         ls' = replicate (a' - a) anonId ++ ls
-        ty'  = transformPredType (TypeContext ps ty)
-dictTransValueInfo (NewtypeConstructor c l pty) =
-  NewtypeConstructor c l $ predType $ unpredType pty
-dictTransValueInfo (Value f cm a (TypeForall vs (TypeContext ps ty))) =
+        ty' = transformPredType ty
+dictTransValueInfo (NewtypeConstructor c l pty) = NewtypeConstructor c l pty
+dictTransValueInfo (Value f cm a (TypeForall vs ty)) =
   Value f False a' $ TypeForall vs (predType ty')
-  where a' = a + if cm then 1 else arrowArity ty' - arrowArity ty
-        ty' = transformPredType (TypeContext ps ty)
+  where a' = a + if cm then 1 else arrowArity ty' - arrowArity (unpredType ty)
+        ty' = transformPredType (predType ty)
 dictTransValueInfo (Label l cs pty) =
   Label l cs $ predType $ unpredType pty
 dictTransValueInfo vi = internalError $ "Transformations.Dictionary.dictTransValueInfo: " ++ show vi
@@ -929,7 +928,9 @@ instPredList (Pred cls ty) = case unapplyType True ty of
 matchPredList :: (ValueEnv -> Type) -> Type -> DTM [Pred]
 matchPredList tySc ty2 = do
   pty <- tySc <$> getValueEnv
-  let TypeForall _ (TypeContext ps _) = pty
+  let ps = case pty of
+             TypeForall _ (TypeContext ps' _) -> ps'
+             _                                -> emptyPredSet
   return $ foldr (\(pls1, pls2) pls' ->
                    fromMaybe pls' $ qualMatch pls1 (rawType pty) pls2 ty2)
                  (internalError $ "Dictionary.matchPredList: " ++ show ps)
