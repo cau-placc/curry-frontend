@@ -311,14 +311,13 @@ bindNewConstr _ _ _   _
 
 checkFieldLabel :: Decl a -> TCM ()
 checkFieldLabel (DataDecl _ _ tvs cs _) = do
-  ls' <- mapM (tcFieldLabel tvs) labels
-  mapM_ tcFieldLabels (groupLabels ls')
+  ls <- mapM (tcFieldLabel tvs) labels
+  mapM_ tcFieldLabels (groupLabels ls)
   where
     labels = [(l, p, ty) | RecordDecl _ _ fs <- cs,
-                           FieldDecl p ls ty <- fs, l <- ls]
-checkFieldLabel (NewtypeDecl _ _ tvs (NewRecordDecl p _ (l, ty)) _) = do
-  _ <- tcFieldLabel tvs (l, p, ty)
-  ok
+                           FieldDecl p ls' ty <- fs, l <- ls']
+checkFieldLabel (NewtypeDecl _ _ tvs (NewRecordDecl p _ (l, ty)) _)
+  = tcFieldLabel tvs (l, p, ty) >> ok
 checkFieldLabel _ = ok
 
 tcFieldLabel :: HasPosition p => [Ident] -> (Ident, p, TypeExpr)
@@ -332,7 +331,7 @@ groupLabels ((x, y, z):xyzs) = (x, y, z : map thd3 xyzs') : groupLabels xyzs''
     (xyzs', xyzs'') = partition ((x ==) . fst3) xyzs
 
 tcFieldLabels :: HasPosition p => (Ident, p, [Type]) -> TCM ()
-tcFieldLabels (_, _, [])     = return ()
+tcFieldLabels (_, _, [])     = ok
 tcFieldLabels (l, p, ty:tys) = unless (not (any (ty /=) tys)) $ do
   m <- getModuleIdent
   report $ errIncompatibleLabelTypes p m l ty (head tys)
@@ -371,7 +370,7 @@ bindLabel :: ModuleIdent -> Int -> Type -> (Ident, [QualIdent], Type)
           -> ValueEnv -> ValueEnv
 bindLabel m n ty (l, lcs, lty)
   = bindGlobalInfo (\qc tySc -> Label qc lcs tySc) m l
-                   (TypeForall [0 .. n - 1] (predType (TypeArrow ty lty)))
+                   (TypeForall [0 .. n - 1] (TypeArrow ty lty))
 
 -- -----------------------------------------------------------------------------
 -- Binding class methods

@@ -65,18 +65,14 @@ instance SubstType Pred where
   subst sigma (Pred qcls ty) = Pred qcls (subst sigma ty)
 
 instance SubstType ValueInfo where
-  subst _     dc@(DataConstructor  _ _ _ _) = dc
-  subst _     nc@(NewtypeConstructor _ _ _) = nc
-  subst theta (Value             v cm a (TypeForall vs (TypeContext ps ty))) =
-    let n = length vs
-        TypeContext ps' ty' = subst (foldr unbindSubst theta [0 .. n-1])
-                                    (TypeContext ps ty)
-    in Value v cm a (TypeForall vs (TypeContext ps' ty'))
-  subst theta (Label                l r (TypeForall vs (TypeContext ps ty))) =
-    let n = length vs
-        TypeContext ps' ty' = subst (foldr unbindSubst theta [0 .. n-1])
-                                    (TypeContext ps ty)
-    in Label l r (TypeForall vs (TypeContext ps' ty'))
+  subst _     dc@(DataConstructor  _ _ _ _)     = dc
+  subst _     nc@(NewtypeConstructor _ _ _)     = nc
+  subst theta (Value v cm a (TypeForall vs ty)) =
+    let ty' = subst (foldr unbindSubst theta [0 .. length vs - 1]) ty
+     in Value v cm a (TypeForall vs ty')
+  subst theta (Label l r (TypeForall vs ty)) =
+    let ty' = subst (foldr unbindSubst theta [0 .. length vs - 1]) ty
+     in Label l r (TypeForall vs ty')
   subst _ vi = internalError $ "Base.TypeSubst.subst: " ++ show vi
 
 instance SubstType a => SubstType (TopEnv a) where

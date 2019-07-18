@@ -689,14 +689,11 @@ dictTransValueInfo (DataConstructor c a ls (TypeForall vs ty)) =
   where a'  = arrowArity ty'
         ls' = replicate (a' - a) anonId ++ ls
         ty' = transformPredType ty
-dictTransValueInfo (NewtypeConstructor c l pty) = NewtypeConstructor c l pty
 dictTransValueInfo (Value f cm a (TypeForall vs ty)) =
   Value f False a' $ TypeForall vs (predType ty')
   where a' = a + if cm then 1 else arrowArity ty' - arrowArity (unpredType ty)
         ty' = transformPredType (predType ty)
-dictTransValueInfo (Label l cs pty) =
-  Label l cs $ predType $ unpredType pty
-dictTransValueInfo vi = internalError $ "Transformations.Dictionary.dictTransValueInfo: " ++ show vi
+dictTransValueInfo vi = vi
 
 -- -----------------------------------------------------------------------------
 -- Adding exports
