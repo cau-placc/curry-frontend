@@ -738,7 +738,9 @@ checkPDeclType qty ps tySc (i, PatternDecl p (VariablePattern spi _ v) rhs) = do
 checkPDeclType _ _ _ _ = internalError "TypeCheck.checkPDeclType"
 
 checkTypeSig :: Type -> Type -> TCM Bool
-checkTypeSig (TypeContext sigPs sigTy) (TypeForall _ (TypeContext ps ty)) = do
+checkTypeSig ty1 ty2 = do
+  (sigPs, sigTy) <- inst ty1
+  (ps, ty) <- inst ty2
   clsEnv <- getClassEnv
   return $
     ty `eqTypes` sigTy &&
