@@ -143,6 +143,9 @@ matchType' (TypeArrow ty11 ty12) (TypeApply ty21 ty22) =
 matchType' (TypeForall _ ty1) (TypeForall _ ty2) = matchType' ty1 ty2
 matchType' (TypeForall _ ty1) ty2 = matchType' ty1 ty2
 matchType' ty1 (TypeForall _ ty2) = matchType' ty1 ty2
+matchType' (TypeContext _ ty1) (TypeContext _ ty2) = matchType' ty1 ty2
+matchType' (TypeContext _ ty1) ty2 = matchType' ty1 ty2
+matchType' ty1 (TypeContext _ ty2) = matchType' ty1 ty2
 matchType' _ _ = Nothing
 
 -- The functions 'bindDecls', 'bindDecl', 'bindPatterns' and 'bindPattern'
