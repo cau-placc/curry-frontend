@@ -126,7 +126,7 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
       where tc'' = qualUnqualify m tc'
             k'   = fromKind' k n
             tvs' = take n tvs
-            ty'  = fromQualType m tvs' ty
+            ty'  = fromQualType m tvs ty
     [TypeClass qcls k ms] -> IClassDecl NoPos cx qcls' k' tv ms' hs : ds
       where qcls' = qualUnqualify m qcls
             cx    = [ Constraint NoSpanInfo (qualUnqualify m scls)
