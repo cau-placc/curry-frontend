@@ -51,9 +51,9 @@ import           Data.List           (nub, nubBy, partition, sortBy)
 import qualified Data.Map            as Map (Map, empty, insert, lookup)
 import           Data.Maybe          (fromJust, isJust)
 import qualified Data.Set.Extra      as Set (Set, concatMap, deleteMin, empty,
-                                             fromList, insert, member,
-                                             notMember, partition, singleton,
-                                             toAscList, toList, union, unions)
+                                             fromList, insert, isSubsetOf,
+                                             member, notMember, partition,
+                                             singleton, toList, union, unions)
 
 import           Curry.Base.Ident
 import           Curry.Base.Position
@@ -739,62 +739,47 @@ checkPDeclType tySc ps ty (i, PatternDecl p (VariablePattern spi _ v) rhs) = do
 checkPDeclType _ _ _ _ = internalError "TypeCheck.checkPDeclType"
 
 checkTypeSig :: Type -> Type -> TCM Bool
-checkTypeSig ty1 ty2 = do
-  (sigPs, sigTy) <- inst ty1
-  (ps, ty) <- inst ty2
+checkTypeSig tySc ty = do
+  (eqb, theta, tyPs, tyScPs) <- eqTypes ty (monoType tySc)
   clsEnv <- getClassEnv
-  return $
-    ty `eqTypes` sigTy &&
-    all (`Set.member` maxPredSet clsEnv sigPs) (Set.toList ps)
-checkTypeSig _ pty = internalError $ "Checks.TypeCheck.checkTypeSig: " ++ show pty
+  return $ eqb && Set.isSubsetOf (subst theta tyPs) (maxPredSet clsEnv tyScPs)
 
--- The function 'equTypes' computes whether two types are equal modulo
--- renaming of type variables.
--- WARNING: This operation is not reflexive and expects the second type to be
--- the type signature provided by the programmer.
-eqTypes :: Type -> Type -> Bool
-eqTypes t1 t2 = fst (eq [] t1 t2)
- where
- -- @is@ is an AssocList of type variable indices
- eq is (TypeConstructor   qid1) (TypeConstructor   qid2) = (qid1 == qid2, is)
- eq is (TypeVariable        i1) (TypeVariable        i2) = eqVar is i1 i2
- eq is (TypeConstrained ts1 i1) (TypeConstrained ts2 i2)
-   = let (res1, is1) = eqs   is  ts1 ts2
-         (res2, is2) = eqVar is1 i1  i2
-     in  (res1 && res2, is2)
- eq is (TypeApply      ta1 tb1) (TypeApply      ta2 tb2)
-   = let (res1, is1) = eq is  ta1 ta2
-         (res2, is2) = eq is1 tb1 tb2
-     in  (res1 && res2, is2)
- eq is (TypeArrow      tf1 tt1) (TypeArrow      tf2 tt2)
-   = let (res1, is1) = eq is  tf1 tf2
-         (res2, is2) = eq is1 tt1 tt2
-     in  (res1 && res2, is2)
- eq is (TypeForall     is1 t1') (TypeForall     is2 t2')
-   = let (res1, is') = eqs (eqUnbound is1 is) (map TypeVariable is1)
-                                              (map TypeVariable is2)
-         (res2, is'') = eq is' t1' t2'
-     in  (res1 && res2, is ++ eqUnbound is1 is'')
- eq is (TypeContext ps1 t1') (TypeContext ps2 t2')
-   = let ls1 = map (\(Pred c ty) -> TypeApply (TypeConstructor c) ty) (Set.toAscList ps1)
-         ls2 = map (\(Pred c ty) -> TypeApply (TypeConstructor c) ty) (Set.toAscList ps2)
-         (res1, is') = eqs is ls1 ls2
-         (res2, is'') = eq is' t1' t2'
-     in  (res1 && res2, is'')
- eq is _                        _                        = (False, is)
+-- | Computes whether two types are equal modulo renaming of type variables.
+-- This operation is not reflexive and expects the second type to be the type
+-- signature provided by the programmer.
+eqTypes :: Type -> Type -> TCM (Bool, TypeSubst, PredSet, PredSet)
+eqTypes = eq idSubst
+  where
+    eqVar sub tv1 tv2 = case lookupSubst tv1 sub of
+      Just (TypeVariable tv2') -> (tv2 == tv2', sub)
+      _                        -> (True, bindSubst tv1 (TypeVariable tv2) sub)
 
- eqUnbound tvs = filter (not . (`elem` tvs) . fst)
+    eqs sub []       []       = return (True, sub, emptyPredSet, emptyPredSet)
+    eqs sub (t1:ts1) (t2:ts2) = do
+      (eqb1, sub1, ps1, ps2) <- eq sub t1 t2
+      (eqb2, sub2, ps1', ps2') <- eqs sub1 ts1 ts2
+      return (eqb1 && eqb2, sub2, ps1 `Set.union` ps1', ps2 `Set.union` ps2')
+    eqs sub _        _        = return (False, sub, emptyPredSet, emptyPredSet)
 
- eqVar is i1 i2 = case lookup i1 is of
-   Nothing  -> (True, (i1, i2) : is)
-   Just i2' -> (i2 == i2', is)
-
- eqs is []        []        = (True , is)
- eqs is (t1':ts1) (t2':ts2)
-    = let (res1, is1) = eq  is t1'  t2'
-          (res2, is2) = eqs is1 ts1 ts2
-      in  (res1 && res2, is2)
- eqs is _         _         = (False, is)
+    eq sub (TypeConstructor tc1)     (TypeConstructor tc2)
+      = return (tc1 == tc2, sub, emptyPredSet, emptyPredSet)
+    eq sub (TypeVariable tv1)        (TypeVariable tv2)        = do
+      let (eqb, sub') = eqVar sub tv1 tv2
+      return (eqb, sub', emptyPredSet, emptyPredSet)
+    eq sub (TypeConstrained ts1 tv1) (TypeConstrained ts2 tv2) = do
+      (eqb1, sub1, ps1, ps2) <- eqs sub ts1 ts2
+      let (eqb2, sub2) = eqVar sub1 tv1 tv2
+      return (eqb1 && eqb2, sub2, ps1, ps2)
+    eq sub (TypeApply ta1 tb1)       (TypeApply ta2 tb2)
+      = eqs sub [ta1, tb1] [ta2, tb2]
+    eq sub (TypeArrow ta1 tb1)       (TypeArrow ta2 tb2)
+      = eqs sub [ta1, tb1] [ta2, tb2]
+    eq sub ty1@(TypeForall _ _)      ty2@(TypeForall _ _)      = do
+      (ps1, ty1') <- inst ty1
+      (ps2, ty2') <- inst ty2
+      (eqb, sub', ps1', ps2') <- eq sub ty1' ty2'
+      return (eqb, sub', ps1 `Set.union` ps1', ps2 `Set.union` ps2')
+    eq sub _ _ = return (False, sub, emptyPredSet, emptyPredSet)
 
 -- In Curry, a non-expansive expression is either
 --
