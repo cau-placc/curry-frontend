@@ -24,6 +24,7 @@ import Base.CurryTypes
 import Base.Messages
 import Base.Types
 import Base.TypeSubst
+import Base.Utils (foldr2)
 
 import Env.Class
 import Env.TypeConstructor
@@ -44,12 +45,15 @@ expandType m tcEnv clsEnv ty = expandType' ty []
         [DataType tc' _ _]     -> applyType (TypeConstructor tc') tys
         [RenamingType tc' _ _] -> applyType (TypeConstructor tc') tys
         [AliasType _ _ n ty']  -> let (tys', tys'') = splitAt n tys
-                                   in applyType (expandAliasType tys' ty') tys''
+                                      sub = foldr2 bindSubst idSubst [0..] tys'
+                                   in applyType (subst sub ty') tys''
         _ -> case qualLookupTypeInfo (qualQualify m tc) tcEnv of
                [DataType tc' _ _]     -> applyType (TypeConstructor tc') tys
                [RenamingType tc' _ _] -> applyType (TypeConstructor tc') tys
-               [AliasType _ _ n ty']  -> let (tys', tys'') = splitAt n tys in
-                 applyType (expandAliasType tys' ty') tys''
+               [AliasType _ _ n ty']  -> let
+                 (tys', tys'') = splitAt n tys
+                 sub = foldr2 bindSubst idSubst [0..] tys' in
+                 applyType (subst sub ty') tys''
                _ -> internalError $ "Base.TypeExpansion.expandType: " ++ show tc
     expandType' (TypeApply ty1 ty2)      tys =
       expandType' ty1 (expandType' ty2 [] : tys)
