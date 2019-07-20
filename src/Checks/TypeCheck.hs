@@ -587,6 +587,10 @@ tcEqn tySc p lhs rhs = do
                         (ps `Set.union` ps')
   return (ps'', foldr TypeArrow ty tys, Equation p lhs' rhs')
 
+-- Use the information from the type signature of a function, a data
+-- constructor or field label to type pattern variables. This is necessary to
+-- support higher-rank types.
+
 bindLhsVars :: [Type] -> Lhs a -> TCM ()
 bindLhsVars tys (FunLhs _ _ ps)
   = mapM_ (uncurry bindPatternVars) $ zip (toCheckModeList tys) ps
@@ -651,20 +655,20 @@ unifyDecl p what doc psLhs tyLhs psRhs tyRhs = do
   fvs <- computeFvEnv
   applyDefaultsDecl p what doc fvs ps tyLhs
 
--- After inferring types for a group of mutually recursive declarations
--- and computing the set of its constrained type variables, the compiler
--- has to be prepared for some of the constrained type variables to not
--- appear in some of the inferred types, i.e., there may be ambiguous
--- types that have not been reported by 'unifyDecl' above at the level
--- of individual function equations and pattern declarations.
+-- After inferring types for a group of mutually recursive declarations and
+-- computing the set of its constrained type variables, the compiler has to be
+-- prepared for some of the constrained type variables to not appear in some of
+-- the inferred types, i.e., there may be ambiguous types that have not been
+-- reported by 'unifyDecl' above at the level of individual function equations
+-- and pattern declarations.
 
 defaultPDecl :: Set.Set Int -> PredSet -> Type -> PDecl a -> TCM PredSet
 defaultPDecl fvs ps ty (_, FunctionDecl p _ f _) =
   applyDefaultsDecl p ("function " ++ escName f) empty fvs ps ty
-defaultPDecl fvs ps ty (_, PatternDecl p t _) = case t of
-  VariablePattern _ _ v ->
-    applyDefaultsDecl p ("variable " ++ escName v) empty fvs ps ty
-  _ -> return ps
+defaultPDecl fvs ps ty (_, PatternDecl p t _)    = case t of
+  VariablePattern _ _ v -> applyDefaultsDecl p ("variable " ++ escName v)
+                                             empty fvs ps ty
+  _                     -> return ps
 defaultPDecl _ _ _ _ = internalError "TypeCheck.defaultPDecl"
 
 applyDefaultsDecl :: HasPosition p => p -> String -> Doc -> Set.Set Int
@@ -675,66 +679,63 @@ applyDefaultsDecl p what doc fvs ps ty = do
       fvs' = foldr Set.insert fvs $ typeVars ty'
   applyDefaults p what doc fvs' ps ty'
 
--- After 'tcDeclGroup' has generalized the types of the implicitly
--- typed declarations of a declaration group it must update their left
--- hand side type annotations and the type environment accordingly.
--- Recall that the compiler generalizes only the types of variable and
--- function declarations.
+-- After 'tcDeclGroup' has generalized the types of the implicitly typed
+-- declarations of a declaration group, it must update their left hand side type
+-- annotations and the type environment accordingly. Recall that the compiler
+-- generalizes only the types of variable and function declarations.
 
 fixType :: Type -> PDecl Type -> PDecl Type
-fixType ~(TypeForall _ (TypeContext ps ty)) (i, FunctionDecl p _ f eqs) =
-  (i, FunctionDecl p (TypeContext ps ty) f eqs)
-fixType ~(TypeForall _ (TypeContext ps ty)) pd@(i, PatternDecl p t rhs) = case t of
-  VariablePattern spi _ v
-    -> (i, PatternDecl p (VariablePattern spi (TypeContext ps ty) v) rhs)
-  _ -> pd
+fixType ~(TypeForall _ ty) (i, FunctionDecl p _ f eqs) =
+  (i, FunctionDecl p ty f eqs)
+fixType ~(TypeForall _ ty) pd@(i, PatternDecl p t rhs) = case t of
+  VariablePattern spi _ v -> (i, PatternDecl p (VariablePattern spi ty v) rhs)
+  _                       -> pd
 fixType _ _ = internalError "TypeCheck.fixType"
 
 declVars :: Decl Type -> [(Ident, Int, Type)]
-declVars (FunctionDecl _ pty f eqs) = [(f, eqnArity $ head eqs, typeScheme pty)]
-declVars (PatternDecl _ t _) = case t of
-  VariablePattern _ pty v -> [(v, 0, typeScheme pty)]
-  _                       -> []
-declVars _ = internalError "TypeCheck.declVars"
+declVars (FunctionDecl _ ty f eqs) = [(f, eqnArity $ head eqs, typeScheme ty)]
+declVars (PatternDecl _ t _)       = case t of
+  VariablePattern _ ty v -> [(v, 0, typeScheme ty)]
+  _                      -> []
+declVars _                         = internalError "TypeCheck.declVars"
 
 -- The function 'tcCheckPDecl' checks the type of an explicitly typed function
 -- or variable declaration. After inferring a type for the declaration, the
--- inferred type is compared with the type signature. Since the inferred type
--- of an explicitly typed function or variable declaration is automatically an
+-- inferred type is compared with the type signature. Since the inferred type of
+-- an explicitly typed function or variable declaration is automatically an
 -- instance of its type signature, the type signature is correct only if the
 -- inferred type matches the type signature exactly except for the inferred
 -- predicate set, which may contain only a subset of the declared context
 -- because the context of a function's type signature is ignored in the
 -- function 'tcFunctionPDecl' above.
 
-tcCheckPDecl :: PredSet -> TypeExpr -> PDecl a
-             -> TCM (PredSet, PDecl Type)
-tcCheckPDecl ps qty pd = do
+tcCheckPDecl :: PredSet -> TypeExpr -> PDecl a -> TCM (PredSet, PDecl Type)
+tcCheckPDecl ps tySc pd = do
   (ps', (ty, pd')) <- tcPDecl ps pd
   fvs <- computeFvEnv
   theta <- getTypeSubst
   poly <- isNonExpansive $ snd pd
   let (gps, lps) = splitPredSet fvs ps'
       ty' = subst theta ty
-      tySc = if poly then gen fvs (TypeContext lps ty') else monoType ty'
-  checkPDeclType qty gps tySc pd'
+      ty'' = if poly then gen fvs (TypeContext lps ty') else monoType ty'
+  checkPDeclType tySc gps ty'' pd'
 
 checkPDeclType :: TypeExpr -> PredSet -> Type -> PDecl Type
                -> TCM (PredSet, PDecl Type)
-checkPDeclType qty ps tySc (i, FunctionDecl p _ f eqs) = do
-  pty <- expandTypeExpr qty
-  unlessM (checkTypeSig pty tySc) $ do
+checkPDeclType tySc ps ty (i, FunctionDecl p _ f eqs) = do
+  tySc' <- expandTypeExpr tySc
+  unlessM (checkTypeSig tySc' ty) $ do
     m <- getModuleIdent
-    report $ errTypeSigTooGeneral p m (text "Function:" <+> ppIdent f) qty
-                                  (rawPredType tySc)
-  return (ps, (i, FunctionDecl p pty f eqs))
-checkPDeclType qty ps tySc (i, PatternDecl p (VariablePattern spi _ v) rhs) = do
-  pty <- expandTypeExpr qty
-  unlessM (checkTypeSig pty tySc) $ do
+    report $ errTypeSigTooGeneral p m (text "Function:" <+> ppIdent f) tySc
+                                  (rawPredType ty)
+  return (ps, (i, FunctionDecl p tySc' f eqs))
+checkPDeclType tySc ps ty (i, PatternDecl p (VariablePattern spi _ v) rhs) = do
+  tySc' <- expandTypeExpr tySc
+  unlessM (checkTypeSig tySc' ty) $ do
     m <- getModuleIdent
-    report $ errTypeSigTooGeneral p m (text "Variable:" <+> ppIdent v) qty
-                                  (rawPredType tySc)
-  return (ps, (i, PatternDecl p (VariablePattern spi pty v) rhs))
+    report $ errTypeSigTooGeneral p m (text "Variable:" <+> ppIdent v) tySc
+                                  (rawPredType ty)
+  return (ps, (i, PatternDecl p (VariablePattern spi tySc' v) rhs))
 checkPDeclType _ _ _ _ = internalError "TypeCheck.checkPDeclType"
 
 checkTypeSig :: Type -> Type -> TCM Bool
