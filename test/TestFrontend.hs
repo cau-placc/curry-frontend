@@ -220,6 +220,15 @@ failInfos = map (uncurry mkFailTest)
       , "Module Prelude does not export bar"
       ]
     )
+  , ("ImpredPoly",
+      [ "Illegal polymorphic type (Bool, forall b . a -> b, Int)"
+      , "Illegal polymorphic type [forall a . a -> a]"
+      , "Illegal polymorphic type Maybe (forall a . a -> a)"
+      , "Illegal polymorphic type [forall a . a -> a]"
+      , "Illegal polymorphic type (Func Bool, Func Int)"
+      , "Illegal polymorphic type Maybe (Func Bool)"
+      ]
+    )
   , ("KindCheck",
       [ "Type variable a occurs more than once in left hand side of type declaration"
       , "Type variable b occurs more than once in left hand side of type declaration"
