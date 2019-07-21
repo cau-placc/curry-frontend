@@ -1,66 +1,69 @@
-{- |
-    Module      :  $Header$
-    Description :  Syntax checks
-    Copyright   :  (c) 1999 - 2004 Wolfgang Lux
-                                   Martin Engelke
-                                   Björn Peemöller
-                       2015        Jan Tikovsky
-                       2016        Finn Teegen
-    License     :  BSD-3-clause
+{-|
+Module      : Checks.SyntaxCheck
+Description : Checks the syntax of a Curry module
+Copyright   : (c) 1999–2004 Wolfgang Lux, Martin Engelke, Björn Peemöller
+                  2015 Jan Tikovsky
+                  2016 Finn Teegen
+                  2019 Jan-Hendrik Matthes
+License     : BSD-3-Clause
 
-    Maintainer  :  bjp@informatik.uni-kiel.de
-    Stability   :  experimental
-    Portability :  portable
+Maintainer  : fte@informatik.uni-kiel.de
+Stability   : experimental
+Portability : portable
 
-   After the type declarations have been checked, the compiler performs
-   a syntax check on the remaining declarations. This check disambiguates
-   nullary data constructors and variables which -- in contrast to Haskell --
-   is not possible on purely syntactic criteria. In addition, this pass checks
-   for undefined as well as ambiguous variables and constructors. In order to
-   allow lifting of local definitions in later phases, all local variables are
-   renamed by adding a key identifying their scope. Therefore, all variables
-   defined in the same scope share the same key so that multiple definitions
-   can be recognized. Finally, all (adjacent) equations of a function are
-   merged into a single definition.
+After the type declarations have been checked, the compiler performs a syntax
+check on the remaining declarations. This check disambiguates nullary data
+constructors and variables which -- in contrast to Haskell -- is not possible
+on purely syntactic criteria. In addition, this pass checks for undefined as
+well as ambiguous variables and constructors. In order to allow lifting of
+local definitions in later phases, all local variables are renamed by adding a
+key identifying their scope. Therefore, all variables defined in the same scope
+share the same key so that multiple definitions can be recognized. Finally, all
+(adjacent) equations of a function are merged into a single definition.
 -}
+
 {-# LANGUAGE CPP #-}
+
 module Checks.SyntaxCheck (syntaxCheck) where
 
 #if __GLASGOW_HASKELL__ >= 804
-import Prelude hiding ((<>))
+import           Prelude             hiding ((<>))
 #endif
 
 #if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative        ((<$>), (<*>))
+import           Control.Applicative ((<$>), (<*>))
 #endif
 
-import Control.Monad                      (unless, when)
-import qualified Control.Monad.State as S ( State, runState, gets, modify
-                                          , withState )
-import           Data.Function            (on)
-import           Data.List                (insertBy, intersect, nub, nubBy)
-import qualified Data.Map  as Map         ( Map, empty, findWithDefault
-                                          , fromList, insertWith, keys )
-import           Data.Maybe               (isJust, isNothing)
-import qualified Data.Set as Set          ( Set, empty, insert, member
-                                          , singleton, toList, union)
+import           Control.Monad       (unless, when)
+import           Control.Monad.Extra (allM, unlessM)
+import qualified Control.Monad.State as S (State, gets, modify, runState,
+                                           withState)
+import           Data.Function       (on)
+import           Data.List           (insertBy, intersect, nub, nubBy)
+import qualified Data.Map            as Map (Map, empty, findWithDefault,
+                                             fromList, insertWith, keys)
+import           Data.Maybe          (isJust, isNothing)
+import qualified Data.Set            as Set (Set, empty, insert, member,
+                                             singleton, toList, union)
 
-import Curry.Base.Ident
-import Curry.Base.Position
-import Curry.Base.Pretty
-import Curry.Base.Span
-import Curry.Base.SpanInfo
-import Curry.Syntax
-import Curry.Syntax.Pretty (ppPattern)
+import           Curry.Base.Ident
+import           Curry.Base.Position
+import           Curry.Base.Pretty
+import           Curry.Base.Span
+import           Curry.Base.SpanInfo
+import           Curry.Syntax
+import           Curry.Syntax.Pretty (ppPattern, ppTypeExpr)
 
-import Base.Expr
-import Base.Messages (Message, posMessage, internalError)
-import Base.NestEnv
-import Base.SCC      (scc)
-import Base.Utils    ((++!), findDouble, findMultiples)
+import           Base.CurryTypes
+import           Base.Expr
+import           Base.Messages       (Message, internalError, posMessage)
+import           Base.NestEnv
+import           Base.SCC            (scc)
+import           Base.Utils          (findDouble, findMultiples, (++!))
 
-import Env.TypeConstructor (TCEnv, clsMethods)
-import Env.Value           (ValueEnv, ValueInfo (..))
+import           Env.TypeConstructor (TCEnv, TypeInfo (..), clsMethods,
+                                      qualLookupTypeInfo)
+import           Env.Value           (ValueEnv, ValueInfo (..))
 
 -- The syntax checking proceeds as follows. First, the compiler extracts
 -- information about all imported values and data constructors from the
@@ -391,7 +394,7 @@ bindFuncDecl _   _ _ env = env
 -- |Bind type class information, i.e. class methods
 bindClassDecl :: Decl a -> SCM ()
 bindClassDecl (ClassDecl _ _ _ _ ds) = mapM_ bindClassMethod ds
-bindClassDecl _ = ok
+bindClassDecl _                      = ok
 
 bindClassMethod :: Decl a -> SCM ()
 bindClassMethod ts@(TypeSig _ _ _) = do
@@ -450,6 +453,7 @@ qualLookupListCons v env
 
 checkModule :: Module () -> SCM (Module (), [KnownExtension])
 checkModule (Module spi ps m es is ds) = do
+  mapM_ checkImpredDecl ds
   mapM_ bindTypeDecl tds
   mapM_ bindClassDecl cds
   ds' <- checkTopDecls ds
@@ -886,7 +890,9 @@ checkExpr _ (Literal       spi a l) = return $ Literal spi a l
 checkExpr _ (Variable      spi a v) = checkVariable spi a v
 checkExpr _ (Constructor   spi a c) = checkVariable spi a c
 checkExpr p (Paren         spi   e) = Paren spi           <$> checkExpr p e
-checkExpr p (Typed        spi e ty) = flip (Typed spi) ty <$> checkExpr p e
+checkExpr p (Typed        spi e ty) = do
+  checkImpredType ty
+  flip (Typed spi) ty <$> checkExpr p e
 checkExpr p (Record     spi _ c fs) = checkRecordExpr p spi c fs
 checkExpr p (RecordUpdate spi e fs) = checkRecordUpdExpr p spi e fs
 checkExpr p (Tuple        spi   es) = Tuple spi <$> mapM (checkExpr p) es
@@ -1109,6 +1115,78 @@ checkLabels p Nothing ls css =
 
 checkField :: (a -> SCM a) -> Field a -> SCM (Field a)
 checkField check (Field p l x) = Field p l <$> check x
+
+-- -----------------------------------------------------------------------------
+-- Impredicative polymorphism detection
+-- -----------------------------------------------------------------------------
+
+checkImpredDecl :: Decl a -> SCM ()
+checkImpredDecl (DataDecl _ _ _ cs _)      = mapM_ checkImpredConsDecl cs
+checkImpredDecl (NewtypeDecl _ _ _ c _)    = checkImpredNewConsDecl c
+checkImpredDecl (TypeDecl _ _ _ ty)        = checkImpredType ty
+checkImpredDecl (TypeSig _ _ ty)           = checkImpredType ty
+checkImpredDecl (DefaultDecl _ tys)        = mapM_ checkImpredType tys
+checkImpredDecl (ClassDecl _ _ _ _ ds)     = mapM_ checkImpredDecl ds
+checkImpredDecl (InstanceDecl _ _ _ ty ds) = do
+  checkImpredType ty
+  mapM_ checkImpredDecl ds
+checkImpredDecl _                          = ok
+
+checkImpredConsDecl :: ConstrDecl -> SCM ()
+checkImpredConsDecl (ConstrDecl _ _ tys)    = mapM_ checkImpredType tys
+checkImpredConsDecl (ConOpDecl _ ty1 _ ty2) = mapM_ checkImpredType [ty1, ty2]
+checkImpredConsDecl (RecordDecl _ _ fs)     = mapM_ checkImpredFieldDecl fs
+
+checkImpredFieldDecl :: FieldDecl -> SCM ()
+checkImpredFieldDecl (FieldDecl _ _ ty) = checkImpredType ty
+
+checkImpredNewConsDecl :: NewConstrDecl -> SCM ()
+checkImpredNewConsDecl (NewConstrDecl _ _ ty)      = checkImpredType ty
+checkImpredNewConsDecl (NewRecordDecl _ _ (_, ty)) = checkImpredType ty
+
+-- | Checks whether the type expression contains no impredicative polymorphism.
+checkImpredType :: TypeExpr -> SCM ()
+checkImpredType (ConstructorType _ _)      = ok
+checkImpredType te@(ApplyType spi ty1 ty2) = do
+  unlessM (checkImpredPoly ty2) $ do
+    report $ errIllegalPolymorphicType (getPosition spi) te
+  checkImpredType ty1
+  checkImpredType ty2
+checkImpredType (VariableType _ _)         = ok
+checkImpredType te@(TupleType spi tys)     = do
+  unlessM (allM checkImpredPoly tys) $ do
+    report $ errIllegalPolymorphicType (getPosition spi) te
+  mapM_ checkImpredType tys
+checkImpredType te@(ListType spi ty)       = do
+  unlessM (checkImpredPoly ty) $ do
+    report $ errIllegalPolymorphicType (getPosition spi) te
+  checkImpredType ty
+checkImpredType (ArrowType _ ty1 ty2)      = do
+  checkImpredType ty1
+  checkImpredType ty2
+checkImpredType (ParenType _ ty)           = checkImpredType ty
+checkImpredType (ContextType _ _ ty)       = checkImpredType ty
+checkImpredType (ForallType _ _ ty)        = checkImpredType ty
+
+-- | Checks whether the given type expression contains no universally
+-- quantified type variables.
+checkImpredPoly :: TypeExpr -> SCM Bool
+checkImpredPoly (ConstructorType _ tc) = do
+  m <- getModuleIdent
+  tcEnv <- getTyConsEnv
+  case qualLookupTypeInfo tc tcEnv of
+    [AliasType _ _ _ ty] -> checkImpredPoly (fromType identSupply ty)
+    _ -> case qualLookupTypeInfo (qualQualify m tc) tcEnv of
+           [AliasType _ _ _ ty] -> checkImpredPoly (fromType identSupply ty)
+           _                    -> return True
+checkImpredPoly (ApplyType _ ty1 ty2)  = allM checkImpredPoly [ty1, ty2]
+checkImpredPoly (VariableType _ _)     = return True
+checkImpredPoly (TupleType _ tys)      = allM checkImpredPoly tys
+checkImpredPoly (ListType _ ty)        = checkImpredPoly ty
+checkImpredPoly (ArrowType _ ty1 ty2)  = allM checkImpredPoly [ty1, ty2]
+checkImpredPoly (ParenType _ ty)       = checkImpredPoly ty
+checkImpredPoly (ContextType _ _ ty)   = checkImpredPoly ty
+checkImpredPoly (ForallType _ _ _)     = return False
 
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions
@@ -1410,3 +1488,9 @@ errInfixWithoutParens p calls = posMessage p $
   showCall (q1, q2) = showWithPos q1 <+> text "calls" <+> showWithPos q2
   showWithPos q =  text (qualName q)
                <+> parens (text $ showLine $ getPosition q)
+
+errIllegalPolymorphicType :: Position -> TypeExpr -> Message
+errIllegalPolymorphicType p ty = posMessage p $ vcat
+  [ text "Illegal polymorphic type" <+> ppTypeExpr 0 ty
+  , text "Impredicative polymorphism isn't yet supported."
+  ]

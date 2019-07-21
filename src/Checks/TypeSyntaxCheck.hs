@@ -579,44 +579,23 @@ checkType c@(ConstructorType spi tc) = do
       [_]         -> return c
       _           -> do report (errAmbiguousIdent tc $ map origName tks)
                         return c
-checkType te@(ApplyType spi ty1 ty2)    = do
-  unless (all checkImpredPoly [ty1, ty2]) $ do
-    report $ errIllegalPolymorphicType (getPosition spi) te
-  ApplyType spi <$> checkType ty1 <*> checkType ty2
+checkType (ApplyType spi ty1 ty2)
+  = ApplyType spi <$> checkType ty1 <*> checkType ty2
 checkType v@(VariableType spi tv)
   | isAnonId tv = return v
   | otherwise   = checkType $ ConstructorType spi (qualify tv)
-checkType te@(TupleType spi tys)        = do
-  unless (all checkImpredPoly tys) $ do
-    report $ errIllegalPolymorphicType (getPosition spi) te
-  TupleType spi <$> mapM checkType tys
-checkType te@(ListType spi ty)          = do
-  unless (checkImpredPoly ty) $ do
-    report $ errIllegalPolymorphicType (getPosition spi) te
-  ListType spi <$> checkType ty
-checkType (ArrowType spi ty1 ty2)    = ArrowType spi <$> checkType ty1
-                                                     <*> checkType ty2
-checkType (ParenType spi ty)         = ParenType spi <$> checkType ty
-checkType (ContextType spi cx ty)    = do
+checkType (TupleType spi tys)     = TupleType spi <$> mapM checkType tys
+checkType (ListType spi ty)       = ListType spi <$> checkType ty
+checkType (ArrowType spi ty1 ty2) = ArrowType spi <$> checkType ty1
+                                                  <*> checkType ty2
+checkType (ParenType spi ty)      = ParenType spi <$> checkType ty
+checkType (ContextType spi cx ty) = do
   ty' <- checkType ty
   cx' <- checkClosedContext (fv ty') cx
   return $ ContextType spi cx' ty'
-checkType (ForallType spi vs ty)     = do
+checkType (ForallType spi vs ty)  = do
   checkUsedExtension (getPosition spi) "Arbitrary-rank types" RankNTypes
   ForallType spi vs <$> checkType ty
-
--- | Checks whether the type expression contains universally quantified type
--- variables.
-checkImpredPoly :: TypeExpr -> Bool
-checkImpredPoly (ConstructorType _ _) = True
-checkImpredPoly (ApplyType _ ty1 ty2) = all checkImpredPoly [ty1, ty2]
-checkImpredPoly (VariableType _ _)    = True
-checkImpredPoly (TupleType _ tys)     = all checkImpredPoly tys
-checkImpredPoly (ListType _ ty)       = checkImpredPoly ty
-checkImpredPoly (ArrowType _ ty1 ty2) = all checkImpredPoly [ty1, ty2]
-checkImpredPoly (ParenType _ ty)      = checkImpredPoly ty
-checkImpredPoly (ContextType _ _ ty)  = checkImpredPoly ty
-checkImpredPoly (ForallType _ _ _)    = False
 
 checkClosed :: [Ident] -> TypeExpr -> TSCM ()
 checkClosed _   (ConstructorType _ _) = ok
@@ -737,10 +716,4 @@ errIllegalInstanceType p inst = posMessage p $ vcat
   , text "The instance type must be of the form (T u_1 ... u_n),"
   , text "where T is not a type synonym and u_1, ..., u_n are"
   , text "mutually distinct, non-anonymous type variables."
-  ]
-
-errIllegalPolymorphicType :: Position -> TypeExpr -> Message
-errIllegalPolymorphicType p ty = posMessage p $ vcat
-  [ text "Illegal polymorphic type" <+> ppTypeExpr 0 ty
-  , text "Impredicative polymorphism isn't yet supported."
   ]
