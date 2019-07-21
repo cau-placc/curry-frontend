@@ -42,8 +42,8 @@ import           Prelude             hiding ((<>))
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative ((<$>), (<*>))
 #endif
-import           Control.Monad.Extra (allM, filterM, foldM, liftM, notM,
-                                      replicateM, unless, unlessM, (&&^))
+import           Control.Monad.Extra (allM, eitherM, filterM, foldM, liftM,
+                                      notM, replicateM, unless, unlessM, (&&^))
 import qualified Control.Monad.State as S (State, gets, modify, runState)
 import           Data.Foldable       (foldrM)
 import           Data.Function       (on)
@@ -781,25 +781,29 @@ eqTypes = eq idSubst
       return (eqb, sub', ps1 `Set.union` ps1', ps2 `Set.union` ps2')
     eq sub _ _ = return (False, sub, emptyPredSet, emptyPredSet)
 
+-- -----------------------------------------------------------------------------
+-- Non-expansive expression
+-- -----------------------------------------------------------------------------
+
 -- In Curry, a non-expansive expression is either
 --
 -- * a literal,
 -- * a variable,
--- * an application of a constructor with arity n to at most n
+-- * an application of a constructor with arity \(n\) to at most \(n\)
 --   non-expansive expressions,
--- * an application of a function with arity n to at most n-1
---   non-expansive expressions, or
--- * a let expression whose body is a non-expansive expression and
---   whose local declarations are either function declarations or
---   variable declarations of the form x=e where e is a non-expansive
---   expression, or
+-- * an application of a function with arity \(n\) to at most \(n-1\)
+--   non-expansive expressions,
+-- * a let expression whose body is a non-expansive expression and whose local
+--   declarations are either function declarations or variable declarations of
+--   the form @x = e@ where @e@ is a non-expansive expression, or
 -- * an expression whose desugared form is one of the above.
 --
--- At first it may seem strange that variables are included in the list
--- above because a variable may be bound to a logical variable. However,
--- this is no problem because type variables that are present among the
--- typing assumptions of the environment enclosing a let expression
--- cannot be generalized.
+-- A record construction is non-expansive only if all field labels are present.
+--
+-- At first it may seem strange that variables are included in the list above
+-- because a variable may be bound to a logical variable. However, this is no
+-- problem because type variables that are present among the typing assumptions
+-- of the environment enclosing a let expression cannot be generalized.
 
 class Binding a where
   isNonExpansive :: a -> TCM Bool
@@ -808,20 +812,19 @@ instance Binding a => Binding [a] where
   isNonExpansive = allM isNonExpansive
 
 instance Binding (Decl a) where
-  isNonExpansive (InfixDecl       _ _ _ _) = return True
-  isNonExpansive (TypeSig           _ _ _) = return True
-  isNonExpansive (FunctionDecl    _ _ _ _) = return True
-  isNonExpansive (ExternalDecl        _ _) = return True
-  isNonExpansive (PatternDecl       _ _ _) = return False
-    -- TODO: Uncomment when polymorphic let declarations are fully supported
-  {-isNonExpansive (PatternDecl     _ t rhs) = case t of
-    VariablePattern _ _ -> isNonExpansive rhs
-    _                   -> return False-}
-  isNonExpansive (FreeDecl            _ _) = return False
-  isNonExpansive _                         =
-    internalError "TypeCheck.isNonExpansive: declaration"
+  isNonExpansive (InfixDecl _ _ _ _)    = return True
+  isNonExpansive (TypeSig _ _ _)        = return True
+  isNonExpansive (FunctionDecl _ _ _ _) = return True
+  isNonExpansive (ExternalDecl _ _)     = return True
+  -- TODO: Uncomment when polymorphic let declarations are fully supported.
+  -- isNonExpansive (PatternDecl _ (VariablePattern _ _) rhs)
+  --   = isNonExpansive rhs
+  isNonExpansive (PatternDecl _ _ _)    = return False
+  isNonExpansive (FreeDecl _ _)         = return False
+  isNonExpansive _ = internalError "TypeCheck.isNonExpansive"
 
 instance Binding (Rhs a) where
+  isNonExpansive (GuardedRhs _ _ _) = return False
   isNonExpansive (SimpleRhs _ e ds) = withLocalValueEnv $ do
     m <- getModuleIdent
     tcEnv <- getTyConsEnv
@@ -829,72 +832,69 @@ instance Binding (Rhs a) where
     sigs <- getSigEnv
     modifyValueEnv $ flip (foldr (bindDeclArity m tcEnv clsEnv sigs)) ds
     isNonExpansive e &&^ isNonExpansive ds
-  isNonExpansive (GuardedRhs _ _ _) = return False
-
--- A record construction is non-expansive only if all field labels are present.
 
 instance Binding (Expression a) where
   isNonExpansive = isNonExpansive' 0
 
 isNonExpansive' :: Int -> Expression a -> TCM Bool
-isNonExpansive' _ (Literal         _ _ _) = return True
-isNonExpansive' n (Variable        _ _ v)
+isNonExpansive' _ (Literal _ _ _)         = return True
+isNonExpansive' n (Variable _ _ v)
   | v' == anonId = return False
-  | isRenamed v' = do
-    vEnv <- getValueEnv
-    return $ n == 0 || n < varArity v vEnv
-  | otherwise = do
-    vEnv <- getValueEnv
-    return $ n < varArity v vEnv
-  where v' = unqualify v
-isNonExpansive' _ (Constructor     _ _ _) = return True
-isNonExpansive' n (Paren             _ e) = isNonExpansive' n e
-isNonExpansive' n (Typed           _ e _) = isNonExpansive' n e
-isNonExpansive' _ (Record       _ _ c fs) = do
+  | isRenamed v' = do vEnv <- getValueEnv
+                      return $ n == 0 || n < varArity v vEnv
+  | otherwise    = do vEnv <- getValueEnv
+                      return $ n < varArity v vEnv
+  where
+    v' = unqualify v
+isNonExpansive' _ (Constructor _ _ _)     = return True
+isNonExpansive' n (Paren _ e)             = isNonExpansive' n e
+isNonExpansive' n (Typed _ e _)           = isNonExpansive' n e
+isNonExpansive' _ (Record _ _ c fs)       = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   liftM ((length (constrLabels m c vEnv) == length fs) &&) (isNonExpansive fs)
-isNonExpansive' _ (Tuple            _ es) = isNonExpansive es
-isNonExpansive' _ (List           _ _ es) = isNonExpansive es
-isNonExpansive' n (Apply           _ f e) =
-  isNonExpansive' (n + 1) f &&^ isNonExpansive e
-isNonExpansive' n (InfixApply _ e1 op e2) =
-  isNonExpansive' (n + 2) (infixOp op) &&^ isNonExpansive e1 &&^
-    isNonExpansive e2
-isNonExpansive' n (LeftSection    _ e op) =
-  isNonExpansive' (n + 1) (infixOp op) &&^ isNonExpansive e
-isNonExpansive' n (Lambda         _ ts e) = withLocalValueEnv $ do
+isNonExpansive' _ (Tuple _ es)            = isNonExpansive es
+isNonExpansive' _ (List _ _ es)           = isNonExpansive es
+isNonExpansive' n (Apply _ f e)           = isNonExpansive' (n + 1) f
+                                              &&^ isNonExpansive e
+isNonExpansive' n (InfixApply _ e1 op e2)
+  = isNonExpansive' (n + 2) (infixOp op) &&^ isNonExpansive e1
+                                         &&^ isNonExpansive e2
+isNonExpansive' n (LeftSection _ e op)    = isNonExpansive' (n + 1) (infixOp op)
+                                              &&^ isNonExpansive e
+isNonExpansive' n (Lambda _ ts e)         = withLocalValueEnv $ do
   modifyValueEnv $ flip (foldr bindVarArity) (bv ts)
-  liftM ((n < length ts) ||)
-    (liftM ((all isVariablePattern ts) &&) (isNonExpansive' (n - length ts) e))
-isNonExpansive' n (Let            _ ds e) = withLocalValueEnv $ do
+  liftM ((n < length ts) ||) (liftM ((all isVariablePattern ts) &&)
+                                    (isNonExpansive' (n - length ts) e))
+isNonExpansive' n (Let _ ds e)            = withLocalValueEnv $ do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv
   clsEnv <- getClassEnv
   sigs <- getSigEnv
   modifyValueEnv $ flip (foldr (bindDeclArity m tcEnv clsEnv sigs)) ds
   isNonExpansive ds &&^ isNonExpansive' n e
-isNonExpansive' _ _                     = return False
+isNonExpansive' _ _                       = return False
 
 instance Binding a => Binding (Field a) where
   isNonExpansive (Field _ _ e) = isNonExpansive e
 
 bindDeclArity :: ModuleIdent -> TCEnv -> ClassEnv -> SigEnv ->  Decl a
               -> ValueEnv -> ValueEnv
-bindDeclArity _ _     _      _    (InfixDecl        _ _ _ _) = id
-bindDeclArity _ _     _      _    (TypeSig            _ _ _) = id
-bindDeclArity _ _     _      _    (FunctionDecl   _ _ f eqs) =
+bindDeclArity _ _     _      _    (InfixDecl _ _ _ _)      = id
+bindDeclArity _ _     _      _    (TypeSig _ _ _)          = id
+bindDeclArity _ _     _      _    (FunctionDecl _ _ f eqs) =
   bindArity f (eqnArity $ head eqs)
-bindDeclArity m tcEnv clsEnv sigs (ExternalDecl        _ fs) =
-  flip (foldr $ \(Var _ f) -> bindArity f $ arrowArity $ ty f) fs
-  where ty = unpredType . expandPolyType m tcEnv clsEnv . fromJust .
-               flip lookupTypeSig sigs
-bindDeclArity _ _     _      _    (PatternDecl        _ t _) =
-  flip (foldr bindVarArity) (bv t)
-bindDeclArity _ _     _      _    (FreeDecl            _ vs) =
-  flip (foldr bindVarArity) (bv vs)
-bindDeclArity _ _     _      _    _                          =
-  internalError "TypeCheck.bindDeclArity"
+bindDeclArity m tcEnv clsEnv sigs (ExternalDecl _ fs)
+  = flip (foldr $ \(Var _ f) -> bindArity f $ arrowArity $ ty f) fs
+  where
+    ty = expandType m tcEnv clsEnv . toType []
+                                   . fromJust
+                                   . flip lookupTypeSig sigs
+bindDeclArity _ _     _      _    (PatternDecl _ t _)
+  = flip (foldr bindVarArity) (bv t)
+bindDeclArity _ _     _      _    (FreeDecl _ vs)
+  = flip (foldr bindVarArity) (bv vs)
+bindDeclArity _ _     _      _    _ = internalError "TypeCheck.bindDeclArity"
 
 bindVarArity :: Ident -> ValueEnv -> ValueEnv
 bindVarArity v = bindArity v 0
@@ -902,55 +902,58 @@ bindVarArity v = bindArity v 0
 bindArity :: Ident -> Int -> ValueEnv -> ValueEnv
 bindArity v n = bindTopEnv v (Value (qualify v) False n undefined)
 
--- Class and instance declarations:
--- When checking method implementations in class and instance
--- declarations, the compiler must check that the inferred type matches
--- the method's declared type. This is straight forward in class
--- declarations (the only difference with respect to an overloaded
--- function with an explicit type signature is that a class method's type
--- signature is composed of its declared type signature and the context
--- from the class declaration), but a little bit more complicated for
--- instance declarations because the instance type must be substituted
--- for the type variable used in the type class declaration.
+-- -----------------------------------------------------------------------------
+-- Class and instance declarations
+-- -----------------------------------------------------------------------------
+
+-- When checking method implementations in class and instance declarations, the
+-- compiler must check that the inferred type matches the method's declared
+-- type. This is straight forward in class declarations (the only difference
+-- with respect to an overloaded function with an explicit type signature is
+-- that a class method's type signature is composed of its declared type
+-- signature and the context from the class declaration), but a little bit more
+-- complicated for instance declarations because the instance type must be
+-- substituted for the type variable used in the type class declaration.
 --
--- When checking inferred method types against their expected types, we
--- have to be careful because the class' type variable is always assigned
--- index 0 in the method types recorded in the value environment. However,
--- in the inferred type scheme returned from 'tcMethodDecl', type variables
--- are assigned indices in the order of their occurrence. In order to avoid
--- incorrectly reporting errors when the type class variable is not the first
--- variable that appears in a method's type, 'tcInstMethodDecl' normalizes
--- the expected method type before applying 'checkInstMethodType' to it and
--- 'checkClassMethodType' uses 'expandPolyType' instead of 'expandMethodType'
--- in order to convert the method's type signature. Unfortunately, this means
--- that the compiler has to add the class constraint explicitly to the type
--- signature.
+-- When checking inferred method types against their expected types, we have to
+-- be careful because the class' type variable is always assigned index 0 in
+-- the method types recorded in the value environment. However, in the inferred
+-- type scheme returned from 'tcMethodDecl', type variables are assigned
+-- indices in the order of their occurrence. In order to avoid incorrectly
+-- reporting errors when the type class variable is not the first variable that
+-- appears in a method's type, 'tcInstanceMethodPDecl' normalizes the expected
+-- method type before applying 'checkInstMethodType' to it. Unfortunately, this
+-- means that the compiler has to add the class constraint explicitly to the
+-- type signature.
 
 tcTopPDecl :: PDecl a -> TCM (PDecl Type)
-tcTopPDecl (i, DataDecl p tc tvs cs clss) =
-  return (i, DataDecl p tc tvs cs clss)
-tcTopPDecl (i, ExternalDataDecl p tc tvs) =
-  return (i, ExternalDataDecl p tc tvs)
-tcTopPDecl (i, NewtypeDecl p tc tvs nc clss) =
-  return (i, NewtypeDecl p tc tvs nc clss)
-tcTopPDecl (i, TypeDecl p tc tvs ty) = return (i, TypeDecl p tc tvs ty)
-tcTopPDecl (i, DefaultDecl p tys) = return (i, DefaultDecl p tys)
-tcTopPDecl (i, ClassDecl p cx cls tv ds) = withLocalSigEnv $ do
+tcTopPDecl (i, DataDecl p tc tvs cs clss)
+  = return (i, DataDecl p tc tvs cs clss)
+tcTopPDecl (i, ExternalDataDecl p tc tvs)
+  = return (i, ExternalDataDecl p tc tvs)
+tcTopPDecl (i, NewtypeDecl p tc tvs nc clss)
+  = return (i, NewtypeDecl p tc tvs nc clss)
+tcTopPDecl (i, TypeDecl p tc tvs ty)
+  = return (i, TypeDecl p tc tvs ty)
+tcTopPDecl (i, DefaultDecl p tys)
+  = return (i, DefaultDecl p tys)
+tcTopPDecl (i, ClassDecl p cx cls tv ds)     = withLocalSigEnv $ do
+  let (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
   setSigEnv $ foldr (bindTypeSigs . snd) emptySigEnv opds
   vpds' <- mapM (tcClassMethodPDecl (qualify cls) tv) vpds
   return (i, ClassDecl p cx cls tv $ fromPDecls $ map untyped opds ++ vpds')
-  where (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
 tcTopPDecl (i, InstanceDecl p cx qcls ty ds) = do
+  m <- getModuleIdent
   tcEnv <- getTyConsEnv
   pty <- expandTypeExpr $ ContextType NoSpanInfo cx ty
-  mid <- getModuleIdent
-  let origCls = getOrigName mid qcls tcEnv
-      clsQual = head $ filter isQualified $ reverseLookupByOrigName origCls tcEnv
+  let origCls = getOrigName m qcls tcEnv
+      clsQual = head $ filter isQualified
+                              (reverseLookupByOrigName origCls tcEnv)
       qQualCls = qualQualify (fromJust $ qidModule clsQual) qcls
+      (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
   vpds' <- mapM (tcInstanceMethodPDecl qQualCls pty) vpds
   return (i, InstanceDecl p cx qcls ty $ fromPDecls $ map untyped opds ++ vpds')
-  where (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
-tcTopPDecl _ = internalError "Checks.TypeCheck.tcTopDecl"
+tcTopPDecl _ = internalError "TypeCheck.tcTopDecl"
 
 tcClassMethodPDecl :: QualIdent -> Ident -> PDecl a -> TCM (PDecl Type)
 tcClassMethodPDecl qcls tv pd@(_, FunctionDecl _ _ f _) = do
@@ -1525,17 +1528,14 @@ unifyTypeLists :: ModuleIdent -> [Type] -> [Type]
                -> TCM (Either Doc (PredSet, TypeSubst))
 unifyTypeLists _ []         _          = return $ Right (emptyPredSet, idSubst)
 unifyTypeLists _ _          []         = return $ Right (emptyPredSet, idSubst)
-unifyTypeLists m (ty1:tys1) (ty2:tys2) = do
-  res <- unifyTypeLists m tys1 tys2
-  case res of
-    Left x        -> return $ Left x
-    Right (ps, s) -> unifyTypesTheta ps s
+unifyTypeLists m (ty1:tys1) (ty2:tys2) = eitherM (return . Left)
+                                                 (uncurry unifyTypesTheta)
+                                                 (unifyTypeLists m tys1 tys2)
   where
-    unifyTypesTheta ps theta = do
-      res <- unifyTypes m (subst theta ty1) (subst theta ty2)
-      case res of
-        Left x        -> return $ Left x
-        Right (ps', s) -> return $ Right (ps `Set.union` ps', compose s theta)
+    unifyTypesTheta ps s
+      = eitherM (return . Left)
+                (\(ps', s') -> return $ Right (Set.union ps ps', compose s' s))
+                (unifyTypes m (subst s ty1) (subst s ty2))
 
 -- After performing a unification, the resulting substitution is applied to the
 -- current predicate set and the resulting predicate set is subject to a
@@ -1569,11 +1569,11 @@ reducePredSet p what doc ps = do
                                                (instPredSet inEnv qcls ty)
 
 instPredSet :: InstEnv' -> QualIdent -> Type -> Maybe PredSet
-instPredSet inEnv qcls ty = case Map.lookup qcls $ snd inEnv of
+instPredSet (sEnv, dEnv) qcls ty = case Map.lookup qcls dEnv of
   Just tys | ty `elem` tys -> Just emptyPredSet
   _                        -> case unapplyType False ty of
     (TypeConstructor tc, tys) -> fmap (expandAliasType tys . snd3)
-                                      (lookupInstInfo (qcls, tc) $ fst inEnv)
+                                      (lookupInstInfo (qcls, tc) sEnv)
     _                         -> Nothing
 
 reportMissingInstance :: HasPosition p => ModuleIdent -> p -> String -> Doc

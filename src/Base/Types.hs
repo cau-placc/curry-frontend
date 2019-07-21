@@ -125,7 +125,8 @@ isArrowType _               = False
 
 -- | Returns the arity of a function type.
 arrowArity :: Type -> Int
-arrowArity = length . arrowArgs
+arrowArity (TypeContext _ ty) = arrowArity ty
+arrowArity ty                 = length (arrowArgs ty)
 
 -- | Returns the argument types of a function type.
 arrowArgs :: Type -> [Type]
