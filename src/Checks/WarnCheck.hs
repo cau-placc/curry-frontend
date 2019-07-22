@@ -47,6 +47,7 @@ import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                        , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv
                        , qualModifyNestEnv)
 
+import Base.Expr  (Expr (fv))
 import Base.Types
 import Base.Utils (findMultiples)
 import Env.ModuleAlias
@@ -269,7 +270,9 @@ checkDecl (InstanceDecl p cx cls ty ds) = do
   checkOrphanInstance p cx cls ty
   checkMissingMethodImplementations p cls ds
   mapM_ checkDecl ds
-checkDecl (TypeSig              _ _ ty) = checkTypeExpr ty
+checkDecl (TypeSig              _ _ ty) = do
+  let tvs = map (setPosition $ getPosition ty) (nub (fv ty))
+  checkTypeExpr (ForallType NoSpanInfo tvs ty)
 checkDecl _                             = ok
 
 --TODO: shadowing und context etc.
@@ -304,6 +307,7 @@ checkTypeExpr (ArrowType       _ ty1 ty2) = mapM_ checkTypeExpr [ty1, ty2]
 checkTypeExpr (ParenType            _ ty) = checkTypeExpr ty
 checkTypeExpr (ContextType        _ _ ty) = checkTypeExpr ty
 checkTypeExpr (ForallType        _ vs ty) = inNestedScope $ do
+  mapM_ checkTypeShadowing vs
   mapM_ insertTypeVar vs
   checkTypeExpr ty
   reportUnusedTypeVars vs
@@ -388,7 +392,8 @@ checkExpr (Variable            _ _ v) = visitQId v
 checkExpr (Paren                 _ e) = checkExpr e
 checkExpr (Typed              _ e ty) = do
   checkExpr e
-  checkTypeExpr ty
+  let tvs = map (setPosition $ getPosition ty) (nub (fv ty))
+  checkTypeExpr (ForallType NoSpanInfo tvs ty)
 checkExpr (Record           _ _ _ fs) = mapM_ (checkField checkExpr) fs
 checkExpr (RecordUpdate       _ e fs) = do
   checkExpr e
