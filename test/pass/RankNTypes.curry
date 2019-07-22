@@ -37,3 +37,11 @@ testT' t = case t of
 
 lambdaFun :: (forall a. Eq a => a -> a) -> (Int, Bool)
 lambdaFun = (\f -> (f 73, f True)) :: (forall b. Ord b => b -> b) -> (Int, Bool)
+
+data FuncList a = EmptyFuncList a | FuncList (forall a. a -> a) (FuncList a)
+
+type FuncListPair a = (FuncList a, FuncList a)
+
+class A b where
+  funA :: b -> (forall a. a -> a)
+  funB :: forall a. a -> b -> a

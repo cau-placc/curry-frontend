@@ -255,6 +255,7 @@ failInfos = map (uncurry mkFailTest)
     )
   , ("TypeError1", ["Type error in explicitly typed expression"])
   , ("TypeError2", ["Missing instance for Prelude.Num Prelude.Bool"])
+  , ("UnboundTypeVariable", ["Unbound type variable a"])
   ]
 
 --------------------------------------------------------------------------------
@@ -322,6 +323,10 @@ warnInfos = map (uncurry mkFailTest)
       [ "Unused declaration of variable `x'", "Shadowing symbol `x'"])
   , ("TabCharacter",
       [ "Tab character"])
+  , ("TypeVariableShadowing",
+      [ "Shadowing type variable `a'"
+      , "Shadowing type variable `a'"
+      , "Shadowing type variable `a'" ])
   , ("UnexportedFunction",
       [ "Unused declaration of variable `q'"
       , "Unused declaration of variable `g'" ]
