@@ -579,13 +579,21 @@ tcEqn :: Type -> SpanInfo -> Lhs a -> Rhs a
       -> TCM (PredSet, Type, Equation Type)
 tcEqn tySc p lhs rhs = do
   (ps, tys, lhs', ps', ty, rhs') <- withLocalValueEnv $ do
-    bindLhsVars (fst $ arrowUnapply tySc) lhs
+    let psn = numOfPatterns lhs
+    let (psTys, resTy) = arrowUnapply tySc
+    let resTy' = foldr TypeArrow resTy (drop psn psTys)
+    bindLhsVars psTys lhs
     (ps, tys, lhs') <- tcLhs p lhs
-    (ps', ty, rhs') <- tcRhs Infer rhs
+    (ps', ty, rhs') <- tcRhs (Check resTy') rhs
     return (ps, tys, lhs', ps', ty, rhs')
   ps'' <- reducePredSet p "equation" (ppEquation (Equation p lhs' rhs'))
                         (ps `Set.union` ps')
   return (ps'', foldr TypeArrow ty tys, Equation p lhs' rhs')
+
+numOfPatterns :: Lhs a -> Int
+numOfPatterns (FunLhs _ _ ps)  = length ps
+numOfPatterns (OpLhs _ _ _ _)  = 2
+numOfPatterns (ApLhs _ lhs ps) = length ps + numOfPatterns lhs
 
 -- Use the information from the type signature of a function, a data
 -- constructor or field label to type pattern variables. This is necessary to
