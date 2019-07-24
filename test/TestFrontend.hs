@@ -326,6 +326,8 @@ warnInfos = map (uncurry mkFailTest)
   , ("TypeVariableShadowing",
       [ "Shadowing type variable `a'"
       , "Shadowing type variable `a'"
+      , "Shadowing type variable `a'"
+      , "Shadowing type variable `a'"
       , "Shadowing type variable `a'" ])
   , ("UnexportedFunction",
       [ "Unused declaration of variable `q'"

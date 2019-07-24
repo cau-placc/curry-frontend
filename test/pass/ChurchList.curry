@@ -17,3 +17,6 @@ cons x xs = ChurchList $ \k z -> k x (runList xs k z)
 
 append :: ChurchList a -> ChurchList a -> ChurchList a
 append xs ys = ChurchList $ \k z -> runList xs k (runList ys k z)
+
+instance Functor ChurchList where
+  fmap f xs = ChurchList $ \k z -> runList xs (\x xs' -> k (f x) xs') z

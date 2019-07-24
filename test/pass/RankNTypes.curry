@@ -1,5 +1,10 @@
 {-# LANGUAGE RankNTypes #-}
 
+type IdFunc = forall a. a -> a
+
+id' :: IdFunc
+id' x = x
+
 fun :: (forall a. a -> a) -> (Char, Bool)
 fun f = (f 'c', f True)
 
@@ -12,7 +17,7 @@ idFun x = x
 idFun' :: (forall a. Eq a => a) -> (forall a. Ord a => a)
 idFun' = id
 
-idFun'' :: forall a. Ord a => (forall a. Eq a => a) -> a
+idFun'' :: forall a. Ord a => (forall b. Eq b => b) -> a
 idFun'' x = id x
 
 idFun''' :: (forall b. Eq b => b) -> (forall c. Ord c => c)
@@ -38,10 +43,26 @@ testT' t = case t of
 lambdaFun :: (forall a. Eq a => a -> a) -> (Int, Bool)
 lambdaFun = (\f -> (f 73, f True)) :: (forall b. Ord b => b -> b) -> (Int, Bool)
 
-data FuncList a = EmptyFuncList a | FuncList (forall a. a -> a) (FuncList a)
+data FuncList a = EmptyFuncList a | FuncList (forall b. b -> b) (FuncList a)
 
 type FuncListPair a = (FuncList a, FuncList a)
 
 class A b where
   funA :: b -> (forall a. a -> a)
   funB :: forall a. a -> b -> a
+
+andF :: (forall a. a -> a -> a) -> (forall a. a -> a -> a)
+     -> (forall a. a -> a -> a)
+andF = \x y -> x y x
+
+andF' :: (forall a. a -> a -> a) -> (forall a. a -> a -> a)
+      -> (forall a. a -> a -> a)
+andF' x y = x y x
+
+orF :: (forall a. a -> a -> a) -> (forall a. a -> a -> a)
+    -> (forall a. a -> a -> a)
+orF = \x y -> x x y
+
+orF' :: (forall a. a -> a -> a) -> (forall a. a -> a -> a)
+     -> (forall a. a -> a -> a)
+orF' x y = x x y
