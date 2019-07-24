@@ -30,7 +30,7 @@ module Base.CurryTypes
   , fromType, fromQualType
   , fromPred, fromQualPred, fromPredSet, fromQualPredSet, fromPredType
   , fromQualPredType
-  , ppType, ppPred, ppPredType
+  , ppType, ppPred, ppPredSet, ppPredType
   ) where
 
 import Data.List (nub)
@@ -38,7 +38,7 @@ import qualified Data.Map as Map (Map, fromList, lookup)
 import qualified Data.Set as Set
 
 import Curry.Base.Ident
-import Curry.Base.Pretty (Doc)
+import Curry.Base.Pretty (Doc, list, parens)
 import Curry.Base.SpanInfo
 import qualified Curry.Syntax as CS
 import Curry.Syntax.Pretty (ppConstraint, ppTypeExpr)
@@ -219,6 +219,9 @@ ppType m = ppTypeExpr 0 . fromQualType m identSupply
 
 ppPred :: ModuleIdent -> Pred -> Doc
 ppPred m = ppConstraint . fromQualPred m identSupply
+
+ppPredSet :: ModuleIdent -> PredSet -> Doc
+ppPredSet m = parens . list . map (ppPred m) . Set.toList
 
 ppPredType :: ModuleIdent -> Type -> Doc
 ppPredType m = ppTypeExpr 0 . fromQualPredType m identSupply

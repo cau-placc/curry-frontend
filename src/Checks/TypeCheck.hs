@@ -1857,6 +1857,11 @@ errIncompatibleTypes m ty1 ty2 = sep
   , nest 2 $ text "and" <+> ppType m ty2
   , text "are incompatible" ]
 
+errIncompatiblePredSets :: ModuleIdent -> PredSet -> PredSet -> Doc
+errIncompatiblePredSets m ps1 ps2 = vcat
+  [ text "Could not deduce" <+> ppPredSet m ps1
+  , nest 2 $ text "from the context:" <+> ppPredSet m ps2 ]
+
 errIncompatibleLabelTypes :: HasPosition a => a -> ModuleIdent -> Ident -> Type
                           -> Type -> Message
 errIncompatibleLabelTypes p m l ty1 ty2 = posMessage p $ sep
