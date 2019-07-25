@@ -23,6 +23,7 @@ module Base.Types
   , applyType, unapplyType, rootOfType, isArrowType, isVarType, arrowArity
   , arrowArgs, arrowBase, arrowUnapply
   , typeConstrs, qualifyType, unqualifyType, qualifyTC, weakPrenex
+  , hasHigherRankPoly
   , IsType (..)
     -- * Representation of predicates and predicate sets
   , Pred (..)
@@ -203,6 +204,17 @@ weakPrenex ty@(TypeForall tvs ty1) = case weakPrenex ty1 of
   TypeForall tvs' ty1' -> TypeForall (tvs ++ tvs') ty1'
   _                    -> ty
 weakPrenex ty                      = ty
+
+-- | Checks whether the given type contains higher-rank polymorphism.
+hasHigherRankPoly :: Type -> Bool
+hasHigherRankPoly = hasHigherRankPoly' . rawPredType . weakPrenex
+  where
+    hasHigherRankPoly' (TypeApply ty1 ty2)
+      = hasHigherRankPoly' ty1 || hasHigherRankPoly' ty2
+    hasHigherRankPoly' (TypeArrow ty1 ty2)
+      = hasHigherRankPoly' ty1 || hasHigherRankPoly' ty2
+    hasHigherRankPoly' (TypeForall _ _)    = True
+    hasHigherRankPoly' _                   = False
 
 class IsType t where
   -- | Returns a list of all non universally quantified type variables occurring

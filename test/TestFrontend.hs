@@ -238,6 +238,14 @@ failInfos = map (uncurry mkFailTest)
       , "Illegal polymorphic type Maybe (Func Bool)"
       ]
     )
+  , ("ImpredPolyUnify",
+      [ "Type error in equation"
+      , "constFun = error \"fail\""
+      , "Cannot instantiate unification variable"
+      , "with a type involving foralls:"
+      , "Impredicative polymorphism isn't yet supported."
+      ]
+    )
   , ("IncompatibleTypes",
       [ "Type error in application"
       , "applyFun idBool"

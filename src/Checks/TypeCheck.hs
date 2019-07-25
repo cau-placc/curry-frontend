@@ -1475,9 +1475,11 @@ unifyTypes _ (TypeVariable tv1)         ty@(TypeVariable tv2)
   | otherwise  = return $ Right (emptyPredSet, singleSubst tv1 ty)
 unifyTypes m (TypeVariable tv)          ty
   | tv `elem` typeVars ty = return $ Left (errRecursiveType m tv ty)
+  | hasHigherRankPoly ty  = return $ Left (errImpredInst m tv ty)
   | otherwise             = return $ Right (emptyPredSet, singleSubst tv ty)
 unifyTypes m ty                         (TypeVariable tv)
   | tv `elem` typeVars ty = return $ Left (errRecursiveType m tv ty)
+  | hasHigherRankPoly ty  = return $ Left (errImpredInst m tv ty)
   | otherwise             = return $ Right (emptyPredSet, singleSubst tv ty)
 unifyTypes _ (TypeConstrained tys1 tv1) ty@(TypeConstrained tys2 tv2)
   | tv1 == tv2   = return $ Right (emptyPredSet, idSubst)
@@ -1874,6 +1876,14 @@ errTypeMismatch p what doc m ety ity reason = posMessage p $ vcat
 
 errRecursiveType :: ModuleIdent -> Int -> Type -> Doc
 errRecursiveType m tv = errIncompatibleTypes m (TypeVariable tv)
+
+errImpredInst :: ModuleIdent -> Int -> Type -> Doc
+errImpredInst m tv ty = sep
+  [ text "Cannot instantiate unification variable"
+      <+> ppType m (TypeVariable tv)
+  , text "with a type involving foralls:"
+  , nest 2 $ ppType m ty
+  , text "Impredicative polymorphism isn't yet supported." ]
 
 errIncompatibleTypes :: ModuleIdent -> Type -> Type -> Doc
 errIncompatibleTypes m ty1 ty2 = sep
