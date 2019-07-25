@@ -20,8 +20,8 @@ the compiler along with some helper functions.
 module Base.Types
   ( -- * Representation of types
     Type (..)
-  , applyType, unapplyType, rootOfType, isArrowType, arrowArity, arrowArgs
-  , arrowBase, arrowUnapply
+  , applyType, unapplyType, rootOfType, isArrowType, isVarType, arrowArity
+  , arrowArgs, arrowBase, arrowUnapply
   , typeConstrs, qualifyType, unqualifyType, qualifyTC, weakPrenex
   , IsType (..)
     -- * Representation of predicates and predicate sets
@@ -122,6 +122,11 @@ rootOfType ty = case fst (unapplyType True ty) of
 isArrowType :: Type -> Bool
 isArrowType (TypeArrow _ _) = True
 isArrowType _               = False
+
+-- | Checks whether a type is a variable type.
+isVarType :: Type -> Bool
+isVarType (TypeVariable _) = True
+isVarType _                = False
 
 -- | Returns the arity of a function type.
 arrowArity :: Type -> Int

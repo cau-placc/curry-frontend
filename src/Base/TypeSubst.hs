@@ -13,7 +13,9 @@
 -}
 
 module Base.TypeSubst
-  ( module Base.TypeSubst, idSubst, singleSubst, bindSubst, compose, lookupSubst
+  ( module Base.TypeSubst
+  , idSubst, singleSubst, bindSubst, compose, lookupSubst, substToList
+  , restrictSubstTo
   ) where
 
 import           Data.List       (nub)

@@ -1507,25 +1507,37 @@ unifyTypes m (TypeArrow ty11 ty12)      ty@(TypeApply _ _)
 unifyTypes m (TypeArrow ty11 ty12)      (TypeArrow ty21 ty22)
   = unifyTypeLists m [ty11, ty12] [ty21, ty22]
 unifyTypes m ty1@(TypeForall _ _)       ty2@(TypeForall _ _)
-  = do (ps1, ty1') <- inst ty1
-       (ps2, ty2') <- inst ty2
+  = do (vs1, ps1, ty1') <- instVars ty1
+       (vs2, ps2, ty2') <- instVars ty2
        res <- unifyTypes m ty1' ty2'
        let ps = ps1 `Set.union` ps2
        case res of
          Left x         -> return $ Left x
-         Right (ps', s) -> return $ Right (ps `Set.union` ps', s)
+         Right (ps', s) -> do
+           let (_, tys) = unzip $ substToList $ restrictSubstTo (vs1 ++ vs2) s
+           case all isVarType tys of
+             True  -> return $ Right (ps `Set.union` ps', s)
+             False -> return $ Left (errIncompatibleTypes m ty1 ty2)
 unifyTypes m ty1@(TypeForall _ _)       ty2
-  = do (ps1, ty1') <- inst ty1
+  = do (vs, ps1, ty1') <- instVars ty1
        res <- unifyTypes m ty1' ty2
        case res of
          Left x        -> return $ Left x
-         Right (ps, s) -> return $ Right (ps1 `Set.union` ps, s)
+         Right (ps, s) -> do
+           let (_, tys) = unzip $ substToList $ restrictSubstTo vs s
+           case all isVarType tys of
+             True  -> return $ Right (ps1 `Set.union` ps, s)
+             False -> return $ Left (errIncompatibleTypes m ty1 ty2)
 unifyTypes m ty1                        ty2@(TypeForall _ _)
-  = do (ps2, ty2') <- inst ty2
+  = do (vs, ps2, ty2') <- instVars ty2
        res <- unifyTypes m ty1 ty2'
        case res of
          Left x        -> return $ Left x
-         Right (ps, s) -> return $ Right (ps2 `Set.union` ps, s)
+         Right (ps, s) -> do
+           let (_, tys) = unzip $ substToList $ restrictSubstTo vs s
+           case all isVarType tys of
+             True  -> return $ Right (ps2 `Set.union` ps, s)
+             False -> return $ Left (errIncompatibleTypes m ty1 ty2)
 unifyTypes m ty1                        ty2
   = return $ Left (errIncompatibleTypes m ty1 ty2)
 
@@ -1712,16 +1724,23 @@ gen gvs ty = TypeForall tvs (subst theta ty)
 
 -- | Instantiates the given type with fresh type variables.
 inst :: Type -> TCM (PredSet, Type)
-inst (TypeForall tvs ty) = do
+inst ty = instVars ty >>= \(_, ps, ty') -> return (ps, ty')
+
+-- | Instantiates the given type with fresh type variables. The first argument
+-- of the triple is the list of fresh type variables.
+instVars :: Type -> TCM ([Int], PredSet, Type)
+instVars (TypeForall tvs ty) = do
   tys <- replicateM (length tvs) freshTypeVar
-  inst $ subst (foldr2 bindSubst idSubst tvs tys) ty
-inst (TypeContext ps ty) = do
-  (ps', ty') <- inst ty
-  return (Set.union ps ps', ty')
-inst (TypeArrow ty1 ty2) = do
-  (ps, ty2') <- inst ty2
-  return (ps, TypeArrow ty1 ty2')
-inst ty                  = return (emptyPredSet, ty)
+  let tvs' = map (\(TypeVariable tv) -> tv) tys
+  (tvs'', ps, ty') <- instVars $ subst (foldr2 bindSubst idSubst tvs tys) ty
+  return (tvs' ++ tvs'', ps, ty')
+instVars (TypeContext ps ty) = do
+  (tvs, ps', ty') <- instVars ty
+  return (tvs, Set.union ps ps', ty')
+instVars (TypeArrow ty1 ty2) = do
+  (tvs, ps, ty2') <- instVars ty2
+  return (tvs, ps, TypeArrow ty1 ty2')
+instVars ty                  = return ([], emptyPredSet, ty)
 
 -- -----------------------------------------------------------------------------
 -- Auxiliary functions
