@@ -51,9 +51,10 @@ import           Data.List           (nub, nubBy, partition, sortBy)
 import qualified Data.Map            as Map (Map, empty, insert, lookup)
 import           Data.Maybe          (fromJust, isJust)
 import qualified Data.Set.Extra      as Set (Set, concatMap, deleteMin, empty,
-                                             fromList, insert, isSubsetOf,
-                                             member, notMember, partition,
-                                             singleton, toList, union, unions)
+                                             filter, fromList, insert,
+                                             isSubsetOf, member, notMember,
+                                             partition, singleton, toList,
+                                             union, unions)
 
 import           Curry.Base.Ident
 import           Curry.Base.Position
@@ -1635,7 +1636,7 @@ applyDefaults p what doc fvs ps ty = do
   mapM_ (report . errAmbiguousTypeVariable m p what doc (TypeContext ps' ty'))
         tvs'
   modifyTypeSubst $ compose theta
-  return ps'
+  return $ Set.filter (\(Pred _ (TypeVariable tv)) -> elem tv fvs) ps'
 
 bindDefault :: [Type] -> InstEnv' -> PredSet -> Int -> TypeSubst -> TypeSubst
 bindDefault defs inEnv ps tv =
