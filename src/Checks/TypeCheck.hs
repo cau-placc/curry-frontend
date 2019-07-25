@@ -1089,7 +1089,7 @@ tcPattern _ (NegativePattern spi _ l) = do
   return (ps, ty, NegativePattern spi (predType ty) l)
 tcPattern _ (VariablePattern spi _ v) = do
   vEnv <- getValueEnv
-  (_, ty) <- inst (varType v vEnv)
+  let ty = rawPredType (varType v vEnv)
   return (emptyPredSet, ty, VariablePattern spi (predType ty) v)
 tcPattern p t@(ConstructorPattern spi _ c ts) = do
   m <- getModuleIdent
@@ -1122,7 +1122,7 @@ tcPattern p t@(ListPattern spi _ ts) = do
   return (ps, listType ty, ListPattern spi (predType $ listType ty) ts')
 tcPattern p t@(AsPattern spi v t') = do
   vEnv <- getValueEnv
-  (_, ty) <- inst (varType v vEnv)
+  let ty = rawPredType (varType v vEnv)
   (ps, t'') <- tcPattern p t' >>-
     unify p "pattern" (ppPattern 0 t) emptyPredSet ty
   return (ps, ty, AsPattern spi v t'')
