@@ -194,7 +194,16 @@ mkFailTest name errorMsgs = (name, [], [], Nothing, errorMsgs)
 -- test code and the expected error message(s) to the following list
 failInfos :: [TestInfo]
 failInfos = map (uncurry mkFailTest)
-  [ ("ErrorMultipleSignature", ["More than one type signature for `f'"])
+  [ ("AmbiguousTypeVariable",
+      [ "Ambiguous type variable"
+      , "inferred for equation"
+      , "applyFunTest = applyFun funA True False"
+      , "Ambiguous type variable"
+      , "inferred for equation"
+      , "applyFunTest2 = applyFun funA 'a' 'b'"
+      ]
+    )
+  , ("ErrorMultipleSignature", ["More than one type signature for `f'"])
   , ("ExportCheck/AmbiguousName", ["Ambiguous name `not'"])
   , ("ExportCheck/AmbiguousType", ["Ambiguous type `Bool'"])
   , ("ExportCheck/ModuleNotImported", ["Module `Foo' not imported"])
@@ -227,6 +236,17 @@ failInfos = map (uncurry mkFailTest)
       , "Illegal polymorphic type [forall a . a -> a]"
       , "Illegal polymorphic type (Func Bool, Func Int)"
       , "Illegal polymorphic type Maybe (Func Bool)"
+      ]
+    )
+  , ("IncompatibleTypes",
+      [ "Type error in application"
+      , "applyFun idBool"
+      , "Type error in application"
+      , "applyFun idFun"
+      , "Type error in application"
+      , "trueFun False"
+      , "Type error in application"
+      , "applyEqFun ((==) :: Bool -> Bool -> Bool)"
       ]
     )
   , ("KindCheck",

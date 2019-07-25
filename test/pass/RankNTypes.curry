@@ -23,6 +23,15 @@ idFun'' x = id x
 idFun''' :: (forall b. Eq b => b) -> forall c. Ord c => c
 idFun''' = idFun
 
+idBool :: Bool -> Bool
+idBool = id
+
+idFunBoolTest :: Bool
+idFunBoolTest = idFunc idBool True
+  where
+    idFunc :: forall a. (a -> a) -> a -> a
+    idFunc f x = f x
+
 applyFun :: forall a b. (a -> b) -> a -> b
 applyFun f x = f x
 
@@ -66,3 +75,9 @@ orF = \x y -> x x y
 orF' :: (forall a. a -> a -> a) -> (forall a. a -> a -> a)
      -> forall a. a -> a -> a
 orF' x y = x x y
+
+trueFun :: (forall a. Eq a => a) -> Bool
+trueFun _ = True
+
+trueFunTest :: Bool
+trueFunTest = trueFun (error "fail")
