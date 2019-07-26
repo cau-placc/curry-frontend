@@ -773,7 +773,8 @@ instance DictTrans Decl where
   dictTrans (ExternalDataDecl     p tc tvs) = return $ ExternalDataDecl p tc tvs
   dictTrans (NewtypeDecl     p tc tvs nc _) =
     return $ NewtypeDecl p tc tvs nc []
-  dictTrans (TypeDecl          p tc tvs ty) = return $ TypeDecl p tc tvs ty
+  dictTrans (TypeDecl          p tc tvs ty) =
+    return $ TypeDecl p tc tvs $ transformTypeExpr ty
   dictTrans (FunctionDecl p      pty f eqs) =
     FunctionDecl p (transformPredType pty) f <$> mapM dictTrans eqs
   dictTrans (PatternDecl           p t rhs) = case t of
@@ -1220,6 +1221,10 @@ freshVar name ty = ((,) ty) . mkIdent . (name ++) .  show <$> getNextId
 dictType :: Pred -> Type
 dictType (Pred cls ty) = TypeApply (TypeConstructor $ qDictTypeId cls) ty
 
+dictTypeExpr :: Constraint -> TypeExpr
+dictTypeExpr (Constraint _ cls ty)
+  = ApplyType NoSpanInfo (ConstructorType NoSpanInfo $ qDictTypeId cls) ty
+
 -- The function 'transformPredType' replaces each predicate with a new
 -- dictionary type argument.
 
@@ -1232,6 +1237,24 @@ transformPredType (TypeForall  tvs ty) = TypeForall tvs (transformPredType ty)
 transformPredType (TypeContext ps ty)
   = foldr (TypeArrow . dictType) (transformPredType ty) $ Set.toList ps
 transformPredType ty = ty
+
+-- | Replaces each predicate with a new dictionary type argument.
+transformTypeExpr :: TypeExpr -> TypeExpr
+transformTypeExpr (ApplyType spi ty1 ty2)
+  = ApplyType spi (transformTypeExpr ty1) (transformTypeExpr ty2)
+transformTypeExpr (TupleType spi tes)
+  = TupleType spi $ map transformTypeExpr tes
+transformTypeExpr (ListType spi ty)
+  = ListType spi $ transformTypeExpr ty
+transformTypeExpr (ArrowType spi ty1 ty2)
+  = ArrowType spi (transformTypeExpr ty1) (transformTypeExpr ty2)
+transformTypeExpr (ParenType spi ty)
+  = ParenType spi $ transformTypeExpr ty
+transformTypeExpr (ContextType spi ps ty)
+  = foldr (ArrowType NoSpanInfo . dictTypeExpr) (transformTypeExpr ty) ps
+transformTypeExpr (ForallType spi tvs ty)
+  = ForallType spi tvs $ transformTypeExpr ty
+transformTypeExpr ty = ty
 
 -- The function 'transformMethodPredType' first deletes the implicit class
 -- constraint and then transforms the resulting predicated type as above.
