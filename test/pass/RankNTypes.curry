@@ -81,3 +81,17 @@ trueFun _ = True
 
 trueFunTest :: Bool
 trueFunTest = trueFun (error "fail")
+
+applyTuple :: forall b c d. (forall a. a -> b) -> (c, d) -> (b, b)
+applyTuple f (x, y) = (f x, f y)
+
+data Foo = Foo Bool | Bar String
+
+applyFoo :: Foo -> (forall a. a -> a) -> Foo
+applyFoo (Foo x) f = Foo $ f x
+applyFoo (Bar x) f = f $ Bar x
+
+applyEqFun :: Eq a => (forall b. Eq b => b -> b -> Bool) -> a -> a -> Bool
+applyEqFun f x y = x `f` y
+
+type EqFunc = forall a. Eq a => a -> a -> Bool
