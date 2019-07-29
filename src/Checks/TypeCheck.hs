@@ -1265,17 +1265,15 @@ tcExpr _     p e@(UnaryMinus spi e1) = do
   return (ps', ty, UnaryMinus spi e1')
 tcExpr _     p e@(Apply spi e1 e2) = do
   (ps, y, e1') <- tcExpr Infer p e1
-  (ps', y') <- inst y
-  (alpha, beta) <- tcArrow p "application" (ppExpr 0 e $-$ text "Term:" <+> ppExpr 0 e1) y'
-  (ps'', e2') <- tcArg Infer p "application" (ppExpr 0 e) (ps `Set.union` ps') alpha e2
-  return (ps'', beta, Apply spi e1' e2')
+  (alpha, beta) <- tcArrow p "application" (ppExpr 0 e $-$ text "Term:" <+> ppExpr 0 e1) y
+  (ps', e2') <- tcArg (Check alpha) p "application" (ppExpr 0 e) ps alpha e2
+  return (ps', beta, Apply spi e1' e2')
 tcExpr _     p e@(InfixApply spi e1 op e2) = do
   (ps, (alpha, beta, gamma), op') <- tcInfixOp op >>=-
     tcBinary p "infix application" (ppExpr 0 e $-$ text "Operator:" <+> ppOp op)
-  (aps, alpha') <- inst alpha
-  (ps', e1') <- tcArg Infer p "infix application" (ppExpr 0 e) (ps `Set.union` aps) alpha' e1
+  (ps', e1') <- tcArg (Check alpha) p "infix application" (ppExpr 0 e) ps alpha e1
   (bps, beta') <- inst beta
-  (ps'', e2') <- tcArg Infer p "infix application" (ppExpr 0 e) (ps' `Set.union` bps) beta' e2
+  (ps'', e2') <- tcArg (Check beta) p "infix application" (ppExpr 0 e) ps' beta e2
   return (ps'', gamma, InfixApply spi e1' op' e2')
 tcExpr _     p e@(LeftSection spi e1 op) = do
   (ps, (alpha, beta), op') <- tcInfixOp op >>=-
