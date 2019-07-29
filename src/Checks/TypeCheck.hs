@@ -700,7 +700,7 @@ fixType _ _ = internalError "TypeCheck.fixType"
 declVars :: Decl Type -> [(Ident, Int, Type)]
 declVars (FunctionDecl _ ty f eqs) = [(f, eqnArity $ head eqs, typeScheme ty)]
 declVars (PatternDecl _ t _)       = case t of
-  VariablePattern _ ty v -> [(v, 0, typeScheme ty)]
+  VariablePattern _ ty v -> [(v, 0, monoType ty)]
   _                      -> []
 declVars _                         = internalError "TypeCheck.declVars"
 
@@ -1272,7 +1272,6 @@ tcExpr _     p e@(InfixApply spi e1 op e2) = do
   (ps, (alpha, beta, gamma), op') <- tcInfixOp op >>=-
     tcBinary p "infix application" (ppExpr 0 e $-$ text "Operator:" <+> ppOp op)
   (ps', e1') <- tcArg (Check alpha) p "infix application" (ppExpr 0 e) ps alpha e1
-  (bps, beta') <- inst beta
   (ps'', e2') <- tcArg (Check beta) p "infix application" (ppExpr 0 e) ps' beta e2
   return (ps'', gamma, InfixApply spi e1' op' e2')
 tcExpr _     p e@(LeftSection spi e1 op) = do
@@ -1289,10 +1288,9 @@ tcExpr _     p e@(RightSection spi op e1) = do
   return (ps', TypeArrow alpha gamma, RightSection spi op' e1')
 tcExpr cm    p (Lambda spi ts e) = do
   (pss, tys, ts', ps, ty, e') <- withLocalValueEnv $ do
-    let cmList = (case cm of
-                    Infer    -> map (const Infer) [0..]
-                    Check ty -> let (argTys, _) = arrowUnapply ty
-                                 in map Check argTys ++ map (const Infer) [0..])
+    let cmList = case cm of
+                   Infer    -> toCheckModeList []
+                   Check ty -> toCheckModeList $ fst $ arrowUnapply ty
     mapM_ (uncurry bindPatternVars) $ zip cmList ts
     (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern p) ts
     (ps, ty, e') <- tcExpr Infer p e
