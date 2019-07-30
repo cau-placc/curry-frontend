@@ -698,11 +698,15 @@ fixType ~(TypeForall _ ty) pd@(i, PatternDecl p t rhs) = case t of
 fixType _ _ = internalError "TypeCheck.fixType"
 
 declVars :: Decl Type -> [(Ident, Int, Type)]
-declVars (FunctionDecl _ ty f eqs) = [(f, eqnArity $ head eqs, typeScheme ty)]
+declVars (FunctionDecl _ ty f eqs)
+  = [(f, eqnArity $ head eqs, typeSchemeFixed ty)]
 declVars (PatternDecl _ t _)       = case t of
-  VariablePattern _ ty v -> [(v, 0, monoType ty)]
+  VariablePattern _ ty v -> [(v, 0, typeSchemeFixed ty)]
   _                      -> []
 declVars _                         = internalError "TypeCheck.declVars"
+
+typeSchemeFixed :: Type -> Type
+typeSchemeFixed ty = TypeForall (filter (>= 0) (typeVars ty)) ty
 
 -- The function 'tcCheckPDecl' checks the type of an explicitly typed function
 -- or variable declaration. After inferring a type for the declaration, the
