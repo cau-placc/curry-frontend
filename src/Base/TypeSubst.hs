@@ -27,6 +27,7 @@ import           Base.Messages (internalError)
 import           Base.Subst
 import           Base.TopEnv
 import           Base.Types
+import           Base.Utils    (setAt)
 
 import           Env.Value     (ValueInfo (..))
 
@@ -104,7 +105,9 @@ expandAliasType' tys (TypeArrow ty1 ty2)
 expandAliasType' tys (TypeContext ps ty)
   = applyType (TypeContext (expandAliasType tys ps) (expandAliasType tys ty))
 expandAliasType' tys (TypeForall tvs ty)
-  = applyType (TypeForall tvs (expandAliasType tys ty))
+  = applyType (TypeForall tvs (expandAliasType tys' ty))
+  where
+    tys' = foldr (\tv -> setAt tv (TypeVariable tv)) tys tvs
 
 instance ExpandAliasType Pred where
   expandAliasType tys (Pred qcls ty) = Pred qcls (expandAliasType tys ty)

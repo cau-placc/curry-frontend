@@ -17,7 +17,7 @@
 
 module Base.Utils
   ( fst3, snd3, thd3, curry3, uncurry3
-  , (++!), foldr2, mapAccumM, findDouble, findMultiples
+  , (++!), foldr2, mapAccumM, findDouble, findMultiples, setAt
   ) where
 
 import Control.Monad (MonadPlus, mzero, mplus)
@@ -92,3 +92,11 @@ findMultiples (x : xs)
   | otherwise = (x : same) : multiples
   where (same, other) = partition (==x) xs
         multiples     = findMultiples other
+
+setAt :: Int -> a -> [a] -> [a]
+setAt i x xs | i < 0     = xs
+             | otherwise = go i xs
+  where
+    go 0 (_:ys) = x : ys
+    go n (y:ys) = y : go (n-1) ys
+    go _ [] = []
