@@ -14,14 +14,11 @@ fun' f = f False
 idFun :: (forall a. Eq a => a) -> forall a. Ord a => a
 idFun x = x
 
-idFun' :: (forall a. Eq a => a) -> forall a. Ord a => a
-idFun' = id
+idFun' :: forall a. Ord a => (forall b. Eq b => b) -> a
+idFun' x = id x
 
-idFun'' :: forall a. Ord a => (forall b. Eq b => b) -> a
-idFun'' x = id x
-
-idFun''' :: (forall b. Eq b => b) -> forall c. Ord c => c
-idFun''' = idFun
+idFun'' :: (forall b. Eq b => b) -> forall c. Ord c => c
+idFun'' = idFun
 
 idBool :: Bool -> Bool
 idBool = id
@@ -78,9 +75,6 @@ orF' x y = x x y
 
 trueFun :: (forall a. Eq a => a) -> Bool
 trueFun _ = True
-
-trueFunTest :: Bool
-trueFunTest = trueFun (error "fail")
 
 applyTuple :: forall b c d. (forall a. a -> b) -> (c, d) -> (b, b)
 applyTuple f (x, y) = (f x, f y)

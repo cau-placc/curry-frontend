@@ -244,6 +244,11 @@ failInfos = map (uncurry mkFailTest)
       , "Cannot instantiate unification variable"
       , "with a type involving foralls:"
       , "Impredicative polymorphism isn't yet supported."
+      , "Type error in infix application"
+      , "constFun x $ f"
+      , "Cannot instantiate unification variable"
+      , "with a type involving foralls:"
+      , "Impredicative polymorphism isn't yet supported."
       ]
     )
   , ("IncompatibleTypes",

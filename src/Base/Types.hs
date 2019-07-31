@@ -207,14 +207,13 @@ weakPrenex ty                      = ty
 
 -- | Checks whether the given type contains higher-rank polymorphism.
 hasHigherRankPoly :: Type -> Bool
-hasHigherRankPoly = hasHigherRankPoly' . rawPredType . weakPrenex
-  where
-    hasHigherRankPoly' (TypeApply ty1 ty2)
-      = hasHigherRankPoly' ty1 || hasHigherRankPoly' ty2
-    hasHigherRankPoly' (TypeArrow ty1 ty2)
-      = hasHigherRankPoly' ty1 || hasHigherRankPoly' ty2
-    hasHigherRankPoly' (TypeForall _ _)    = True
-    hasHigherRankPoly' _                   = False
+hasHigherRankPoly (TypeApply ty1 ty2)
+  = hasHigherRankPoly ty1 || hasHigherRankPoly ty2
+hasHigherRankPoly (TypeArrow ty1 ty2)
+  = hasHigherRankPoly ty1 || hasHigherRankPoly ty2
+hasHigherRankPoly (TypeForall _ _)    = True
+hasHigherRankPoly (TypeContext _ _)   = True
+hasHigherRankPoly _                   = False
 
 class IsType t where
   -- | Returns a list of all non universally quantified type variables occurring

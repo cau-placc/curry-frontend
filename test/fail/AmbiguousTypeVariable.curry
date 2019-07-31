@@ -6,7 +6,7 @@ class A b where
 instance A Bool where
   funA = const
 
-applyFun :: (forall a. a -> a -> a) -> a -> a -> a
+applyFun :: (forall b. b -> b -> b) -> a -> a -> a
 applyFun f x y = f x y
 
 applyFunTest :: Bool
