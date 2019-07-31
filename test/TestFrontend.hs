@@ -174,6 +174,7 @@ passInfos = map mkPassTest
   , "RecordTest2"
   , "RecordTest3"
   , "ReexportTest"
+  , "ScottEncoding"
   , "SelfExport"
   , "SpaceLeak"
   , "TyConsTest"

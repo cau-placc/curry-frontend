@@ -49,6 +49,19 @@ testT' t = case t of
 lambdaFun :: (forall a. Eq a => a -> a) -> (Int, Bool)
 lambdaFun = (\f -> (f 73, f True)) :: (forall b. Ord b => b -> b) -> (Int, Bool)
 
+lambdaFun' :: (Int, Bool)
+lambdaFun' = ((\f -> (f 73, f True)) :: (forall b. b -> b) -> (Int, Bool)) id
+
+lambdaFun'' :: Bool -> (Int, Bool)
+lambdaFun'' b = case b of
+                  True  -> f id
+                  False -> g (flip const "fail")
+  where
+    f :: (forall b. b -> b) -> (Int, Bool)
+    f = \h -> (h 73, h True)
+    g :: (forall b. b -> b) -> (Int, Bool)
+    g h = (h 73, h True)
+
 data FuncList a = EmptyFuncList a | FuncList (forall b. b -> b) (FuncList a)
 
 type FuncListPair a = (FuncList a, FuncList a)
