@@ -145,7 +145,7 @@ passInfos = map mkPassTest
   , "ACVisibility"
   , "AnonymVar"
   , "CaseComplete"
-  , "ChurchList"
+  , "ChurchEncoding"
   , "DefaultPrecedence"
   , "Dequeue"
   , "ExplicitLayout"
