@@ -557,7 +557,7 @@ tcPDecl ps (i, FunctionDecl p _ f eqs)  = do
   tcFunctionPDecl i ps (varType f vEnv) p f eqs
 tcPDecl ps (i, d@(PatternDecl p t rhs)) = do
   (ps', ty, t') <- tcPattern p t
-  (ps'', rhs') <- tcRhs Infer rhs >>-
+  (ps'', rhs') <- tcRhs (Check ty) rhs >>-
     unifyDecl p "pattern declaration" (ppDecl d) (ps `Set.union` ps') ty
   return (ps'', (ty, (i, PatternDecl p t' rhs')))
 tcPDecl _  _                            = internalError "TypeCheck.tcPDecl"
