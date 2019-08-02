@@ -350,7 +350,7 @@ checkDecl (FunctionDecl a p f eqs)         = FunctionDecl a p f <$>
   mapM checkEquation eqs
 checkDecl (PatternDecl p t rhs)            = PatternDecl p t <$> checkRhs rhs
 checkDecl (DefaultDecl p tys)              = DefaultDecl p <$>
-  mapM checkType tys
+  mapM (checkClosedType []) tys
 checkDecl (ClassDecl p cx cls clsvar ds)   = do
   checkTypeVars "class declaration" [clsvar]
   cx' <- checkClosedContext [clsvar] cx
