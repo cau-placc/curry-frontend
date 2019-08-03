@@ -1185,7 +1185,7 @@ checkImpredPoly (TupleType _ tys)      = allM checkImpredPoly tys
 checkImpredPoly (ListType _ ty)        = checkImpredPoly ty
 checkImpredPoly (ArrowType _ ty1 ty2)  = allM checkImpredPoly [ty1, ty2]
 checkImpredPoly (ParenType _ ty)       = checkImpredPoly ty
-checkImpredPoly (ContextType _ _ ty)   = checkImpredPoly ty
+checkImpredPoly (ContextType _ _ _)    = return False
 checkImpredPoly (ForallType _ _ _)     = return False
 
 -- ---------------------------------------------------------------------------
