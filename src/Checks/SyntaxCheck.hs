@@ -453,6 +453,7 @@ qualLookupListCons v env
 
 checkModule :: Module () -> SCM (Module (), [KnownExtension])
 checkModule (Module spi ps m es is ds) = do
+  mapM_ checkDefaultDecl dds
   mapM_ checkImpredDecl ds
   mapM_ bindTypeDecl tds
   mapM_ bindClassDecl cds
@@ -466,6 +467,7 @@ checkModule (Module spi ps m es is ds) = do
   where tds = filter isTypeDecl ds
         cds = filter isClassDecl ds
         ids = filter isInstanceDecl ds
+        dds = filter isDefaultDecl ds
 
 -- |Checks whether a function in a functional pattern contains cycles
 -- |(depends on its own global function)
@@ -1116,6 +1118,13 @@ checkLabels p Nothing ls css =
 checkField :: (a -> SCM a) -> Field a -> SCM (Field a)
 checkField check (Field p l x) = Field p l <$> check x
 
+checkDefaultDecl :: Decl a -> SCM ()
+checkDefaultDecl (DefaultDecl _ tys) = mapM_ checkForallType tys
+  where
+    checkForallType te = unlessM (checkImpredPoly te) $ do
+      report $ errIllegalDefaultType (getPosition te) te
+checkDefaultDecl _                   = ok
+
 -- -----------------------------------------------------------------------------
 -- Impredicative polymorphism detection
 -- -----------------------------------------------------------------------------
@@ -1125,7 +1134,6 @@ checkImpredDecl (DataDecl _ _ _ cs _)      = mapM_ checkImpredConsDecl cs
 checkImpredDecl (NewtypeDecl _ _ _ c _)    = checkImpredNewConsDecl c
 checkImpredDecl (TypeDecl _ _ _ ty)        = checkImpredType ty
 checkImpredDecl (TypeSig _ _ ty)           = checkImpredType ty
-checkImpredDecl (DefaultDecl _ tys)        = mapM_ checkImpredType tys
 checkImpredDecl (ClassDecl _ _ _ _ ds)     = mapM_ checkImpredDecl ds
 checkImpredDecl (InstanceDecl _ _ _ ty ds) = do
   checkImpredType ty
@@ -1493,4 +1501,10 @@ errIllegalPolymorphicType :: Position -> TypeExpr -> Message
 errIllegalPolymorphicType p ty = posMessage p $ vcat
   [ text "Illegal polymorphic type" <+> ppTypeExpr 0 ty
   , text "Impredicative polymorphism isn't yet supported."
+  ]
+
+errIllegalDefaultType :: Position -> TypeExpr -> Message
+errIllegalDefaultType p ty = posMessage p $ vcat
+  [ text "Illegal polymorphic type:" <+> ppTypeExpr 0 ty
+  , text "When checking the types in a default declaration."
   ]
