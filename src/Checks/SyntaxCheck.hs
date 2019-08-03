@@ -1119,9 +1119,9 @@ checkField :: (a -> SCM a) -> Field a -> SCM (Field a)
 checkField check (Field p l x) = Field p l <$> check x
 
 checkDefaultDecl :: Decl a -> SCM ()
-checkDefaultDecl (DefaultDecl _ tys) = mapM_ checkForallType tys
+checkDefaultDecl (DefaultDecl _ tys) = mapM_ checkType tys
   where
-    checkForallType te = unlessM (checkImpredPoly te) $ do
+    checkType te = unlessM (checkSimpleType te) $ do
       report $ errIllegalDefaultType (getPosition te) te
 checkDefaultDecl _                   = ok
 
@@ -1156,17 +1156,17 @@ checkImpredNewConsDecl (NewRecordDecl _ _ (_, ty)) = checkImpredType ty
 checkImpredType :: TypeExpr -> SCM ()
 checkImpredType (ConstructorType _ _)      = ok
 checkImpredType te@(ApplyType spi ty1 ty2) = do
-  unlessM (checkImpredPoly ty2) $ do
+  unlessM (checkSimpleType ty2) $ do
     report $ errIllegalPolymorphicType (getPosition spi) te
   checkImpredType ty1
   checkImpredType ty2
 checkImpredType (VariableType _ _)         = ok
 checkImpredType te@(TupleType spi tys)     = do
-  unlessM (allM checkImpredPoly tys) $ do
+  unlessM (allM checkSimpleType tys) $ do
     report $ errIllegalPolymorphicType (getPosition spi) te
   mapM_ checkImpredType tys
 checkImpredType te@(ListType spi ty)       = do
-  unlessM (checkImpredPoly ty) $ do
+  unlessM (checkSimpleType ty) $ do
     report $ errIllegalPolymorphicType (getPosition spi) te
   checkImpredType ty
 checkImpredType (ArrowType _ ty1 ty2)      = do
@@ -1177,24 +1177,24 @@ checkImpredType (ContextType _ _ ty)       = checkImpredType ty
 checkImpredType (ForallType _ _ ty)        = checkImpredType ty
 
 -- | Checks whether the given type expression contains no universally
--- quantified type variables.
-checkImpredPoly :: TypeExpr -> SCM Bool
-checkImpredPoly (ConstructorType _ tc) = do
+-- quantified type variables or type constraints.
+checkSimpleType :: TypeExpr -> SCM Bool
+checkSimpleType (ConstructorType _ tc) = do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv
   case qualLookupTypeInfo tc tcEnv of
-    [AliasType _ _ _ ty] -> checkImpredPoly (fromType identSupply ty)
+    [AliasType _ _ _ ty] -> checkSimpleType (fromType identSupply ty)
     _ -> case qualLookupTypeInfo (qualQualify m tc) tcEnv of
-           [AliasType _ _ _ ty] -> checkImpredPoly (fromType identSupply ty)
+           [AliasType _ _ _ ty] -> checkSimpleType (fromType identSupply ty)
            _                    -> return True
-checkImpredPoly (ApplyType _ ty1 ty2)  = allM checkImpredPoly [ty1, ty2]
-checkImpredPoly (VariableType _ _)     = return True
-checkImpredPoly (TupleType _ tys)      = allM checkImpredPoly tys
-checkImpredPoly (ListType _ ty)        = checkImpredPoly ty
-checkImpredPoly (ArrowType _ ty1 ty2)  = allM checkImpredPoly [ty1, ty2]
-checkImpredPoly (ParenType _ ty)       = checkImpredPoly ty
-checkImpredPoly (ContextType _ _ _)    = return False
-checkImpredPoly (ForallType _ _ _)     = return False
+checkSimpleType (ApplyType _ ty1 ty2)  = allM checkSimpleType [ty1, ty2]
+checkSimpleType (VariableType _ _)     = return True
+checkSimpleType (TupleType _ tys)      = allM checkSimpleType tys
+checkSimpleType (ListType _ ty)        = checkSimpleType ty
+checkSimpleType (ArrowType _ ty1 ty2)  = allM checkSimpleType [ty1, ty2]
+checkSimpleType (ParenType _ ty)       = checkSimpleType ty
+checkSimpleType (ContextType _ _ _)    = return False
+checkSimpleType (ForallType _ _ _)     = return False
 
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions
