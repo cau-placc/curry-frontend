@@ -231,10 +231,10 @@ failInfos = map (uncurry mkFailTest)
       ]
     )
   , ("ImpredPoly",
-      [ "Illegal polymorphic type (Bool, forall b . a -> b, Int)"
-      , "Illegal polymorphic type [forall a . a -> a]"
-      , "Illegal polymorphic type Maybe (forall a . a -> a)"
-      , "Illegal polymorphic type [forall a . a -> a]"
+      [ "Illegal polymorphic type (Bool, forall b. a -> b, Int)"
+      , "Illegal polymorphic type [forall a. a -> a]"
+      , "Illegal polymorphic type Maybe (forall a. a -> a)"
+      , "Illegal polymorphic type [forall a. a -> a]"
       , "Illegal polymorphic type (Func Bool, Func Int)"
       , "Illegal polymorphic type Maybe (Func Bool)"
       ]
