@@ -38,7 +38,7 @@ import Base.CurryTypes (fromPredType, toType, toPredType)
 import Base.Expr       (bv)
 import Base.Messages   (internalError)
 import Base.NestEnv
-import Base.Types      (Type, arrowArity, unpredType, rawPredType)
+import Base.Types      (Type, arrowArity, rawPredType)
 import Base.TypeSubst
 
 import Env.Value       (ValueEnv, ValueInfo (..), qualLookupValue)
@@ -218,7 +218,7 @@ trFuncDecl global (FunctionDecl  _ pty f eqs)
   <*> getQualType f pty <*> mapM trEquation eqs
 trFuncDecl global (ExternalDecl         _ vs)
   =   T.forM vs $ \(Var pty f) -> CFunc
-  <$> trFuncName global f <*> pure (arrowArity $ unpredType pty)
+  <$> trFuncName global f <*> pure (arrowArity pty)
   <*> getVisibility f <*> getQualType f pty <*> return []
 trFuncDecl _      _                           = return []
 

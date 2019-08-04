@@ -149,7 +149,7 @@ getNextId = do
 freshVar :: Typeable t => String -> t -> DsM (Type, Ident)
 freshVar prefix t = do
   v <- (mkIdent . (prefix ++) . show) <$> getNextId
-  return (predType $ typeOf t, v)
+  return (typeOf t, v)
 
 -- ---------------------------------------------------------------------------
 -- Desugaring
@@ -217,7 +217,7 @@ genSelEqn p l qc = do
   case elemIndex l ls of
     Just n  -> do
       vs <- mapM (freshVar "_#rec") tys
-      let pat = constrPattern (predType ty0) qc vs
+      let pat = constrPattern ty0 qc vs
       return [mkEquation p l [pat] (uncurry mkVar (vs !! n))]
     Nothing -> return []
 
@@ -375,8 +375,7 @@ dsNonLinear env (TuplePattern             _ ts) =
 dsNonLinear env (ListPattern          _ pty ts) =
   second (ListPattern NoSpanInfo pty) <$> mapAccumM dsNonLinear env ts
 dsNonLinear env (AsPattern               _ v t) = do
-  let pty = predType $ typeOf t
-  (env1, pat) <- dsNonLinear env (VariablePattern NoSpanInfo pty v)
+  (env1, pat) <- dsNonLinear env (VariablePattern NoSpanInfo (typeOf t) v)
   let VariablePattern _ _ v' = pat
   (env2, t') <- dsNonLinear env1 t
   return (env2, AsPattern NoSpanInfo v' t')
@@ -507,12 +506,12 @@ fp2Expr (NegativePattern         _ pty l) =
 fp2Expr (VariablePattern         _ pty v) = (mkVar pty v, [])
 fp2Expr (ConstructorPattern  _  pty c ts) =
   let (ts', ess) = unzip $ map fp2Expr ts
-      pty' = predType $ foldr TypeArrow (unpredType pty) $ map typeOf ts
+      pty' = foldr TypeArrow (unpredType pty) $ map typeOf ts
   in  (apply (Constructor NoSpanInfo pty' c) ts', concat ess)
 fp2Expr (InfixPattern   _ pty t1 op t2) =
   let (t1', es1) = fp2Expr t1
       (t2', es2) = fp2Expr t2
-      pty' = predType $ foldr TypeArrow (unpredType pty) [typeOf t1, typeOf t2]
+      pty' = foldr TypeArrow (unpredType pty) [typeOf t1, typeOf t2]
   in  (InfixApply NoSpanInfo t1' (InfixConstr pty' op) t2', es1 ++ es2)
 fp2Expr (ParenPattern                _ t) = first (Paren NoSpanInfo) (fp2Expr t)
 fp2Expr (TuplePattern               _ ts) =
@@ -523,16 +522,16 @@ fp2Expr (ListPattern            _ pty ts) =
   in  (List NoSpanInfo pty ts', concat ess)
 fp2Expr (FunctionPattern      _ pty f ts) =
   let (ts', ess) = unzip $ map fp2Expr ts
-      pty' = predType $ foldr TypeArrow (unpredType pty) $ map typeOf ts
+      pty' = foldr TypeArrow (unpredType pty) $ map typeOf ts
   in  (apply (Variable NoSpanInfo pty' f) ts', concat ess)
 fp2Expr (InfixFuncPattern _ pty t1 op t2) =
   let (t1', es1) = fp2Expr t1
       (t2', es2) = fp2Expr t2
-      pty' = predType $ foldr TypeArrow (unpredType pty) $ map typeOf [t1, t2]
+      pty' = foldr TypeArrow (unpredType pty) $ map typeOf [t1, t2]
   in  (InfixApply NoSpanInfo t1' (InfixOp pty' op) t2', es1 ++ es2)
 fp2Expr (AsPattern                 _ v t) =
   let (t', es) = fp2Expr t
-      pty = predType $ typeOf t
+      pty = typeOf t
   in  (mkVar pty v, (t' =:<= mkVar pty v) : es)
 fp2Expr (RecordPattern        _ pty c fs) =
   let (fs', ess) = unzip [ (Field p f e, es) | Field p f t <- fs
@@ -578,7 +577,7 @@ dsLiteralPat pty f@(Float _) = Right (LiteralPattern NoSpanInfo pty f)
 dsLiteralPat pty (String cs) =
   Left $ ListPattern NoSpanInfo pty $
   map (LiteralPattern NoSpanInfo pty' . Char) cs
-  where pty' = predType $ elemType $ unpredType pty
+  where pty' = elemType $ unpredType pty
 
 dsPat :: SpanInfo -> [Decl Type] -> Pattern Type
       -> DsM ([Decl Type], Pattern Type)
@@ -604,7 +603,7 @@ dsPat p ds (RecordPattern      _ pty c fs) = do
   dsPat p ds (ConstructorPattern NoSpanInfo pty c ts)
 dsPat p ds (TuplePattern              _ ts) =
   dsPat p ds (ConstructorPattern NoSpanInfo pty (qTupleId $ length ts) ts)
-  where pty = predType (tupleType (map typeOf ts))
+  where pty = tupleType (map typeOf ts)
 dsPat p ds (ListPattern           _ pty ts) =
   second (dsList cons nil) <$> mapAccumM (dsPat p) ds ts
   where nil = ConstructorPattern NoSpanInfo pty qNilId []
@@ -621,7 +620,7 @@ dsAs :: SpanInfo -> Ident -> ([Decl Type], Pattern Type)
 dsAs p v (ds, t) = case t of
   VariablePattern _ pty v' -> (varDecl p pty  v (mkVar pty  v') : ds,t)
   AsPattern       _  v' t' -> (varDecl p pty' v (mkVar pty' v') : ds,t)
-    where pty' = predType $ typeOf t'
+    where pty' = typeOf t'
   _                      -> (ds, AsPattern NoSpanInfo v t)
 
 dsLazy :: SpanInfo -> [Decl Type] -> Pattern Type
@@ -676,7 +675,6 @@ dsExpr p (RecordUpdate _ e fs) = do
   alts  <- constructors tc >>= concatMapM updateAlt
   dsExpr p $ Case NoSpanInfo Flex e (map (uncurry (caseAlt p)) alts)
   where ty = typeOf e
-        pty = predType ty
         tc = rootOfType (arrowBase ty)
         updateAlt (RecordConstr c ls _)
           | all (`elem` qls2) (map fieldLabel fs)= do
@@ -684,24 +682,24 @@ dsExpr p (RecordUpdate _ e fs) = do
             vEnv <- getValueEnv
             let (qls, tys) = argumentTypes ty qc vEnv
             vs <- mapM (freshVar "_#rec") tys
-            let pat = constrPattern pty qc vs
+            let pat = constrPattern ty qc vs
                 esMap = map field2Tuple fs
                 originalEs = map (uncurry mkVar) vs
                 maybeEs = map (flip lookup esMap) qls
                 es = zipWith fromMaybe originalEs maybeEs
-            return [(pat, applyConstr pty qc tys es)]
+            return [(pat, applyConstr ty qc tys es)]
           where qls2 = map (qualifyLike tc) ls
         updateAlt _ = return []
 dsExpr p (Tuple      _ es) =
   apply (Constructor NoSpanInfo pty $ qTupleId $ length es)
   <$> mapM (dsExpr p) es
-  where pty = predType (foldr TypeArrow (tupleType tys) tys)
+  where pty = foldr TypeArrow (tupleType tys) tys
         tys = map typeOf es
 dsExpr p (List   _ pty es) = dsList cons nil <$> mapM (dsExpr p) es
   where nil = Constructor NoSpanInfo pty qNilId
         cons = (Apply NoSpanInfo) . (Apply NoSpanInfo)
           (Constructor NoSpanInfo
-            (predType $ consType $ elemType $ unpredType pty) qConsId)
+            (consType $ elemType $ unpredType pty) qConsId)
 dsExpr p (ListCompr          _ e qs) = dsListComp p e qs
 dsExpr p (EnumFrom              _ e) =
   Apply NoSpanInfo (prelEnumFrom (typeOf e)) <$> dsExpr p e
@@ -878,13 +876,13 @@ dsStmt (StmtDecl   _ ds) e' = return $ Let NoSpanInfo ds e'
 dsListComp :: SpanInfo -> Expression Type -> [Statement Type]
            -> DsM (Expression Type)
 dsListComp p e []     =
-  dsExpr p (List NoSpanInfo (predType $ listType $ typeOf e) [e])
+  dsExpr p (List NoSpanInfo (listType $ typeOf e) [e])
 dsListComp p e (q:qs) = dsQual p q (ListCompr NoSpanInfo e qs)
 
 dsQual :: SpanInfo -> Statement Type -> Expression Type
        -> DsM (Expression Type)
 dsQual p (StmtExpr   _ b) e =
-  dsExpr p (IfThenElse NoSpanInfo b e (List NoSpanInfo (predType $ typeOf e) []))
+  dsExpr p (IfThenElse NoSpanInfo b e (List NoSpanInfo (typeOf e) []))
 dsQual p (StmtDecl  _ ds) e = dsExpr p (Let NoSpanInfo ds e)
 dsQual p (StmtBind _ t l) e
   | isVariablePattern t = dsExpr p (qualExpr t e l)
@@ -892,7 +890,7 @@ dsQual p (StmtBind _ t l) e
     v <- freshVar "_#var" t
     l' <- freshVar "_#var" e
     dsExpr p (apply (prelFoldr (typeOf t) (typeOf e))
-      [foldFunct v l' e, List NoSpanInfo (predType $ typeOf e) [], l])
+      [foldFunct v l' e, List NoSpanInfo (typeOf e) [], l])
   where
   qualExpr v (ListCompr NoSpanInfo e1 []) l1
     = apply (prelMap (typeOf v) (typeOf e1)) [Lambda NoSpanInfo [v] e1, l1]
@@ -910,7 +908,7 @@ dsQual p (StmtBind _ t l) e
   append e1                  l1 =
     apply (prelAppend (elemType $ typeOf e1)) [e1, l1]
   prelCons ty                   =
-      Constructor NoSpanInfo (predType $ consType ty) $ qConsId
+      Constructor NoSpanInfo (consType ty) $ qConsId
 
 -- -----------------------------------------------------------------------------
 -- Desugaring of Lists, labels, fields, and literals
@@ -943,7 +941,7 @@ dsLiteral pty f@(Float _) = Right $ fixLiteral (unpredType pty)
                           Literal NoSpanInfo predFloatType f
 dsLiteral pty (String cs) =
   Left $ List NoSpanInfo pty $ map (Literal NoSpanInfo pty' . Char) cs
-  where pty' = predType $ elemType $ unpredType pty
+  where pty' = elemType $ unpredType pty
 
 negateLiteral :: Literal -> Literal
 negateLiteral (Int i) = Int (-i)
@@ -955,8 +953,7 @@ negateLiteral _ = internalError "Desugar.negateLiteral"
 -- ---------------------------------------------------------------------------
 
 preludeFun :: [Type] -> Type -> String -> Expression Type
-preludeFun tys ty = Variable NoSpanInfo (predType $ foldr TypeArrow ty tys)
-                  . preludeIdent
+preludeFun tys ty = Variable NoSpanInfo (foldr TypeArrow ty tys) . preludeIdent
 
 preludeIdent :: String -> QualIdent
 preludeIdent = qualifyWith preludeMIdent . mkIdent
@@ -1055,8 +1052,7 @@ elemType ty = internalError $ "Base.Types.elemType " ++ show ty
 applyConstr :: Type -> QualIdent -> [Type] -> [Expression Type]
             -> Expression Type
 applyConstr pty c tys =
-  apply (Constructor NoSpanInfo
-    (predType (foldr TypeArrow (unpredType pty) tys)) c)
+  apply (Constructor NoSpanInfo (foldr TypeArrow (unpredType pty) tys) c)
 
 -- The function 'instType' instantiates the universally quantified
 -- type variables of a type scheme with fresh type variables. Since this

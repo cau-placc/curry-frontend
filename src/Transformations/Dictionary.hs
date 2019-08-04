@@ -179,7 +179,7 @@ augmentValues = fmap augmentValueInfo
 
 augmentValueInfo :: ValueInfo -> ValueInfo
 augmentValueInfo (Value f True a (TypeForall vs ty))
-  | arrowArity (unpredType ty) == 0
+  | arrowArity ty == 0
     = Value f True a $ TypeForall vs $ augmentType ty
 augmentValueInfo vi = vi
 
@@ -193,7 +193,7 @@ augmentTypeInfo ti = ti
 
 augmentClassMethod :: ClassMethod -> ClassMethod
 augmentClassMethod mthd@(ClassMethod f a ty)
-  | arrowArity (unpredType ty) == 0 =
+  | arrowArity ty == 0 =
     ClassMethod f (Just $ fromMaybe 0 a + 1) $ augmentType ty
   | otherwise = mthd
 
@@ -394,8 +394,8 @@ createInstDictExpr cls ty = do
   m <- getModuleIdent
   clsEnv <- getClassEnv
   let fs = map (qImplMethodId m cls ty) $ classMethods cls clsEnv
-  return $ apply (Constructor NoSpanInfo (predType ty') (qDictConstrId cls))
-             (zipWith (Variable NoSpanInfo . predType) (arrowArgs ty') fs)
+  return $ apply (Constructor NoSpanInfo ty' (qDictConstrId cls))
+             (zipWith (Variable NoSpanInfo) (arrowArgs ty') fs)
 
 getInstDictConstrType :: QualIdent -> Type -> DTM Type
 getInstDictConstrType cls ty = do
@@ -439,7 +439,7 @@ defaultInstMethodDecl ps cls ty f = do
   vEnv <- getValueEnv
   let pty@(TypeContext _ ty') = instMethodType vEnv ps cls ty f
   return $ funDecl NoSpanInfo pty f [] $
-    Variable NoSpanInfo (predType $ instType ty') (qDefaultMethodId cls f)
+    Variable NoSpanInfo (instType ty') (qDefaultMethodId cls f)
 
 -- Returns the type for a given instance's method of a given class. To this
 -- end, the class method's type is stripped of its first predicate (which is
@@ -676,8 +676,8 @@ dictTransDataConstr (RecordConstr c _ tys) =
 -- cleanup phase.
 
 dictTransClassMethod :: ClassMethod -> ClassMethod
-dictTransClassMethod (ClassMethod f a pty) = ClassMethod f a' $ predType ty
-  where a' = Just $ fromMaybe 0 a + arrowArity ty - arrowArity (unpredType pty)
+dictTransClassMethod (ClassMethod f a pty) = ClassMethod f a' ty
+  where a' = Just $ fromMaybe 0 a + arrowArity ty - arrowArity pty
         ty = transformPredType pty
 
 dictTransValues :: ValueEnv -> ValueEnv
@@ -690,9 +690,9 @@ dictTransValueInfo (DataConstructor c a ls (TypeForall vs ty)) =
         ls' = replicate (a' - a) anonId ++ ls
         ty' = transformPredType ty
 dictTransValueInfo (Value f cm a (TypeForall vs ty)) =
-  Value f False a' $ TypeForall vs (predType ty')
-  where a' = a + if cm then 1 else arrowArity ty' - arrowArity (unpredType ty)
-        ty' = transformPredType (predType ty)
+  Value f False a' $ TypeForall vs ty'
+  where a' = a + if cm then 1 else arrowArity ty' - arrowArity ty
+        ty' = transformPredType ty
 dictTransValueInfo vi = vi
 
 -- -----------------------------------------------------------------------------
@@ -1250,7 +1250,7 @@ transformTypeExpr (ArrowType spi ty1 ty2)
   = ArrowType spi (transformTypeExpr ty1) (transformTypeExpr ty2)
 transformTypeExpr (ParenType spi ty)
   = ParenType spi $ transformTypeExpr ty
-transformTypeExpr (ContextType spi ps ty)
+transformTypeExpr (ContextType _ ps ty)
   = foldr (ArrowType NoSpanInfo . dictTypeExpr) (transformTypeExpr ty) ps
 transformTypeExpr (ForallType spi tvs ty)
   = ForallType spi tvs $ transformTypeExpr ty
@@ -1262,6 +1262,7 @@ transformTypeExpr ty = ty
 transformMethodPredType :: Type -> Type
 transformMethodPredType (TypeContext ps ty) =
   transformPredType $ TypeContext (Set.deleteMin ps) ty
+transformMethodPredType ty = transformPredType ty
 
 -- The function 'generalizeMethodType' generalizes an already transformed
 -- method type to a forall type by quantifying all occuring type variables
@@ -1295,16 +1296,16 @@ unRenameIdentIf b = if b then unRenameIdent else id
 
 preludeError :: Type -> String -> Expression Type
 preludeError a =
-  Apply NoSpanInfo (Variable NoSpanInfo
-                     (predType (TypeArrow stringType a)) qErrorId) . stringExpr
+  Apply NoSpanInfo (Variable NoSpanInfo (TypeArrow stringType a) qErrorId)
+    . stringExpr
 
 stringExpr :: String -> Expression Type
-stringExpr = foldr (consExpr . Literal NoSpanInfo (predType charType) . Char)
+stringExpr = foldr (consExpr . Literal NoSpanInfo charType . Char)
                nilExpr
   where
-  nilExpr = Constructor NoSpanInfo (predType stringType) qNilId
+  nilExpr = Constructor NoSpanInfo stringType qNilId
   consExpr = (Apply NoSpanInfo) . (Apply NoSpanInfo)
-    (Constructor NoSpanInfo (predType $ consType charType) qConsId)
+    (Constructor NoSpanInfo (consType charType) qConsId)
 
 -- The function 'varType' is able to lookup both local and global identifiers.
 -- Since the environments have been qualified before, global declarations are

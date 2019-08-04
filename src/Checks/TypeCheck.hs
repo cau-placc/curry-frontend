@@ -1032,7 +1032,7 @@ instMethodType qual (TypeContext ps ty) f = do
   let TypeForall _ (TypeContext ps' _) = tySc
       TypeContext ps'' ty'' = instanceType ty (TypeContext (Set.deleteMin ps') (rawType tySc))
   return $ TypeContext (ps `Set.union` ps'') ty''
-instMethodType qual ty f = instMethodType qual (TypeContext emptyPredSet ty) f
+instMethodType qual ty f = instMethodType qual (predType ty) f
 
 -- External functions:
 
@@ -1043,7 +1043,7 @@ tcExternal f = do
     Nothing -> internalError "TypeCheck.tcExternal: type signature not found"
     Just ty -> do
       m <- getModuleIdent
-      ty' <- unpredType <$> expandTypeExpr ty
+      ty' <- expandTypeExpr ty
       modifyValueEnv $ bindFun m f False (arrowArity ty') (polyType ty')
       return ty'
 
@@ -1087,21 +1087,21 @@ tcPattern :: HasPosition p => p -> Pattern a
           -> TCM (PredSet, Type, Pattern Type)
 tcPattern _ (LiteralPattern spi _ l) = do
   (ps, ty) <- tcLiteral False l
-  return (ps, ty, LiteralPattern spi (predType ty) l)
+  return (ps, ty, LiteralPattern spi ty l)
 tcPattern _ (NegativePattern spi _ l) = do
   (ps, ty) <- tcLiteral False l
-  return (ps, ty, NegativePattern spi (predType ty) l)
+  return (ps, ty, NegativePattern spi ty l)
 tcPattern _ (VariablePattern spi _ v) = do
   vEnv <- getValueEnv
   let ty = rawPredType (varType v vEnv)
-  return (emptyPredSet, ty, VariablePattern spi (predType ty) v)
+  return (emptyPredSet, ty, VariablePattern spi ty v)
 tcPattern p t@(ConstructorPattern spi _ c ts) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, (tys, ty')) <- liftM (fmap arrowUnapply) (inst (constrType m c vEnv))
   (ps', ts') <- mapAccumM (uncurry . tcPatternArg p "pattern" (ppPattern 0 t))
                           ps (zip tys ts)
-  return (ps', ty', ConstructorPattern spi (predType ty') c ts')
+  return (ps', ty', ConstructorPattern spi ty' c ts')
 tcPattern p (InfixPattern spi a t1 op t2) = do
   (ps, ty, t') <- tcPattern p (ConstructorPattern NoSpanInfo a op [t1, t2])
   let ConstructorPattern _ a' op' [t1', t2'] = t'
@@ -1115,7 +1115,7 @@ tcPattern _ t@(RecordPattern spi _ c fs) = do
   (ps, ty) <- liftM (fmap arrowBase) (inst (constrType m c vEnv))
   (ps', fs') <- mapAccumM (tcField tcPattern "pattern"
     (\t' -> ppPattern 0 t $-$ text "Term:" <+> ppPattern 0 t') ty) ps fs
-  return (ps', ty, RecordPattern spi (predType ty) c fs')
+  return (ps', ty, RecordPattern spi ty c fs')
 tcPattern p (TuplePattern spi ts) = do
   (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern p) ts
   return (Set.unions pss, tupleType tys, TuplePattern spi ts')
@@ -1123,7 +1123,7 @@ tcPattern p t@(ListPattern spi _ ts) = do
   ty <- freshTypeVar
   (ps, ts') <- mapAccumM (flip (tcPatternArg p "pattern" (ppPattern 0 t)) ty)
                          emptyPredSet ts
-  return (ps, listType ty, ListPattern spi (predType $ listType ty) ts')
+  return (ps, listType ty, ListPattern spi (listType ty) ts')
 tcPattern p t@(AsPattern spi v t') = do
   vEnv <- getValueEnv
   let ty = rawPredType (varType v vEnv)
@@ -1148,13 +1148,13 @@ tcFuncPattern :: HasPosition p => p -> SpanInfo -> Doc -> QualIdent
               -> PredSet -> Type -> [Pattern a]
               -> TCM (PredSet, Type, Pattern Type)
 tcFuncPattern _ spi _ f ts ps ty [] =
-  return (ps, ty, FunctionPattern spi (predType ty) f (ts []))
+  return (ps, ty, FunctionPattern spi ty f (ts []))
 tcFuncPattern p spi doc f ts ps ty (t':ts') = do
   (alpha, beta) <-
     tcArrow p "functional pattern" (doc $-$ text "Term:" <+> ppPattern 0 t) ty
   (ps', t'') <- tcPatternArg p "functional pattern" doc ps alpha t'
   tcFuncPattern p spi doc f (ts . (t'' :)) ps' beta ts'
-  where t = FunctionPattern spi (predType ty) f (ts [])
+  where t = FunctionPattern spi ty f (ts [])
 
 tcPatternArg :: HasPosition p => p -> String -> Doc -> PredSet -> Type
              -> Pattern a -> TCM (PredSet, Pattern Type)
@@ -1186,18 +1186,18 @@ tcExpr :: HasPosition p => CheckMode -> p -> Expression a
        -> TCM (PredSet, Type, Expression Type)
 tcExpr _     _ (Literal spi _ l) = do
   (ps, ty) <- tcLiteral True l
-  return (ps, ty, Literal spi (predType ty) l)
+  return (ps, ty, Literal spi ty l)
 tcExpr _     _ (Variable spi _ v) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- if isAnonId (unqualify v) then freshPredType []
                                         else inst (funType m v vEnv)
-  return (ps, ty, Variable spi (predType ty) v)
+  return (ps, ty, Variable spi ty v)
 tcExpr _     _ (Constructor spi _ c) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- inst (constrType m c vEnv)
-  return (ps, ty, Constructor spi (predType ty) c)
+  return (ps, ty, Constructor spi ty c)
 tcExpr cm    p (Paren spi e) = do
   (ps, ty, e') <- tcExpr cm p e
   return (ps, ty, Paren spi e')
@@ -1222,7 +1222,7 @@ tcExpr _     _ e@(Record spi _ c fs) = do
   (ps, ty) <- liftM (fmap arrowBase) (inst (constrType m c vEnv))
   (ps', fs') <- mapAccumM (tcField (tcExpr Infer) "construction"
     (\e' -> ppExpr 0 e $-$ text "Term:" <+> ppExpr 0 e') ty) ps fs
-  return (ps', ty, Record spi (predType ty) c fs')
+  return (ps', ty, Record spi ty c fs')
 tcExpr _     p e@(RecordUpdate spi e1 fs) = do
   (ps, ty, e1') <- tcExpr Infer p e1
   (ps', fs') <- mapAccumM (tcField (tcExpr Infer) "update"
@@ -1235,7 +1235,7 @@ tcExpr _     p e@(List spi _ es) = do
   ty <- freshTypeVar
   (ps, es') <-
     mapAccumM (flip (tcArg Infer p "expression" (ppExpr 0 e)) ty) emptyPredSet es
-  return (ps, listType ty, List spi (predType $ listType ty) es')
+  return (ps, listType ty, List spi (listType ty) es')
 tcExpr _     p (ListCompr spi e qs) = do
   (ps, qs', ps', ty, e') <- withLocalValueEnv $ do
     (ps, qs') <- mapAccumM (tcQual p) emptyPredSet qs
@@ -1391,12 +1391,12 @@ tcInfixOp (InfixOp _ op) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- inst (funType m op vEnv)
-  return (ps, ty, InfixOp (predType ty) op)
+  return (ps, ty, InfixOp ty op)
 tcInfixOp (InfixConstr _ op) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- inst (constrType m op vEnv)
-  return (ps, ty, InfixConstr (predType ty) op)
+  return (ps, ty, InfixConstr ty op)
 
 -- The first unification in 'tcField' cannot fail; it serves only for
 -- instantiating the type variables in the field label's type.
