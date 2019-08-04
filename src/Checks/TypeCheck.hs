@@ -674,7 +674,9 @@ eqTypes t1 t2 = fst (eq [] t1 t2)
  where
  -- @is@ is an AssocList of type variable indices
  eq is (TypeConstructor   qid1) (TypeConstructor   qid2) = (qid1 == qid2, is)
- eq is (TypeVariable        i1) (TypeVariable        i2) = eqVar is i1 i2
+ eq is (TypeVariable        i1) (TypeVariable        i2)
+   | i1 < 0    = (False, is)
+   | otherwise = eqVar is i1 i2
  eq is (TypeConstrained ts1 i1) (TypeConstrained ts2 i2)
    = let (res1, is1) = eqs   is  ts1 ts2
          (res2, is2) = eqVar is1 i1  i2
