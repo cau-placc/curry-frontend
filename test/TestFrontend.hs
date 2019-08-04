@@ -289,6 +289,13 @@ failInfos = map (uncurry mkFailTest)
     )
   , ("TypeError1", ["Type error in explicitly typed expression"])
   , ("TypeError2", ["Missing instance for Prelude.Num Prelude.Bool"])
+  , ("TypeSigTooGeneral",
+      [ "Type signature too general"
+      , "Function: h"
+      , "Type signature too general"
+      , "Function: g'"
+      ]
+    )
   , ("UnboundTypeVariable", ["Unbound type variable a"])
   ]
 

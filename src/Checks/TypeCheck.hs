@@ -749,15 +749,16 @@ checkPDeclType _ _ _ _ = internalError "TypeCheck.checkPDeclType"
 
 checkTypeSig :: Type -> Type -> TCM Bool
 checkTypeSig tySc ty = do
-  (eqb, theta, tyPs, tyScPs) <- eqTypes ty (monoType tySc)
+  let fvs = filter (< 0) $ typeVars ty
+  (eqb, theta, tyPs, tyScPs) <- eqTypes fvs ty (monoType tySc)
   clsEnv <- getClassEnv
   return $ eqb && Set.isSubsetOf (subst theta tyPs) (maxPredSet clsEnv tyScPs)
 
 -- | Computes whether two types are equal modulo renaming of type variables.
 -- This operation is not reflexive and expects the second type to be the type
 -- signature provided by the programmer.
-eqTypes :: Type -> Type -> TCM (Bool, TypeSubst, PredSet, PredSet)
-eqTypes = eq idSubst
+eqTypes :: [Int] -> Type -> Type -> TCM (Bool, TypeSubst, PredSet, PredSet)
+eqTypes fvs = eq idSubst
   where
     eqVar sub tv1 tv2 = case lookupSubst tv1 sub of
       Just (TypeVariable tv2') -> (tv2 == tv2', sub)
@@ -772,9 +773,10 @@ eqTypes = eq idSubst
 
     eq sub (TypeConstructor tc1)     (TypeConstructor tc2)
       = return (tc1 == tc2, sub, emptyPredSet, emptyPredSet)
-    eq sub (TypeVariable tv1)        (TypeVariable tv2)        = do
-      let (eqb, sub') = eqVar sub tv1 tv2
-      return (eqb, sub', emptyPredSet, emptyPredSet)
+    eq sub (TypeVariable tv1)        (TypeVariable tv2)
+      | tv1 `elem` fvs = return (False, sub, emptyPredSet, emptyPredSet)
+      | otherwise      = do let (eqb, sub') = eqVar sub tv1 tv2
+                            return (eqb, sub', emptyPredSet, emptyPredSet)
     eq sub (TypeConstrained ts1 tv1) (TypeConstrained ts2 tv2) = do
       (eqb1, sub1, ps1, ps2) <- eqs sub ts1 ts2
       let (eqb2, sub2) = eqVar sub1 tv1 tv2
