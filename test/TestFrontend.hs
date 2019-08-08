@@ -305,7 +305,12 @@ failInfos = map (uncurry mkFailTest)
       , "Function: g'"
       ]
     )
-  , ("UnboundTypeVariable", ["Unbound type variable a"])
+  , ("UnboundTypeVariable",
+      [ "Unbound type variable a"
+      , "Unbound type variable b"
+      , "Unbound type variable c"
+      ]
+    )
   ]
 
 --------------------------------------------------------------------------------
