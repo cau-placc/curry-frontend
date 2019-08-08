@@ -1463,12 +1463,10 @@ unify p what doc ps1 ty1 ps2 ty2 = do
       ty2' = subst theta ty2
   m <- getModuleIdent
   res <- unifyTypes m ty1' ty2'
-  let ps = either (const emptyPredSet) fst res
   case res of
     Left reason      -> report $ errTypeMismatch p what doc m ty1' ty2' reason
     Right (_, sigma) -> modifyTypeSubst (compose sigma)
-  _ <- reducePredSet p what doc ps
-  reducePredSet p what doc $ (ps1 `Set.union` ps2)
+  reducePredSet p what doc (ps1 `Set.union` ps2)
 
 unifyTypes :: ModuleIdent -> Type -> Type
            -> TCM (Either Doc (PredSet, TypeSubst))
