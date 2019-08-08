@@ -205,6 +205,15 @@ failInfos = map (uncurry mkFailTest)
       ]
     )
   , ("ErrorMultipleSignature", ["More than one type signature for `f'"])
+  , ("EscapingTypeVariable",
+      [ "Type error in application"
+      , "runBag"
+      , "  (do e <- newElem \"Hello, world!\""
+      , "      return e)"
+      , "Type error in application"
+      , "runBag (newElem \"Hello, world!\")"
+      ]
+    )
   , ("ExportCheck/AmbiguousName", ["Ambiguous name `not'"])
   , ("ExportCheck/AmbiguousType", ["Ambiguous type `Bool'"])
   , ("ExportCheck/ModuleNotImported", ["Module `Foo' not imported"])

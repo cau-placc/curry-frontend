@@ -1520,7 +1520,14 @@ unifyTypes m ty1@(TypeForall _ _)       ty2@(TypeForall _ _)
          Right (ps', s) -> do
            let (_, tys) = unzip $ substToList $ restrictSubstTo (vs1 ++ vs2) s
            case all isVarType tys of
-             True  -> return $ Right (ps `Set.union` ps', s)
+             True  -> do
+               let vars = typeVars ty1 ++ typeVars ty2
+               let tvs = concatMap typeVars $ snd $ unzip $ substToList
+                                            $ restrictSubstTo vars s
+               let tys' = map (\(TypeVariable tv) -> tv) tys
+               case filter (`elem` tvs) (vs1 ++ vs2 ++ tys') of
+                 []   -> return $ Right (ps `Set.union` ps', s)
+                 ev:_ -> return $ Left $ errEscapingTypeVariable m ev ty1 ty2
              False -> return $ Left (errIncompatibleTypes m ty1 ty2)
 unifyTypes m ty1@(TypeForall _ _)       ty2
   = do (vs, ps1, ty1') <- skolemise ty1
@@ -1530,7 +1537,13 @@ unifyTypes m ty1@(TypeForall _ _)       ty2
          Right (ps, s) -> do
            let (_, tys) = unzip $ substToList $ restrictSubstTo vs s
            case all isVarType tys of
-             True  -> return $ Right (ps1 `Set.union` ps, s)
+             True  -> do
+               let tvs = concatMap typeVars $ snd $ unzip $ substToList
+                                            $ restrictSubstTo (typeVars ty1) s
+               let tys' = map (\(TypeVariable tv) -> tv) tys
+               case filter (`elem` tvs) (vs ++ tys') of
+                 []   -> return $ Right (ps1 `Set.union` ps, s)
+                 ev:_ -> return $ Left $ errEscapingTypeVariable m ev ty1 ty2
              False -> return $ Left (errIncompatibleTypes m ty1 ty2)
 unifyTypes m ty1                        ty2@(TypeForall _ _)
   = do (vs, ps2, ty2') <- skolemise ty2
@@ -1540,7 +1553,13 @@ unifyTypes m ty1                        ty2@(TypeForall _ _)
          Right (ps, s) -> do
            let (_, tys) = unzip $ substToList $ restrictSubstTo vs s
            case all isVarType tys of
-             True  -> return $ Right (ps2 `Set.union` ps, s)
+             True  -> do
+               let tvs = concatMap typeVars $ snd $ unzip $ substToList
+                                            $ restrictSubstTo (typeVars ty2) s
+               let tys' = map (\(TypeVariable tv) -> tv) tys
+               case filter (`elem` tvs) (vs ++ tys') of
+                 []   -> return $ Right (ps2 `Set.union` ps, s)
+                 ev:_ -> return $ Left $ errEscapingTypeVariable m ev ty1 ty2
              False -> return $ Left (errIncompatibleTypes m ty1 ty2)
 unifyTypes m ty1                        ty2
   = return $ Left (errIncompatibleTypes m ty1 ty2)
@@ -1892,6 +1911,13 @@ errIncompatibleTypes m ty1 ty2 = sep
   [ text "Types" <+> ppType m ty1
   , nest 2 $ text "and" <+> ppType m ty2
   , text "are incompatible" ]
+
+errEscapingTypeVariable :: ModuleIdent -> Int -> Type -> Type -> Doc
+errEscapingTypeVariable m tv ty1 ty2 = sep
+  [ text "Couldn't match type" <+> ppType m ty1
+  , text "with" <+> ppType m ty2
+  , text "because type variable" <+> ppType m (TypeVariable tv)
+                                 <+> text "would escape its scope" ]
 
 errIncompatiblePredSets :: ModuleIdent -> PredSet -> PredSet -> Doc
 errIncompatiblePredSets m ps1 ps2 = vcat
