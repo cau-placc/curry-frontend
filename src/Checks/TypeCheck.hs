@@ -1511,8 +1511,8 @@ unifyTypes m (TypeArrow ty11 ty12)      ty@(TypeApply _ _)
 unifyTypes m (TypeArrow ty11 ty12)      (TypeArrow ty21 ty22)
   = unifyTypeLists m [ty11, ty12] [ty21, ty22]
 unifyTypes m ty1@(TypeForall _ _)       ty2@(TypeForall _ _)
-  = do (vs1, ps1, ty1') <- instVars ty1
-       (vs2, ps2, ty2') <- instVars ty2
+  = do (vs1, ps1, ty1') <- skolemise ty1
+       (vs2, ps2, ty2') <- skolemise ty2
        res <- unifyTypes m ty1' ty2'
        let ps = ps1 `Set.union` ps2
        case res of
@@ -1523,7 +1523,7 @@ unifyTypes m ty1@(TypeForall _ _)       ty2@(TypeForall _ _)
              True  -> return $ Right (ps `Set.union` ps', s)
              False -> return $ Left (errIncompatibleTypes m ty1 ty2)
 unifyTypes m ty1@(TypeForall _ _)       ty2
-  = do (vs, ps1, ty1') <- instVars ty1
+  = do (vs, ps1, ty1') <- skolemise ty1
        res <- unifyTypes m ty1' ty2
        case res of
          Left x        -> return $ Left x
@@ -1533,7 +1533,7 @@ unifyTypes m ty1@(TypeForall _ _)       ty2
              True  -> return $ Right (ps1 `Set.union` ps, s)
              False -> return $ Left (errIncompatibleTypes m ty1 ty2)
 unifyTypes m ty1                        ty2@(TypeForall _ _)
-  = do (vs, ps2, ty2') <- instVars ty2
+  = do (vs, ps2, ty2') <- skolemise ty2
        res <- unifyTypes m ty1 ty2'
        case res of
          Left x        -> return $ Left x
@@ -1728,23 +1728,23 @@ gen gvs ty = TypeForall tvs (subst theta ty)
 
 -- | Instantiates the given type with fresh type variables.
 inst :: Type -> TCM (PredSet, Type)
-inst ty = instVars ty >>= \(_, ps, ty') -> return (ps, ty')
+inst ty = skolemise ty >>= \(_, ps, ty') -> return (ps, ty')
 
 -- | Instantiates the given type with fresh type variables. The first argument
 -- of the triple is the list of fresh type variables.
-instVars :: Type -> TCM ([Int], PredSet, Type)
-instVars (TypeForall tvs ty) = do
+skolemise :: Type -> TCM ([Int], PredSet, Type)
+skolemise (TypeForall tvs ty) = do
   tys <- replicateM (length tvs) freshTypeVar
   let tvs' = map (\(TypeVariable tv) -> tv) tys
-  (tvs'', ps, ty') <- instVars $ subst (foldr2 bindSubst idSubst tvs tys) ty
+  (tvs'', ps, ty') <- skolemise $ subst (foldr2 bindSubst idSubst tvs tys) ty
   return (tvs' ++ tvs'', ps, ty')
-instVars (TypeContext ps ty) = do
-  (tvs, ps', ty') <- instVars ty
+skolemise (TypeContext ps ty) = do
+  (tvs, ps', ty') <- skolemise ty
   return (tvs, Set.union ps ps', ty')
-instVars (TypeArrow ty1 ty2) = do
-  (tvs, ps, ty2') <- instVars ty2
+skolemise (TypeArrow ty1 ty2) = do
+  (tvs, ps, ty2') <- skolemise ty2
   return (tvs, ps, TypeArrow ty1 ty2')
-instVars ty                  = return ([], emptyPredSet, ty)
+skolemise ty                  = return ([], emptyPredSet, ty)
 
 -- -----------------------------------------------------------------------------
 -- Auxiliary functions
