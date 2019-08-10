@@ -80,6 +80,7 @@ import Base.Types
 import Base.TypeSubst
 import Base.Typing
 import Base.Utils (fst3, mapAccumM)
+import Base.Linearity
 
 import Env.TypeConstructor (TCEnv, TypeInfo (..), qualLookupTypeInfo)
 import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
@@ -99,7 +100,7 @@ desugar :: [KnownExtension] -> ValueEnv -> TCEnv -> Module PredType
 desugar xs vEnv tcEnv (Module spi ps m es is ds)
   = (Module spi ps m es is ds', valueEnv s')
   where (ds', s') = S.runState (desugarModuleDecls ds)
-                               (DesugarState m xs tcEnv vEnv 1)
+                               (DesugarState m xs tcEnv vEnv 1 ds)
 
 -- ---------------------------------------------------------------------------
 -- Desugaring monad and accessor functions
@@ -118,6 +119,7 @@ data DesugarState = DesugarState
   , tyConsEnv   :: TCEnv            -- read-only
   , valueEnv    :: ValueEnv         -- will be extended
   , nextId      :: Integer          -- counter
+  , allDecls    :: [Decl PredType]
   }
 
 type DsM a = S.State DesugarState a
@@ -272,11 +274,11 @@ dsDeclRhs _                          =
 -- Desugaring of an equation
 dsEquation :: Equation PredType -> DsM (Equation PredType)
 dsEquation (Equation p lhs rhs) = do
-  (     cs1, ts1) <- dsNonLinearity         ts
-  (ds1, cs2, ts2) <- dsFunctionalPatterns p ts1
-  (ds2,      ts3) <- mapAccumM (dsPat p) [] ts2
-  rhs'            <- dsRhs (constrain cs2 . constrain cs1)
-                           (addDecls (ds1 ++ ds2) rhs)
+  (     cs1,     ts1) <- dsNonLinearity         ts
+  (ds1, fConstr, ts2) <- dsFunctionalPatterns p ts1
+  (ds2,          ts3) <- mapAccumM (dsPat p) [] ts2
+  rhs'                <- dsRhs (fConstr . constrain cs1)
+                               (addDecls (ds1 ++ ds2) rhs)
   return $ Equation p (FunLhs NoSpanInfo f ts3) rhs'
   where (f, ts) = flatLhs lhs
 
@@ -445,14 +447,21 @@ substPat s (InfixFuncPattern _ a p1 op p2) =
 
 dsFunctionalPatterns
   :: SpanInfo -> [Pattern PredType]
-  -> DsM ([Decl PredType], [Expression PredType], [Pattern PredType])
+  -> DsM ([Decl PredType], (Expression PredType -> Expression PredType), [Pattern PredType])
 dsFunctionalPatterns p ts = do
   -- extract functional patterns
   (bs, ts') <- mapAccumM elimFP [] ts
   -- generate declarations of free variables and constraints
-  let (ds, cs) = genFPExpr p (concatMap patternVars ts') (reverse bs)
-  -- return (declarations, constraints, desugared patterns)
-  return (ds, cs, ts')
+  mid   <- getModuleIdent
+  allDs <- S.gets allDecls
+  let revbs = reverse bs
+  let free = nub $ filter (not . isAnonId . fst3) $
+                   concatMap patternVars (map fst revbs)
+                     \\ (concatMap patternVars ts')
+  if all (isLinearFuncPat mid allDs . fst) bs
+         -- return (declarations, constraints, desugared patterns)
+    then let (ds, cs) = genFPExpr p free revbs in return (ds, constrain cs, ts')
+    else let fCond = genLinFPExpr        revbs in return ([], fCond       , ts')
 
 type LazyBinding = (Pattern PredType, (PredType, Ident))
 
@@ -488,7 +497,7 @@ elimFP bs p@(InfixFuncPattern  _ _ _ _ _) = do
 
 genFPExpr :: SpanInfo -> [(Ident, Int, PredType)] -> [LazyBinding]
           -> ([Decl PredType], [Expression PredType])
-genFPExpr p vs bs
+genFPExpr p free bs
   | null bs   = ([]               , [])
   | null free = ([]               , cs)
   | otherwise = ([FreeDecl p (map (\(v, _, pty) -> Var pty v) free)], cs)
@@ -496,8 +505,6 @@ genFPExpr p vs bs
   mkLB (t, (pty, v)) = let (t', es) = fp2Expr t
                        in  (t' =:<= mkVar pty v) : es
   cs   = concatMap mkLB bs
-  free = nub $ filter (not . isAnonId . fst3) $
-                 concatMap patternVars (map fst bs) \\ vs
 
 fp2Expr :: Pattern PredType -> (Expression PredType, [Expression PredType])
 fp2Expr (LiteralPattern          _ pty l) = (Literal NoSpanInfo  pty l, [])
@@ -539,6 +546,50 @@ fp2Expr (RecordPattern        _ pty c fs) =
   in  (Record NoSpanInfo pty c fs', concat ess)
 fp2Expr t                               = internalError $
   "Desugar.fp2Expr: Unexpected constructor term: " ++ show t
+
+-- TODO: pattern might be nonlinear
+
+genLinFPExpr :: [LazyBinding] -> Expression PredType -> Expression PredType
+genLinFPExpr []                     e = e
+genLinFPExpr ((t, (pty, v)) : bs) e =
+  let (f, ps) = fp2Pat t
+      tys = map typeOf ps
+
+      varty  = unpredType pty
+      resty  = case tys of
+        []  -> error "Desugar.genLinFPExpr: Empty pattern list"
+        [x] -> x
+        _   -> tupleType tys
+      funty  = foldr TypeArrow varty tys
+      invty  = TypeArrow funty (TypeArrow varty resty)
+
+      invexpr  = (var (predType invty) (qInvfId (length ps))
+              -=> var (predType funty) f)
+              -=> var (predType varty) (qualify v)
+      resexpr  = genLinFPExpr bs e
+      failexpr = prelFailed (typeOf resexpr)
+
+      succpat = case ps of
+        []   -> error "Desugar.genLinFPExpr: Empty pattern list"
+        [x]  -> x
+        _    -> TuplePattern    NoSpanInfo ps
+      failpat = VariablePattern NoSpanInfo (predType resty) anonId
+
+  in Case NoSpanInfo Rigid invexpr
+       [ Alt NoSpanInfo succpat (simpleRhs NoSpanInfo resexpr)
+       , Alt NoSpanInfo failpat (simpleRhs NoSpanInfo failexpr)]
+  where
+    (-=>) = Apply NoSpanInfo
+    var = Variable NoSpanInfo
+
+fp2Pat :: Pattern PredType -> (QualIdent, [Pattern PredType])
+fp2Pat (FunctionPattern  _ _    qid ps) = (qid, ps)
+fp2Pat (InfixFuncPattern _ _ p1 qid p2) = (qid, [p1, p2])
+
+isLinearFuncPat :: ModuleIdent -> [Decl PredType] -> Pattern PredType -> Bool
+isLinearFuncPat mid ds (FunctionPattern  _ _   qid _) = isLinearIdt mid ds qid
+isLinearFuncPat mid ds (InfixFuncPattern _ _ _ qid _) = isLinearIdt mid ds qid
+isLinearFuncPat _   _  _                              = False
 
 -- -----------------------------------------------------------------------------
 -- Desugaring of ordinary patterns
