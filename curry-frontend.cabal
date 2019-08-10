@@ -63,6 +63,7 @@ Library
     , Base.Expr
     , Base.KindSubst
     , Base.Kinds
+    , Base.Linearity
     , Base.Messages
     , Base.NestEnv
     , Base.PrettyKinds
