@@ -265,7 +265,7 @@ dsDeclLhs d                     = return [d]
 dsDeclRhs :: Decl PredType -> DsM (Decl PredType)
 dsDeclRhs (FunctionDecl p pty f eqs) =
   FunctionDecl p pty f <$> mapM dsEquation eqs
-dsDeclRhs (PatternDecl      p t rhs) = PatternDecl p t <$> dsRhs id rhs
+dsDeclRhs (PatternDecl      p t rhs) = PatternDecl p t <$> dsRhs return rhs
 dsDeclRhs d@(FreeDecl           _ _) = return d
 dsDeclRhs d@(ExternalDecl       _ _) = return d
 dsDeclRhs _                          =
@@ -300,17 +300,21 @@ constrain cs e = if null cs then e else foldr1 (&) cs &> e
 -- type 'Bool' of the guard because the guard's type defaults to
 -- 'Success' if it is not restricted by the guard expression.
 
-dsRhs :: (Expression PredType -> Expression PredType)
+dsRhs :: (Expression PredType -> DsM (Expression PredType))
       -> Rhs PredType -> DsM (Rhs PredType)
 dsRhs f rhs =   expandRhs (prelFailed (typeOf rhs)) f rhs
             >>= dsExpr (getSpanInfo rhs)
             >>= return . simpleRhs (getSpanInfo rhs)
 
-expandRhs :: Expression PredType -> (Expression PredType -> Expression PredType)
+expandRhs :: Expression PredType
+          -> (Expression PredType -> DsM (Expression PredType))
           -> Rhs PredType -> DsM (Expression PredType)
-expandRhs _  f (SimpleRhs _ e ds) = return $ Let NoSpanInfo ds (f e)
-expandRhs e0 f (GuardedRhs _ es ds) = (Let NoSpanInfo ds . f)
-                                   <$> expandGuards e0 es
+expandRhs _  f (SimpleRhs _ e ds) = do
+  e' <- f e
+  return $ Let NoSpanInfo ds e'
+expandRhs e0 f (GuardedRhs _ es ds) = do
+  e <- expandGuards e0 es >>= f
+  return $ Let NoSpanInfo ds e
 
 expandGuards :: Expression PredType -> [CondExpr PredType]
              -> DsM (Expression PredType)
@@ -447,7 +451,8 @@ substPat s (InfixFuncPattern _ a p1 op p2) =
 
 dsFunctionalPatterns
   :: SpanInfo -> [Pattern PredType]
-  -> DsM ([Decl PredType], Expression PredType -> Expression PredType, [Pattern PredType])
+  -> DsM ([Decl PredType], Expression PredType -> DsM (Expression PredType),
+            [Pattern PredType])
 dsFunctionalPatterns p ts = do
   -- extract functional patterns
   (bs, ts') <- mapAccumM elimFP [] ts
@@ -460,8 +465,9 @@ dsFunctionalPatterns p ts = do
                      \\ concatMap patternVars ts'
   if all (isLinearFuncPat mid allDs . fst) bs
     -- return (declarations, constraints, desugared patterns)
-    then let fCond = genLinFPExpr        revbs in return ([], fCond       , ts')
-    else let (ds, cs) = genFPExpr p free revbs in return (ds, constrain cs, ts')
+    then return ([], genLinFPExpr revbs, ts')
+    else let (ds, cs) = genFPExpr p free revbs
+         in return (ds, return . constrain cs, ts')
 
 type LazyBinding = (Pattern PredType, (PredType, Ident))
 
@@ -549,12 +555,14 @@ fp2Expr t                               = internalError $
 
 -- TODO: pattern might be nonlinear
 
-genLinFPExpr :: [LazyBinding] -> Expression PredType -> Expression PredType
-genLinFPExpr []                     e = e
+genLinFPExpr :: [LazyBinding] -> Expression PredType -> DsM (Expression PredType)
+genLinFPExpr []                   e = return e
 genLinFPExpr ((t, (pty, v)) : bs) e =
-  let (f, ps) = fp2Pat t
+  let --split functional pattern and its args
+      (f, ps) = fp2Pat t
       tys = map typeOf ps
 
+      -- construct types
       varty  = unpredType pty
       resty  = case tys of
         []  -> error "Desugar.genLinFPExpr: Empty pattern list"
@@ -563,21 +571,27 @@ genLinFPExpr ((t, (pty, v)) : bs) e =
       funty  = foldr TypeArrow varty tys
       invty  = TypeArrow funty (TypeArrow varty resty)
 
-      invexpr  = (var (predType invty) (qInvfId (length ps))
-              -=> var (predType funty) f)
-              -=> var (predType varty) (qualify v)
-      resexpr  = genLinFPExpr bs e
-      failexpr = prelFailed (typeOf resexpr)
-
+      -- construct patterns
       succpat = case ps of
         []   -> error "Desugar.genLinFPExpr: Empty pattern list"
         [x]  -> x
         _    -> TuplePattern    NoSpanInfo ps
       failpat = VariablePattern NoSpanInfo (predType resty) anonId
+  in do
+      -- construct result expressions
+      resexpr <- genLinFPExpr bs e
+      let failexpr = prelFailed (typeOf resexpr)
+      let invexpr  = (var (predType invty) (qInvfId (length ps))
+                  -=> var (predType funty) f)
+                  -=> var (predType varty) (qualify v)
 
-  in Case NoSpanInfo Rigid invexpr
-       [ Alt NoSpanInfo succpat (simpleRhs NoSpanInfo resexpr)
-       , Alt NoSpanInfo failpat (simpleRhs NoSpanInfo failexpr)]
+      -- desugar nonlinearity inside functional pattern.
+      ((_, es), succpat') <- dsNonLinear (Set.empty, []) succpat
+      let resexpr' = constrain es resexpr
+
+      return $ Case NoSpanInfo Rigid invexpr
+       [ Alt NoSpanInfo succpat' (simpleRhs NoSpanInfo resexpr')
+       , Alt NoSpanInfo failpat  (simpleRhs NoSpanInfo failexpr)]
   where
     (-=>) = Apply NoSpanInfo
     var = Variable NoSpanInfo
@@ -849,12 +863,12 @@ dsAltLhs (Alt p t rhs) = do
   return $ Alt p t' (addDecls ds' rhs)
 
 dsAltRhs :: Alt PredType -> DsM (Alt PredType)
-dsAltRhs (Alt p t rhs) = Alt p t <$> dsRhs id rhs
+dsAltRhs (Alt p t rhs) = Alt p t <$> dsRhs return rhs
 
 expandAlt :: (PredType, Ident) -> CaseType -> [Alt PredType]
           -> DsM (Alt PredType)
 expandAlt _ _  []                   = error "Desugar.expandAlt: empty list"
-expandAlt v ct (Alt p t rhs : alts) = caseAlt p t <$> expandRhs e0 id rhs
+expandAlt v ct (Alt p t rhs : alts) = caseAlt p t <$> expandRhs e0 return rhs
   where
   e0 | ct == Flex || null compAlts = prelFailed (typeOf rhs)
      | otherwise = Case NoSpanInfo ct (uncurry mkVar v) compAlts
