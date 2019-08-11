@@ -447,7 +447,7 @@ substPat s (InfixFuncPattern _ a p1 op p2) =
 
 dsFunctionalPatterns
   :: SpanInfo -> [Pattern PredType]
-  -> DsM ([Decl PredType], (Expression PredType -> Expression PredType), [Pattern PredType])
+  -> DsM ([Decl PredType], Expression PredType -> Expression PredType, [Pattern PredType])
 dsFunctionalPatterns p ts = do
   -- extract functional patterns
   (bs, ts') <- mapAccumM elimFP [] ts
@@ -456,12 +456,12 @@ dsFunctionalPatterns p ts = do
   allDs <- S.gets allDecls
   let revbs = reverse bs
   let free = nub $ filter (not . isAnonId . fst3) $
-                   concatMap patternVars (map fst revbs)
-                     \\ (concatMap patternVars ts')
+                   concatMap (patternVars . fst) revbs
+                     \\ concatMap patternVars ts'
   if all (isLinearFuncPat mid allDs . fst) bs
-         -- return (declarations, constraints, desugared patterns)
-    then let (ds, cs) = genFPExpr p free revbs in return (ds, constrain cs, ts')
-    else let fCond = genLinFPExpr        revbs in return ([], fCond       , ts')
+    -- return (declarations, constraints, desugared patterns)
+    then let fCond = genLinFPExpr        revbs in return ([], fCond       , ts')
+    else let (ds, cs) = genFPExpr p free revbs in return (ds, constrain cs, ts')
 
 type LazyBinding = (Pattern PredType, (PredType, Ident))
 
@@ -513,7 +513,7 @@ fp2Expr (NegativePattern         _ pty l) =
 fp2Expr (VariablePattern         _ pty v) = (mkVar pty v, [])
 fp2Expr (ConstructorPattern  _  pty c ts) =
   let (ts', ess) = unzip $ map fp2Expr ts
-      pty' = predType $ foldr TypeArrow (unpredType pty) $ map typeOf ts
+      pty' = predType $ foldr (TypeArrow . typeOf) (unpredType pty) ts
   in  (apply (Constructor NoSpanInfo pty' c) ts', concat ess)
 fp2Expr (InfixPattern   _ pty t1 op t2) =
   let (t1', es1) = fp2Expr t1
@@ -529,12 +529,12 @@ fp2Expr (ListPattern            _ pty ts) =
   in  (List NoSpanInfo pty ts', concat ess)
 fp2Expr (FunctionPattern      _ pty f ts) =
   let (ts', ess) = unzip $ map fp2Expr ts
-      pty' = predType $ foldr TypeArrow (unpredType pty) $ map typeOf ts
+      pty' = predType $ foldr (TypeArrow . typeOf) (unpredType pty) ts
   in  (apply (Variable NoSpanInfo pty' f) ts', concat ess)
 fp2Expr (InfixFuncPattern _ pty t1 op t2) =
   let (t1', es1) = fp2Expr t1
       (t2', es2) = fp2Expr t2
-      pty' = predType $ foldr TypeArrow (unpredType pty) $ map typeOf [t1, t2]
+      pty' = predType $ foldr (TypeArrow . typeOf) (unpredType pty) [t1, t2]
   in  (InfixApply NoSpanInfo t1' (InfixOp pty' op) t2', es1 ++ es2)
 fp2Expr (AsPattern                 _ v t) =
   let (t', es) = fp2Expr t
@@ -585,6 +585,7 @@ genLinFPExpr ((t, (pty, v)) : bs) e =
 fp2Pat :: Pattern PredType -> (QualIdent, [Pattern PredType])
 fp2Pat (FunctionPattern  _ _    qid ps) = (qid, ps)
 fp2Pat (InfixFuncPattern _ _ p1 qid p2) = (qid, [p1, p2])
+fp2Pat _                                = error "Desugar.fp2pat: No functional pattern"
 
 isLinearFuncPat :: ModuleIdent -> [Decl PredType] -> Pattern PredType -> Bool
 isLinearFuncPat mid ds (FunctionPattern  _ _   qid _) = isLinearIdt mid ds qid
