@@ -6,6 +6,12 @@ newtype ChurchList a =
 empty :: ChurchList a
 empty = ChurchList (\_ z -> z)
 
+singleton :: a -> ChurchList a
+singleton x = ChurchList (\k z -> k x z)
+
+head :: ChurchList a -> a
+head xs = runList xs const (error "head: empty list")
+
 fromList :: [a] -> ChurchList a
 fromList xs = ChurchList (\k z -> foldr k z xs)
 
@@ -20,6 +26,13 @@ append xs ys = ChurchList (\k z -> runList xs k (runList ys k z))
 
 instance Functor ChurchList where
   fmap f xs = ChurchList (\k z -> runList xs (\x xs' -> k (f x) xs') z)
+
+instance Monad ChurchList where
+  return = singleton
+  xs >>= f = runList xs (\x -> append (f x)) empty
+
+-- instance Foldable ChurchList where
+--   foldr f z xs = runList xs f z
 
 newtype ChurchMaybe a =
   ChurchMaybe { runMaybe :: forall r. r -> (a -> r) -> r }

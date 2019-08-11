@@ -160,6 +160,7 @@ passInfos = map mkPassTest
   , "Inline"
   , "Lambda"
   , "Maybe"
+  , "Monad"
   , "NegLit"
   , "Newtype1"
   , "Newtype2"
