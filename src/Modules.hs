@@ -262,7 +262,7 @@ transModule :: Options -> CompEnv (CS.Module PredType)
             -> CYIO (CompEnv IL.Module, CompEnv (CS.Module Type))
 transModule opts mdl = do
   derived    <- dumpCS DumpDerived       $ derive         mdl
-  desugared  <- dumpCS DumpDesugared     $ desugar        derived
+  desugared  <- dumpCS DumpDesugared     $ desugar optim  derived
   dicts      <- dumpCS DumpDictionaries  $ insertDicts    desugared
   newtypes   <- dumpCS DumpNewtypes      $ removeNewtypes dicts
   simplified <- dumpCS DumpSimplified    $ simplify       newtypes
@@ -275,6 +275,7 @@ transModule opts mdl = do
          -> CYIO (CompEnv (CS.Module a))
   dumpCS = dumpWith opts CS.showModule CS.ppModule
   dumpIL = dumpWith opts IL.showModule IL.ppModule
+  optim = optOptimizations opts
 
 -- ---------------------------------------------------------------------------
 -- Writing output

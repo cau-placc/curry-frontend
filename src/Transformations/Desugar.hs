@@ -95,12 +95,12 @@ import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 -- out separately. Actually, the transformation is slightly more general than
 -- necessary as it allows value declarations at the top-level of a module.
 
-desugar :: [KnownExtension] -> ValueEnv -> TCEnv -> Module PredType
+desugar :: Bool -> [KnownExtension] -> ValueEnv -> TCEnv -> Module PredType
         -> (Module PredType, ValueEnv)
-desugar xs vEnv tcEnv (Module spi ps m es is ds)
+desugar b xs vEnv tcEnv (Module spi ps m es is ds)
   = (Module spi ps m es is ds', valueEnv s')
   where (ds', s') = S.runState (desugarModuleDecls ds)
-                               (DesugarState m xs tcEnv vEnv 1 ds)
+                               (DesugarState m xs tcEnv vEnv 1 ds b)
 
 -- ---------------------------------------------------------------------------
 -- Desugaring monad and accessor functions
@@ -119,7 +119,8 @@ data DesugarState = DesugarState
   , tyConsEnv   :: TCEnv            -- read-only
   , valueEnv    :: ValueEnv         -- will be extended
   , nextId      :: Integer          -- counter
-  , allDecls    :: [Decl PredType]
+  , allDecls    :: [Decl PredType]  -- all declarations of the module
+  , funpatDsOpt :: Bool             -- Desugar functional patterns with inverse?
   }
 
 type DsM a = S.State DesugarState a
@@ -141,6 +142,12 @@ getNextId = do
   nid <- S.gets nextId
   S.modify $ \s -> s { nextId = succ nid }
   return nid
+
+checkOptLinearFunPats :: DsM Bool
+checkOptLinearFunPats = S.gets funpatDsOpt
+
+getAllDecls :: DsM [Decl PredType]
+getAllDecls = S.gets allDecls
 
 -- ---------------------------------------------------------------------------
 -- Generation of fresh names
@@ -457,13 +464,14 @@ dsFunctionalPatterns p ts = do
   -- extract functional patterns
   (bs, ts') <- mapAccumM elimFP [] ts
   -- generate declarations of free variables and constraints
-  mid   <- getModuleIdent
-  allDs <- S.gets allDecls
+  mid    <- getModuleIdent
+  allDs  <- getAllDecls
+  optLin <- checkOptLinearFunPats
   let revbs = reverse bs
   let free = nub $ filter (not . isAnonId . fst3) $
                    concatMap (patternVars . fst) revbs
                      \\ concatMap patternVars ts'
-  if all (isLinearFuncPat mid allDs . fst) bs
+  if optLin && all (isLinearFuncPat mid allDs . fst) bs -- TODO: decide per pattern
     -- return (declarations, constraints, desugared patterns)
     then return ([], genLinFPExpr revbs, ts')
     else let (ds, cs) = genFPExpr p free revbs

@@ -27,6 +27,7 @@ import Transformations.Qual           as Q  (qual)
 import Transformations.Simplify       as S  (simplify)
 
 import CompilerEnv
+import CompilerOpts
 import Imports (qualifyEnv)
 import qualified IL
 
@@ -42,9 +43,11 @@ derive (env, mdl) = (env, mdl')
                          (opPrecEnv env) mdl
 
 -- |Remove any syntactic sugar, changes the value environment.
-desugar :: CompEnv (Module PredType) -> CompEnv (Module PredType)
-desugar (env, mdl) = (env { valueEnv = tyEnv' }, mdl')
-  where (mdl', tyEnv') = DS.desugar (extensions env) (valueEnv env)
+desugar :: OptimizationOpts -> CompEnv (Module PredType)
+        -> CompEnv (Module PredType)
+desugar optim (env, mdl) = (env { valueEnv = tyEnv' }, mdl')
+  where (mdl', tyEnv') = DS.desugar (optLinearFunctionalPatterns optim)
+                                    (extensions env) (valueEnv env)
                                     (tyConsEnv env) mdl
 
 -- |Insert dictionaries, changes the type constructor and value environments.
