@@ -8,7 +8,7 @@ data Monad m = Monad {
 }
 
 listMonad :: Monad []
-listMonad = Monad (const []) (flip concatMap)
+listMonad = Monad (:[]) (flip concatMap)
 
 maybeMonad :: Monad Maybe
 maybeMonad = Monad Just (\m f -> case m of
