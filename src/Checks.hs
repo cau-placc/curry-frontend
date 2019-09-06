@@ -17,6 +17,7 @@ module Checks where
 import qualified Checks.InstanceCheck     as INC (instanceCheck)
 import qualified Checks.InterfaceCheck    as IC  (interfaceCheck)
 import qualified Checks.ImportSyntaxCheck as ISC (importCheck)
+import qualified Checks.ImpredCheck       as IPC (impredCheck)
 import qualified Checks.DeriveCheck       as DC  (deriveCheck)
 import qualified Checks.ExportCheck       as EC  (exportCheck, expandExports)
 import qualified Checks.ExtensionCheck    as EXC (extensionCheck)
@@ -84,6 +85,16 @@ kindCheck _ (env, mdl)
   | otherwise = failMessages msgs
   where ((tcEnv', clsEnv'), msgs) = KC.kindCheck (tyConsEnv env) (classEnv env)
                                                  mdl
+
+-- |Check for impredicative types.
+--
+-- * Declarations: remains unchanged
+-- * Environment:  remains unchanged
+impredCheck :: Monad m => Check m (Module ())
+impredCheck _ (env, mdl)
+  | null msgs = ok (env, mdl')
+  | otherwise = failMessages msgs
+  where (mdl', msgs) = IPC.impredCheck (tyConsEnv env) mdl
 
 -- |Check for a correct syntax.
 --

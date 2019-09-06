@@ -35,7 +35,6 @@ import           Control.Applicative ((<$>), (<*>))
 #endif
 
 import           Control.Monad       (unless, when)
-import           Control.Monad.Extra (allM, unlessM)
 import qualified Control.Monad.State as S (State, gets, modify, runState,
                                            withState)
 import           Data.Function       (on)
@@ -52,17 +51,15 @@ import           Curry.Base.Pretty
 import           Curry.Base.Span
 import           Curry.Base.SpanInfo
 import           Curry.Syntax
-import           Curry.Syntax.Pretty (ppPattern, ppTypeExpr)
+import           Curry.Syntax.Pretty (ppPattern)
 
-import           Base.CurryTypes
 import           Base.Expr
 import           Base.Messages       (Message, internalError, posMessage)
 import           Base.NestEnv
 import           Base.SCC            (scc)
 import           Base.Utils          (findDouble, findMultiples, (++!))
 
-import           Env.TypeConstructor (TCEnv, TypeInfo (..), clsMethods,
-                                      qualLookupTypeInfo)
+import           Env.TypeConstructor (TCEnv, clsMethods)
 import           Env.Value           (ValueEnv, ValueInfo (..))
 
 -- The syntax checking proceeds as follows. First, the compiler extracts
@@ -453,8 +450,6 @@ qualLookupListCons v env
 
 checkModule :: Module () -> SCM (Module (), [KnownExtension])
 checkModule (Module spi ps m es is ds) = do
-  mapM_ checkDefaultDecl dds
-  mapM_ checkImpredDecl ds
   mapM_ bindTypeDecl tds
   mapM_ bindClassDecl cds
   ds' <- checkTopDecls ds
@@ -467,7 +462,6 @@ checkModule (Module spi ps m es is ds) = do
   where tds = filter isTypeDecl ds
         cds = filter isClassDecl ds
         ids = filter isInstanceDecl ds
-        dds = filter isDefaultDecl ds
 
 -- |Checks whether a function in a functional pattern contains cycles
 -- |(depends on its own global function)
@@ -892,9 +886,7 @@ checkExpr _ (Literal       spi a l) = return $ Literal spi a l
 checkExpr _ (Variable      spi a v) = checkVariable spi a v
 checkExpr _ (Constructor   spi a c) = checkVariable spi a c
 checkExpr p (Paren         spi   e) = Paren spi           <$> checkExpr p e
-checkExpr p (Typed        spi e ty) = do
-  checkImpredType ty
-  flip (Typed spi) ty <$> checkExpr p e
+checkExpr p (Typed        spi e ty) = flip (Typed spi) ty <$> checkExpr p e
 checkExpr p (Record     spi _ c fs) = checkRecordExpr p spi c fs
 checkExpr p (RecordUpdate spi e fs) = checkRecordUpdExpr p spi e fs
 checkExpr p (Tuple        spi   es) = Tuple spi <$> mapM (checkExpr p) es
@@ -1117,84 +1109,6 @@ checkLabels p Nothing ls css =
 
 checkField :: (a -> SCM a) -> Field a -> SCM (Field a)
 checkField check (Field p l x) = Field p l <$> check x
-
-checkDefaultDecl :: Decl a -> SCM ()
-checkDefaultDecl (DefaultDecl _ tys) = mapM_ checkType tys
-  where
-    checkType te = unlessM (checkSimpleType te) $ do
-      report $ errIllegalDefaultType (getPosition te) te
-checkDefaultDecl _                   = ok
-
--- -----------------------------------------------------------------------------
--- Impredicative polymorphism detection
--- -----------------------------------------------------------------------------
-
-checkImpredDecl :: Decl a -> SCM ()
-checkImpredDecl (DataDecl _ _ _ cs _)      = mapM_ checkImpredConsDecl cs
-checkImpredDecl (NewtypeDecl _ _ _ c _)    = checkImpredNewConsDecl c
-checkImpredDecl (TypeDecl _ _ _ ty)        = checkImpredType ty
-checkImpredDecl (TypeSig _ _ ty)           = checkImpredType ty
-checkImpredDecl (ClassDecl _ _ _ _ ds)     = mapM_ checkImpredDecl ds
-checkImpredDecl (InstanceDecl _ _ _ ty ds) = do
-  checkImpredType ty
-  mapM_ checkImpredDecl ds
-checkImpredDecl _                          = ok
-
-checkImpredConsDecl :: ConstrDecl -> SCM ()
-checkImpredConsDecl (ConstrDecl _ _ tys)    = mapM_ checkImpredType tys
-checkImpredConsDecl (ConOpDecl _ ty1 _ ty2) = mapM_ checkImpredType [ty1, ty2]
-checkImpredConsDecl (RecordDecl _ _ fs)     = mapM_ checkImpredFieldDecl fs
-
-checkImpredFieldDecl :: FieldDecl -> SCM ()
-checkImpredFieldDecl (FieldDecl _ _ ty) = checkImpredType ty
-
-checkImpredNewConsDecl :: NewConstrDecl -> SCM ()
-checkImpredNewConsDecl (NewConstrDecl _ _ ty)      = checkImpredType ty
-checkImpredNewConsDecl (NewRecordDecl _ _ (_, ty)) = checkImpredType ty
-
--- | Checks whether the type expression contains no impredicative polymorphism.
-checkImpredType :: TypeExpr -> SCM ()
-checkImpredType (ConstructorType _ _)      = ok
-checkImpredType te@(ApplyType spi ty1 ty2) = do
-  unlessM (checkSimpleType ty2) $ do
-    report $ errIllegalPolymorphicType (getPosition spi) te
-  checkImpredType ty1
-  checkImpredType ty2
-checkImpredType (VariableType _ _)         = ok
-checkImpredType te@(TupleType spi tys)     = do
-  unlessM (allM checkSimpleType tys) $ do
-    report $ errIllegalPolymorphicType (getPosition spi) te
-  mapM_ checkImpredType tys
-checkImpredType te@(ListType spi ty)       = do
-  unlessM (checkSimpleType ty) $ do
-    report $ errIllegalPolymorphicType (getPosition spi) te
-  checkImpredType ty
-checkImpredType (ArrowType _ ty1 ty2)      = do
-  checkImpredType ty1
-  checkImpredType ty2
-checkImpredType (ParenType _ ty)           = checkImpredType ty
-checkImpredType (ContextType _ _ ty)       = checkImpredType ty
-checkImpredType (ForallType _ _ ty)        = checkImpredType ty
-
--- | Checks whether the given type expression contains no universally
--- quantified type variables or type constraints.
-checkSimpleType :: TypeExpr -> SCM Bool
-checkSimpleType (ConstructorType _ tc) = do
-  m <- getModuleIdent
-  tcEnv <- getTyConsEnv
-  case qualLookupTypeInfo tc tcEnv of
-    [AliasType _ _ _ ty] -> checkSimpleType (fromType identSupply ty)
-    _ -> case qualLookupTypeInfo (qualQualify m tc) tcEnv of
-           [AliasType _ _ _ ty] -> checkSimpleType (fromType identSupply ty)
-           _                    -> return True
-checkSimpleType (ApplyType _ ty1 ty2)  = allM checkSimpleType [ty1, ty2]
-checkSimpleType (VariableType _ _)     = return True
-checkSimpleType (TupleType _ tys)      = allM checkSimpleType tys
-checkSimpleType (ListType _ ty)        = checkSimpleType ty
-checkSimpleType (ArrowType _ ty1 ty2)  = allM checkSimpleType [ty1, ty2]
-checkSimpleType (ParenType _ ty)       = checkSimpleType ty
-checkSimpleType (ContextType _ _ _)    = return False
-checkSimpleType (ForallType _ _ _)     = return False
 
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions
@@ -1496,15 +1410,3 @@ errInfixWithoutParens p calls = posMessage p $
   showCall (q1, q2) = showWithPos q1 <+> text "calls" <+> showWithPos q2
   showWithPos q =  text (qualName q)
                <+> parens (text $ showLine $ getPosition q)
-
-errIllegalPolymorphicType :: Position -> TypeExpr -> Message
-errIllegalPolymorphicType p ty = posMessage p $ vcat
-  [ text "Illegal polymorphic type" <+> ppTypeExpr 0 ty
-  , text "Impredicative polymorphism isn't yet supported."
-  ]
-
-errIllegalDefaultType :: Position -> TypeExpr -> Message
-errIllegalDefaultType p ty = posMessage p $ vcat
-  [ text "Illegal polymorphic type:" <+> ppTypeExpr 0 ty
-  , text "When checking the types in a default declaration."
-  ]
