@@ -101,6 +101,14 @@ applyFoo (Bar x) f = f $ Bar x
 applyEqFun :: Eq a => (forall b. Eq b => b -> b -> Bool) -> a -> a -> Bool
 applyEqFun f x y = x `f` y
 
+applyMaybe :: Maybe a -> (forall b. b -> b) -> a
+applyMaybe Nothing  _ = error "fail"
+applyMaybe (Just x) f = f x
+
+applyMaybe' :: (forall b. b -> b) -> Maybe a -> a
+applyMaybe' _ Nothing  = error "fail"
+applyMaybe' f (Just x) = f x
+
 type EqFunc = forall a. Eq a => a -> a -> Bool
 
 data Bag _ a = Bag a
@@ -132,3 +140,6 @@ getValueFromBag :: String
 getValueFromBag = runBag (do e <- newElem "Hello, world!"
                              value <- readElem e
                              return value)
+
+failErr :: forall a. a
+failErr = error "fail"
