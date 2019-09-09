@@ -3,6 +3,8 @@
 constFun :: a -> (forall b. b -> b) -> a
 constFun = error "fail"
 
+idConstFunTest = id constFun
+
 constFunTest :: a -> (forall b. b -> b) -> a
 constFunTest x f = constFun x $ f
 

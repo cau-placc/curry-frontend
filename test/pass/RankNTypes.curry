@@ -143,3 +143,12 @@ getValueFromBag = runBag (do e <- newElem "Hello, world!"
 
 failErr :: forall a. a
 failErr = error "fail"
+
+constFun :: (forall a. a -> a) -> _ -> forall b. b -> b
+constFun f _ = f
+
+constFun' :: (forall a. a -> a) -> _ -> forall b. b -> b
+constFun' = const
+
+constFunTest :: Bool
+constFunTest = (id `constFun` 73) True
