@@ -252,7 +252,10 @@ checkClosed tvs (ListType       _ ty) = checkClosed tvs ty
 checkClosed tvs (ArrowType _ ty1 ty2) = mapM_ (checkClosed tvs) [ty1, ty2]
 checkClosed tvs (ParenType      _ ty) = checkClosed tvs ty
 checkClosed tvs (ForallType  _ vs ty) = checkClosed (tvs ++ vs) ty
-checkClosed _ _ = internalError "Checks.InterfaceSyntaxCheck.checkClosed"
+checkClosed tvs (ContextType _ cx ty) = do
+  checkClosed tvs ty
+  _ <- checkClosedContext tvs cx
+  return ()
 
 checkTypeConstructor :: SpanInfo -> QualIdent -> ISC TypeExpr
 checkTypeConstructor spi tc = do
