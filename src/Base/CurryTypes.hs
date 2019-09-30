@@ -30,7 +30,7 @@ module Base.CurryTypes
   , fromType, fromQualType
   , fromPred, fromQualPred, fromPredSet, fromQualPredSet, fromPredType
   , fromQualPredType
-  , ppType, ppPred, ppPredType, ppTypeScheme
+  , ppType, ppPred, ppPredSet, ppPredType
   ) where
 
 import Data.List (nub)
@@ -38,10 +38,10 @@ import qualified Data.Map as Map (Map, fromList, lookup)
 import qualified Data.Set as Set
 
 import Curry.Base.Ident
-import Curry.Base.Pretty (Doc)
+import Curry.Base.Pretty (Doc, list, parens)
 import Curry.Base.SpanInfo
 import qualified Curry.Syntax as CS
-import Curry.Syntax.Pretty (ppConstraint, ppTypeExpr, ppQualTypeExpr)
+import Curry.Syntax.Pretty (ppConstraint, ppTypeExpr)
 
 import Base.Expr
 import Base.Messages (internalError)
@@ -76,6 +76,11 @@ toType' tvs (CS.ArrowType  _ ty1 ty2) tys
   | null tys = TypeArrow (toType' tvs ty1 []) (toType' tvs ty2 [])
   | otherwise = internalError "Base.CurryTypes.toType': arrow type application"
 toType' tvs (CS.ParenType       _ ty) tys = toType' tvs ty tys
+toType' tvs (CS.ContextType _ cx ty)  tys
+  | null cx   = toType' tvs ty tys
+  | otherwise = applyType (TypeContext (toPredSet' tvs cx)
+                                       (toType' tvs ty []))
+                          tys
 toType' tvs (CS.ForallType _ tvs' ty) tys
   | null tvs' = toType' tvs ty tys
   | otherwise = applyType (TypeForall (map (toVar tvs) tvs')
@@ -111,47 +116,41 @@ toPredSet' tvs = Set.fromList . map (toPred' tvs)
 toQualPredSet :: ModuleIdent -> [Ident] -> CS.Context -> PredSet
 toQualPredSet m tvs = qualifyPredSet m . toPredSet tvs
 
-toPredType :: [Ident] -> CS.QualTypeExpr -> PredType
-toPredType tvs qty = toPredType' (enumTypeVars tvs qty) qty
+toPredType :: [Ident] -> CS.TypeExpr -> Type
+toPredType tvs ty = toPredType' (enumTypeVars tvs ty) ty
 
-toPredType' :: Map.Map Ident Int -> CS.QualTypeExpr -> PredType
-toPredType' tvs (CS.QualTypeExpr _ cx ty) =
-  PredType (toPredSet' tvs cx) (toType' tvs ty [])
+toPredType' :: Map.Map Ident Int -> CS.TypeExpr -> Type
+toPredType' tvs (CS.ContextType _ cx ty) =
+  TypeContext (toPredSet' tvs cx) (toType' tvs ty [])
+toPredType' tvs ty = TypeContext (toPredSet' tvs []) (toType' tvs ty [])
 
-toQualPredType :: ModuleIdent -> [Ident] -> CS.QualTypeExpr -> PredType
-toQualPredType m tvs = qualifyPredType m . toPredType tvs
+toQualPredType :: ModuleIdent -> [Ident] -> CS.TypeExpr -> Type
+toQualPredType m tvs = qualifyType m . toPredType tvs
 
 -- The function 'toConstrType' returns the type of a data or newtype
 -- constructor. Hereby, it restricts the context to those type variables
 -- which are free in the argument types.
 
-toConstrType :: QualIdent -> [Ident] -> CS.Context -> [CS.TypeExpr] -> PredType
-toConstrType tc tvs cx tys = toPredType tvs $
-  CS.QualTypeExpr NoSpanInfo cx' ty' 
-  where tvs' = nub (fv tys)
-        cx'  = restrictContext tvs' cx
-        ty'  = foldr (CS.ArrowType NoSpanInfo) ty0 tys
+toConstrType :: QualIdent -> [Ident] -> [CS.TypeExpr] -> Type
+toConstrType tc tvs tys = toPredType tvs $
+  CS.ContextType NoSpanInfo [] ty'
+  where ty'  = foldr (CS.ArrowType NoSpanInfo) ty0 tys
         ty0  = foldl (CS.ApplyType NoSpanInfo)
                      (CS.ConstructorType NoSpanInfo tc)
                      (map (CS.VariableType NoSpanInfo) tvs)
-
-restrictContext :: [Ident] -> CS.Context -> CS.Context
-restrictContext tvs cx =
-  [CS.Constraint spi cls ty
-    | CS.Constraint spi cls ty <- cx, classVar ty `elem` tvs]
-  where classVar (CS.VariableType _ tv) = tv
-        classVar (CS.ApplyType  _ ty _) = classVar ty
-        classVar _ = internalError "Base.CurryTypes.restrictContext.classVar"
 
 -- The function 'toMethodType' returns the type of a type class method.
 -- It adds the implicit type class constraint to the method's type signature
 -- and ensures that the class' type variable is always assigned index 0.
 
-toMethodType :: QualIdent -> Ident -> CS.QualTypeExpr -> PredType
-toMethodType qcls clsvar (CS.QualTypeExpr spi cx ty) =
-  toPredType [clsvar] (CS.QualTypeExpr spi cx' ty)
+toMethodType :: QualIdent -> Ident -> CS.TypeExpr -> Type
+toMethodType qcls clsvar (CS.ContextType spi cx ty) =
+  toPredType [clsvar] (CS.ContextType spi cx' ty)
   where cx' = CS.Constraint NoSpanInfo qcls
                 (CS.VariableType NoSpanInfo clsvar) : cx
+toMethodType qcls clsvar ty =
+  toPredType [clsvar] (CS.ContextType NoSpanInfo cx' ty)
+  where cx' = [CS.Constraint NoSpanInfo qcls (CS.VariableType NoSpanInfo clsvar)]
 
 fromType :: [Ident] -> Type -> CS.TypeExpr
 fromType tvs ty = fromType' tvs ty []
@@ -173,9 +172,10 @@ fromType' tvs (TypeArrow     ty1 ty2) tys =
   foldl (CS.ApplyType NoSpanInfo)
     (CS.ArrowType NoSpanInfo (fromType tvs ty1) (fromType tvs ty2)) tys
 fromType' tvs (TypeConstrained tys _) tys' = fromType' tvs (head tys) tys'
-fromType' _   (TypeSkolem          k) tys =
-  foldl (CS.ApplyType NoSpanInfo)
-    (CS.VariableType NoSpanInfo $ mkIdent $ "_?" ++ show k) tys
+fromType' tvs (TypeContext ps ty) tys
+  = foldl (CS.ApplyType NoSpanInfo)
+          (CS.ContextType NoSpanInfo (fromPredSet tvs ps) (fromType tvs ty))
+          tys
 fromType' tvs (TypeForall    tvs' ty) tys
   | null tvs' = fromType' tvs ty tys
   | otherwise = foldl (CS.ApplyType NoSpanInfo)
@@ -204,12 +204,13 @@ fromPredSet tvs = map (fromPred tvs) . Set.toAscList
 fromQualPredSet :: ModuleIdent -> [Ident] -> PredSet -> CS.Context
 fromQualPredSet m tvs = fromPredSet tvs . unqualifyPredSet m
 
-fromPredType :: [Ident] -> PredType -> CS.QualTypeExpr
-fromPredType tvs (PredType ps ty) =
-  CS.QualTypeExpr NoSpanInfo (fromPredSet tvs ps) (fromType tvs ty)
+fromPredType :: [Ident] -> Type -> CS.TypeExpr
+fromPredType tvs (TypeContext ps ty) =
+  CS.ContextType NoSpanInfo (fromPredSet tvs ps) (fromType tvs ty)
+fromPredType tvs ty = fromType tvs ty
 
-fromQualPredType :: ModuleIdent -> [Ident] -> PredType -> CS.QualTypeExpr
-fromQualPredType m tvs = fromPredType tvs . unqualifyPredType m
+fromQualPredType :: ModuleIdent -> [Ident] -> Type -> CS.TypeExpr
+fromQualPredType m tvs = fromPredType tvs . unqualifyType m
 
 -- The following functions implement pretty-printing for types.
 
@@ -219,8 +220,8 @@ ppType m = ppTypeExpr 0 . fromQualType m identSupply
 ppPred :: ModuleIdent -> Pred -> Doc
 ppPred m = ppConstraint . fromQualPred m identSupply
 
-ppPredType :: ModuleIdent -> PredType -> Doc
-ppPredType m = ppQualTypeExpr . fromQualPredType m identSupply
+ppPredSet :: ModuleIdent -> PredSet -> Doc
+ppPredSet m = parens . list . map (ppPred m) . Set.toList
 
-ppTypeScheme :: ModuleIdent -> TypeScheme -> Doc
-ppTypeScheme m (ForAll _ pty) = ppPredType m pty
+ppPredType :: ModuleIdent -> Type -> Doc
+ppPredType m = ppTypeExpr 0 . fromQualPredType m identSupply

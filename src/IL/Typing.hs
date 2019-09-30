@@ -30,9 +30,12 @@ instance Typeable Expression where
   typeOf (Variable ty _) = ty
   typeOf (Function ty _ _) = ty
   typeOf (Constructor ty _ _) = ty
-  typeOf (Apply e _) = case typeOf e of
+  typeOf (Apply e _) = case instType (typeOf e) of
     TypeArrow _ ty -> ty
-    _ -> internalError "IL.Typing.typeOf: application"
+    _              -> internalError "IL.Typing.typeOf: application"
+    where
+      instType (TypeForall _ ty) = instType ty
+      instType ty                = ty
   typeOf (Case _ _ as) = typeOf $ head as
   typeOf (Or e _) = typeOf e
   typeOf (Exist _ _ e) = typeOf e

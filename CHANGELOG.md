@@ -320,4 +320,3 @@ Version 0.3.0
   * All compiler warnings removed.
 
   * Fixed various implementation bugs (#9, #16, #19, #29, #289).
-

@@ -107,7 +107,7 @@ ppTypeVar n
 ppQuantifiedTypeVars :: [Int] -> Doc
 ppQuantifiedTypeVars ns
   | null ns = empty
-  | otherwise = text "forall" <+> hsep (map ppTypeVar ns) <+> char '.'
+  | otherwise = text "forall" <+> hsep (map ppTypeVar ns) <> char '.'
 
 ppBinding :: Binding -> Doc
 ppBinding (Binding v expr) = sep

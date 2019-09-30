@@ -316,7 +316,7 @@ idsDecl (TypeDecl         _ t vs ty) =
   TypeCons TypeDeclare False (qualify t) :
     map (Identifier IdDeclare False . qualify) vs ++ idsTypeExpr ty
 idsDecl (TypeSig           _ fs qty) =
-  map (Function FuncTypeSig False . qualify) fs ++ idsQualTypeExpr qty
+  map (Function FuncTypeSig False . qualify) fs ++ idsTypeExpr qty
 idsDecl (FunctionDecl     _ _ _ eqs) = concatMap idsEquation eqs
 idsDecl (ExternalDecl          _ fs) =
   map (Function FuncDeclare False . qualify . varIdent) fs
@@ -331,15 +331,12 @@ idsDecl (InstanceDecl  _ cx c ty ds) = idsContext cx ++
   TypeCons TypeRefer False c : idsTypeExpr ty ++ concatMap idsInstanceDecl ds
 
 idsConstrDecl :: ConstrDecl -> [Code]
-idsConstrDecl (ConstrDecl     _ vs cx c tys) =
-  map (Identifier IdDeclare False . qualify) vs ++ idsContext cx ++
-    DataCons ConsDeclare False (qualify c) : concatMap idsTypeExpr tys
-idsConstrDecl (ConOpDecl _ vs cx ty1 op ty2) =
-  map (Identifier IdDeclare False . qualify) vs ++ idsContext cx ++
+idsConstrDecl (ConstrDecl     _ c tys) =
+  DataCons ConsDeclare False (qualify c) : concatMap idsTypeExpr tys
+idsConstrDecl (ConOpDecl _ ty1 op ty2) =
   idsTypeExpr ty1 ++ (DataCons ConsDeclare False $ qualify op) : idsTypeExpr ty2
-idsConstrDecl (RecordDecl      _ vs cx c fs) =
-  map (Identifier IdDeclare False . qualify) vs ++ idsContext cx ++
-    DataCons ConsDeclare False (qualify c) : concatMap idsFieldDecl fs
+idsConstrDecl (RecordDecl      _ c fs) =
+  DataCons ConsDeclare False (qualify c) : concatMap idsFieldDecl fs
 
 idsNewConstrDecl :: NewConstrDecl -> [Code]
 idsNewConstrDecl (NewConstrDecl _ c     ty) =
@@ -350,7 +347,7 @@ idsNewConstrDecl (NewRecordDecl _ c (l,ty)) =
 
 idsClassDecl :: Decl a -> [Code]
 idsClassDecl (TypeSig       _ fs qty) =
-  map (Function FuncDeclare False . qualify) fs ++ idsQualTypeExpr qty
+  map (Function FuncDeclare False . qualify) fs ++ idsTypeExpr qty
 idsClassDecl (FunctionDecl _ _ _ eqs) = concatMap idsEquation eqs
 idsClassDecl _                        =
   internalError "SyntaxColoring.idsClassDecl"
@@ -359,9 +356,6 @@ idsInstanceDecl :: Decl a -> [Code]
 idsInstanceDecl (FunctionDecl _ _ _ eqs) = concatMap idsEquation eqs
 idsInstanceDecl _                        =
   internalError "SyntaxColoring.idsInstanceDecl"
-
-idsQualTypeExpr :: QualTypeExpr -> [Code]
-idsQualTypeExpr (QualTypeExpr _ cx ty) = idsContext cx ++ idsTypeExpr ty
 
 idsContext :: Context -> [Code]
 idsContext = concatMap idsConstraint
@@ -378,6 +372,7 @@ idsTypeExpr (TupleType       _ tys) = concatMap idsTypeExpr tys
 idsTypeExpr (ListType         _ ty) = idsTypeExpr ty
 idsTypeExpr (ArrowType   _ ty1 ty2) = concatMap idsTypeExpr [ty1, ty2]
 idsTypeExpr (ParenType        _ ty) = idsTypeExpr ty
+idsTypeExpr (ContextType   _ cx ty) = idsContext cx ++ idsTypeExpr ty
 idsTypeExpr (ForallType    _ vs ty) =
   map (Identifier IdDeclare False . qualify) vs ++ idsTypeExpr ty
 
@@ -431,7 +426,7 @@ idsExpr (Variable           _ _ qid)
   | otherwise                      = [Identifier IdRefer False qid]
 idsExpr (Constructor        _ _ qid) = [DataCons ConsCall False qid]
 idsExpr (Paren                  _ e) = idsExpr e
-idsExpr (Typed              _ e qty) = idsExpr e ++ idsQualTypeExpr qty
+idsExpr (Typed              _ e qty) = idsExpr e ++ idsTypeExpr qty
 idsExpr (Record          _ _ qid fs) =
   DataCons ConsCall False qid : concatMap (idsField idsExpr) fs
 idsExpr (RecordUpdate        _ e fs) =

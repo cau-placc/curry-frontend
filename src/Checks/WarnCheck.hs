@@ -43,12 +43,13 @@ import Curry.Syntax
 import Curry.Syntax.Utils  (typeVariables)
 import Curry.Syntax.Pretty (ppDecl, ppPattern, ppExpr, ppIdent, ppConstraint)
 
-import Base.CurryTypes (ppTypeScheme, fromPred, toPredSet)
+import Base.CurryTypes (ppPredType, toPredSet, fromPred)
 import Base.Messages   (Message, posMessage, internalError)
 import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                        , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv
                        , qualModifyNestEnv)
 
+import Base.Expr  (Expr (fv))
 import Base.Types
 import Base.Utils (findMultiples)
 import Env.ModuleAlias
@@ -62,8 +63,8 @@ import CompilerOpts
 -- Find potentially incorrect code in a Curry program and generate warnings
 -- for the following issues:
 --   - multiply imported modules, multiply imported/hidden values
---   - unreferenced variables
---   - shadowing variables
+--   - unreferenced (type) variables
+--   - shadowing (type) variables
 --   - idle case alternatives
 --   - overlapping case alternatives
 --   - non-adjacent function rules
@@ -273,28 +274,22 @@ checkDecl (InstanceDecl p cx cls ty ds) = do
   checkOrphanInstance p cx cls ty
   checkMissingMethodImplementations p cls ds
   mapM_ checkDecl ds
+checkDecl (TypeSig              _ _ ty) = do
+  let tvs = map (setPosition $ getPosition ty) (nub (fv ty))
+  checkTypeExpr (ForallType NoSpanInfo tvs ty)
 checkDecl _                             = ok
 
 --TODO: shadowing und context etc.
 checkConstrDecl :: ConstrDecl -> WCM ()
-checkConstrDecl (ConstrDecl     _ vs _ c tys) = inNestedScope $ do
-  mapM_ checkTypeShadowing vs
-  mapM_ insertTypeVar vs
+checkConstrDecl (ConstrDecl     _ c tys) = inNestedScope $ do
   visitId c
   mapM_ checkTypeExpr tys
-  reportUnusedTypeVars vs
-checkConstrDecl (ConOpDecl _ vs _ ty1 op ty2) = inNestedScope $ do
-  mapM_ checkTypeShadowing vs
-  mapM_ insertTypeVar vs
+checkConstrDecl (ConOpDecl _ ty1 op ty2) = inNestedScope $ do
   visitId op
   mapM_ checkTypeExpr [ty1, ty2]
-  reportUnusedTypeVars vs
-checkConstrDecl (RecordDecl      _ vs _ c fs) = inNestedScope $ do
-  mapM_ checkTypeShadowing vs
-  mapM_ insertTypeVar vs
+checkConstrDecl (RecordDecl      _ c fs) = inNestedScope $ do
   visitId c
   mapM_ checkTypeExpr tys
-  reportUnusedTypeVars vs
   where
     tys = [ty | FieldDecl _ _ ty <- fs]
 
@@ -314,9 +309,12 @@ checkTypeExpr (TupleType           _ tys) = mapM_ checkTypeExpr tys
 checkTypeExpr (ListType             _ ty) = checkTypeExpr ty
 checkTypeExpr (ArrowType       _ ty1 ty2) = mapM_ checkTypeExpr [ty1, ty2]
 checkTypeExpr (ParenType            _ ty) = checkTypeExpr ty
-checkTypeExpr (ForallType        _ vs ty) = do
+checkTypeExpr (ContextType        _ _ ty) = checkTypeExpr ty
+checkTypeExpr (ForallType        _ vs ty) = inNestedScope $ do
+  mapM_ checkTypeShadowing vs
   mapM_ insertTypeVar vs
   checkTypeExpr ty
+  reportUnusedTypeVars vs
 
 -- Checks locally declared identifiers (i.e. functions and logic variables)
 -- for shadowing
@@ -396,7 +394,10 @@ checkCondExpr (CondExpr _ c e) = checkExpr c >> checkExpr e
 checkExpr :: Expression () -> WCM ()
 checkExpr (Variable            _ _ v) = visitQId v
 checkExpr (Paren                 _ e) = checkExpr e
-checkExpr (Typed               _ e _) = checkExpr e
+checkExpr (Typed              _ e ty) = do
+  checkExpr e
+  let tvs = map (setPosition $ getPosition ty) (nub (fv ty))
+  checkTypeExpr (ForallType NoSpanInfo tvs ty)
 checkExpr (Record           _ _ _ fs) = mapM_ (checkField checkExpr) fs
 checkExpr (RecordUpdate       _ e fs) = do
   checkExpr e
@@ -506,7 +507,7 @@ checkMissingTypeSignatures ds = warnFor WarnMissingSignatures $ do
     tyScs <- mapM getTyScheme untypedFs
     mapM_ report $ zipWith (warnMissingTypeSignature mid) untypedFs tyScs
 
-getTyScheme :: Ident -> WCM TypeScheme
+getTyScheme :: Ident -> WCM Type
 getTyScheme q = do
   m     <- getModuleIdent
   tyEnv <- gets valueEnv
@@ -514,10 +515,11 @@ getTyScheme q = do
     [Value  _ _ _ tys] -> tys
     _ -> internalError $ "Checks.WarnCheck.getTyScheme: " ++ show q
 
-warnMissingTypeSignature :: ModuleIdent -> Ident -> TypeScheme -> Message
-warnMissingTypeSignature mid i tys = posMessage i $ fsep
+warnMissingTypeSignature :: ModuleIdent -> Ident -> Type -> Message
+warnMissingTypeSignature mid i pty = posMessage i $ fsep
   [ text "Top-level binding with no type signature:"
-  , nest 2 $ text (showIdent i) <+> text "::" <+> ppTypeScheme mid tys
+  , nest 2 $ text (showIdent i) <+> text "::"
+                                <+> ppPredType mid (rawPredType pty)
   ]
 
 -- -----------------------------------------------------------------------------
@@ -797,8 +799,8 @@ getConTy q = do
   tyEnv <- gets valueEnv
   tcEnv <- gets tyConsEnv
   case qualLookupValue q tyEnv of
-    [DataConstructor  _ _ _ (ForAllExist _ _ (PredType _ ty))] -> return ty
-    [NewtypeConstructor _ _ (ForAllExist _ _ (PredType _ ty))] -> return ty
+    [DataConstructor  _ _ _ tySc] -> return $ rawType tySc
+    [NewtypeConstructor _ _ tySc] -> return $ rawType tySc
     _ -> case qualLookupTypeInfo q tcEnv of
       [AliasType _ _ _ ty] -> return ty
       _ -> internalError $ "Checks.WarnCheck.getConTy: " ++ show q
@@ -1019,12 +1021,13 @@ insertTypeExpr (TupleType        _ tys) = mapM_ insertTypeExpr tys
 insertTypeExpr (ListType          _ ty) = insertTypeExpr ty
 insertTypeExpr (ArrowType    _ ty1 ty2) = mapM_ insertTypeExpr [ty1,ty2]
 insertTypeExpr (ParenType         _ ty) = insertTypeExpr ty
+insertTypeExpr (ContextType     _ _ ty) = insertTypeExpr ty
 insertTypeExpr (ForallType      _ _ ty) = insertTypeExpr ty
 
 insertConstrDecl :: ConstrDecl -> WCM ()
-insertConstrDecl (ConstrDecl _ _ _    c _) = insertConsId c
-insertConstrDecl (ConOpDecl  _ _ _ _ op _) = insertConsId op
-insertConstrDecl (RecordDecl _ _ _    c _) = insertConsId c
+insertConstrDecl (ConstrDecl _    c _) = insertConsId c
+insertConstrDecl (ConOpDecl  _ _ op _) = insertConsId op
+insertConstrDecl (RecordDecl _    c _) = insertConsId c
 
 insertNewConstrDecl :: NewConstrDecl -> WCM ()
 insertNewConstrDecl (NewConstrDecl _ c _) = insertConsId c
@@ -1230,7 +1233,7 @@ checkCaseModeDecl (TypeDecl _ tc vs ty) = do
   checkCaseModeTypeExpr ty
 checkCaseModeDecl (TypeSig _ fs qty) = do
   mapM_ (checkCaseModeID isFuncName) fs
-  checkCaseModeQualTypeExpr qty
+  checkCaseModeTypeExpr qty
 checkCaseModeDecl (FunctionDecl _ _ f eqs) = do
   checkCaseModeID isFuncName f
   mapM_ checkCaseModeEquation eqs
@@ -1254,20 +1257,14 @@ checkCaseModeDecl (InstanceDecl _ cx _ inst ds) = do
 checkCaseModeDecl _ = ok
 
 checkCaseModeConstr :: ConstrDecl -> WCM ()
-checkCaseModeConstr (ConstrDecl _ evs cx c tys) = do
-  mapM_ (checkCaseModeID isVarName) evs
-  checkCaseModeContext cx
+checkCaseModeConstr (ConstrDecl _ c tys) = do
   checkCaseModeID isConstrName c
   mapM_ checkCaseModeTypeExpr tys
-checkCaseModeConstr (ConOpDecl  _ evs cx ty1 c ty2) = do
-  mapM_ (checkCaseModeID isVarName) evs
-  checkCaseModeContext cx
+checkCaseModeConstr (ConOpDecl  _ ty1 c ty2) = do
   checkCaseModeTypeExpr ty1
   checkCaseModeID isConstrName c
   checkCaseModeTypeExpr ty2
-checkCaseModeConstr (RecordDecl _ evs cx c fs) = do
-  mapM_ (checkCaseModeID isVarName) evs
-  checkCaseModeContext cx
+checkCaseModeConstr (RecordDecl _ c fs) = do
   checkCaseModeID isConstrName c
   mapM_ checkCaseModeFieldDecl fs
 
@@ -1302,15 +1299,13 @@ checkCaseModeTypeExpr (ArrowType _ ty1 ty2) = do
   checkCaseModeTypeExpr ty1
   checkCaseModeTypeExpr ty2
 checkCaseModeTypeExpr (ParenType _ ty) = checkCaseModeTypeExpr ty
+checkCaseModeTypeExpr (ContextType _ cx ty) = do
+  checkCaseModeContext cx
+  checkCaseModeTypeExpr ty
 checkCaseModeTypeExpr (ForallType _ tvs ty) = do
   mapM_ (checkCaseModeID isVarName) tvs
   checkCaseModeTypeExpr ty
 checkCaseModeTypeExpr _ = ok
-
-checkCaseModeQualTypeExpr :: QualTypeExpr -> WCM ()
-checkCaseModeQualTypeExpr (QualTypeExpr _ cx ty) = do
-  checkCaseModeContext cx
-  checkCaseModeTypeExpr ty
 
 checkCaseModeEquation :: Equation a -> WCM ()
 checkCaseModeEquation (Equation _ lhs rhs) = do
@@ -1368,7 +1363,7 @@ checkCaseModeExpr :: Expression a -> WCM ()
 checkCaseModeExpr (Paren _ e) = checkCaseModeExpr e
 checkCaseModeExpr (Typed _ e qty) = do
   checkCaseModeExpr e
-  checkCaseModeQualTypeExpr qty
+  checkCaseModeTypeExpr qty
 checkCaseModeExpr (Record _ _ _ fs) = mapM_ checkCaseModeFieldExpr fs
 checkCaseModeExpr (RecordUpdate _ e fs) = do
   checkCaseModeExpr e
@@ -1482,6 +1477,27 @@ getPredFromContext cx =
   let vs = concatMap (\(Constraint _ _ ty) -> typeVariables ty) cx
   in (vs, toPredSet vs cx)
 
+getPredFromType :: TypeExpr -> ([Ident], PredSet)
+getPredFromType (ContextType _ cx ty) =
+  let (vs1, ps1) = getPredFromContext cx
+      (vs2, ps2) = getPredFromType ty
+  in (vs1 ++ vs2, Set.union ps1 ps2)
+getPredFromType (ApplyType _ ty1 ty2) =
+  let (vs1, ps1) = getPredFromType ty1
+      (vs2, ps2) = getPredFromType ty2
+  in (vs1 ++ vs2, Set.union ps1 ps2)
+getPredFromType (ArrowType _ ty1 ty2) =
+  let (vs1, ps1) = getPredFromType ty1
+      (vs2, ps2) = getPredFromType ty2
+  in (vs1 ++ vs2, Set.union ps1 ps2)
+getPredFromType (TupleType _ tys) =
+  let (vss, pss) = unzip $ map getPredFromType tys
+  in (concat vss, Set.unions pss)
+getPredFromType (ListType  _ ty) = getPredFromType ty
+getPredFromType (ParenType _ ty) = getPredFromType ty
+getPredFromType (ForallType _ _ ty) = getPredFromType ty
+getPredFromType _ = ([], Set.empty)
+
 checkRedContext' :: (Pred -> Message) -> PredSet -> WCM ()
 checkRedContext' f ps = do
   m     <- gets moduleId
@@ -1490,9 +1506,9 @@ checkRedContext' f ps = do
   mapM_ (report . f) (getRedPredSet m cenv tcEnv ps)
 
 checkRedContextDecl :: Decl a -> WCM ()
-checkRedContextDecl (TypeSig _ ids (QualTypeExpr _ cx _)) =
+checkRedContextDecl (TypeSig _ ids ty) =
   checkRedContext' (warnRedContext (warnRedFuncString ids) vs) ps
-  where (vs, ps) = getPredFromContext cx
+  where (vs, ps) = getPredFromType ty
 checkRedContextDecl (FunctionDecl _ _ _ eqs) = mapM_ checkRedContextEq eqs
 checkRedContextDecl (PatternDecl _ _ rhs) = checkRedContextRhs rhs
 checkRedContextDecl (ClassDecl _ cx i _ ds) = do
@@ -1507,25 +1523,12 @@ checkRedContextDecl (InstanceDecl _ cx qid _ ds) = do
     ps
   mapM_ checkRedContextDecl ds
   where (vs, ps) = getPredFromContext cx
-checkRedContextDecl (DataDecl _ _ _ cs _) = mapM_ checkRedContextConstrDecl cs
+checkRedContextDecl (TypeDecl _ idt _ ty) =
+  checkRedContext'
+    (warnRedContext (text ("type declaration " ++ escName idt)) vs)
+    ps
+  where (vs, ps) = getPredFromType ty
 checkRedContextDecl _ = return ()
-
-checkRedContextConstrDecl :: ConstrDecl -> WCM ()
-checkRedContextConstrDecl (ConstrDecl _ _ cx idt _  ) =
-  checkRedContext'
-    (warnRedContext (text ("constructor declaration " ++ escName idt)) vs)
-    ps
-  where (vs, ps) = getPredFromContext cx
-checkRedContextConstrDecl (ConOpDecl  _ _ cx _ idt _) =
-  checkRedContext'
-    (warnRedContext (text ("constructor operator " ++ escName idt)) vs)
-    ps
-  where (vs, ps) = getPredFromContext cx
-checkRedContextConstrDecl (RecordDecl _ _ cx idt _  ) =
-  checkRedContext'
-    (warnRedContext (text ("record declaration " ++ escName idt)) vs)
-    ps
-  where (vs, ps) = getPredFromContext cx
 
 checkRedContextEq :: Equation a -> WCM ()
 checkRedContextEq (Equation _ _ rhs) = checkRedContextRhs rhs
@@ -1545,10 +1548,10 @@ checkRedContextCond (CondExpr _ e1 e2) = do
 
 checkRedContextExpr :: Expression a -> WCM ()
 checkRedContextExpr (Paren _ e) = checkRedContextExpr e
-checkRedContextExpr (Typed _ e (QualTypeExpr _ cx _)) = do
+checkRedContextExpr (Typed _ e ty) = do
   checkRedContextExpr e
   checkRedContext' (warnRedContext (text "type signature") vs) ps
-  where (vs, ps) = getPredFromContext cx
+  where (vs, ps) = getPredFromType ty
 checkRedContextExpr (Record _ _ _ fs) = mapM_ checkRedContextFieldExpr fs
 checkRedContextExpr (RecordUpdate _ e fs) = do
   checkRedContextExpr e

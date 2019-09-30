@@ -1,4 +1,4 @@
-Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: curry-frontend
 Upstream-Contact: Michael Hanus <mh@informatik.uni-kiel.de>
 Source: https://git.ps.informatik.uni-kiel.de/curry/curry-frontend
@@ -142,6 +142,7 @@ Files: src/CurryBuilder.hs
 Copyright: 2005, Martin Engelke
   2007, Sebastian Fischer
   2011 - 2015, Björn Peemöller
+  2018, Kai-Oliver Prott
 License: BSD-3-clause
 
 Files: src/CurryDeps.hs
@@ -260,6 +261,8 @@ Copyright: 1999 - 2004, Wolfgang Lux
   2007, Sebastian Fischer
   2011 - 2015, Björn Peemöller
   2016, Jan Tikovsky
+  2016-2017, Finn Teegen
+  2018, Kai-Oliver Prott
 License: BSD-3-clause
 
 Files: src/TokenStream.hs
@@ -311,6 +314,11 @@ Copyright: 2003, Wolfgang Lux
   Martin Engelke
   2011 - 2015, Björn Peemöller
   2016, Finn Teegen
+License: BSD-3-clause
+
+Files: src/Generators/GenTypeAnnotatedFlatCurry.hs
+Copyright: 2017, Finn Teegen
+           2018, Kai-Oliver Prott
 License: BSD-3-clause
 
 Files: src/cymake.hs

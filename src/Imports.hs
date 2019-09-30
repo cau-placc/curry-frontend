@@ -28,8 +28,8 @@ import Curry.Base.Monad
 import Curry.Syntax
 
 import Base.CurryKinds (toKind')
-import Base.CurryTypes ( toQualType, toQualTypes, toQualPredSet, toQualPredType
-                       , toConstrType, toMethodType )
+import Base.CurryTypes ( toQualType, toQualTypes, toQualPredType, toConstrType
+                       , toMethodType )
 
 import Base.Kinds
 import Base.Messages
@@ -176,7 +176,7 @@ importInstances m = flip $ foldr (bindInstance m)
 bindInstance :: ModuleIdent -> IDecl -> InstEnv -> InstEnv
 bindInstance m (IInstanceDecl _ cx qcls ty is mm) = bindInstInfo
   (qualQualify m qcls, qualifyTC m $ typeConstr ty) (fromMaybe m mm, ps, is)
-  where PredType ps _ = toQualPredType m [] $ QualTypeExpr NoSpanInfo cx ty
+  where TypeContext ps _ = toQualPredType m [] $ ContextType NoSpanInfo cx ty
 bindInstance _ _ = id
 
 -- ---------------------------------------------------------------------------
@@ -201,26 +201,20 @@ types :: ModuleIdent -> IDecl -> [TypeInfo]
 types m (IDataDecl _ tc k tvs cs _) =
   [typeCon DataType m tc k tvs (map mkData cs)]
   where
-    mkData (ConstrDecl _ evs cx c tys) =
-      DataConstr c (length evs) (toQualPredSet m tvs' cx)
-        (toQualTypes m tvs' tys)
-      where tvs' = tvs ++ evs
-    mkData (ConOpDecl _ evs cx ty1 c ty2) =
-      DataConstr c (length evs) (toQualPredSet m tvs' cx)
-        (toQualTypes m tvs' [ty1, ty2])
-      where tvs' = tvs ++ evs
-    mkData (RecordDecl _ evs cx c fs) =
-      RecordConstr c (length evs) (toQualPredSet m tvs' cx) labels
-        (toQualTypes m tvs' tys)
-      where tvs' = tvs ++ evs
-            (labels, tys) = unzip [(l, ty) | FieldDecl _ ls ty <- fs, l <- ls]
+    mkData (ConstrDecl _ c tys) =
+      DataConstr c (toQualTypes m tvs tys)
+    mkData (ConOpDecl _  ty1 c ty2) =
+      DataConstr c (toQualTypes m tvs [ty1, ty2])
+    mkData (RecordDecl _ c fs) =
+      RecordConstr c labels (toQualTypes m tvs tys)
+      where (labels, tys) = unzip [(l, ty) | FieldDecl _ ls ty <- fs, l <- ls]
 types m (INewtypeDecl _ tc k tvs nc _) =
   [typeCon RenamingType m tc k tvs (mkData nc)]
   where
     mkData (NewConstrDecl _ c ty) =
-      DataConstr c 0 emptyPredSet [toQualType m tvs ty]
+      DataConstr c [toQualType m tvs ty]
     mkData (NewRecordDecl _ c (l, ty)) =
-      RecordConstr c 0 emptyPredSet [l] [toQualType m tvs ty]
+      RecordConstr c [l] [toQualType m tvs ty]
 types m (ITypeDecl _ tc k tvs ty) =
   [typeCon aliasType m tc k tvs (toQualType m tvs ty)]
   where
@@ -229,7 +223,7 @@ types m (IClassDecl _ _ qcls k tv ds _) =
   [typeCls m qcls k (map mkMethod ds)]
   where
     mkMethod (IMethodDecl _ f a qty) = ClassMethod f a $
-      qualifyPredType m $ normalize 1 $ toMethodType qcls tv qty
+      qualifyType m $ normalize 1 $ toMethodType qcls tv qty
 types _ _ = []
 
 -- type constructors
@@ -251,7 +245,7 @@ values m (IDataDecl _ tc _ tvs cs hs) =
   map (recLabel m tc' tvs ty') (nubBy sameLabel clabels)
   where tc' = qualQualify m tc
         ty' = constrType tc' tvs
-        labels   = [ (l, lty) | RecordDecl _ _ _ _ fs <- cs
+        labels   = [ (l, lty) | RecordDecl _ _ fs <- cs
                    , FieldDecl _ ls lty <- fs, l <- ls, l `notElem` hs
                    ]
         clabels  = [(l, constr l, ty) | (l, ty) <- labels]
@@ -278,17 +272,17 @@ values m (IClassDecl _ _ qcls _ tv ds hs) =
 values _ _                        = []
 
 dataConstr :: ModuleIdent -> QualIdent -> [Ident] -> ConstrDecl -> ValueInfo
-dataConstr m tc tvs (ConstrDecl _ evs cx c tys) =
+dataConstr m tc tvs (ConstrDecl _ c tys) =
   DataConstructor (qualifyLike tc c) a labels $
-    constrType' m tc tvs evs cx tys
+    constrType' m tc tvs tys
   where a      = length tys
         labels = replicate a anonId
-dataConstr m tc tvs (ConOpDecl _ evs cx ty1 op ty2) =
+dataConstr m tc tvs (ConOpDecl _ ty1 op ty2) =
   DataConstructor (qualifyLike tc op) 2 [anonId, anonId] $
-    constrType' m tc tvs evs cx [ty1, ty2]
-dataConstr m tc tvs (RecordDecl _ evs cx c fs) =
+    constrType' m tc tvs [ty1, ty2]
+dataConstr m tc tvs (RecordDecl _ c fs) =
   DataConstructor (qualifyLike tc c) a labels $
-    constrType' m tc tvs evs cx tys
+    constrType' m tc tvs tys
   where fields        = [(l, ty) | FieldDecl _ ls ty <- fs, l <- ls]
         (labels, tys) = unzip fields
         a             = length labels
@@ -296,10 +290,10 @@ dataConstr m tc tvs (RecordDecl _ evs cx c fs) =
 newConstr :: ModuleIdent -> QualIdent -> [Ident] -> NewConstrDecl -> ValueInfo
 newConstr m tc tvs (NewConstrDecl _ c ty1) =
   NewtypeConstructor (qualifyLike tc c) anonId $
-  constrType' m tc tvs [] [] [ty1]
+  constrType' m tc tvs [ty1]
 newConstr m tc tvs (NewRecordDecl _ c (l, ty1)) =
   NewtypeConstructor (qualifyLike tc c) l $
-  constrType' m tc tvs [] [] [ty1]
+  constrType' m tc tvs [ty1]
 
 recLabel :: ModuleIdent -> QualIdent -> [Ident] -> TypeExpr
            -> (Ident, [Ident], TypeExpr) -> ValueInfo
@@ -308,11 +302,9 @@ recLabel m tc tvs ty0 (l, cs, lty) = Label ql qcs tySc
         qcs  = map (qualifyLike tc) cs
         tySc = polyType (toQualType m tvs (ArrowType NoSpanInfo ty0 lty))
 
-constrType' :: ModuleIdent -> QualIdent -> [Ident] -> [Ident] -> Context
-            -> [TypeExpr] -> ExistTypeScheme
-constrType' m tc tvs evs cx tys = ForAllExist (length tvs) (length evs) pty
-  where tvs' = tvs ++ evs
-        pty  = qualifyPredType m $ toConstrType tc tvs' cx tys
+constrType' :: ModuleIdent -> QualIdent -> [Ident] -> [TypeExpr] -> Type
+constrType' m tc tvs tys = TypeForall [0.. length tvs - 1] (TypeContext ps ty)
+  where TypeContext ps ty = qualifyType m $ toConstrType tc tvs tys
 
 constrType :: QualIdent -> [Ident] -> TypeExpr
 constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)
@@ -324,7 +316,7 @@ constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)
 classMethod :: ModuleIdent -> QualIdent -> Ident -> IMethodDecl -> ValueInfo
 classMethod m qcls tv (IMethodDecl _ f _ qty) =
   Value (qualifyLike qcls f) True 0 $
-    typeScheme $ qualifyPredType m $ toMethodType qcls tv qty
+    typeScheme $ qualifyType m $ toMethodType qcls tv qty
 
 -- ---------------------------------------------------------------------------
 

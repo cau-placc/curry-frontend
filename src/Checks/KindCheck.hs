@@ -155,9 +155,9 @@ instance HasType (Decl a) where
     fts m cx . fts m cls . fts m inst . fts m ds
 
 instance HasType ConstrDecl where
-  fts m (ConstrDecl     _ _ cx _ tys) = fts m cx . fts m tys
-  fts m (ConOpDecl  _ _ cx ty1 _ ty2) = fts m cx . fts m ty1 . fts m ty2
-  fts m (RecordDecl      _ _ cx _ fs) = fts m cx . fts m fs
+  fts m (ConstrDecl     _ _ tys) = fts m tys
+  fts m (ConOpDecl  _ ty1 _ ty2) = fts m ty1 . fts m ty2
+  fts m (RecordDecl      _ _ fs) = fts m fs
 
 instance HasType FieldDecl where
   fts m (FieldDecl _ _ ty) = fts m ty
@@ -169,9 +169,6 @@ instance HasType NewConstrDecl where
 instance HasType Constraint where
   fts m (Constraint _ qcls _) = fts m qcls
 
-instance HasType QualTypeExpr where
-  fts m (QualTypeExpr _ cx ty) = fts m cx . fts m ty
-
 instance HasType TypeExpr where
   fts m (ConstructorType     _ tc) = fts m tc
   fts m (ApplyType      _ ty1 ty2) = fts m ty1 . fts m ty2
@@ -180,6 +177,7 @@ instance HasType TypeExpr where
   fts m (ListType            _ ty) = (listId :) . fts m ty
   fts m (ArrowType      _ ty1 ty2) = (arrowId :) . fts m ty1 . fts m ty2
   fts m (ParenType           _ ty) = fts m ty
+  fts m (ContextType      _ cx ty) = fts m cx . fts m ty
   fts m (ForallType        _ _ ty) = fts m ty
 
 instance HasType (Equation a) where
@@ -314,36 +312,34 @@ bindKind :: ModuleIdent -> TCEnv -> ClassEnv -> TCEnv -> Decl a -> KCM TCEnv
 bindKind m tcEnv' clsEnv tcEnv (DataDecl _ tc tvs cs _) =
   bindTypeConstructor DataType tc tvs (Just KindStar) (map mkData cs) tcEnv
   where
-    mkData (ConstrDecl _ evs cx     c  tys) = mkData' evs cx c  tys
-    mkData (ConOpDecl  _ evs cx ty1 op ty2) = mkData' evs cx op [ty1, ty2]
-    mkData (RecordDecl _ evs cx     c   fs) =
+    mkData (ConstrDecl _     c  tys) = mkData' c  tys
+    mkData (ConOpDecl  _ ty1 op ty2) = mkData' op [ty1, ty2]
+    mkData (RecordDecl _     c   fs) =
       let (labels, tys) = unzip [(l, ty) | FieldDecl _ ls ty <- fs, l <- ls]
-      in  mkRec evs cx c labels tys
-    mkData' evs cx c tys = DataConstr c (length evs) ps tys'
+      in  mkRec c labels tys
+    mkData' c tys = DataConstr c tys'
       where qtc = qualifyWith m tc
-            tvs' = tvs ++ evs
-            PredType ps ty = expandConstrType m tcEnv' clsEnv qtc tvs' cx tys
+            TypeContext _ ty = expandConstrType m tcEnv' clsEnv qtc tvs tys
             tys' = arrowArgs ty
-    mkRec evs cx c ls tys =
-      RecordConstr c (length evs) ps ls tys'
+    mkRec c ls tys =
+      RecordConstr c ls tys'
       where qtc = qualifyWith m tc
-            tvs' = tvs ++ evs
-            PredType ps ty = expandConstrType m tcEnv' clsEnv qtc tvs' cx tys
+            TypeContext _ ty = expandConstrType m tcEnv' clsEnv qtc tvs tys
             tys' = arrowArgs ty
 bindKind _ _     _       tcEnv (ExternalDataDecl _ tc tvs) =
   bindTypeConstructor DataType tc tvs (Just KindStar) [] tcEnv
-bindKind m tcEnv' _      tcEnv (NewtypeDecl _ tc tvs nc _) =
+bindKind m tcEnv' clsEnv tcEnv (NewtypeDecl _ tc tvs nc _) =
   bindTypeConstructor RenamingType tc tvs (Just KindStar) (mkData nc) tcEnv
   where
-    mkData (NewConstrDecl _ c      ty) = DataConstr c 0 emptyPredSet [ty']
-      where ty'  = expandMonoType m tcEnv' tvs ty
-    mkData (NewRecordDecl _ c (l, ty)) = RecordConstr c 0 emptyPredSet [l] [ty']
-      where ty'  = expandMonoType m tcEnv' tvs ty
-bindKind m tcEnv' _      tcEnv (TypeDecl _ tc tvs ty) =
+    mkData (NewConstrDecl _ c      ty) = DataConstr c [ty']
+      where ty'  = expandMonoType m tcEnv' clsEnv tvs ty
+    mkData (NewRecordDecl _ c (l, ty)) = RecordConstr c [l] [ty']
+      where ty'  = expandMonoType m tcEnv' clsEnv tvs ty
+bindKind m tcEnv' clsEnv tcEnv (TypeDecl _ tc tvs ty) =
   bindTypeConstructor aliasType tc tvs Nothing ty' tcEnv
   where
     aliasType tc' k = AliasType tc' k $ length tvs
-    ty' = expandMonoType m tcEnv' tvs ty
+    ty' = expandMonoType m tcEnv' clsEnv tvs ty
 bindKind m tcEnv' clsEnv tcEnv (ClassDecl _ _ cls tv ds) =
   bindTypeClass cls (concatMap mkMethods ds) tcEnv
   where
@@ -471,25 +467,19 @@ kcDecl tcEnv (InstanceDecl p cx qcls inst ds) = do
       doc = ppDecl (InstanceDecl p cx qcls inst [])
 
 kcConstrDecl :: TCEnv -> ConstrDecl -> KCM ()
-kcConstrDecl tcEnv d@(ConstrDecl p evs cx _ tys) = do
-  tcEnv' <- foldM bindFreshKind tcEnv evs
-  kcContext tcEnv' p cx
-  mapM_ (kcValueType tcEnv' p what doc) tys
+kcConstrDecl tcEnv d@(ConstrDecl p _ tys) = do
+  mapM_ (kcValueType tcEnv p what doc) tys
     where
       what = "data constructor declaration"
       doc = ppConstr d
-kcConstrDecl tcEnv d@(ConOpDecl p evs cx ty1 _ ty2) = do
-  tcEnv' <- foldM bindFreshKind tcEnv evs
-  kcContext tcEnv' p cx
-  kcValueType tcEnv' p what doc ty1
-  kcValueType tcEnv' p what doc ty2
+kcConstrDecl tcEnv d@(ConOpDecl p ty1 _ ty2) = do
+  kcValueType tcEnv p what doc ty1
+  kcValueType tcEnv p what doc ty2
     where
       what = "data constructor declaration"
       doc = ppConstr d
-kcConstrDecl tcEnv (RecordDecl p evs cx _ fs) = do
-  tcEnv' <- foldM bindFreshKind tcEnv evs
-  kcContext tcEnv' p cx
-  mapM_ (kcFieldDecl tcEnv') fs
+kcConstrDecl tcEnv (RecordDecl _ _ fs) = do
+  mapM_ (kcFieldDecl tcEnv) fs
 
 kcFieldDecl :: TCEnv -> FieldDecl -> KCM ()
 kcFieldDecl tcEnv d@(FieldDecl p _ ty) =
@@ -588,10 +578,16 @@ kcConstraint tcEnv p sc@(Constraint _ qcls ty) = do
   where
     doc = ppConstraint sc
 
-kcTypeSig :: HasPosition p => TCEnv -> p -> QualTypeExpr -> KCM ()
-kcTypeSig tcEnv p (QualTypeExpr _ cx ty) = do
+kcTypeSig :: HasPosition p => TCEnv -> p -> TypeExpr -> KCM ()
+kcTypeSig tcEnv p (ContextType _ cx ty) = do
   tcEnv' <- foldM bindFreshKind tcEnv free
   kcContext tcEnv' p cx
+  kcValueType tcEnv' p "type signature" doc ty
+  where
+    free = filter (null . flip lookupTypeInfo tcEnv) $ nub $ fv ty
+    doc = ppTypeExpr 0 ty
+kcTypeSig tcEnv p ty = do
+  tcEnv' <- foldM bindFreshKind tcEnv free
   kcValueType tcEnv' p "type signature" doc ty
   where
     free = filter (null . flip lookupTypeInfo tcEnv) $ nub $ fv ty
@@ -635,6 +631,9 @@ kcTypeExpr tcEnv p what doc _ (ArrowType _ ty1 ty2) = do
   kcValueType tcEnv p what doc ty2
   return KindStar
 kcTypeExpr tcEnv p what doc n (ParenType _ ty) = kcTypeExpr tcEnv p what doc n ty
+kcTypeExpr tcEnv p what doc n (ContextType _ cx ty) = do
+  kcContext tcEnv p cx
+  kcTypeExpr tcEnv p what doc n ty
 kcTypeExpr tcEnv p what doc n (ForallType _ vs ty) = do
   tcEnv' <- foldM bindFreshKind tcEnv vs
   kcTypeExpr tcEnv' p what doc n ty
