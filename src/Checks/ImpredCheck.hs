@@ -8,7 +8,11 @@ Maintainer  : fte@informatik.uni-kiel.de
 Stability   : experimental
 Portability : portable
 
-Checks all data type definitions and type signatures for impredicativity.
+Checks all data type declarations, type synonyms, class declarations, instance
+declarations and type signatures for an impredicative instantiation of type
+variables. An error is generated if one is found. It also ensures that
+default-declarations contain no universally quantified type variables or
+predicates.
 -}
 
 {-# LANGUAGE CPP #-}

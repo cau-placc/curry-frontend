@@ -565,6 +565,7 @@ checkClosedType tvs ty = do
   checkClosed tvs ty'
   return ty'
 
+-- | If a type signature starts with a forall type, the type must be closed.
 checkClosedTypeSig :: [Ident] -> TypeExpr -> TSCM TypeExpr
 checkClosedTypeSig tvs ty@(ForallType _ _ _) = checkClosedType tvs ty
 checkClosedTypeSig _   ty                    = checkType ty

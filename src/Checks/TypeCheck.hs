@@ -22,6 +22,13 @@ The type checker uses the algorithm by Damas and Milner (1982) for inferring
 the types of unannotated declarations, but allows for polymorphic recursion
 when a type annotation is present.
 
+With the introduction of higher-rank types the compiler uses the type
+annotations provided by the programmer to type programs where lambda-bound
+arguments are used polymorphic. This is necessary because lambda-bound
+arguments that are used polymorphic cannot be inferred automatically without
+the help of the programmer. The idea for this approach is based on the paper
+"Practical type inference for arbitrary-rank types" by Peyton Jones et al.
+
 The result of type checking is a (flat) top-level environment containing the
 types of all constructors, variables, and functions defined at the top level of
 a module. In addition, a type annotated source module is returned. Note that

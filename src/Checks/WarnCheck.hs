@@ -61,8 +61,8 @@ import CompilerOpts
 -- Find potentially incorrect code in a Curry program and generate warnings
 -- for the following issues:
 --   - multiply imported modules, multiply imported/hidden values
---   - unreferenced variables
---   - shadowing variables
+--   - unreferenced (type) variables
+--   - shadowing (type) variables
 --   - idle case alternatives
 --   - overlapping case alternatives
 --   - non-adjacent function rules
