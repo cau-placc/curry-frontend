@@ -427,7 +427,8 @@ checkConstrainedClsVar tv (ArrowType _ ty1 ty2)
 checkConstrainedClsVar tv (ParenType _ ty)      = checkConstrainedClsVar tv ty
 checkConstrainedClsVar tv (ContextType _ cx ty)
   = (||) <$> return (tv `elem` fv cx) <*> checkConstrainedClsVar tv ty
-checkConstrainedClsVar tv (ForallType _ _ ty)   = checkConstrainedClsVar tv ty
+checkConstrainedClsVar tv (ForallType _ vs ty)
+  | not (tv `elem` vs) = checkConstrainedClsVar tv ty
 checkConstrainedClsVar _  _                     = return False
 
 checkInstanceType :: SpanInfo -> InstanceType -> TSCM ()
