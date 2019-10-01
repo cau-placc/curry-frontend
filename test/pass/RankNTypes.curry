@@ -1,5 +1,7 @@
 {-# LANGUAGE RankNTypes #-}
 
+module RankNTypes where
+
 type IdFunc = forall a. a -> a
 
 id' :: IdFunc
