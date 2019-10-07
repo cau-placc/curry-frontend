@@ -45,6 +45,8 @@ Library
     , containers
     , curry-base == 1.2.0
     , directory
+    , template-haskell >= 2.10 && < 3
+    , bytestring >= 0.10 && < 0.11
     , extra >= 1.4.6
     , filepath
     , mtl
@@ -105,6 +107,7 @@ Library
     , Env.Value
     , Exports
     , Files.CymakePath
+    , Files.Embed
     , Generators
     , Generators.GenAbstractCurry
     , Generators.GenFlatCurry
@@ -145,6 +148,8 @@ Executable curry-frontend
     , curry-base == 1.2.0
     , curry-frontend
     , directory
+    , template-haskell >= 2.10 && < 3
+    , bytestring >= 0.10 && < 0.11
     , extra >= 1.4.6
     , filepath
     , mtl
