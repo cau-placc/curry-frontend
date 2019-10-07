@@ -712,6 +712,7 @@ declVars (PatternDecl _ t _)       = case t of
   _                      -> []
 declVars _                         = internalError "TypeCheck.declVars"
 
+-- | Quantifies type variables that are greater than or equal to zero.
 typeSchemeFixed :: Type -> Type
 typeSchemeFixed ty = TypeForall (filter (>= 0) (typeVars ty)) ty
 
@@ -1471,42 +1472,41 @@ unify p what doc ps1 ty1 ps2 ty2 = do
   m <- getModuleIdent
   res <- unifyTypes m ty1' ty2'
   case res of
-    Left reason      -> report $ errTypeMismatch p what doc m ty1' ty2' reason
-    Right (_, sigma) -> modifyTypeSubst (compose sigma)
+    Left reason -> report $ errTypeMismatch p what doc m ty1' ty2' reason
+    Right sigma -> modifyTypeSubst (compose sigma)
   reducePredSet p what doc (ps1 `Set.union` ps2)
 
-unifyTypes :: ModuleIdent -> Type -> Type
-           -> TCM (Either Doc (PredSet, TypeSubst))
+unifyTypes :: ModuleIdent -> Type -> Type -> TCM (Either Doc TypeSubst)
 unifyTypes _ (TypeVariable tv1)         ty@(TypeVariable tv2)
-  | tv1 == tv2 = return $ Right (emptyPredSet, idSubst)
-  | otherwise  = return $ Right (emptyPredSet, singleSubst tv1 ty)
+  | tv1 == tv2 = return $ Right idSubst
+  | otherwise  = return $ Right (singleSubst tv1 ty)
 unifyTypes m (TypeVariable tv)          ty
   | tv `elem` typeVars ty = return $ Left (errRecursiveType m tv ty)
   | hasHigherRankPoly ty  = return $ Left (errImpredInst m tv ty)
-  | otherwise             = return $ Right (emptyPredSet, singleSubst tv ty)
+  | otherwise             = return $ Right (singleSubst tv ty)
 unifyTypes m ty                         (TypeVariable tv)
   | tv `elem` typeVars ty = return $ Left (errRecursiveType m tv ty)
   | hasHigherRankPoly ty  = return $ Left (errImpredInst m tv ty)
-  | otherwise             = return $ Right (emptyPredSet, singleSubst tv ty)
+  | otherwise             = return $ Right (singleSubst tv ty)
 unifyTypes _ (TypeConstrained tys1 tv1) ty@(TypeConstrained tys2 tv2)
-  | tv1 == tv2   = return $ Right (emptyPredSet, idSubst)
-  | tys1 == tys2 = return $ Right (emptyPredSet, singleSubst tv1 ty)
+  | tv1 == tv2   = return $ Right idSubst
+  | tys1 == tys2 = return $ Right (singleSubst tv1 ty)
 unifyTypes m (TypeConstrained tys tv)   ty
   = foldrM (\ty' s -> liftM (`choose` s) (unifyTypes m ty ty'))
            (Left (errIncompatibleTypes m ty (head tys)))
            tys
   where
-    choose (Left _)            theta' = theta'
-    choose (Right (ps, theta)) _      = Right (ps, bindSubst tv ty theta)
+    choose (Left _)      theta' = theta'
+    choose (Right theta) _      = Right (bindSubst tv ty theta)
 unifyTypes m ty                         (TypeConstrained tys tv)
   = foldrM (\ty' s -> liftM (`choose` s) (unifyTypes m ty ty'))
            (Left (errIncompatibleTypes m ty (head tys)))
            tys
   where
-    choose (Left _)            theta' = theta'
-    choose (Right (ps, theta)) _      = Right (ps, bindSubst tv ty theta)
+    choose (Left _)      theta' = theta'
+    choose (Right theta) _      = Right (bindSubst tv ty theta)
 unifyTypes _ (TypeConstructor tc1)      (TypeConstructor tc2)
-  | tc1 == tc2 = return $ Right (emptyPredSet, idSubst)
+  | tc1 == tc2 = return $ Right idSubst
 unifyTypes m (TypeApply ty11 ty12)      (TypeApply ty21 ty22)
   = unifyTypeLists m [ty11, ty12] [ty21, ty22]
 unifyTypes m ty@(TypeApply _ _)         (TypeArrow ty21 ty22)
@@ -1516,13 +1516,12 @@ unifyTypes m (TypeArrow ty11 ty12)      ty@(TypeApply _ _)
 unifyTypes m (TypeArrow ty11 ty12)      (TypeArrow ty21 ty22)
   = unifyTypeLists m [ty11, ty12] [ty21, ty22]
 unifyTypes m ty1@(TypeForall _ _)       ty2@(TypeForall _ _)
-  = do (vs1, ps1, ty1') <- skolemise ty1
-       (vs2, ps2, ty2') <- skolemise ty2
+  = do (vs1, _, ty1') <- skolemise ty1
+       (vs2, _, ty2') <- skolemise ty2
        res <- unifyTypes m ty1' ty2'
-       let ps = ps1 `Set.union` ps2
        case res of
-         Left x         -> return $ Left x
-         Right (ps', s) -> do
+         Left x  -> return $ Left x
+         Right s -> do
            let (_, tys) = unzip $ substToList $ restrictSubstTo (vs1 ++ vs2) s
            case all isVarType tys of
              True  -> do
@@ -1531,15 +1530,15 @@ unifyTypes m ty1@(TypeForall _ _)       ty2@(TypeForall _ _)
                                             $ restrictSubstTo vars s
                let tys' = map (\(TypeVariable tv) -> tv) tys
                case filter (`elem` tvs) (vs1 ++ vs2 ++ tys') of
-                 []   -> return $ Right (ps `Set.union` ps', s)
+                 []   -> return $ Right s
                  ev:_ -> return $ Left $ errEscapingTypeVariable m ev ty1 ty2
              False -> return $ Left (errIncompatibleTypes m ty1 ty2)
 unifyTypes m ty1@(TypeForall _ _)       ty2
-  = do (vs, ps1, ty1') <- skolemise ty1
+  = do (vs, _, ty1') <- skolemise ty1
        res <- unifyTypes m ty1' ty2
        case res of
-         Left x        -> return $ Left x
-         Right (ps, s) -> do
+         Left x  -> return $ Left x
+         Right s -> do
            let (_, tys) = unzip $ substToList $ restrictSubstTo vs s
            case all isVarType tys of
              True  -> do
@@ -1547,15 +1546,15 @@ unifyTypes m ty1@(TypeForall _ _)       ty2
                                             $ restrictSubstTo (typeVars ty1) s
                let tys' = map (\(TypeVariable tv) -> tv) tys
                case filter (`elem` tvs) (vs ++ tys') of
-                 []   -> return $ Right (ps1 `Set.union` ps, s)
+                 []   -> return $ Right s
                  ev:_ -> return $ Left $ errEscapingTypeVariable m ev ty1 ty2
              False -> return $ Left (errIncompatibleTypes m ty1 ty2)
 unifyTypes m ty1                        ty2@(TypeForall _ _)
-  = do (vs, ps2, ty2') <- skolemise ty2
+  = do (vs, _, ty2') <- skolemise ty2
        res <- unifyTypes m ty1 ty2'
        case res of
-         Left x        -> return $ Left x
-         Right (ps, s) -> do
+         Left x  -> return $ Left x
+         Right s -> do
            let (_, tys) = unzip $ substToList $ restrictSubstTo vs s
            case all isVarType tys of
              True  -> do
@@ -1563,24 +1562,22 @@ unifyTypes m ty1                        ty2@(TypeForall _ _)
                                             $ restrictSubstTo (typeVars ty2) s
                let tys' = map (\(TypeVariable tv) -> tv) tys
                case filter (`elem` tvs) (vs ++ tys') of
-                 []   -> return $ Right (ps2 `Set.union` ps, s)
+                 []   -> return $ Right s
                  ev:_ -> return $ Left $ errEscapingTypeVariable m ev ty1 ty2
              False -> return $ Left (errIncompatibleTypes m ty1 ty2)
 unifyTypes m ty1                        ty2
   = return $ Left (errIncompatibleTypes m ty1 ty2)
 
-unifyTypeLists :: ModuleIdent -> [Type] -> [Type]
-               -> TCM (Either Doc (PredSet, TypeSubst))
-unifyTypeLists _ []         _          = return $ Right (emptyPredSet, idSubst)
-unifyTypeLists _ _          []         = return $ Right (emptyPredSet, idSubst)
+unifyTypeLists :: ModuleIdent -> [Type] -> [Type] -> TCM (Either Doc TypeSubst)
+unifyTypeLists _ []         _          = return $ Right idSubst
+unifyTypeLists _ _          []         = return $ Right idSubst
 unifyTypeLists m (ty1:tys1) (ty2:tys2) = eitherM (return . Left)
-                                                 (uncurry unifyTypesTheta)
+                                                 (unifyTypesTheta)
                                                  (unifyTypeLists m tys1 tys2)
   where
-    unifyTypesTheta ps s
-      = eitherM (return . Left)
-                (\(ps', s') -> return $ Right (Set.union ps ps', compose s' s))
-                (unifyTypes m (subst s ty1) (subst s ty2))
+    unifyTypesTheta s = eitherM (return . Left)
+                                (\s' -> return $ Right (compose s' s))
+                                (unifyTypes m (subst s ty1) (subst s ty2))
 
 -- After performing a unification, the resulting substitution is applied to the
 -- current predicate set and the resulting predicate set is subject to a
