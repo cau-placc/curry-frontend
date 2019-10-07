@@ -23,7 +23,6 @@ import           Data.List     (nub)
 import           Data.Maybe    (fromMaybe)
 import qualified Data.Set      as Set (Set, map)
 
-import           Base.Messages (internalError)
 import           Base.Subst
 import           Base.TopEnv
 import           Base.Types
