@@ -170,6 +170,7 @@ passInfos = map mkPassTest
   , "Prelude"
   , "Pretty"
   , "RankNTypes"
+  , "RankNTypesFuncPats"
   , "RankNTypesImport"
   , "RecordsPolymorphism"
   , "RecordTest1"
