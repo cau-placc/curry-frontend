@@ -634,7 +634,7 @@ bindInstMethod m cls ty m' ps is f vEnv = bindMethod m f' a pty vEnv
 
 bindMethod :: ModuleIdent -> QualIdent -> Int -> Type -> ValueEnv
            -> ValueEnv
-bindMethod m f n pty = bindEntity m f $ Value f False n $ typeScheme pty
+bindMethod m f n pty = bindEntity m f $ Value f False n $ polyType pty
 
 -- The function 'bindEntity' introduces a binding for an entity into a top-level
 -- environment. Depending on whether the entity is defined in the current module

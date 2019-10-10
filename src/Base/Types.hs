@@ -39,7 +39,7 @@ module Base.Types
   , ClassMethod (..)
   , methodName, methodArity, methodType
     -- * Representation of quantification
-  , monoType, polyType, typeScheme, rawType, rawPredType
+  , monoType, polyType, rawType, rawPredType
     -- * Predefined types
   , arrowType, unitType, predUnitType, boolType, predBoolType, charType
   , intType, predIntType, floatType, predFloatType, stringType, predStringType
@@ -53,6 +53,8 @@ import           Curry.Base.Ident
 
 import           Base.Messages    (internalError)
 import           Env.Class        (ClassEnv, allSuperClasses)
+
+import           Data.List        (nub)
 
 -- -----------------------------------------------------------------------------
 -- Types
@@ -395,11 +397,7 @@ monoType = TypeForall []
 -- universally quantified type variables in the type are assigned indices
 -- starting with 0 and does not renumber the variables.
 polyType :: Type -> Type
-polyType = typeScheme
-
--- | Translates a type into a type scheme.
-typeScheme :: Type -> Type
-typeScheme ty = TypeForall (typeVars ty) ty
+polyType ty = TypeForall (filter (>= 0) (nub $ typeVars ty)) ty
 
 -- | Strips the quantifier and predicate set from a type scheme.
 rawType :: Type -> Type

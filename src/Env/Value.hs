@@ -205,4 +205,4 @@ bindLocalVars = flip $ foldr bindLocalVar
 
 bindLocalVar :: ValueType t => (Ident, Int, t) -> ValueEnv -> ValueEnv
 bindLocalVar (v, a, ty) =
-  bindTopEnv v $ Value (qualify v) False a $ typeScheme $ fromValueType ty
+  bindTopEnv v $ Value (qualify v) False a $ polyType $ fromValueType ty

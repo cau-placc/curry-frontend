@@ -263,9 +263,9 @@ values m (INewtypeDecl _ tc _ tvs nc hs) =
   where tc' = qualQualify m tc
         ty' = constrType tc' tvs
 values m (IFunctionDecl _ f Nothing a qty) =
-  [Value (qualQualify m f) False a (typeScheme (toQualPredType m [] qty))]
+  [Value (qualQualify m f) False a (polyType (toQualPredType m [] qty))]
 values m (IFunctionDecl _ f (Just tv) _ qty) =
-  [Value (qualQualify m f) True 0 (typeScheme (toQualPredType m [tv] qty))]
+  [Value (qualQualify m f) True 0 (polyType (toQualPredType m [tv] qty))]
 values m (IClassDecl _ _ qcls _ tv ds hs) =
   map (classMethod m qcls' tv) (filter ((`notElem` hs) . imethod) ds)
   where qcls' = qualQualify m qcls
@@ -316,7 +316,7 @@ constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)
 classMethod :: ModuleIdent -> QualIdent -> Ident -> IMethodDecl -> ValueInfo
 classMethod m qcls tv (IMethodDecl _ f _ qty) =
   Value (qualifyLike qcls f) True 0 $
-    typeScheme $ qualifyType m $ toMethodType qcls tv qty
+    polyType $ qualifyType m $ toMethodType qcls tv qty
 
 -- ---------------------------------------------------------------------------
 

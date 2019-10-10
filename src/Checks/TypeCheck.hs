@@ -404,7 +404,7 @@ bindClassMethods' m tcEnv vEnv
 
 bindClassMethod :: ModuleIdent -> ClassMethod -> ValueEnv -> ValueEnv
 bindClassMethod m (ClassMethod f _ ty) =
-  bindGlobalInfo (\qc tySc -> Value qc True 0 tySc) m f (typeScheme ty)
+  bindGlobalInfo (\qc tySc -> Value qc True 0 tySc) m f (polyType ty)
 
 -- -----------------------------------------------------------------------------
 -- Default Types
@@ -416,7 +416,7 @@ bindClassMethod m (ClassMethod f _ ty) =
 setDefaults :: Decl a -> TCM ()
 setDefaults (DefaultDecl _ tys) = mapM toDefaultType tys >>= setDefaultTypes
   where
-    toDefaultType ty = snd <$> (inst =<< typeScheme <$> expandTypeExpr ty)
+    toDefaultType ty = snd <$> (inst =<< polyType <$> expandTypeExpr ty)
 setDefaults _                   = ok
 
 -- -----------------------------------------------------------------------------
@@ -539,7 +539,7 @@ tcDeclVars (FunctionDecl _ _ f eqs) = do
   case lookupTypeSig f sigs of
     Just ty -> do
       ty' <- expandTypeExpr ty
-      return [(f, n, typeScheme ty')]
+      return [(f, n, polyType ty')]
     Nothing -> do
       tys <- replicateM (n + 1) freshTypeVar
       return [(f, n, monoType $ foldr1 TypeArrow tys)]
@@ -553,7 +553,7 @@ tcDeclVar poly v = do
   sigs <- getSigEnv
   case lookupTypeSig v sigs of
     Just ty | poly || null (fv ty) -> do ty' <- expandTypeExpr ty
-                                         return (v, 0, typeScheme ty')
+                                         return (v, 0, polyType ty')
             | otherwise            -> do report $ errPolymorphicVar v
                                          lambdaVar v
     Nothing                        -> lambdaVar v
@@ -706,15 +706,11 @@ fixType _ _ = internalError "TypeCheck.fixType"
 
 declVars :: Decl Type -> [(Ident, Int, Type)]
 declVars (FunctionDecl _ ty f eqs)
-  = [(f, eqnArity $ head eqs, typeSchemeFixed ty)]
+  = [(f, eqnArity $ head eqs, polyType ty)]
 declVars (PatternDecl _ t _)       = case t of
-  VariablePattern _ ty v -> [(v, 0, typeSchemeFixed ty)]
+  VariablePattern _ ty v -> [(v, 0, polyType ty)]
   _                      -> []
 declVars _                         = internalError "TypeCheck.declVars"
-
--- | Quantifies type variables that are greater than or equal to zero.
-typeSchemeFixed :: Type -> Type
-typeSchemeFixed ty = TypeForall (filter (>= 0) (typeVars ty)) ty
 
 -- The function 'tcCheckPDecl' checks the type of an explicitly typed function
 -- or variable declaration. After inferring a type for the declaration, the
@@ -992,7 +988,7 @@ toClassMethodTypeExpr qcls clsvar ty
 tcInstanceMethodPDecl :: QualIdent -> Type -> PDecl a -> TCM (PDecl Type)
 tcInstanceMethodPDecl qcls pty pd@(_, FunctionDecl _ _ f _) = do
   methTy <- instMethodType (qualifyLike qcls) pty f
-  (tySc, pd') <- tcMethodPDecl (typeScheme methTy) pd
+  (tySc, pd') <- tcMethodPDecl (polyType methTy) pd
   checkInstMethodType (normalize 0 methTy) tySc pd'
 tcInstanceMethodPDecl _ _ _ = internalError "TypeCheck.tcInstanceMethodPDecl"
 
@@ -1213,7 +1209,7 @@ tcExpr cm    p (Paren spi e) = do
   return (ps, ty, Paren spi e')
 tcExpr _     p (Typed spi e qty) = do
   pty <- expandTypeExpr qty
-  (ps, ty) <- inst (typeScheme pty)
+  (ps, ty) <- inst (polyType pty)
   (ps', e') <- tcExpr (Check ty) p e >>-
     unifyDecl p "explicitly typed expression" (ppExpr 0 e) emptyPredSet ty
   fvs <- computeFvEnv
