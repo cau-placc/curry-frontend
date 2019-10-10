@@ -23,7 +23,6 @@ import           Data.List     (nub)
 import           Data.Maybe    (fromMaybe)
 import qualified Data.Set      as Set (Set, map)
 
-import           Base.Messages (internalError)
 import           Base.Subst
 import           Base.TopEnv
 import           Base.Types
@@ -135,4 +134,4 @@ normalize n ty = expandAliasType [TypeVariable (occur tv) | tv <- [0..]] ty
 instanceType :: ExpandAliasType a => Type -> a -> a
 instanceType ty = expandAliasType (ty : map TypeVariable [n..])
   where
-    n = maximum (-1 : typeVars ty) + 1
+    n = maximum (1 : typeVars ty)

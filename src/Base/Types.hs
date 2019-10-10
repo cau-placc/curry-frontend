@@ -31,7 +31,7 @@ module Base.Types
   , PredSet
   , emptyPredSet, partitionPredSet, minPredSet, maxPredSet, qualifyPredSet
   , unqualifyPredSet
-  , predType, unpredType
+  , unpredType
     -- * Representation of data constructors
   , DataConstr (..)
   , constrIdent, constrTypes, recLabels, recLabelTypes, tupleData
@@ -39,10 +39,9 @@ module Base.Types
   , ClassMethod (..)
   , methodName, methodArity, methodType
     -- * Representation of quantification
-  , monoType, polyType, typeScheme, rawType, rawPredType
+  , monoType, polyType, rawType, rawPredType
     -- * Predefined types
-  , arrowType, unitType, predUnitType, boolType, predBoolType, charType
-  , intType, predIntType, floatType, predFloatType, stringType, predStringType
+  , arrowType, unitType, boolType, charType, intType, floatType, stringType
   , listType, consType, ioType, tupleType
   , numTypes, fractionalTypes, predefTypes
   ) where
@@ -53,6 +52,8 @@ import           Curry.Base.Ident
 
 import           Base.Messages    (internalError)
 import           Env.Class        (ClassEnv, allSuperClasses)
+
+import           Data.List        (nub)
 
 -- -----------------------------------------------------------------------------
 -- Types
@@ -316,11 +317,6 @@ unqualifyPredSet m = Set.map (unqualifyPred m)
 -- Predicated types
 -- -----------------------------------------------------------------------------
 
--- | Transforms a type into a predicated type with an empty predicate set.
-predType :: Type -> Type
-predType ty@(TypeContext _ _) = ty
-predType ty                   = TypeContext emptyPredSet ty
-
 -- | Removes the predicate set from a predicated type.
 unpredType :: Type -> Type
 unpredType (TypeContext _ ty) = ty
@@ -395,11 +391,7 @@ monoType = TypeForall []
 -- universally quantified type variables in the type are assigned indices
 -- starting with 0 and does not renumber the variables.
 polyType :: Type -> Type
-polyType = typeScheme
-
--- | Translates a type into a type scheme.
-typeScheme :: Type -> Type
-typeScheme ty = TypeForall (typeVars ty) ty
+polyType ty = TypeForall (filter (>= 0) (nub $ typeVars ty)) ty
 
 -- | Strips the quantifier and predicate set from a type scheme.
 rawType :: Type -> Type
@@ -427,17 +419,9 @@ arrowType ty1 ty2 = primType qArrowId [ty1, ty2]
 unitType :: Type
 unitType = primType qUnitId []
 
--- | Returns the predicated unit type.
-predUnitType :: Type
-predUnitType = predType unitType
-
 -- | Returns the bool type.
 boolType :: Type
 boolType = primType qBoolId []
-
--- | Returns the predicated bool type.
-predBoolType :: Type
-predBoolType = predType boolType
 
 -- | Returns the char type.
 charType :: Type
@@ -447,25 +431,13 @@ charType = primType qCharId []
 intType :: Type
 intType = primType qIntId []
 
--- | Returns the predicated integer type.
-predIntType :: Type
-predIntType = predType intType
-
 -- | Returns the float type.
 floatType :: Type
 floatType = primType qFloatId []
 
--- | Returns the predicated float type.
-predFloatType :: Type
-predFloatType = predType floatType
-
 -- | Returns the string type.
 stringType :: Type
 stringType = listType charType
-
--- | Returns the predicated string type.
-predStringType :: Type
-predStringType = predType stringType
 
 -- | Returns a list type with the given argument type.
 listType :: Type -> Type

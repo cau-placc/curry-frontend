@@ -269,7 +269,7 @@ augmentLhs mm lhs@(FunLhs spi f ts) = do
     augEnv <- getAugEnv
     if isAugmented augEnv (qualifyWith m $ unRenameIdentIf (isJust mm) f)
       then return $ FunLhs spi f
-                  $ ConstructorPattern NoSpanInfo predUnitType qUnitId [] : ts
+                  $ ConstructorPattern NoSpanInfo unitType qUnitId [] : ts
       else return lhs
 augmentLhs _ lhs               =
   internalError $ "Dictionary.augmentLhs" ++ show lhs
@@ -285,7 +285,7 @@ instance Augment Expression where
     augEnv <- getAugEnv
     return $ if isAugmented augEnv v'
                then apply (Variable NoSpanInfo (augmentType pty) v')
-                      [Constructor NoSpanInfo predUnitType qUnitId]
+                      [Constructor NoSpanInfo unitType qUnitId]
                else v
   augment c@(Constructor _ _ _) = return c
   augment (Typed       spi e qty) = flip (Typed spi) qty <$> augment e
@@ -414,7 +414,7 @@ defaultClassMethodDecl cls f = do
   augEnv <- getAugEnv
   let augmented = isAugmented augEnv (qualifyLike cls f)
       pats = if augmented
-               then [ConstructorPattern NoSpanInfo predUnitType qUnitId []]
+               then [ConstructorPattern NoSpanInfo unitType qUnitId []]
                else []
       ty' = if augmented then arrowBase ty else ty
   return $ funDecl NoSpanInfo pty f pats $ preludeError (instType ty') $
@@ -634,7 +634,7 @@ bindInstMethod m cls ty m' ps is f vEnv = bindMethod m f' a pty vEnv
 
 bindMethod :: ModuleIdent -> QualIdent -> Int -> Type -> ValueEnv
            -> ValueEnv
-bindMethod m f n pty = bindEntity m f $ Value f False n $ typeScheme pty
+bindMethod m f n pty = bindEntity m f $ Value f False n $ polyType pty
 
 -- The function 'bindEntity' introduces a binding for an entity into a top-level
 -- environment. Depending on whether the entity is defined in the current module

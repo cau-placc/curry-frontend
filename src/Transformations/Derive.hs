@@ -325,9 +325,9 @@ readsPrecReadParenCondExpr :: ConstrInfo -> Expression Type -> Precedence
 readsPrecReadParenCondExpr (_, c, _, tys) d p
   | null tys                        = prelFalse
   | isQInfixOp c && length tys == 2 =
-    prelLt (Literal NoSpanInfo predIntType $ Int p) d
+    prelLt (Literal NoSpanInfo intType $ Int p) d
   | otherwise                       =
-    prelLt (Literal NoSpanInfo predIntType $ Int 10) d
+    prelLt (Literal NoSpanInfo intType $ Int 10) d
 
 deriveReadsPrecLambdaExpr :: Type -> ConstrInfo -> Precedence
                       -> DVM (Expression Type)
@@ -403,7 +403,7 @@ deriveReadsPrecLexStmt :: String -> (Type, Ident)
 deriveReadsPrecLexStmt str r = do
   s <- freshArgument $ stringType
   let pat  = TuplePattern NoSpanInfo
-               [ LiteralPattern NoSpanInfo predStringType $ String str
+               [ LiteralPattern NoSpanInfo stringType $ String str
                , uncurry (VariablePattern NoSpanInfo) s
                ]
       stmt = StmtBind NoSpanInfo pat $ preludeLex $ uncurry mkVar r
@@ -458,7 +458,7 @@ showsPrecNullaryConstrExpr c = preludeShowString $ showsConstr c ""
 showsPrecShowParenExpr :: Expression Type -> Precedence
                        -> Expression Type -> Expression Type
 showsPrecShowParenExpr d p =
-  prelShowParen $ prelLt (Literal NoSpanInfo predIntType $ Int p) d
+  prelShowParen $ prelLt (Literal NoSpanInfo intType $ Int p) d
 
 showsPrecRecordConstrExpr :: Ident -> [Ident] -> [Expression Type]
                           -> Expression Type
@@ -549,10 +549,10 @@ instMethodType vEnv ps cls ty f = TypeContext (ps `Set.union` ps'') ty''
 -- -----------------------------------------------------------------------------
 
 prelTrue :: Expression Type
-prelTrue = Constructor NoSpanInfo predBoolType qTrueId
+prelTrue = Constructor NoSpanInfo boolType qTrueId
 
 prelFalse :: Expression Type
-prelFalse = Constructor NoSpanInfo predBoolType qFalseId
+prelFalse = Constructor NoSpanInfo boolType qFalseId
 
 prelAppend :: Expression Type -> Expression Type -> Expression Type
 prelAppend e1 e2 = foldl1 (Apply NoSpanInfo)
@@ -634,7 +634,7 @@ preludeReadsPrec :: Type -> Integer -> Expression Type
                  -> Expression Type
 preludeReadsPrec ty p e = flip (Apply NoSpanInfo) e $
   Apply NoSpanInfo (Variable NoSpanInfo pty qReadsPrecId) $
-  Literal NoSpanInfo predIntType $ Int p
+  Literal NoSpanInfo intType $ Int p
   where pty = foldr1 TypeArrow [ intType, stringType
                                , listType $ tupleType [ ty
                                                       , stringType
@@ -644,14 +644,14 @@ preludeReadsPrec ty p e = flip (Apply NoSpanInfo) e $
 preludeShowsPrec :: Integer -> Expression Type -> Expression Type
 preludeShowsPrec p e = flip (Apply NoSpanInfo) e $
   Apply NoSpanInfo (Variable NoSpanInfo pty qShowsPrecId) $
-  Literal NoSpanInfo predIntType $ Int p
+  Literal NoSpanInfo intType $ Int p
   where pty = foldr1 TypeArrow [ intType, typeOf e
                                , stringType, stringType
                                ]
 
 preludeShowString :: String -> Expression Type
 preludeShowString s = Apply NoSpanInfo (Variable NoSpanInfo pty qShowStringId) $
-  Literal NoSpanInfo predStringType $ String s
+  Literal NoSpanInfo stringType $ String s
   where pty = foldr1 TypeArrow $ replicate 3 stringType
 
 preludeFailed :: Type -> Expression Type
