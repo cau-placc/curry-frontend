@@ -840,7 +840,7 @@ dsStmt (StmtBind _ t e1) e' = do
   return $ apply (prelBind (typeOf e1) (typeOf t) (typeOf e')) [e1, func]
   where failedPatternMatch ty =
           apply (prelFail ty)
-            [Literal NoSpanInfo predStringType $ String "Pattern match failed!"]
+            [Literal NoSpanInfo stringType $ String "Pattern match failed!"]
 dsStmt (StmtDecl   _ ds) e' = return $ Let NoSpanInfo ds e'
 
 -- -----------------------------------------------------------------------------
@@ -932,13 +932,13 @@ dsLiteral pty (Int i) = Right $ fixLiteral (unpredType pty)
           | ty == intType = Literal NoSpanInfo pty $ Int i
           | ty == floatType = Literal NoSpanInfo pty $ Float $ fromInteger i
           | otherwise = Apply NoSpanInfo (prelFromInt $ unpredType pty) $
-                          Literal NoSpanInfo predIntType $ Int i
+                          Literal NoSpanInfo intType $ Int i
 dsLiteral pty f@(Float _) = Right $ fixLiteral (unpredType pty)
   where fixLiteral (TypeConstrained tys _) = fixLiteral (head tys)
         fixLiteral ty
           | ty == floatType = Literal NoSpanInfo pty f
           | otherwise = Apply NoSpanInfo (prelFromFloat $ unpredType pty) $
-                          Literal NoSpanInfo predFloatType f
+                          Literal NoSpanInfo floatType f
 dsLiteral pty (String cs) =
   Left $ List NoSpanInfo pty $ map (Literal NoSpanInfo pty' . Char) cs
   where pty' = elemType $ unpredType pty
@@ -1024,10 +1024,10 @@ e1 &> e2 = apply (preludeFun [boolType, typeOf e2] (typeOf e2) "cond") [e1, e2]
 e1 & e2 = apply (preludeFun [boolType, boolType] boolType "&") [e1, e2]
 
 truePat :: Pattern Type
-truePat = ConstructorPattern NoSpanInfo predBoolType qTrueId []
+truePat = ConstructorPattern NoSpanInfo boolType qTrueId []
 
 falsePat :: Pattern Type
-falsePat = ConstructorPattern NoSpanInfo predBoolType qFalseId []
+falsePat = ConstructorPattern NoSpanInfo boolType qFalseId []
 
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions

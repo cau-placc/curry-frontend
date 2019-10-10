@@ -1038,7 +1038,7 @@ instMethodType qual (TypeContext ps ty) f = do
   let TypeForall _ (TypeContext ps' _) = tySc
       TypeContext ps'' ty'' = instanceType ty (TypeContext (Set.deleteMin ps') (rawType tySc))
   return $ TypeContext (ps `Set.union` ps'') ty''
-instMethodType qual ty f = instMethodType qual (predType ty) f
+instMethodType qual ty f = instMethodType qual (TypeContext emptyPredSet ty) f
 
 -- External functions:
 

@@ -165,9 +165,8 @@ tupleDCs :: [ValueInfo]
 tupleDCs = map dataInfo tupleData
   where dataInfo (DataConstr _ tys) =
           let n = length tys
-              TypeContext ps ty = predType $ foldr TypeArrow (tupleType tys) tys
-          in  DataConstructor (qTupleId n) n (replicate n anonId) $
-                TypeForall [0..n-1] (TypeContext ps ty)
+           in DataConstructor (qTupleId n) n (replicate n anonId) $
+                TypeForall [0..n-1] (foldr TypeArrow (tupleType tys) tys)
         dataInfo (RecordConstr _ _ _) =
           internalError $ "Env.Value.tupleDCs: " ++ show tupleDCs
 
@@ -198,7 +197,7 @@ class ValueType t where
 instance ValueType Type where
   toValueType = id
   fromValueType ty@(TypeContext _ _) = ty
-  fromValueType ty = predType ty
+  fromValueType ty = ty
 
 bindLocalVars :: ValueType t => [(Ident, Int, t)] -> ValueEnv -> ValueEnv
 bindLocalVars = flip $ foldr bindLocalVar
