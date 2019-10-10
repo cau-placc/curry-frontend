@@ -146,6 +146,7 @@ passInfos = map mkPassTest
   , "AnonymVar"
   , "CaseComplete"
   , "ChurchEncoding"
+  , "ClassMethods"
   , "DefaultPrecedence"
   , "Dequeue"
   , "ExplicitLayout"
