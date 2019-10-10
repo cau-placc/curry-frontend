@@ -130,9 +130,9 @@ Library
     , Transformations.Qual
     , Transformations.Simplify
   other-modules:
-    Paths_curry_frontend
+      Paths_curry_frontend
   autogen-modules:
-    Paths_curry_frontend
+      Paths_curry_frontend
 
 Executable curry-frontend
   hs-source-dirs:   src
@@ -156,7 +156,84 @@ Executable curry-frontend
     , network-uri >= 2.6
     , pretty
     , curry-base == 1.2.0
-    , curry-frontend
+  other-modules:
+      Base.AnnotExpr
+    , Base.CurryKinds
+    , Base.CurryTypes
+    , Base.Expr
+    , Base.KindSubst
+    , Base.Kinds
+    , Base.Messages
+    , Base.NestEnv
+    , Base.PrettyKinds
+    , Base.PrettyTypes
+    , Base.SCC
+    , Base.Subst
+    , Base.TopEnv
+    , Base.TypeExpansion
+    , Base.TypeSubst
+    , Base.Types
+    , Base.Typing
+    , Base.Utils
+    , Checks
+    , Checks.DeriveCheck
+    , Checks.ExportCheck
+    , Checks.ExtensionCheck
+    , Checks.ImportSyntaxCheck
+    , Checks.ImpredCheck
+    , Checks.InstanceCheck
+    , Checks.InterfaceCheck
+    , Checks.InterfaceSyntaxCheck
+    , Checks.KindCheck
+    , Checks.PrecCheck
+    , Checks.SyntaxCheck
+    , Checks.TypeCheck
+    , Checks.TypeSyntaxCheck
+    , Checks.WarnCheck
+    , CompilerEnv
+    , CompilerOpts
+    , CondCompile
+    , CurryBuilder
+    , CurryDeps
+    , Env.Class
+    , Env.Instance
+    , Env.Interface
+    , Env.ModuleAlias
+    , Env.OpPrec
+    , Env.Type
+    , Env.TypeConstructor
+    , Env.Value
+    , Exports
+    , Files.CymakePath
+    , Generators
+    , Generators.GenAbstractCurry
+    , Generators.GenFlatCurry
+    , Generators.GenTypedFlatCurry
+    , Generators.GenTypeAnnotatedFlatCurry
+    , Html.CurryHtml
+    , Html.SyntaxColoring
+    , IL
+    , IL.Pretty
+    , IL.ShowModule
+    , IL.Type
+    , IL.Typing
+    , Imports
+    , Interfaces
+    , Modules
+    , TokenStream
+    , Transformations
+    , Transformations.CaseCompletion
+    , Transformations.CurryToIL
+    , Transformations.Derive
+    , Transformations.Desugar
+    , Transformations.Dictionary
+    , Transformations.Lift
+    , Transformations.Newtypes
+    , Transformations.Qual
+    , Transformations.Simplify
+    , Paths_curry_frontend
+  autogen-modules:
+      Paths_curry_frontend
 
 Test-Suite test-frontend
   type:             detailed-0.9
