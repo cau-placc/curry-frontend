@@ -55,7 +55,7 @@ import Env.Interface
 import qualified Curry.AbstractCurry as AC
 import qualified Curry.FlatCurry     as FC
 import qualified Curry.Syntax        as CS
-import qualified IL                  as IL
+import qualified IL
 
 import Checks
 import CompilerEnv
@@ -127,11 +127,12 @@ loadModule opts m fn = do
   -- load the imported interfaces into an InterfaceEnv
   let paths = map (addCurrySubdir (optUseSubdir opts))
                   ("." : optImportPaths opts)
-  iEnv   <- loadInterfaces paths mdl
+  let withPrel = importPrelude opts mdl
+  iEnv   <- loadInterfaces paths withPrel
   checkInterfaces opts iEnv
-  is     <- importSyntaxCheck iEnv mdl
+  is     <- importSyntaxCheck iEnv withPrel
   -- add information of imported modules
-  cEnv   <- importModules mdl iEnv is
+  cEnv   <- importModules withPrel iEnv is
   return (cEnv { filePath = fn, tokens = toks }, mdl)
 
 parseModule :: Options -> ModuleIdent -> FilePath
@@ -150,7 +151,7 @@ parseModule opts m fn = do
       -- they will be issued a second time during parsing.
       spanToks <- liftCYM $ silent $ CS.lexSource fn condC
       ast      <- liftCYM $ CS.parseModule fn condC
-      checked  <- checkModuleHeader opts m fn ast
+      checked  <- checkModuleHeader m fn ast
       return (spanToks, checked)
 
 preprocess :: PrepOpts -> FilePath -> String -> CYIO String
@@ -179,11 +180,10 @@ withTempFile act = do
   removeFile fn
   return res
 
-checkModuleHeader :: Monad m => Options -> ModuleIdent -> FilePath
+checkModuleHeader :: Monad m => ModuleIdent -> FilePath
                   -> CS.Module () -> CYT m (CS.Module ())
-checkModuleHeader opts m fn = checkModuleId m
-                            . importPrelude opts
-                            . CS.patchModuleId fn
+checkModuleHeader m fn = checkModuleId m
+                       . CS.patchModuleId fn
 
 -- |Check whether the 'ModuleIdent' and the 'FilePath' fit together
 checkModuleId :: Monad m => ModuleIdent -> CS.Module () -> CYT m (CS.Module ())
@@ -191,10 +191,11 @@ checkModuleId mid m@(CS.Module _ _ mid' _ _ _)
   | mid == mid' = ok m
   | otherwise   = failMessages [errModuleFileMismatch mid']
 
--- An implicit import of the prelude is added to the declarations of
--- every module, except for the prelude itself, or when the import is disabled
--- by a compiler option. If no explicit import for the prelude is present,
--- the prelude is imported unqualified, otherwise a qualified import is added.
+-- An implicit import of the prelude is temporariliy added to the declarations
+-- of every module, except for the prelude itself, or when the import is
+-- disabled by a compiler option. If no explicit import for the prelude is
+-- present, the prelude is imported unqualified,
+-- otherwise a qualified import is added.
 
 importPrelude :: Options -> CS.Module () -> CS.Module ()
 importPrelude opts m@(CS.Module spi ps mid es is ds)
@@ -369,7 +370,7 @@ writeFlatIntf opts env prog
       mfint <- liftIO $ FC.readFlatInterface targetFile
       let oldInterface = fromMaybe emptyIntf mfint
       when (mfint == mfint) $ return () -- necessary to close file -- TODO
-      unless (oldInterface `eqInterface` fint) $ outputInterface
+      unless (oldInterface `eqInterface` fint) outputInterface
   where
   targetFile      = flatIntName (filePath env)
   emptyIntf       = FC.Prog "" [] [] [] []
