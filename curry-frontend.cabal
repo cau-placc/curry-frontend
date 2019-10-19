@@ -49,6 +49,7 @@ Library
     , file-embed
     , containers
     , set-extra
+    , binary
     , bytestring >= 0.10
     , process
     , network-uri >= 2.6
@@ -151,6 +152,7 @@ Executable curry-frontend
     , file-embed
     , containers
     , set-extra
+    , binary
     , bytestring >= 0.10
     , process
     , network-uri >= 2.6

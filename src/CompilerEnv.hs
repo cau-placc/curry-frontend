@@ -82,7 +82,7 @@ showCompilerEnv env allBinds simpleEnv = show $ vcat
   , header "Values             " $ ppAL simpleEnv $ bindings $ valueEnv  env
   ]
   where
-  header hdr content = hang (text hdr <+> colon) 4 content
+  header hdr = hang (text hdr <+> colon) 4
   bindings = if allBinds then allBindings else allLocalBindings
 
 -- |Pretty print a 'Map'
@@ -114,4 +114,3 @@ ppALPretty xs = vcat
   where showXs   = map (\(a,b) -> (render (pPrint a), render (pPrint b))) xs
         keyWidth = maximum (0 : map (length .fst) showXs)
         pad s n  = take n (s ++ repeat ' ')
-

@@ -23,10 +23,11 @@ module Modules
   ) where
 
 import qualified Control.Exception as C   (catch, IOException)
-import           Control.Monad            (liftM, unless, when)
+import           Control.Monad            (liftM, unless, when, void)
 import           Data.Char                (toUpper)
 import qualified Data.Map          as Map (elems, lookup)
 import           Data.Maybe               (fromMaybe)
+import           Data.Binary              (encode)
 import           System.Directory         (getTemporaryDirectory, removeFile)
 import           System.Exit              (ExitCode (..))
 import           System.FilePath          (normalise)
@@ -93,7 +94,7 @@ compileModule opts m fn = do
   writeParsed   opts mdl
   let qmdl = qual mdl
   writeHtml     opts qmdl
-  let umdl = (fst qmdl, fmap (const ()) (snd qmdl))
+  let umdl = (fst qmdl, void (snd qmdl))
   writeAST      opts umdl
   writeShortAST opts umdl
   mdl' <- expandExports opts mdl
@@ -150,6 +151,8 @@ parseModule opts m fn = do
       -- We ignore the warnings issued by the lexer because
       -- they will be issued a second time during parsing.
       spanToks <- liftCYM $ silent $ CS.lexSource fn condC
+      doDump ((optDebugOpts opts) { dbDumpEnv = False })
+             (DumpLexed, undefined, show $ map snd spanToks)
       ast      <- liftCYM $ CS.parseModule fn condC
       checked  <- checkModuleHeader m fn ast
       return (spanToks, checked)
@@ -348,13 +351,17 @@ matchInterface ifn i = do
 writeFlat :: Options -> CompilerEnv -> CS.Module Type -> IL.Module -> CYIO ()
 writeFlat opts env mdl il = do
   (_, tfc) <- dumpWith opts show (FC.ppProg . genFlatCurry) DumpTypedFlatCurry (env, tfcyProg)
-  when tfcyTarget  $ liftIO $ FC.writeFlatCurry (useSubDir tfcyName) tafcyProg
-  when tafcyTarget $ liftIO $ FC.writeFlatCurry (useSubDir tafcyName) tfc
+  when tfcyTarget  $ liftIO $ fcWriter (useSubDir tfcyName) tafcyProg
+  when tafcyTarget $ liftIO $ fcWriter (useSubDir tafcyName) tfc
   when fcyTarget $ do
     (_, fc) <- dumpWith opts show FC.ppProg DumpFlatCurry (env, fcyProg)
-    liftIO $ FC.writeFlatCurry (useSubDir fcyName) fc
+    liftIO $ fcWriter (useSubDir fcyName) fc
   writeFlatIntf opts env fcyProg
   where
+  fcWriter dir c =
+    if optBinary opts
+      then FC.writeFlatCurry dir c >> FC.writeBinaryFlatCurry dir c
+      else FC.writeFlatCurry dir c
   tfcyName    = typedFlatName (filePath env)
   tfcyProg    = genTypedFlatCurry env mdl il
   tfcyTarget  = TypedFlatCurry `elem` optTargetTypes opts
@@ -398,17 +405,27 @@ writeAbstractCurry opts (env, mdl) = do
 
 writeAST :: Options -> CompEnv (CS.Module ()) -> CYIO ()
 writeAST opts (env, mdl) = when astTarget $ liftIO $
-  writeModule (useSubDir $ astName (filePath env)) (CS.showModule mdl)
+  astWriter (useSubDir $ astName path) mdl
   where
+  astWriter dir c =
+    if optBinary opts
+      then writeModule dir (CS.showModule c) >> writeBinaryModule dir (encode c)
+      else writeModule dir (CS.showModule c)
+  path       = filePath env
   astTarget  = AST `elem` optTargetTypes opts
   useSubDir  = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
 
 
 writeShortAST :: Options -> CompEnv (CS.Module ()) -> CYIO ()
 writeShortAST opts (env, mdl) = when astTarget $ liftIO $
-  writeModule (useSubDir $ shortASTName (filePath env))
-              (CS.showModule $ shortenModuleAST mdl)
+  astWriter (useSubDir $ astName path) shortMdl
   where
+  astWriter dir c =
+    if optBinary opts
+      then writeModule dir (CS.showModule c) >> writeBinaryModule dir (encode c)
+      else writeModule dir (CS.showModule c)
+  shortMdl   = shortenModuleAST mdl
+  path       = filePath env
   astTarget  = ShortAST `elem` optTargetTypes opts
   useSubDir  = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
 
@@ -433,9 +450,10 @@ doDump opts (level, env, dump)
       when (dbDumpEnv opts) $ do
         putStrLn (heading "Environment" '-')
         putStrLn (showCompilerEnv env (dbDumpAllBindings opts) (dbDumpSimple opts))
-      putStrLn (heading "Source Code" '-')
+      putStrLn (heading headingStr '-')
       putStrLn dump
   where
+  headingStr = if level == DumpLexed then "Token List" else "Source Code"
   heading h s = '\n' : h ++ '\n' : replicate (length h) s
   lookupHeader []            = "Unknown dump level " ++ show level
   lookupHeader ((l,_,h):lhs)

@@ -58,11 +58,12 @@ data Options = Options
   , optPrepOpts      :: PrepOpts            -- ^ preprocessor options
   , optWarnOpts      :: WarnOpts            -- ^ warning options
   , optTargetTypes   :: [TargetType]        -- ^ what to generate
+  , optBinary        :: Bool                -- ^ also use binary target format
   , optExtensions    :: [KnownExtension]    -- ^ enabled language extensions
   , optDebugOpts     :: DebugOpts           -- ^ debug options
   , optCaseMode      :: CaseMode            -- ^ case mode
   , optCppOpts       :: CppOpts             -- ^ C preprocessor options
-  , optOptimizations :: OptimizationOpts -- ^ Optimization options
+  , optOptimizations :: OptimizationOpts    -- ^ Optimization options
   } deriving Show
 
 -- |C preprocessor options
@@ -121,6 +122,7 @@ defaultOptions = Options
   , optPrepOpts      = defaultPrepOpts
   , optWarnOpts      = defaultWarnOpts
   , optTargetTypes   = []
+  , optBinary        = False
   , optExtensions    = []
   , optDebugOpts     = defaultDebugOpts
   , optCaseMode      = CaseModeFree
@@ -189,17 +191,17 @@ verbosities = [ ( VerbQuiet , "0", "quiet" )
 
 -- |Type of the target file
 data TargetType
-  = Tokens               -- ^ Source code tokens
-  | Comments             -- ^ Source code comments
-  | Parsed               -- ^ Parsed source code
-  | FlatCurry            -- ^ FlatCurry
-  | TypedFlatCurry       -- ^ Typed FlatCurry
+  = Tokens                 -- ^ Source code tokens
+  | Comments               -- ^ Source code comments
+  | Parsed                 -- ^ Parsed source code
+  | FlatCurry              -- ^ FlatCurry
+  | TypedFlatCurry         -- ^ Typed FlatCurry
   | TypeAnnotatedFlatCurry -- ^ Type-annotated FlatCurry
   | AbstractCurry          -- ^ AbstractCurry
   | UntypedAbstractCurry   -- ^ Untyped AbstractCurry
   | Html                   -- ^ HTML documentation
-  | AST                  -- ^ Abstract-Syntax-Tree after checks
-  | ShortAST             -- ^ Abstract-Syntax-Tree with shortened decls
+  | AST                    -- ^ Abstract-Syntax-Tree after checks
+  | ShortAST               -- ^ Abstract-Syntax-Tree with shortened decls
     deriving (Eq, Show)
 
 -- |Warnings flags
@@ -259,6 +261,7 @@ warnFlags =
 -- |Dump level
 data DumpLevel
   = DumpCondCompiled      -- ^ dump source code after conditional compiling
+  | DumpLexed             -- ^ dump token  list after lexing
   | DumpParsed            -- ^ dump source code after parsing
   | DumpExtensionChecked  -- ^ dump source code after extension checking
   | DumpTypeSyntaxChecked -- ^ dump source code after type syntax checking
@@ -286,6 +289,7 @@ data DumpLevel
 -- |Description and flag of dump levels
 dumpLevel :: [(DumpLevel, String, String)]
 dumpLevel = [ (DumpCondCompiled     , "dump-cond" , "conditional compiling"           )
+            , (DumpLexed            , "dump-lex"  , "lexing"                          )
             , (DumpParsed           , "dump-parse", "parsing"                         )
             , (DumpExtensionChecked , "dump-exc"  , "extension checking"              )
             , (DumpTypeSyntaxChecked, "dump-tsc"  , "type syntax checking"            )
@@ -471,6 +475,9 @@ options =
       "generate abstract syntax tree"
   , targetOption ShortAST               "short-ast"
       "generate shortened abstract syntax tree for documentation"
+  , Option "b" ["binary"]
+      (NoArg (onOpts $ \ opts -> opts { optBinary = True }))
+      "also generate binary output format for supported targets"
   , Option "F"  []
       (NoArg (onPrepOpts $ \ opts -> opts { ppPreprocess = True }))
       "use custom preprocessor"
@@ -506,7 +513,7 @@ parseCppDefinition arg optErr
   = onCppOpts (addCppDefinition s v) optErr
   | otherwise
   = addErr (cppDefinitionErr arg) optErr
-  where (s, v) = fmap (drop 1) $ break ('=' ==) arg
+  where (s, v) = drop 1 <$> break ('=' ==) arg
 
 addCppDefinition :: String -> String -> CppOpts -> CppOpts
 addCppDefinition s v opts =
