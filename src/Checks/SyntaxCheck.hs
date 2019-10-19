@@ -1097,7 +1097,7 @@ checkFieldLabel l = do
     [RecordLabel _ cs] -> processLabel cs
     rs                 -> case qualLookupVar (qualQualify m l) env of
       [RecordLabel _ cs] -> processLabel cs
-      rs'                -> if (null rs && null rs')
+      rs'                -> if null rs && null rs'
                                then do report $ errUndefinedLabel l
                                        return []
                                else do report $

@@ -208,8 +208,8 @@ checkTypeAll tc = do
 
 checkModule :: ModuleIdent -> ECM ()
 checkModule em = do
-  isLocal   <- (em ==)         <$> getModuleIdent
-  isForeign <- (Set.member em) <$> getImportedModules
+  isLocal   <- (==)       em <$> getModuleIdent
+  isForeign <- Set.member em <$> getImportedModules
   unless (isLocal || isForeign) $ report $ errModuleNotImported em
 
 -- Check whether two entities of the same kind (type or constructor/function)
@@ -242,7 +242,7 @@ checkNonUniqueness es = map errMultipleType (findMultiples types )
 expand :: ModuleIdent -> AliasEnv -> TCEnv -> ValueEnv -> Maybe ExportSpec
        -> [Export]
 expand m aEnv tcEnv tyEnv spec
-  = fst $ runECM ((joinExports . canonExports tcEnv) <$> expandSpec spec)
+  = fst $ runECM (joinExports . canonExports tcEnv <$> expandSpec spec)
                  m aEnv tcEnv tyEnv
 
 -- While checking all export specifications, the compiler expands
@@ -314,8 +314,8 @@ expandTypeAll tc = do
 
 expandModule :: ModuleIdent -> ECM [Export]
 expandModule em = do
-  isLocal   <- (em ==)         <$> getModuleIdent
-  isForeign <- (Set.member em) <$> getImportedModules
+  isLocal   <- (==)       em <$> getModuleIdent
+  isForeign <- Set.member em <$> getImportedModules
   locals    <- if isLocal   then expandLocalModule       else return []
   foreigns  <- if isForeign then expandImportedModule em else return []
   return $ locals ++ foreigns
@@ -381,7 +381,7 @@ canonLabels tcEnv es = foldr bindLabels Map.empty (allEntities tcEnv)
   tcs = [tc | ExportTypeWith _ tc _ <- es]
   bindLabels t ls
     | tc' `elem` tcs = foldr (bindLabel tc') ls (elements t)
-    | otherwise     = ls
+    | otherwise      = ls
       where
         tc'            = origName t
         bindLabel tc x =
@@ -424,7 +424,7 @@ elements (TypeVar            _) =
 
 -- get visible constructor and label identifiers for given constructor
 visibleElems :: [DataConstr] -> [Ident]
-visibleElems cs = map constrIdent cs ++ (nub (concatMap recLabels cs))
+visibleElems cs = map constrIdent cs ++ nub (concatMap recLabels cs)
 
 -- get class method names
 visibleMethods :: [ClassMethod] -> [Ident]
@@ -469,10 +469,10 @@ errNonDataTypeOrTypeClass tc = posMessage tc $ hsep $ map text
   [escQualName tc, "is not a data type or type class"]
 
 errOutsideTypeConstructor :: QualIdent -> QualIdent -> Message
-errOutsideTypeConstructor c tc = errOutsideTypeExport "Data constructor" c tc
+errOutsideTypeConstructor = errOutsideTypeExport "Data constructor"
 
 errOutsideTypeLabel :: QualIdent -> QualIdent -> Message
-errOutsideTypeLabel l tc = errOutsideTypeExport "Label" l tc
+errOutsideTypeLabel = errOutsideTypeExport "Label"
 
 errOutsideTypeExport :: String -> QualIdent -> QualIdent -> Message
 errOutsideTypeExport what q tc = posMessage q

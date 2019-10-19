@@ -148,7 +148,7 @@ getNextId = do
 -- Create a fresh variable ident for a given prefix with a monomorphic type
 freshVar :: Typeable t => String -> t -> DsM (Type, Ident)
 freshVar prefix t = do
-  v <- (mkIdent . (prefix ++) . show) <$> getNextId
+  v <- mkIdent . (prefix ++) . show <$> getNextId
   return (typeOf t, v)
 
 -- ---------------------------------------------------------------------------
@@ -308,7 +308,7 @@ dsRhs f rhs =   expandRhs (prelFailed (typeOf rhs)) f rhs
 expandRhs :: Expression Type -> (Expression Type -> Expression Type)
           -> Rhs Type -> DsM (Expression Type)
 expandRhs _  f (SimpleRhs _ e ds) = return $ Let NoSpanInfo ds (f e)
-expandRhs e0 f (GuardedRhs _ es ds) = (Let NoSpanInfo ds . f)
+expandRhs e0 f (GuardedRhs _ es ds) = Let NoSpanInfo ds . f
                                    <$> expandGuards e0 es
 
 expandGuards :: Expression Type -> [CondExpr Type]
@@ -497,7 +497,7 @@ genFPExpr p vs bs
                        in  (t' =:<= mkVar pty v) : es
   cs   = concatMap mkLB bs
   free = nub $ filter (not . isAnonId . fst3) $
-                 concatMap patternVars (map fst bs) \\ vs
+                 concatMap (patternVars . fst) bs \\ vs
 
 fp2Expr :: Pattern Type -> (Expression Type, [Expression Type])
 fp2Expr (LiteralPattern          _ pty l) = (Literal NoSpanInfo  pty l, [])
@@ -506,7 +506,7 @@ fp2Expr (NegativePattern         _ pty l) =
 fp2Expr (VariablePattern         _ pty v) = (mkVar pty v, [])
 fp2Expr (ConstructorPattern  _  pty c ts) =
   let (ts', ess) = unzip $ map fp2Expr ts
-      pty' = foldr TypeArrow (unpredType pty) $ map typeOf ts
+      pty' = foldr (TypeArrow . typeOf) (unpredType pty) ts
   in  (apply (Constructor NoSpanInfo pty' c) ts', concat ess)
 fp2Expr (InfixPattern   _ pty t1 op t2) =
   let (t1', es1) = fp2Expr t1
@@ -522,12 +522,12 @@ fp2Expr (ListPattern            _ pty ts) =
   in  (List NoSpanInfo pty ts', concat ess)
 fp2Expr (FunctionPattern      _ pty f ts) =
   let (ts', ess) = unzip $ map fp2Expr ts
-      pty' = foldr TypeArrow (unpredType pty) $ map typeOf ts
+      pty' = foldr (TypeArrow . typeOf) (unpredType pty) ts
   in  (apply (Variable NoSpanInfo pty' f) ts', concat ess)
 fp2Expr (InfixFuncPattern _ pty t1 op t2) =
   let (t1', es1) = fp2Expr t1
       (t2', es2) = fp2Expr t2
-      pty' = foldr TypeArrow (unpredType pty) $ map typeOf [t1, t2]
+      pty' = foldr (TypeArrow . typeOf) (unpredType pty) [t1, t2]
   in  (InfixApply NoSpanInfo t1' (InfixOp pty' op) t2', es1 ++ es2)
 fp2Expr (AsPattern                 _ v t) =
   let (t', es) = fp2Expr t
@@ -668,7 +668,7 @@ dsExpr p (Record   _ pty c fs) = do
   let (ls, tys) = argumentTypes (unpredType pty) c vEnv
       esMap = map field2Tuple fs
       unknownEs = map prelUnknown tys
-      maybeEs = map (flip lookup esMap) ls
+      maybeEs = map (`lookup` esMap) ls
       es = zipWith fromMaybe unknownEs maybeEs
   dsExpr p (applyConstr pty c tys es)
 dsExpr p (RecordUpdate _ e fs) = do
@@ -677,7 +677,7 @@ dsExpr p (RecordUpdate _ e fs) = do
   where ty = typeOf e
         tc = rootOfType (arrowBase ty)
         updateAlt (RecordConstr c ls _)
-          | all (`elem` qls2) (map fieldLabel fs)= do
+          | all (`elem` qls2) (map fieldLabel fs) = do
             let qc = qualifyLike tc c
             vEnv <- getValueEnv
             let (qls, tys) = argumentTypes ty qc vEnv
@@ -685,7 +685,7 @@ dsExpr p (RecordUpdate _ e fs) = do
             let pat = constrPattern ty qc vs
                 esMap = map field2Tuple fs
                 originalEs = map (uncurry mkVar) vs
-                maybeEs = map (flip lookup esMap) qls
+                maybeEs = map (`lookup` esMap) qls
                 es = zipWith fromMaybe originalEs maybeEs
             return [(pat, applyConstr ty qc tys es)]
           where qls2 = map (qualifyLike tc) ls
@@ -697,7 +697,7 @@ dsExpr p (Tuple      _ es) =
         tys = map typeOf es
 dsExpr p (List   _ pty es) = dsList cons nil <$> mapM (dsExpr p) es
   where nil = Constructor NoSpanInfo pty qNilId
-        cons = (Apply NoSpanInfo) . (Apply NoSpanInfo)
+        cons = Apply NoSpanInfo . Apply NoSpanInfo
           (Constructor NoSpanInfo
             (consType $ elemType $ unpredType pty) qConsId)
 dsExpr p (ListCompr          _ e qs) = dsListComp p e qs
@@ -946,7 +946,7 @@ dsQual p (StmtBind _ t l) e
   append e1                  l1 =
     apply (prelAppend (elemType $ typeOf e1)) [e1, l1]
   prelCons ty                   =
-      Constructor NoSpanInfo (consType ty) $ qConsId
+      Constructor NoSpanInfo (consType ty) qConsId
 
 -- -----------------------------------------------------------------------------
 -- Desugaring of Lists, labels, fields, and literals

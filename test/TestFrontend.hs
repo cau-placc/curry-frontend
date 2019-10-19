@@ -22,13 +22,13 @@
 {-# LANGUAGE CPP #-}
 module TestFrontend (tests) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative    ((<$>))
-#endif
+import           Prelude                hiding (fail)
 import qualified Control.Exception as E (SomeException, catch)
 
 import           Data.List              (isInfixOf, sort)
-import           Distribution.TestSuite
+import           Distribution.TestSuite ( Test (..), TestInstance (..)
+                                        , Progress (..), Result (..)
+                                        , OptionDescr)
 import           System.FilePath        (FilePath, (</>), (<.>))
 
 import           Curry.Base.Message     (Message, message, ppMessages, ppError)
@@ -36,7 +36,7 @@ import           Curry.Base.Monad       (CYIO, runCYIO)
 import           Curry.Base.Pretty      (text)
 import qualified CompilerOpts as CO     ( Options (..), WarnOpts (..)
                                         , WarnFlag (..), Verbosity (VerbQuiet)
-                                        , defaultOptions, defaultWarnOpts)
+                                        , defaultOptions)
 import CurryBuilder                     (buildCurry)
 
 tests :: IO [Test]
@@ -135,7 +135,7 @@ type SetOption = String -> String -> Either String TestInstance
 
 -- generate a simple passing test
 mkPassTest :: String -> TestInfo
-mkPassTest name = (name, [], [], Nothing, [])
+mkPassTest = flip mkFailTest []
 
 -- To add a passing test to the test suite simply add the module name of the
 -- test code to the following list
@@ -198,7 +198,7 @@ passInfos = map mkPassTest
 
 -- generate a simple failing test
 mkFailTest :: String -> [String] -> TestInfo
-mkFailTest name errorMsgs = (name, [], [], Nothing, errorMsgs)
+mkFailTest n errorMsgs = (n, [], [], Nothing, errorMsgs)
 
 -- To add a failing test to the test suite simply add the module name of the
 -- test code and the expected error message(s) to the following list
