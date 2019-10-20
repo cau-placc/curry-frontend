@@ -41,7 +41,7 @@ import Curry.Base.Ident
 import Curry.Base.Pretty (Doc, list, parens)
 import Curry.Base.SpanInfo
 import qualified Curry.Syntax as CS
-import Curry.Syntax.Pretty (ppConstraint, ppTypeExpr)
+import Curry.Syntax.Pretty (pPrint, pPrintPrec)
 
 import Base.Expr
 import Base.Messages (internalError)
@@ -215,13 +215,13 @@ fromQualPredType m tvs = fromPredType tvs . unqualifyType m
 -- The following functions implement pretty-printing for types.
 
 ppType :: ModuleIdent -> Type -> Doc
-ppType m = ppTypeExpr 0 . fromQualType m identSupply
+ppType m = pPrintPrec 0 . fromQualType m identSupply
 
 ppPred :: ModuleIdent -> Pred -> Doc
-ppPred m = ppConstraint . fromQualPred m identSupply
+ppPred m = pPrint . fromQualPred m identSupply
 
 ppPredSet :: ModuleIdent -> PredSet -> Doc
 ppPredSet m = parens . list . map (ppPred m) . Set.toList
 
 ppPredType :: ModuleIdent -> Type -> Doc
-ppPredType m = ppTypeExpr 0 . fromQualPredType m identSupply
+ppPredType m = pPrintPrec 0 . fromQualPredType m identSupply

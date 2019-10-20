@@ -41,7 +41,7 @@ import Curry.Base.Pretty
 import Curry.Base.SpanInfo
 import Curry.Syntax
 import Curry.Syntax.Utils  (typeVariables)
-import Curry.Syntax.Pretty (ppDecl, ppPattern, ppExpr, ppIdent, ppConstraint)
+import Curry.Syntax.Pretty (pPrint, pPrintPrec, ppIdent)
 
 import Base.CurryTypes (ppPredType, toPredSet, fromPred)
 import Base.Messages   (Message, posMessage, internalError)
@@ -466,7 +466,7 @@ checkOrphanInstance p cx cls ty = warnFor WarnOrphanInstances $ do
   let ocls = getOrigName m cls tcEnv
       otc  = getOrigName m tc  tcEnv
   unless (isLocalIdent m ocls || isLocalIdent m otc) $ report $
-    warnOrphanInstance (spanInfo2Pos p) $ ppDecl $ InstanceDecl p cx cls ty []
+    warnOrphanInstance (spanInfo2Pos p) $ pPrint $ InstanceDecl p cx cls ty []
   where tc = typeConstr ty
 
 warnOrphanInstance :: Position -> Doc -> Message
@@ -933,9 +933,9 @@ warnMissingPattern p loc pats = posMessage p
   ppExPat (ps, cs)
     | null cs   = ppPats
     | otherwise = ppPats <+> text "with" <+> hsep (map ppCons cs)
-    where ppPats = hsep (map (ppPattern 2) ps)
+    where ppPats = hsep (map (pPrintPrec 2) ps)
   ppCons (i, lits) = ppIdent i <+> text "`notElem`"
-            <+> ppExpr 0 (List NoSpanInfo () (map (Literal NoSpanInfo ()) lits))
+            <+> pPrintPrec 0 (List NoSpanInfo () (map (Literal NoSpanInfo ()) lits))
 
 -- |Warning message for unreachable patterns.
 -- To shorten the output only the first 'maxPattern' are printed,
@@ -950,7 +950,7 @@ warnUnreachablePattern p pats = posMessage p
     | length ps > maxPattern = ppPats ++ [text "..."]
     | otherwise              = ppPats
     where ppPats = map ppPat (take maxPattern ps)
-  ppPat ps = hsep (map (ppPattern 2) ps)
+  ppPat ps = hsep (map (pPrintPrec 2) ps)
 
 -- |Maximum number of missing patterns to be shown.
 maxPattern :: Int
@@ -1618,7 +1618,7 @@ warnRedFuncString is = text "type signature for function" <>
 warnRedContext :: Doc -> [Ident] -> Pred -> Message
 warnRedContext d vs p@(Pred qid _) = posMessage qid $
   text "Redundant context in" <+> d <> colon <+>
-  quotes (ppConstraint $ fromPred vs p) -- idents use ` ' as quotes not ' '
+  quotes (pPrint $ fromPred vs p) -- idents use ` ' as quotes not ' '
 
 -- seperate a list by ', '
 csep :: [Doc] -> Doc

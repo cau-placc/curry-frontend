@@ -51,7 +51,7 @@ import           Curry.Base.Pretty
 import           Curry.Base.Span
 import           Curry.Base.SpanInfo
 import           Curry.Syntax
-import           Curry.Syntax.Pretty (ppPattern)
+import           Curry.Syntax.Pretty (pPrintPrec)
 
 import           Base.Expr
 import           Base.Messages       (Message, internalError, posMessage)
@@ -1279,12 +1279,12 @@ opAnnotation (InfixConstr a _) = a
 errUnsupportedFPTerm :: String -> Position -> Pattern a -> Message
 errUnsupportedFPTerm s p pat = posMessage p $ text s
   <+> text "patterns are not supported inside a functional pattern."
-  $+$ ppPattern 0 pat
+  $+$ pPrintPrec 0 pat
 
 errUnsupportedFuncPattern :: String -> Position -> Pattern a -> Message
 errUnsupportedFuncPattern s p pat = posMessage p $
   text "Functional patterns are not supported inside a" <+> text s <> dot
-  $+$ ppPattern 0 pat
+  $+$ pPrintPrec 0 pat
 
 errFuncPatNotGlobal :: QualIdent -> Message
 errFuncPatNotGlobal f = posMessage f $ hsep $ map text

@@ -14,9 +14,6 @@ variables. An error is generated if one is found. It also ensures that
 default-declarations contain no universally quantified type variables or
 predicates.
 -}
-
-{-# LANGUAGE CPP #-}
-
 module Checks.ImpredCheck (impredCheck) where
 
 import           Control.Monad.Extra (allM, unlessM)
@@ -26,7 +23,7 @@ import           Curry.Base.Ident
 import           Curry.Base.Position
 import           Curry.Base.Pretty
 import           Curry.Syntax
-import           Curry.Syntax.Pretty (ppTypeExpr)
+import           Curry.Syntax.Pretty ()
 
 import           Base.CurryTypes
 import           Base.Messages       (Message, posMessage)
@@ -157,12 +154,12 @@ checkSimpleType (ForallType _ _ _)     = return False
 
 errIllegalPolymorphicType :: Position -> TypeExpr -> Message
 errIllegalPolymorphicType p ty = posMessage p $ vcat
-  [ text "Illegal polymorphic type" <+> ppTypeExpr 0 ty
+  [ text "Illegal polymorphic type" <+> pPrintPrec 0 ty
   , text "Impredicative polymorphism isn't yet supported."
   ]
 
 errIllegalDefaultType :: Position -> TypeExpr -> Message
 errIllegalDefaultType p ty = posMessage p $ vcat
-  [ text "Illegal polymorphic type:" <+> ppTypeExpr 0 ty
+  [ text "Illegal polymorphic type:" <+> pPrintPrec 0 ty
   , text "When checking the types in a default declaration."
   ]

@@ -565,7 +565,7 @@ tcPDecl ps (i, FunctionDecl p _ f eqs)  = do
 tcPDecl ps (i, d@(PatternDecl p t rhs)) = do
   (ps', ty, t') <- tcPattern p t
   (ps'', rhs') <- tcRhs (Check ty) rhs >>-
-    unifyDecl p "pattern declaration" (ppDecl d) (ps `Set.union` ps') ty
+    unifyDecl p "pattern declaration" (pPrint d) (ps `Set.union` ps') ty
   return (ps'', (ty, (i, PatternDecl p t' rhs')))
 tcPDecl _  _                            = internalError "TypeCheck.tcPDecl"
 
@@ -582,7 +582,7 @@ tcFunctionPDecl i ps tySc p f eqs = do
 
 tcEquation :: Type -> PredSet -> Equation a -> TCM (PredSet, Equation Type)
 tcEquation ty ps eqn@(Equation p lhs rhs) =
-  tcEqn ty p lhs rhs >>- unifyDecl p "equation" (ppEquation eqn) ps ty
+  tcEqn ty p lhs rhs >>- unifyDecl p "equation" (pPrint eqn) ps ty
 
 tcEqn :: Type -> SpanInfo -> Lhs a -> Rhs a
       -> TCM (PredSet, Type, Equation Type)
@@ -595,7 +595,7 @@ tcEqn tySc p lhs rhs = do
     (ps, tys, lhs') <- tcLhs p lhs
     (ps', ty, rhs') <- tcRhs (Check resTy') rhs
     return (ps, tys, lhs', ps', ty, rhs')
-  ps'' <- reducePredSet p "equation" (ppEquation (Equation p lhs' rhs'))
+  ps'' <- reducePredSet p "equation" (pPrint (Equation p lhs' rhs'))
                         (ps `Set.union` ps')
   return (ps'', foldr TypeArrow ty tys, Equation p lhs' rhs')
 
@@ -1105,7 +1105,7 @@ tcPattern p t@(ConstructorPattern spi _ c ts) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, (tys, ty')) <- liftM (fmap arrowUnapply) (inst (constrType m c vEnv))
-  (ps', ts') <- mapAccumM (uncurry . tcPatternArg p "pattern" (ppPattern 0 t))
+  (ps', ts') <- mapAccumM (uncurry . tcPatternArg p "pattern" (pPrintPrec 0 t))
                           ps (zip tys ts)
   return (ps', ty', ConstructorPattern spi ty' c ts')
 tcPattern p (InfixPattern spi a t1 op t2) = do
@@ -1120,21 +1120,21 @@ tcPattern _ t@(RecordPattern spi _ c fs) = do
   vEnv <- getValueEnv
   (ps, ty) <- liftM (fmap arrowBase) (inst (constrType m c vEnv))
   (ps', fs') <- mapAccumM (tcField tcPattern "pattern"
-    (\t' -> ppPattern 0 t $-$ text "Term:" <+> ppPattern 0 t') ty) ps fs
+    (\t' -> pPrintPrec 0 t $-$ text "Term:" <+> pPrintPrec 0 t') ty) ps fs
   return (ps', ty, RecordPattern spi ty c fs')
 tcPattern p (TuplePattern spi ts) = do
   (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern p) ts
   return (Set.unions pss, tupleType tys, TuplePattern spi ts')
 tcPattern p t@(ListPattern spi _ ts) = do
   ty <- freshTypeVar
-  (ps, ts') <- mapAccumM (flip (tcPatternArg p "pattern" (ppPattern 0 t)) ty)
+  (ps, ts') <- mapAccumM (flip (tcPatternArg p "pattern" (pPrintPrec 0 t)) ty)
                          emptyPredSet ts
   return (ps, listType ty, ListPattern spi (listType ty) ts')
 tcPattern p t@(AsPattern spi v t') = do
   vEnv <- getValueEnv
   let ty = rawPredType (varType v vEnv)
   (ps, t'') <- tcPattern p t' >>-
-    unify p "pattern" (ppPattern 0 t) emptyPredSet ty
+    unify p "pattern" (pPrintPrec 0 t) emptyPredSet ty
   return (ps, ty, AsPattern spi v t'')
 tcPattern p (LazyPattern spi t) = do
   (ps, ty, t') <- tcPattern p t
@@ -1143,7 +1143,7 @@ tcPattern p t@(FunctionPattern spi _ f ts) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- inst (funType m f vEnv)
-  tcFuncPattern p spi (ppPattern 0 t) f id ps ty ts
+  tcFuncPattern p spi (pPrintPrec 0 t) f id ps ty ts
 tcPattern p (InfixFuncPattern spi a t1 op t2) = do
   (ps, ty, t') <- tcPattern p (FunctionPattern spi a op [t1, t2])
   let FunctionPattern _ a' op' [t1', t2'] = t'
@@ -1157,7 +1157,7 @@ tcFuncPattern _ spi _ f ts ps ty [] =
   return (ps, ty, FunctionPattern spi ty f (ts []))
 tcFuncPattern p spi doc f ts ps ty (t':ts') = do
   (alpha, beta) <-
-    tcArrow p "functional pattern" (doc $-$ text "Term:" <+> ppPattern 0 t) ty
+    tcArrow p "functional pattern" (doc $-$ text "Term:" <+> pPrintPrec 0 t) ty
   (ps', t'') <- tcPatternArg p "functional pattern" doc ps alpha t'
   tcFuncPattern p spi doc f (ts . (t'' :)) ps' beta ts'
   where t = FunctionPattern spi ty f (ts [])
@@ -1166,7 +1166,7 @@ tcPatternArg :: HasPosition p => p -> String -> Doc -> PredSet -> Type
              -> Pattern a -> TCM (PredSet, Pattern Type)
 tcPatternArg p what doc ps ty t =
   tcPattern p t >>-
-    unify p what (doc $-$ text "Term:" <+> ppPattern 0 t) ps ty
+    unify p what (doc $-$ text "Term:" <+> pPrintPrec 0 t) ps ty
 
 tcRhs :: CheckMode -> Rhs a -> TCM (PredSet, Type, Rhs Type)
 tcRhs cm (SimpleRhs p e ds) = do
@@ -1174,7 +1174,7 @@ tcRhs cm (SimpleRhs p e ds) = do
     (ps, ds') <- tcDecls ds
     (ps', ty, e') <- tcExpr cm p e
     return (ps, ds', ps', ty, e')
-  ps'' <- reducePredSet p "expression" (ppExpr 0 e') (ps `Set.union` ps')
+  ps'' <- reducePredSet p "expression" (pPrintPrec 0 e') (ps `Set.union` ps')
   return (ps'', ty, SimpleRhs p e' ds')
 tcRhs cm (GuardedRhs spi es ds) = withLocalValueEnv $ do
   (ps, ds') <- tcDecls ds
@@ -1184,8 +1184,8 @@ tcRhs cm (GuardedRhs spi es ds) = withLocalValueEnv $ do
 
 tcCondExpr :: CheckMode -> Type -> PredSet -> CondExpr a -> TCM (PredSet, CondExpr Type)
 tcCondExpr cm ty ps (CondExpr p g e) = do
-  (ps', g') <- tcExpr Infer p g >>- unify p "guard" (ppExpr 0 g) ps boolType
-  (ps'', e') <- tcExpr cm p e >>- unify p "guarded expression" (ppExpr 0 e) ps' ty
+  (ps', g') <- tcExpr Infer p g >>- unify p "guard" (pPrintPrec 0 g) ps boolType
+  (ps'', e') <- tcExpr cm p e >>- unify p "guarded expression" (pPrintPrec 0 e) ps' ty
   return (ps'', CondExpr p g' e')
 
 tcExpr :: HasPosition p => CheckMode -> p -> Expression a
@@ -1211,7 +1211,7 @@ tcExpr _     p (Typed spi e qty) = do
   pty <- expandTypeExpr qty
   (ps, ty) <- inst (polyType pty)
   (ps', e') <- tcExpr (Check ty) p e >>-
-    unifyDecl p "explicitly typed expression" (ppExpr 0 e) emptyPredSet ty
+    unifyDecl p "explicitly typed expression" (pPrintPrec 0 e) emptyPredSet ty
   fvs <- computeFvEnv
   theta <- getTypeSubst
   let (gps, lps) = splitPredSet fvs ps'
@@ -1219,7 +1219,7 @@ tcExpr _     p (Typed spi e qty) = do
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
     report $
-      errTypeSigTooGeneral p m (text "Expression:" <+> ppExpr 0 e) qty
+      errTypeSigTooGeneral p m (text "Expression:" <+> pPrintPrec 0 e) qty
                            (rawPredType tySc)
   return (ps `Set.union` gps, ty, Typed spi e' qty)
 tcExpr _     _ e@(Record spi _ c fs) = do
@@ -1227,12 +1227,12 @@ tcExpr _     _ e@(Record spi _ c fs) = do
   vEnv <- getValueEnv
   (ps, ty) <- liftM (fmap arrowBase) (inst (constrType m c vEnv))
   (ps', fs') <- mapAccumM (tcField (tcExpr Infer) "construction"
-    (\e' -> ppExpr 0 e $-$ text "Term:" <+> ppExpr 0 e') ty) ps fs
+    (\e' -> pPrintPrec 0 e $-$ text "Term:" <+> pPrintPrec 0 e') ty) ps fs
   return (ps', ty, Record spi ty c fs')
 tcExpr _     p e@(RecordUpdate spi e1 fs) = do
   (ps, ty, e1') <- tcExpr Infer p e1
   (ps', fs') <- mapAccumM (tcField (tcExpr Infer) "update"
-    (\e' -> ppExpr 0 e $-$ text "Term:" <+> ppExpr 0 e') ty) ps fs
+    (\e' -> pPrintPrec 0 e $-$ text "Term:" <+> pPrintPrec 0 e') ty) ps fs
   return (ps', ty, RecordUpdate spi e1' fs')
 tcExpr _     p (Tuple spi es) = do
   (pss, tys, es') <- liftM unzip3 $ mapM (tcExpr Infer p) es
@@ -1240,61 +1240,61 @@ tcExpr _     p (Tuple spi es) = do
 tcExpr _     p e@(List spi _ es) = do
   ty <- freshTypeVar
   (ps, es') <-
-    mapAccumM (flip (tcArg Infer p "expression" (ppExpr 0 e)) ty) emptyPredSet es
+    mapAccumM (flip (tcArg Infer p "expression" (pPrintPrec 0 e)) ty) emptyPredSet es
   return (ps, listType ty, List spi (listType ty) es')
 tcExpr _     p (ListCompr spi e qs) = do
   (ps, qs', ps', ty, e') <- withLocalValueEnv $ do
     (ps, qs') <- mapAccumM (tcQual p) emptyPredSet qs
     (ps', ty, e') <- tcExpr Infer p e
     return (ps, qs', ps', ty, e')
-  ps'' <- reducePredSet p "expression" (ppExpr 0 e') (ps `Set.union` ps')
+  ps'' <- reducePredSet p "expression" (pPrintPrec 0 e') (ps `Set.union` ps')
   return (ps'', listType ty, ListCompr spi e' qs')
 tcExpr _     p e@(EnumFrom spi e1) = do
   (ps, ty) <- freshEnumType
-  (ps', e1') <- tcArg Infer p "arithmetic sequence" (ppExpr 0 e) ps ty e1
+  (ps', e1') <- tcArg Infer p "arithmetic sequence" (pPrintPrec 0 e) ps ty e1
   return (ps', listType ty, EnumFrom spi e1')
 tcExpr _     p e@(EnumFromThen spi e1 e2) = do
   (ps, ty) <- freshEnumType
-  (ps', e1') <- tcArg Infer p "arithmetic sequence" (ppExpr 0 e) ps ty e1
-  (ps'', e2') <- tcArg Infer p "arithmetic sequence" (ppExpr 0 e) ps' ty e2
+  (ps', e1') <- tcArg Infer p "arithmetic sequence" (pPrintPrec 0 e) ps ty e1
+  (ps'', e2') <- tcArg Infer p "arithmetic sequence" (pPrintPrec 0 e) ps' ty e2
   return (ps'', listType ty, EnumFromThen spi e1' e2')
 tcExpr _     p e@(EnumFromTo spi e1 e2) = do
   (ps, ty) <- freshEnumType
-  (ps', e1') <- tcArg Infer p "arithmetic sequence" (ppExpr 0 e) ps ty e1
-  (ps'', e2') <- tcArg Infer p "arithmetic sequence" (ppExpr 0 e) ps' ty e2
+  (ps', e1') <- tcArg Infer p "arithmetic sequence" (pPrintPrec 0 e) ps ty e1
+  (ps'', e2') <- tcArg Infer p "arithmetic sequence" (pPrintPrec 0 e) ps' ty e2
   return (ps'', listType ty, EnumFromTo spi e1' e2')
 tcExpr _     p e@(EnumFromThenTo spi e1 e2 e3) = do
   (ps, ty) <- freshEnumType
-  (ps', e1') <- tcArg Infer p "arithmetic sequence" (ppExpr 0 e) ps ty e1
-  (ps'', e2') <- tcArg Infer p "arithmetic sequence" (ppExpr 0 e) ps' ty e2
-  (ps''', e3') <- tcArg Infer p "arithmetic sequence" (ppExpr 0 e) ps'' ty e3
+  (ps', e1') <- tcArg Infer p "arithmetic sequence" (pPrintPrec 0 e) ps ty e1
+  (ps'', e2') <- tcArg Infer p "arithmetic sequence" (pPrintPrec 0 e) ps' ty e2
+  (ps''', e3') <- tcArg Infer p "arithmetic sequence" (pPrintPrec 0 e) ps'' ty e3
   return (ps''', listType ty, EnumFromThenTo spi e1' e2' e3')
 tcExpr _     p e@(UnaryMinus spi e1) = do
   (ps, ty) <- freshNumType
-  (ps', e1') <- tcArg Infer p "unary negation" (ppExpr 0 e) ps ty e1
+  (ps', e1') <- tcArg Infer p "unary negation" (pPrintPrec 0 e) ps ty e1
   return (ps', ty, UnaryMinus spi e1')
 tcExpr _     p e@(Apply spi e1 e2) = do
   (ps, y, e1') <- tcExpr Infer p e1
-  (alpha, beta) <- tcArrow p "application" (ppExpr 0 e $-$ text "Term:" <+> ppExpr 0 e1) y
-  (ps', e2') <- tcArg (Check alpha) p "application" (ppExpr 0 e) ps alpha e2
+  (alpha, beta) <- tcArrow p "application" (pPrintPrec 0 e $-$ text "Term:" <+> pPrintPrec 0 e1) y
+  (ps', e2') <- tcArg (Check alpha) p "application" (pPrintPrec 0 e) ps alpha e2
   return (ps', beta, Apply spi e1' e2')
 tcExpr _     p e@(InfixApply spi e1 op e2) = do
   (ps, (alpha, beta, gamma), op') <- tcInfixOp op >>=-
-    tcBinary p "infix application" (ppExpr 0 e $-$ text "Operator:" <+> ppOp op)
-  (ps', e1') <- tcArg (Check alpha) p "infix application" (ppExpr 0 e) ps alpha e1
-  (ps'', e2') <- tcArg (Check beta) p "infix application" (ppExpr 0 e) ps' beta e2
+    tcBinary p "infix application" (pPrintPrec 0 e $-$ text "Operator:" <+> pPrint op)
+  (ps', e1') <- tcArg (Check alpha) p "infix application" (pPrintPrec 0 e) ps alpha e1
+  (ps'', e2') <- tcArg (Check beta) p "infix application" (pPrintPrec 0 e) ps' beta e2
   return (ps'', gamma, InfixApply spi e1' op' e2')
 tcExpr _     p e@(LeftSection spi e1 op) = do
   (ps, (alpha, beta), op') <- tcInfixOp op >>=-
-    tcArrow p "left section" (ppExpr 0 e $-$ text "Operator:" <+> ppOp op)
+    tcArrow p "left section" (pPrintPrec 0 e $-$ text "Operator:" <+> pPrint op)
   (aps, _) <- inst alpha
-  (ps', e1') <- tcArg Infer p "left section" (ppExpr 0 e) (ps `Set.union` aps) alpha e1
+  (ps', e1') <- tcArg Infer p "left section" (pPrintPrec 0 e) (ps `Set.union` aps) alpha e1
   return (ps', beta, LeftSection spi e1' op')
 tcExpr _     p e@(RightSection spi op e1) = do
   (ps, (alpha, beta, gamma), op') <- tcInfixOp op >>=-
-    tcBinary p "right section" (ppExpr 0 e $-$ text "Operator:" <+> ppOp op)
+    tcBinary p "right section" (pPrintPrec 0 e $-$ text "Operator:" <+> pPrint op)
   (bps, _) <- inst beta
-  (ps', e1') <- tcArg Infer p "right section" (ppExpr 0 e) (ps `Set.union` bps) beta e1
+  (ps', e1') <- tcArg Infer p "right section" (pPrintPrec 0 e) (ps `Set.union` bps) beta e1
   return (ps', TypeArrow alpha gamma, RightSection spi op' e1')
 tcExpr cm    p (Lambda spi ts e) = do
   (pss, tys, ts', ps, ty, e') <- withLocalValueEnv $ do
@@ -1305,27 +1305,27 @@ tcExpr cm    p (Lambda spi ts e) = do
     (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern p) ts
     (ps, ty, e') <- tcExpr Infer p e
     return (pss, tys, ts', ps, ty, e')
-  ps' <- reducePredSet p "expression" (ppExpr 0 e') (Set.unions $ ps : pss)
+  ps' <- reducePredSet p "expression" (pPrintPrec 0 e') (Set.unions $ ps : pss)
   return (ps', foldr TypeArrow ty tys, Lambda spi ts' e')
 tcExpr cm    p (Let spi ds e) = do
   (ps, ds', ps', ty, e') <- withLocalValueEnv $ do
     (ps, ds') <- tcDecls ds
     (ps', ty, e') <- tcExpr cm p e
     return (ps, ds', ps', ty, e')
-  ps'' <- reducePredSet p "expression" (ppExpr 0 e') (ps `Set.union` ps')
+  ps'' <- reducePredSet p "expression" (pPrintPrec 0 e') (ps `Set.union` ps')
   return (ps'', ty, Let spi ds' e')
 tcExpr _     p (Do spi sts e) = do
   (sts', ty, ps', e') <- withLocalValueEnv $ do
     ((ps, mTy), sts') <-
       mapAccumM (uncurry (tcStmt p)) (emptyPredSet, Nothing) sts
     ty <- liftM (maybe id TypeApply mTy) freshTypeVar
-    (ps', e') <- tcExpr Infer p e >>- unify p "statement" (ppExpr 0 e) ps ty
+    (ps', e') <- tcExpr Infer p e >>- unify p "statement" (pPrintPrec 0 e) ps ty
     return (sts', ty, ps', e')
   return (ps', ty, Do spi sts' e')
 tcExpr cm    p e@(IfThenElse spi e1 e2 e3) = do
-  (ps, e1') <- tcArg Infer p "expression" (ppExpr 0 e) emptyPredSet boolType e1
+  (ps, e1') <- tcArg Infer p "expression" (pPrintPrec 0 e) emptyPredSet boolType e1
   (ps', ty, e2') <- tcExpr cm p e2
-  (ps'', e3') <- tcArg cm p "expression" (ppExpr 0 e) (ps `Set.union` ps') ty e3
+  (ps'', e3') <- tcArg cm p "expression" (pPrintPrec 0 e) (ps `Set.union` ps') ty e3
   return (ps'', ty, IfThenElse spi e1' e2' e3')
 tcExpr cm    p (Case spi ct e as) = do
   (ps, tyLhs, e') <- tcExpr Infer p e
@@ -1336,13 +1336,13 @@ tcExpr cm    p (Case spi ct e as) = do
 tcArg :: HasPosition p => CheckMode -> p -> String -> Doc -> PredSet -> Type
       -> Expression a -> TCM (PredSet, Expression Type)
 tcArg cm p what doc ps ty e =
-  tcExpr cm p e >>- unify p what (doc $-$ text "Term:" <+> ppExpr 0 e) ps ty
+  tcExpr cm p e >>- unify p what (doc $-$ text "Term:" <+> pPrintPrec 0 e) ps ty
 
 tcAlt :: CheckMode -> Type -> Type -> PredSet -> Alt a
       -> TCM (PredSet, Alt Type)
 tcAlt cm tyLhs tyRhs ps a@(Alt p t rhs) =
   tcAltern cm tyLhs p t rhs >>-
-    unify p "case alternative" (ppAlt a) ps tyRhs
+    unify p "case alternative" (pPrint a) ps tyRhs
 
 tcAltern :: CheckMode -> Type -> SpanInfo -> Pattern a
          -> Rhs a -> TCM (PredSet, Type, Alt Type)
@@ -1350,26 +1350,26 @@ tcAltern cm tyLhs p t rhs = do
   (ps, t', ps', ty', rhs') <- withLocalValueEnv $ do
     bindPatternVars (Check tyLhs) t
     (ps, t') <-
-      tcPatternArg p "case pattern" (ppAlt (Alt p t rhs)) emptyPredSet tyLhs t
+      tcPatternArg p "case pattern" (pPrint (Alt p t rhs)) emptyPredSet tyLhs t
     (ps', ty', rhs') <- tcRhs cm rhs
     return (ps, t', ps', ty', rhs')
-  ps'' <- reducePredSet p "alternative" (ppAlt (Alt p t' rhs'))
+  ps'' <- reducePredSet p "alternative" (pPrint (Alt p t' rhs'))
                         (ps `Set.union` ps')
   return (ps'', ty', Alt p t' rhs')
 
 tcQual :: HasPosition p => p -> PredSet -> Statement a
        -> TCM (PredSet, Statement Type)
 tcQual p ps (StmtExpr spi e) = do
-  (ps', e') <- tcExpr Infer p e >>- unify p "guard" (ppExpr 0 e) ps boolType
+  (ps', e') <- tcExpr Infer p e >>- unify p "guard" (pPrintPrec 0 e) ps boolType
   return (ps', StmtExpr spi e')
 tcQual _ ps (StmtDecl spi ds) = do
   (ps', ds') <- tcDecls ds
   return (ps `Set.union` ps', StmtDecl spi ds')
 tcQual p ps q@(StmtBind spi t e) = do
   alpha <- freshTypeVar
-  (ps', e') <- tcArg Infer p "generator" (ppStmt q) ps (listType alpha) e
+  (ps', e') <- tcArg Infer p "generator" (pPrint q) ps (listType alpha) e
   bindPatternVars Infer t
-  (ps'', t') <- tcPatternArg p "generator" (ppStmt q) ps' alpha t
+  (ps'', t') <- tcPatternArg p "generator" (pPrint q) ps' alpha t
   return (ps'', StmtBind spi t' e')
 
 tcStmt :: HasPosition p => p -> PredSet -> Maybe Type -> Statement a
@@ -1378,7 +1378,7 @@ tcStmt p ps mTy (StmtExpr spi e) = do
   (ps', ty) <- maybe freshMonadType (return . (,) emptyPredSet) mTy
   alpha <- freshTypeVar
   (ps'', e') <- tcExpr Infer p e >>-
-    unify p "statement" (ppExpr 0 e) (ps `Set.union` ps') (applyType ty [alpha])
+    unify p "statement" (pPrintPrec 0 e) (ps `Set.union` ps') (applyType ty [alpha])
   return ((ps'', Just ty), StmtExpr spi e')
 tcStmt _ ps mTy (StmtDecl spi ds) = do
   (ps', ds') <- tcDecls ds
@@ -1389,9 +1389,9 @@ tcStmt p ps mTy st@(StmtBind spi t e) = do
   (ps', ty) <- maybe freshMType (return . (,) emptyPredSet) mTy
   alpha <- freshTypeVar
   (ps'', e') <-
-    tcArg Infer p "statement" (ppStmt st) (ps `Set.union` ps') (applyType ty [alpha]) e
+    tcArg Infer p "statement" (pPrint st) (ps `Set.union` ps') (applyType ty [alpha]) e
   bindPatternVars Infer t
-  (ps''', t') <- tcPatternArg p "statement" (ppStmt st) ps'' alpha t
+  (ps''', t') <- tcPatternArg p "statement" (pPrint st) ps'' alpha t
   return ((ps''', Just ty), StmtBind spi t' e')
 
 checkFailableBind :: Pattern a -> TCM Bool
@@ -1903,7 +1903,7 @@ errTypeSigTooGeneral :: HasPosition a => a -> ModuleIdent -> Doc -> TypeExpr
 errTypeSigTooGeneral p m what tySc ty = posMessage p $ vcat
   [ text "Type signature too general", what
   , text "Inferred type:" <+> ppType m ty
-  , text "Type signature:" <+> ppTypeExpr 0 tySc ]
+  , text "Type signature:" <+> pPrintPrec 0 tySc ]
 
 errMethodTypeTooSpecific :: HasPosition a => a -> ModuleIdent -> Doc -> Type
                          -> Type -> Message

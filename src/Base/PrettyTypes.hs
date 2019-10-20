@@ -10,29 +10,25 @@
 
    TODO
 -}
-{-# LANGUAGE     CPP        #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Base.PrettyTypes where
 
-#if __GLASGOW_HASKELL__ >= 804
 import Prelude hiding ((<>))
-#endif
-
 import Data.Maybe (fromMaybe)
 import qualified Data.Set as Set (Set, toAscList)
 
-import Curry.Base.Ident (identSupply)
+import Curry.Base.Ident    (identSupply)
 import Curry.Base.Pretty
-import Curry.Syntax.Pretty
+import Curry.Syntax.Pretty ()
 
 import Base.CurryTypes
 import Base.Types
 
 instance Pretty Type where
-  pPrint = ppTypeExpr 0 . fromType identSupply
+  pPrint = pPrintPrec 0 . fromType identSupply
 
 instance Pretty Pred where
-  pPrint = ppConstraint . fromPred identSupply
+  pPrint = pPrint . fromPred identSupply
 
 instance Pretty a => Pretty (Set.Set a) where
   pPrint = parens . list . map pPrint . Set.toAscList

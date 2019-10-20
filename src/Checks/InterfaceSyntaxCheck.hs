@@ -340,7 +340,7 @@ errNoElement what for tc x = posMessage tc $ hsep $ map text
 
 errIllegalSimpleConstraint :: Constraint -> Message
 errIllegalSimpleConstraint c@(Constraint _ qcls _) = posMessage qcls $ vcat
-  [ text "Illegal class constraint" <+> ppConstraint c
+  [ text "Illegal class constraint" <+> pPrint c
   , text "Constraints in class and instance declarations must be of"
   , text "the form C u, where C is a type class and u is a type variable."
   ]

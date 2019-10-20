@@ -97,7 +97,7 @@ compileModule opts m fn = do
   writeAST      opts umdl
   writeShortAST opts umdl
   mdl' <- expandExports opts mdl
-  qmdl' <- dumpWith opts CS.showModule CS.ppModule DumpQualified $ qual mdl'
+  qmdl' <- dumpWith opts CS.showModule pPrint DumpQualified $ qual mdl'
   writeAbstractCurry opts qmdl'
   -- generate interface file
   let intf = uncurry exportInterface qmdl'
@@ -254,7 +254,7 @@ checkModule opts mdl = do
   where
   dumpCS :: (MonadIO m, Show a) => DumpLevel -> CompEnv (CS.Module a)
          -> m (CompEnv (CS.Module a))
-  dumpCS = dumpWith opts CS.showModule CS.ppModule
+  dumpCS = dumpWith opts CS.showModule pPrint
 
 -- ---------------------------------------------------------------------------
 -- Translating a module
@@ -278,7 +278,7 @@ transModule opts mdl = do
   remNT = optDesugarNewtypes     optOpts
   dumpCS :: Show a => DumpLevel -> CompEnv (CS.Module a)
          -> CYIO (CompEnv (CS.Module a))
-  dumpCS = dumpWith opts CS.showModule CS.ppModule
+  dumpCS = dumpWith opts CS.showModule pPrint
   dumpIL = dumpWith opts IL.showModule IL.ppModule
 
 -- ---------------------------------------------------------------------------
@@ -335,7 +335,7 @@ writeInterface opts env intf@(CS.Interface m _ _)
   interfaceFile   = interfName (filePath env)
   outputInterface = liftIO $ writeModule
                     (addCurrySubdirModule (optUseSubdir opts) m interfaceFile)
-                    (show $ CS.ppInterface intf)
+                    (show $ pPrint intf)
 
 matchInterface :: FilePath -> CS.Interface -> IO Bool
 matchInterface ifn i = do
@@ -347,11 +347,11 @@ matchInterface ifn i = do
 
 writeFlat :: Options -> CompilerEnv -> CS.Module Type -> IL.Module -> CYIO ()
 writeFlat opts env mdl il = do
-  (_, tfc) <- dumpWith opts show (FC.ppProg . genFlatCurry) DumpTypedFlatCurry (env, tfcyProg)
+  (_, tfc) <- dumpWith opts show (pPrint . genFlatCurry) DumpTypedFlatCurry (env, tfcyProg)
   when tfcyTarget  $ liftIO $ FC.writeFlatCurry (useSubDir tfcyName) tafcyProg
   when tafcyTarget $ liftIO $ FC.writeFlatCurry (useSubDir tafcyName) tfc
   when fcyTarget $ do
-    (_, fc) <- dumpWith opts show FC.ppProg DumpFlatCurry (env, fcyProg)
+    (_, fc) <- dumpWith opts show pPrint DumpFlatCurry (env, fcyProg)
     liftIO $ FC.writeFlatCurry (useSubDir fcyName) fc
   writeFlatIntf opts env fcyProg
   where

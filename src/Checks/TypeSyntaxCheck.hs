@@ -705,14 +705,14 @@ errUnboundVariable tv = posMessage tv $ hsep $ map text
 
 errIllegalConstraint :: Constraint -> Message
 errIllegalConstraint c@(Constraint _ cls _) = posMessage cls $ vcat
-  [ text "Illegal class constraint" <+> ppConstraint c
+  [ text "Illegal class constraint" <+> pPrint c
   , text "Constraints must be of the form C u or C (u t1 ... tn),"
   , text "where C is a type class, u is a type variable and t1, ..., tn are types."
   ]
 
 errIllegalSimpleConstraint :: Constraint -> Message
 errIllegalSimpleConstraint c@(Constraint _ cls _) = posMessage cls $ vcat
-  [ text "Illegal class constraint" <+> ppConstraint c
+  [ text "Illegal class constraint" <+> pPrint c
   , text "Constraints in class and instance declarations must be of"
   , text "the form C u, where C is a type class and u is a type variable."
   ]
