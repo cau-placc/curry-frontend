@@ -26,3 +26,8 @@ applyEqFun f x y = x `f` y
 
 applyEqFunTest :: Bool
 applyEqFunTest = applyEqFun ((==) :: Bool -> Bool -> Bool) True False
+
+whereTest :: (forall a. a -> a) -> (Char, Bool)
+whereTest = whereTest'
+  where
+    whereTest' f = (f 'c', f True)

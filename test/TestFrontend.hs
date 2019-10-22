@@ -285,6 +285,8 @@ failInfos = map (uncurry mkFailTest)
       , "trueFun False"
       , "Type error in application"
       , "applyEqFun ((==) :: Bool -> Bool -> Bool)"
+      , "Type error in equation"
+      , "whereTest = whereTest'"
       ]
     )
   , ("KindCheck",
