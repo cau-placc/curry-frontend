@@ -298,7 +298,7 @@ minPredSet clsEnv ps =
           [Pred cls' ty | cls' <- tail (allSuperClasses cls clsEnv)]
 
 maxPredSet :: ClassEnv -> PredSet -> PredSet
-maxPredSet clsEnv ps = Set.concatMap implied ps
+maxPredSet clsEnv = Set.concatMap implied
   where implied (Pred cls ty) = Set.fromList
           [Pred cls' ty | cls' <- allSuperClasses cls clsEnv]
 

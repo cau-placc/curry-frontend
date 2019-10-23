@@ -324,12 +324,12 @@ checkDecl :: Decl a -> TSCM (Decl a)
 checkDecl (DataDecl p tc tvs cs clss) = do
   checkTypeLhs tvs
   cs' <- mapM (checkConstrDecl tvs) cs
-  mapM_ checkClass clss
+  mapM_ (checkClass False) clss
   return $ DataDecl p tc tvs cs' clss
 checkDecl (NewtypeDecl p tc tvs nc clss) = do
   checkTypeLhs tvs
   nc' <- checkNewConstrDecl tvs nc
-  mapM_ checkClass clss
+  mapM_ (checkClass False) clss
   return $ NewtypeDecl p tc tvs nc' clss
 checkDecl (TypeDecl p tc tvs ty) = do
   checkTypeLhs tvs
@@ -350,7 +350,7 @@ checkDecl (ClassDecl p cx cls clsvar ds) = do
   mapM_ (checkClassMethod clsvar) ds'
   return $ ClassDecl p cx' cls clsvar ds'
 checkDecl (InstanceDecl p cx qcls inst ds) = do
-  checkClass qcls
+  checkClass True qcls
   QualTypeExpr _ cx' inst' <- checkQualType $ QualTypeExpr NoSpanInfo cx inst
   checkSimpleContext cx'
   checkInstanceType p inst'
@@ -529,7 +529,7 @@ checkContext = mapM checkConstraint
 
 checkConstraint :: Constraint -> TSCM Constraint
 checkConstraint c@(Constraint spi qcls ty) = do
-  checkClass qcls
+  checkClass False qcls
   ty' <- checkType ty
   unless (isVariableType $ rootType ty') $ report $ errIllegalConstraint c
   return $ Constraint spi qcls ty'
@@ -537,16 +537,22 @@ checkConstraint c@(Constraint spi qcls ty) = do
     rootType (ApplyType _ ty' _) = ty'
     rootType ty'                 = ty'
 
-checkClass :: QualIdent -> TSCM ()
-checkClass qcls = do
+checkClass :: Bool -> QualIdent -> TSCM ()
+checkClass isInstDecl qcls = do
   m <- getModuleIdent
   tEnv <- getTypeEnv
   case qualLookupTypeKind qcls tEnv of
     [] -> report $ errUndefinedClass qcls
-    [Class _ _] -> ok
+    [Class c _]
+      | c == qDataId -> when (isInstDecl && m /= preludeMIdent) $ report $
+                          errIllegalDataInstance qcls
+      | otherwise    -> ok
     [_] -> report $ errUndefinedClass qcls
     tks -> case qualLookupTypeKind (qualQualify m qcls) tEnv of
-      [Class _ _] -> ok
+      [Class c _]
+        | c == qDataId -> when (isInstDecl && m /= preludeMIdent) $ report $
+                            errIllegalDataInstance qcls
+        | otherwise    -> ok
       [_] -> report $ errUndefinedClass qcls
       _ -> report $ errAmbiguousIdent qcls $ map origName tks
 
@@ -697,4 +703,11 @@ errIllegalInstanceType p inst = posMessage p $ vcat
   , text "The instance type must be of the form (T u_1 ... u_n),"
   , text "where T is not a type synonym and u_1, ..., u_n are"
   , text "mutually distinct, non-anonymous type variables."
+  ]
+
+errIllegalDataInstance :: QualIdent -> Message
+errIllegalDataInstance qcls = posMessage qcls $ vcat
+  [ text "Illegal instance of" <+> ppQIdent qcls
+  , text "Instances of this class cannot be defined."
+  , text "Instead, they are automatically derived if possible."
   ]

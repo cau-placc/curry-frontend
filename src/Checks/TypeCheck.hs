@@ -450,8 +450,16 @@ tcPDeclGroup ps [(i, ExternalDecl p fs)] = do
 tcPDeclGroup ps [(i, FreeDecl p fvs)] = do
   vs <- mapM (tcDeclVar False) (bv fvs)
   m <- getModuleIdent
-  modifyValueEnv $ flip (bindVars m) vs
-  return (ps, [(i, FreeDecl p (map (\(v, _, ForAll _ pty) -> Var pty v) vs))])
+  (vs', ps') <- unzip <$> mapM addDataPred vs
+  modifyValueEnv $ flip (bindVars m) vs'
+  let d = FreeDecl p (map (\(v, _, ForAll _ pty) -> Var pty v) vs')
+  return (ps `Set.union` Set.unions ps', [(i, d)])
+  where
+    addDataPred :: (Ident, Int, TypeScheme) -> TCM ((Ident, Int, TypeScheme), PredSet)
+    addDataPred (idt, n, ForAll vars (PredType ps1 ty1)) = do
+      (ps2, ty2) <- freshDataType
+      ps' <- unify idt "free variable" (ppIdent idt) ps1 ty1 ps2 ty2
+      return ((idt, n, ForAll vars (PredType ps' ty1)), ps')
 tcPDeclGroup ps pds = do
   vEnv <- getValueEnv
   vss <- mapM (tcDeclVars . snd) pds
@@ -1589,6 +1597,9 @@ freshFractionalType = freshPredType [qFractionalId]
 
 freshMonadType :: TCM (PredSet, Type)
 freshMonadType = freshPredType [qMonadId]
+
+freshDataType :: TCM (PredSet, Type)
+freshDataType = freshPredType [qDataId]
 
 freshConstrained :: [Type] -> TCM Type
 freshConstrained = freshVar . TypeConstrained

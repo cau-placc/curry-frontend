@@ -44,6 +44,7 @@ checkDerivable m tcEnv cs cls
   | ocls == qEnumId && not (isEnum cs)       = [errNotEnum cls]
   | ocls == qBoundedId && not (isBounded cs) = [errNotBounded cls]
   | ocls `notElem` derivableClasses          = [errNotDerivable ocls]
+  | ocls == qDataId                          = [errNoDataDerive ocls]
   | otherwise                                = []
   where ocls = getOrigName m cls tcEnv
 
@@ -54,7 +55,7 @@ derivableClasses = [qEqId, qOrdId, qEnumId, qBoundedId, qReadId, qShowId]
 -- where all data constructors are constants.
 
 isEnum :: [ConstrDecl] -> Bool
-isEnum cs = all ((0 ==) . constrArity) cs
+isEnum = all ((0 ==) . constrArity)
 
 -- Instances of 'Bounded' can be derived only for enumerations and for single
 -- constructor types.
@@ -97,6 +98,12 @@ errNoExistentialDerive p = posMessage p $
 errNotDerivable :: QualIdent -> Message
 errNotDerivable cls = posMessage cls $ hsep $ map text
   ["Instances of type class", escQualName cls, "cannot be derived"]
+
+errNoDataDerive :: QualIdent -> Message
+errNoDataDerive qcls = posMessage qcls $ hsep $ map text
+  [ "Instances of type class"
+  , escQualName qcls
+  , "are automatically derived if possible"]
 
 errNotEnum :: HasPosition a => a -> Message
 errNotEnum p = posMessage p $
