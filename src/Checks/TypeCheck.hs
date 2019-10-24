@@ -49,6 +49,7 @@ import           Prelude             hiding ((<>))
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative ((<$>), (<*>))
 #endif
+import           Control.Monad       (when)
 import           Control.Monad.Extra (allM, eitherM, filterM, foldM, liftM,
                                       notM, replicateM, unless, unlessM, (&&^))
 import qualified Control.Monad.State as S (State, gets, modify, runState)
@@ -97,7 +98,7 @@ typeCheck :: ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv -> InstEnv -> [Decl a]
 typeCheck m tcEnv vEnv clsEnv inEnv ds = runTCM (checkDecls ds) initState
   where
     initState = TcState m tcEnv vEnv clsEnv (inEnv, Map.empty)
-                        [intType, floatType] idSubst emptySigEnv 1 []
+                        [intType, floatType] idSubst emptySigEnv 1 [] []
 
 checkDecls :: [Decl a] -> TCM [Decl Type]
 checkDecls ds = do
@@ -143,6 +144,8 @@ data TcState = TcState
   , sigEnv       :: SigEnv
   , nextId       :: Int         -- automatic counter
   , errors       :: [Message]
+  , impVars      :: [Int]       -- type variables that can be instantiated with
+                                -- higher-rank types when necessary
   }
 
 (&&>) :: TCM () -> TCM () -> TCM ()
@@ -221,6 +224,12 @@ getNextId = do
   n <- S.gets nextId
   S.modify $ \s -> s { nextId = succ n }
   return n
+
+getImpVars :: TCM [Int]
+getImpVars = S.gets impVars
+
+addImpVars :: [Int] -> TCM ()
+addImpVars ivs = S.modify $ \s -> s { impVars = ivs ++ impVars s }
 
 report :: Message -> TCM ()
 report err = S.modify $ \s -> s { errors = err : errors s }
@@ -640,7 +649,7 @@ bindPatternVars cm         (LazyPattern _ p)             = bindPatternVars cm p
 bindPatternVars _          (FunctionPattern _ _ f ps)    = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  tys <- (fst . arrowUnapply . snd) <$> inst (funType m f vEnv)
+  tys <- (fst . arrowUnapply . snd) <$> inst (snd $ funType m f vEnv)
   mapM_ (uncurry bindPatternVars) $ zip (toCheckModeList tys) ps
 bindPatternVars cm         (InfixFuncPattern spi a p1 op p2)
   = bindPatternVars cm (FunctionPattern spi a op [p1, p2])
@@ -1026,7 +1035,7 @@ classMethodType :: (Ident -> QualIdent) -> Ident -> TCM Type
 classMethodType qual f = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  return $ funType m (qual $ unRenameIdent f) vEnv
+  return $ snd $ funType m (qual $ unRenameIdent f) vEnv
 
 -- Due to the sorting of the predicate set, we can simply remove the minimum
 -- element as this is guaranteed to be the class constraint (see module 'Types'
@@ -1142,7 +1151,7 @@ tcPattern p (LazyPattern spi t) = do
 tcPattern p t@(FunctionPattern spi _ f ts) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  (ps, ty) <- inst (funType m f vEnv)
+  (ps, ty) <- inst (snd $ funType m f vEnv)
   tcFuncPattern p spi (ppPattern 0 t) f id ps ty ts
 tcPattern p (InfixFuncPattern spi a t1 op t2) = do
   (ps, ty, t') <- tcPattern p (FunctionPattern spi a op [t1, t2])
@@ -1197,7 +1206,7 @@ tcExpr _     _ (Variable spi _ v) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- if isAnonId (unqualify v) then freshPredType []
-                                        else inst (funType m v vEnv)
+                                        else inst (snd $ funType m v vEnv)
   return (ps, ty, Variable spi ty v)
 tcExpr _     _ (Constructor spi _ c) = do
   m <- getModuleIdent
@@ -1279,19 +1288,19 @@ tcExpr _     p e@(Apply spi e1 e2) = do
   (ps', e2') <- tcArg (Check alpha) p "application" (ppExpr 0 e) ps alpha e2
   return (ps', beta, Apply spi e1' e2')
 tcExpr _     p e@(InfixApply spi e1 op e2) = do
-  (ps, (alpha, beta, gamma), op') <- tcInfixOp op >>=-
+  (ps, (alpha, beta, gamma), op') <- tcInfixOp True op >>=-
     tcBinary p "infix application" (ppExpr 0 e $-$ text "Operator:" <+> ppOp op)
   (ps', e1') <- tcArg (Check alpha) p "infix application" (ppExpr 0 e) ps alpha e1
   (ps'', e2') <- tcArg (Check beta) p "infix application" (ppExpr 0 e) ps' beta e2
   return (ps'', gamma, InfixApply spi e1' op' e2')
 tcExpr _     p e@(LeftSection spi e1 op) = do
-  (ps, (alpha, beta), op') <- tcInfixOp op >>=-
+  (ps, (alpha, beta), op') <- tcInfixOp False op >>=-
     tcArrow p "left section" (ppExpr 0 e $-$ text "Operator:" <+> ppOp op)
   (aps, _) <- inst alpha
   (ps', e1') <- tcArg Infer p "left section" (ppExpr 0 e) (ps `Set.union` aps) alpha e1
   return (ps', beta, LeftSection spi e1' op')
 tcExpr _     p e@(RightSection spi op e1) = do
-  (ps, (alpha, beta, gamma), op') <- tcInfixOp op >>=-
+  (ps, (alpha, beta, gamma), op') <- tcInfixOp False op >>=-
     tcBinary p "right section" (ppExpr 0 e $-$ text "Operator:" <+> ppOp op)
   (bps, _) <- inst beta
   (ps', e1') <- tcArg Infer p "right section" (ppExpr 0 e) (ps `Set.union` bps) beta e1
@@ -1392,13 +1401,15 @@ tcStmt p ps mTy st@(StmtBind spi t e) = do
   (ps''', t') <- tcPatternArg p "statement" (ppStmt st) ps'' alpha t
   return ((ps''', Just ty), StmtBind spi t' e')
 
-tcInfixOp :: InfixOp a -> TCM (PredSet, Type, InfixOp Type)
-tcInfixOp (InfixOp _ op) = do
+tcInfixOp :: Bool -> InfixOp a -> TCM (PredSet, Type, InfixOp Type)
+tcInfixOp b (InfixOp _ op) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  (ps, ty) <- inst (funType m op vEnv)
+  let (qid, ty') = funType m op vEnv
+  (ps, ty) <- inst ty'
+  when (b && qualName qid == "Prelude.$") $ addImpVars (typeVars ty)
   return (ps, ty, InfixOp ty op)
-tcInfixOp (InfixConstr _ op) = do
+tcInfixOp _ (InfixConstr _ op) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- inst (constrType m op vEnv)
@@ -1478,11 +1489,19 @@ unifyTypes _ (TypeVariable tv1)         ty@(TypeVariable tv2)
   | otherwise  = return $ Right (singleSubst tv1 ty)
 unifyTypes m (TypeVariable tv)          ty
   | tv `elem` typeVars ty = return $ Left (errRecursiveType m tv ty)
-  | hasHigherRankPoly ty  = return $ Left (errImpredInst m tv ty)
+  | hasHigherRankPoly ty  = do
+    ivs <- getImpVars
+    case tv `elem` ivs of
+      True -> return $ Right (singleSubst tv ty)
+      _    -> return $ Left (errImpredInst m tv ty)
   | otherwise             = return $ Right (singleSubst tv ty)
 unifyTypes m ty                         (TypeVariable tv)
   | tv `elem` typeVars ty = return $ Left (errRecursiveType m tv ty)
-  | hasHigherRankPoly ty  = return $ Left (errImpredInst m tv ty)
+  | hasHigherRankPoly ty  = do
+    ivs <- getImpVars
+    case tv `elem` ivs of
+      True -> return $ Right (singleSubst tv ty)
+      _    -> return $ Left (errImpredInst m tv ty)
   | otherwise             = return $ Right (singleSubst tv ty)
 unifyTypes _ (TypeConstrained tys1 tv1) ty@(TypeConstrained tys2 tv2)
   | tv1 == tv2   = return $ Right idSubst
@@ -1811,14 +1830,14 @@ varArity v vEnv = case qualLookupValue v vEnv of
   Label _ _ _ : _   -> 1
   _                 -> internalError $ "TypeCheck.varArity: " ++ show v
 
-funType :: ModuleIdent -> QualIdent -> ValueEnv -> Type
+funType :: ModuleIdent -> QualIdent -> ValueEnv -> (QualIdent, Type)
 funType m f vEnv = case qualLookupValue f vEnv of
-  [Value _ _ _ tySc] -> tySc
-  [Label _ _ tySc]   -> tySc
+  [Value qid _ _ tySc] -> (qid, tySc)
+  [Label qid _ tySc]   -> (qid, tySc)
   _ -> case qualLookupValue (qualQualify m f) vEnv of
-         [Value _ _ _ tySc] -> tySc
-         [Label _ _ tySc]   -> tySc
-         _                  -> internalError $ "TypeCheck.funType: " ++ show f
+         [Value qid _ _ tySc] -> (qid, tySc)
+         [Label qid _ tySc]   -> (qid, tySc)
+         _                    -> internalError $ "TypeCheck.funType: " ++ show f
 
 labelType :: ModuleIdent -> QualIdent -> ValueEnv -> Type
 labelType m l vEnv = case qualLookupValue l vEnv of
