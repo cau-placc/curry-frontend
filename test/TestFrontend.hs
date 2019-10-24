@@ -245,6 +245,14 @@ failInfos = map (uncurry mkFailTest)
       , "Module Prelude does not export bar"
       ]
     )
+  , ("ImpredDollar",
+      [ "Type error in infix application"
+      , "constFun x $ f"
+      , "Cannot instantiate unification variable"
+      , "with a type involving foralls:"
+      , "Impredicative polymorphism isn't yet supported."
+      ]
+    )
   , ("ImpredPoly",
       [ "Illegal polymorphic type (Bool, forall b. a -> b, Int)"
       , "Illegal polymorphic type [forall a. a -> a]"
