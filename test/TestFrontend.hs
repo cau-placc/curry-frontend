@@ -145,6 +145,7 @@ passInfos = map mkPassTest
   , "ACVisibility"
   , "AnonymVar"
   , "CaseComplete"
+  , "DataPass"
   , "DefaultPrecedence"
   , "Dequeue"
   , "ExplicitLayout"
@@ -192,7 +193,14 @@ mkFailTest name errorMsgs = (name, [], [], Nothing, errorMsgs)
 -- test code and the expected error message(s) to the following list
 failInfos :: [TestInfo]
 failInfos = map (uncurry mkFailTest)
-  [ ("ErrorMultipleSignature", ["More than one type signature for `f'"])
+  [ ("DataFail",
+      [ "Missing instance for Prelude.Data Test1"
+      , "Missing instance for Prelude.Data (Test2 _3)"
+      , "Missing instance for Prelude.Data (Test2 _5)"
+      , "Missing instance for Prelude.Data Test1"
+      ]
+    )
+  , ("ErrorMultipleSignature", ["More than one type signature for `f'"])
   , ("ExportCheck/AmbiguousName", ["Ambiguous name `not'"])
   , ("ExportCheck/AmbiguousType", ["Ambiguous type `Bool'"])
   , ("ExportCheck/ModuleNotImported", ["Module `Foo' not imported"])
