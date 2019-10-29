@@ -20,6 +20,7 @@ import Control.Monad.Writer
 import Data.List             (mapAccumL)
 import Data.Maybe            (fromMaybe, isJust)
 import Data.ByteString as BS (ByteString, writeFile)
+import Data.FileEmbed
 import Network.URI           (escapeURIString, isUnreserved)
 import System.FilePath       ((</>))
 
@@ -32,13 +33,17 @@ import Curry.Syntax          (Module (..), Token)
 
 import Html.SyntaxColoring
 
-import Files.Embed
 
 import CompilerOpts          (Options (..))
 
 -- |Read file via TemplateHaskell at compile time
 cssContent :: ByteString
-cssContent = $(embedDataFile cssFileName)
+cssContent = $(makeRelativeToProject "data/currysource.css" >>= embedFile)
+
+-- | Name of the css file
+-- NOTE: The relative path is given above
+cssFileName :: String
+cssFileName = "currysource.css"
 
 -- |Translate source file into HTML file with syntaxcoloring
 source2html :: Options -> ModuleIdent -> [(Position, Token)] -> Module a
