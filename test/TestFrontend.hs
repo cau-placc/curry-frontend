@@ -147,6 +147,7 @@ passInfos = map mkPassTest
   , "CaseComplete"
   , "ChurchEncoding"
   , "ClassMethods"
+  , "DataPass"
   , "DefaultPrecedence"
   , "Dequeue"
   , "EmptyWhere"
@@ -213,6 +214,14 @@ failInfos = map (uncurry mkFailTest)
       , "applyFunTest2 = applyFun funA 'a' 'b'"
       ]
     )
+  [ ("DataFail",
+      [ "Missing instance for Prelude.Data Test1"
+      , "Missing instance for Prelude.Data (Test2 _3)"
+      , "Missing instance for Prelude.Data (Test2 _5)"
+      , "Missing instance for Prelude.Data Test1"
+      ]
+    )
+  , ("ErrorMultipleSignature", ["More than one type signature for `f'"])
   , ("ErrorMultipleSignature", ["More than one type signature for `f'"])
   , ("EscapingTypeVariable",
       [ "Type error in application"

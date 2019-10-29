@@ -88,7 +88,7 @@ checkImpredDecl (InstanceDecl _ _ _ ty ds) = do
   mapM_ checkImpredDecl ds
 checkImpredDecl (DefaultDecl _ tys)        = mapM_ checkType tys
   where
-    checkType te = unlessM (checkSimpleType te) $ do
+    checkType te = unlessM (checkSimpleType te) $
       report $ errIllegalDefaultType (getPosition te) te
 checkImpredDecl _                          = ok
 
@@ -108,17 +108,17 @@ checkImpredNewConsDecl (NewRecordDecl _ _ (_, ty)) = checkImpredType ty
 checkImpredType :: TypeExpr -> ICM ()
 checkImpredType (ConstructorType _ _)      = ok
 checkImpredType te@(ApplyType spi ty1 ty2) = do
-  unlessM (checkSimpleType ty2) $ do
+  unlessM (checkSimpleType ty2) $
     report $ errIllegalPolymorphicType (getPosition spi) te
   checkImpredType ty1
   checkImpredType ty2
 checkImpredType (VariableType _ _)         = ok
 checkImpredType te@(TupleType spi tys)     = do
-  unlessM (allM checkSimpleType tys) $ do
+  unlessM (allM checkSimpleType tys) $
     report $ errIllegalPolymorphicType (getPosition spi) te
   mapM_ checkImpredType tys
 checkImpredType te@(ListType spi ty)       = do
-  unlessM (checkSimpleType ty) $ do
+  unlessM (checkSimpleType ty) $
     report $ errIllegalPolymorphicType (getPosition spi) te
   checkImpredType ty
 checkImpredType (ArrowType _ ty1 ty2)      = do

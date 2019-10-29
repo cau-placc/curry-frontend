@@ -49,8 +49,8 @@ import           Prelude             hiding ((<>))
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative ((<$>), (<*>))
 #endif
-import           Control.Monad.Extra (allM, eitherM, filterM, foldM, liftM,
-                                      notM, replicateM, unless, unlessM, (&&^))
+import           Control.Monad.Extra (allM, eitherM, filterM, foldM, (&&^),
+                                      notM, replicateM, when, unless, unlessM)
 import qualified Control.Monad.State as S (State, gets, modify, runState)
 import           Data.Foldable       (foldrM)
 import           Data.Function       (on)
@@ -148,7 +148,7 @@ data TcState = TcState
 (&&>) :: TCM () -> TCM () -> TCM ()
 pre &&> suf = do
   errs <- pre >> S.gets errors
-  if null errs then suf else return ()
+  when (null errs) suf
 
 (>>-) :: TCM (a, b, c) -> (a -> b -> TCM a) -> TCM (a, c)
 m >>- f = do
@@ -361,8 +361,8 @@ bindLabels' m tcEnv vEnv = foldr (bindData . snd) vEnv $ localBindings tcEnv
         n = kindArity k
         labels = zip (concatMap recLabels cs) (concatMap recLabelTypes cs)
         clabels = [(l, constr l, ty) | (l, ty) <- labels]
-        constr l = map (qualifyLike tc)
-                       [constrIdent c | c <- cs, l `elem` recLabels c]
+        constr l = [qualifyLike tc (constrIdent c)
+                     | c <- cs, l `elem` recLabels c]
         sameLabel (l1, _, _) (l2, _, _) = l1 == l2
     bindData (RenamingType tc k (RecordConstr c [l] [lty])) vEnv'
       = bindLabel m n (constrType' tc n) (l, [qc], lty) vEnv'
@@ -437,7 +437,7 @@ bindTypeSig :: Ident -> TypeExpr -> SigEnv -> SigEnv
 bindTypeSig = Map.insert
 
 bindTypeSigs :: Decl a -> SigEnv -> SigEnv
-bindTypeSigs (TypeSig _ vs ty) env = foldr (flip bindTypeSig ty) env vs
+bindTypeSigs (TypeSig _ vs ty) env = foldr (`bindTypeSig` ty) env vs
 bindTypeSigs _                 env = env
 
 lookupTypeSig :: Ident -> SigEnv -> Maybe TypeExpr
@@ -474,7 +474,7 @@ toCheckModeList tys = map Check tys ++ repeat Infer
 -- that group as well.
 
 tcDecls :: [Decl a] -> TCM (PredSet, [Decl Type])
-tcDecls = liftM (fmap fromPDecls) . tcPDecls . toPDecls
+tcDecls = fmap (fmap fromPDecls) . tcPDecls . toPDecls
 
 tcPDecls :: [PDecl a] -> TCM (PredSet, [PDecl Type])
 tcPDecls pds = withLocalSigEnv $ do
@@ -492,8 +492,16 @@ tcPDeclGroup ps [(i, ExternalDecl p fs)] = do
 tcPDeclGroup ps [(i, FreeDecl p fvs)]    = do
   vs <- mapM (tcDeclVar False) (bv fvs)
   m <- getModuleIdent
-  modifyValueEnv $ flip (bindVars m) vs
-  return (ps, [(i, FreeDecl p (map (\(v, _, TypeForall _ ty) -> Var ty v) vs))])
+  (vs', ps') <- unzip <$> mapM addDataPred vs
+  modifyValueEnv $ flip (bindVars m) vs'
+  let d = FreeDecl p (map (\(v, _, TypeForall _ ty) -> Var ty v) vs')
+  return (ps `Set.union` Set.unions ps', [(i, d)])
+  where
+    addDataPred (idt, n, TypeForall ids ty1) = do
+      (ps2, ty2) <- freshDataType
+      ps' <- unify idt "free variable" (ppIdent idt) emptyPredSet ty1 ps2 ty2
+      return ((idt, n, TypeForall ids ty1), ps')
+    addDataPred _ = internalError "TypeCheck.addDataPred"
 tcPDeclGroup ps pds = do
   vEnv <- getValueEnv
   vss <- mapM (tcDeclVars . snd) pds
@@ -503,7 +511,7 @@ tcPDeclGroup ps pds = do
   let (impPds, expPds) = partitionPDecls sigs pds
   (ps', impPds') <- mapAccumM tcPDecl ps impPds
   theta <- getTypeSubst
-  tvs <- liftM (concatMap $ typeVars . subst theta . fst) $
+  tvs <- concatMap (typeVars . subst theta . fst) <$>
            filterM (notM . isNonExpansive . snd . snd) impPds'
   let fvs = foldr Set.insert (fvEnv (subst theta vEnv)) tvs
       (gps, lps) = splitPredSet fvs ps'
@@ -624,7 +632,7 @@ bindPatternVars (Check ty) (VariablePattern _ _ v)       = do
 bindPatternVars _          (ConstructorPattern _ _ c ps) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  tys <- (fst . arrowUnapply . snd) <$> inst (constrType m c vEnv)
+  tys <- fst . arrowUnapply . snd <$> inst (constrType m c vEnv)
   mapM_ (uncurry bindPatternVars) $ zip (toCheckModeList tys) ps
 bindPatternVars cm         (InfixPattern spi a p1 op p2)
   = bindPatternVars cm (ConstructorPattern spi a op [p1, p2])
@@ -640,11 +648,11 @@ bindPatternVars cm         (LazyPattern _ p)             = bindPatternVars cm p
 bindPatternVars _          (FunctionPattern _ _ f ps)    = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  tys <- (fst . arrowUnapply . snd) <$> inst (funType m f vEnv)
+  tys <- fst . arrowUnapply . snd <$> inst (funType m f vEnv)
   mapM_ (uncurry bindPatternVars) $ zip (toCheckModeList tys) ps
 bindPatternVars cm         (InfixFuncPattern spi a p1 op p2)
   = bindPatternVars cm (FunctionPattern spi a op [p1, p2])
-bindPatternVars _          (RecordPattern       _ _ _ fs) = do
+bindPatternVars _          (RecordPattern       _ _ _ fs) =
   mapM_ bindFieldVars fs
 bindPatternVars _          _                              = ok
 
@@ -652,7 +660,7 @@ bindFieldVars :: Field (Pattern a) -> TCM ()
 bindFieldVars (Field _ l p) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  ty <- (arrowBase . snd) <$> inst (labelType m l vEnv)
+  ty <- arrowBase . snd <$> inst (labelType m l vEnv)
   bindPatternVars (Check ty) p
 
 lambdaVar :: Ident -> TCM (Ident, Int, Type)
@@ -867,7 +875,7 @@ isNonExpansive' n (Typed _ e _)           = isNonExpansive' n e
 isNonExpansive' _ (Record _ _ c fs)       = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  liftM ((length (constrLabels m c vEnv) == length fs) &&) (isNonExpansive fs)
+  fmap ((length (constrLabels m c vEnv) == length fs) &&) (isNonExpansive fs)
 isNonExpansive' _ (Tuple _ es)            = isNonExpansive es
 isNonExpansive' _ (List _ _ es)           = isNonExpansive es
 isNonExpansive' n (Apply _ f e)           = isNonExpansive' (n + 1) f
@@ -879,8 +887,8 @@ isNonExpansive' n (LeftSection _ e op)    = isNonExpansive' (n + 1) (infixOp op)
                                               &&^ isNonExpansive e
 isNonExpansive' n (Lambda _ ts e)         = withLocalValueEnv $ do
   modifyValueEnv $ flip (foldr bindVarArity) (bv ts)
-  liftM ((n < length ts) ||) (liftM ((all isVariablePattern ts) &&)
-                                    (isNonExpansive' (n - length ts) e))
+  fmap (((n < length ts) ||) . (all isVariablePattern ts &&))
+    (isNonExpansive' (n - length ts) e)
 isNonExpansive' n (Let _ ds e)            = withLocalValueEnv $ do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv
@@ -1063,15 +1071,15 @@ tcLiteral :: Bool -> Literal -> TCM (PredSet, Type)
 tcLiteral _    (Char _)   = return (emptyPredSet, charType)
 tcLiteral poly (Int _)
   | poly      = freshNumType
-  | otherwise = liftM ((,) emptyPredSet) (freshConstrained numTypes)
+  | otherwise = fmap ((,) emptyPredSet) (freshConstrained numTypes)
 tcLiteral poly (Float _)
   | poly      = freshFractionalType
-  | otherwise = liftM ((,) emptyPredSet) (freshConstrained fractionalTypes)
+  | otherwise = fmap ((,) emptyPredSet) (freshConstrained fractionalTypes)
 tcLiteral _    (String _) = return (emptyPredSet, stringType)
 
 tcLhs :: HasPosition p => p -> Lhs a -> TCM (PredSet, [Type], Lhs Type)
 tcLhs p (FunLhs spi f ts) = do
-  (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern p) ts
+  (pss, tys, ts') <- unzip3 <$> mapM (tcPattern p) ts
   return (Set.unions pss, tys, FunLhs spi f ts')
 tcLhs p (OpLhs spi t1 op t2) = do
   (ps1, ty1, t1') <- tcPattern p t1
@@ -1079,7 +1087,7 @@ tcLhs p (OpLhs spi t1 op t2) = do
   return (ps1 `Set.union` ps2, [ty1, ty2], OpLhs spi t1' op t2')
 tcLhs p (ApLhs spi lhs ts) = do
   (ps, tys1, lhs') <- tcLhs p lhs
-  (pss, tys2, ts') <- liftM unzip3 $ mapM (tcPattern p) ts
+  (pss, tys2, ts') <- unzip3 <$> mapM (tcPattern p) ts
   return (Set.unions (ps:pss), tys1 ++ tys2, ApLhs spi lhs' ts')
 
 -- When computing the type of a variable in a pattern, we ignore the
@@ -1104,7 +1112,7 @@ tcPattern _ (VariablePattern spi _ v) = do
 tcPattern p t@(ConstructorPattern spi _ c ts) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  (ps, (tys, ty')) <- liftM (fmap arrowUnapply) (inst (constrType m c vEnv))
+  (ps, (tys, ty')) <- fmap (fmap arrowUnapply) (inst (constrType m c vEnv))
   (ps', ts') <- mapAccumM (uncurry . tcPatternArg p "pattern" (pPrintPrec 0 t))
                           ps (zip tys ts)
   return (ps', ty', ConstructorPattern spi ty' c ts')
@@ -1118,12 +1126,12 @@ tcPattern p (ParenPattern spi t) = do
 tcPattern _ t@(RecordPattern spi _ c fs) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  (ps, ty) <- liftM (fmap arrowBase) (inst (constrType m c vEnv))
+  (ps, ty) <- fmap (fmap arrowBase) (inst (constrType m c vEnv))
   (ps', fs') <- mapAccumM (tcField tcPattern "pattern"
     (\t' -> pPrintPrec 0 t $-$ text "Term:" <+> pPrintPrec 0 t') ty) ps fs
   return (ps', ty, RecordPattern spi ty c fs')
 tcPattern p (TuplePattern spi ts) = do
-  (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern p) ts
+  (pss, tys, ts') <- unzip3 <$> mapM (tcPattern p) ts
   return (Set.unions pss, tupleType tys, TuplePattern spi ts')
 tcPattern p t@(ListPattern spi _ ts) = do
   ty <- freshTypeVar
@@ -1225,7 +1233,7 @@ tcExpr _     p (Typed spi e qty) = do
 tcExpr _     _ e@(Record spi _ c fs) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  (ps, ty) <- liftM (fmap arrowBase) (inst (constrType m c vEnv))
+  (ps, ty) <- fmap (fmap arrowBase) (inst (constrType m c vEnv))
   (ps', fs') <- mapAccumM (tcField (tcExpr Infer) "construction"
     (\e' -> pPrintPrec 0 e $-$ text "Term:" <+> pPrintPrec 0 e') ty) ps fs
   return (ps', ty, Record spi ty c fs')
@@ -1235,7 +1243,7 @@ tcExpr _     p e@(RecordUpdate spi e1 fs) = do
     (\e' -> pPrintPrec 0 e $-$ text "Term:" <+> pPrintPrec 0 e') ty) ps fs
   return (ps', ty, RecordUpdate spi e1' fs')
 tcExpr _     p (Tuple spi es) = do
-  (pss, tys, es') <- liftM unzip3 $ mapM (tcExpr Infer p) es
+  (pss, tys, es') <- unzip3 <$> mapM (tcExpr Infer p) es
   return (Set.unions pss, tupleType tys, Tuple spi es')
 tcExpr _     p e@(List spi _ es) = do
   ty <- freshTypeVar
@@ -1302,7 +1310,7 @@ tcExpr cm    p (Lambda spi ts e) = do
                    Infer    -> toCheckModeList []
                    Check ty -> toCheckModeList $ fst $ arrowUnapply ty
     mapM_ (uncurry bindPatternVars) $ zip cmList ts
-    (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern p) ts
+    (pss, tys, ts') <- unzip3 <$> mapM (tcPattern p) ts
     (ps, ty, e') <- tcExpr Infer p e
     return (pss, tys, ts', ps, ty, e')
   ps' <- reducePredSet p "expression" (pPrintPrec 0 e') (Set.unions $ ps : pss)
@@ -1318,7 +1326,7 @@ tcExpr _     p (Do spi sts e) = do
   (sts', ty, ps', e') <- withLocalValueEnv $ do
     ((ps, mTy), sts') <-
       mapAccumM (uncurry (tcStmt p)) (emptyPredSet, Nothing) sts
-    ty <- liftM (maybe id TypeApply mTy) freshTypeVar
+    ty <- fmap (maybe id TypeApply mTy) freshTypeVar
     (ps', e') <- tcExpr Infer p e >>- unify p "statement" (pPrintPrec 0 e) ps ty
     return (sts', ty, ps', e')
   return (ps', ty, Do spi sts' e')
@@ -1526,14 +1534,14 @@ unifyTypes _ (TypeConstrained tys1 tv1) ty@(TypeConstrained tys2 tv2)
   | tv1 == tv2   = return $ Right idSubst
   | tys1 == tys2 = return $ Right (singleSubst tv1 ty)
 unifyTypes m (TypeConstrained tys tv)   ty
-  = foldrM (\ty' s -> liftM (`choose` s) (unifyTypes m ty ty'))
+  = foldrM (\ty' s -> fmap (`choose` s) (unifyTypes m ty ty'))
            (Left (errIncompatibleTypes m ty (head tys)))
            tys
   where
     choose (Left _)      theta' = theta'
     choose (Right theta) _      = Right (bindSubst tv ty theta)
 unifyTypes m ty                         (TypeConstrained tys tv)
-  = foldrM (\ty' s -> liftM (`choose` s) (unifyTypes m ty ty'))
+  = foldrM (\ty' s -> fmap (`choose` s) (unifyTypes m ty ty'))
            (Left (errIncompatibleTypes m ty (head tys)))
            tys
   where
@@ -1557,16 +1565,16 @@ unifyTypes m ty1@(TypeForall _ _)       ty2@(TypeForall _ _)
          Left x  -> return $ Left x
          Right s -> do
            let (_, tys) = unzip $ substToList $ restrictSubstTo (vs1 ++ vs2) s
-           case all isVarType tys of
-             True  -> do
+           if all isVarType tys
+             then do
                let vars = typeVars ty1 ++ typeVars ty2
-               let tvs = concatMap typeVars $ snd $ unzip $ substToList
-                                            $ restrictSubstTo vars s
+               let tvs = concatMap (typeVars . snd) $
+                           substToList $ restrictSubstTo vars s
                let tys' = map (\(TypeVariable tv) -> tv) tys
                case filter (`elem` tvs) (vs1 ++ vs2 ++ tys') of
                  []   -> return $ Right s
                  ev:_ -> return $ Left $ errEscapingTypeVariable m ev ty1 ty2
-             False -> return $ Left (errIncompatibleTypes m ty1 ty2)
+             else return $ Left (errIncompatibleTypes m ty1 ty2)
 unifyTypes m ty1@(TypeForall _ _)       ty2
   = do (vs, _, ty1') <- skolemise ty1
        res <- unifyTypes m ty1' ty2
@@ -1574,15 +1582,15 @@ unifyTypes m ty1@(TypeForall _ _)       ty2
          Left x  -> return $ Left x
          Right s -> do
            let (_, tys) = unzip $ substToList $ restrictSubstTo vs s
-           case all isVarType tys of
-             True  -> do
-               let tvs = concatMap typeVars $ snd $ unzip $ substToList
-                                            $ restrictSubstTo (typeVars ty1) s
+           if all isVarType tys
+             then do
+               let tvs = concatMap (typeVars . snd) $
+                           substToList $ restrictSubstTo (typeVars ty1) s
                let tys' = map (\(TypeVariable tv) -> tv) tys
                case filter (`elem` tvs) (vs ++ tys') of
                  []   -> return $ Right s
                  ev:_ -> return $ Left $ errEscapingTypeVariable m ev ty1 ty2
-             False -> return $ Left (errIncompatibleTypes m ty1 ty2)
+             else return $ Left (errIncompatibleTypes m ty1 ty2)
 unifyTypes m ty1                        ty2@(TypeForall _ _)
   = do (vs, _, ty2') <- skolemise ty2
        res <- unifyTypes m ty1 ty2'
@@ -1590,15 +1598,15 @@ unifyTypes m ty1                        ty2@(TypeForall _ _)
          Left x  -> return $ Left x
          Right s -> do
            let (_, tys) = unzip $ substToList $ restrictSubstTo vs s
-           case all isVarType tys of
-             True  -> do
-               let tvs = concatMap typeVars $ snd $ unzip $ substToList
-                                            $ restrictSubstTo (typeVars ty2) s
+           if all isVarType tys
+             then do
+               let tvs = concatMap (typeVars . snd) $
+                           substToList $ restrictSubstTo (typeVars ty2) s
                let tys' = map (\(TypeVariable tv) -> tv) tys
                case filter (`elem` tvs) (vs ++ tys') of
                  []   -> return $ Right s
                  ev:_ -> return $ Left $ errEscapingTypeVariable m ev ty1 ty2
-             False -> return $ Left (errIncompatibleTypes m ty1 ty2)
+             else return $ Left (errIncompatibleTypes m ty1 ty2)
 unifyTypes m ty1                        ty2
   = return $ Left (errIncompatibleTypes m ty1 ty2)
 
@@ -1631,7 +1639,7 @@ reducePredSet p what doc ps = do
   m <- getModuleIdent
   clsEnv <- getClassEnv
   theta <- getTypeSubst
-  inEnv <- (fmap $ fmap $ subst theta) <$> getInstEnv
+  inEnv <- fmap (fmap (subst theta)) <$> getInstEnv
   let ps' = subst theta ps
       (ps1, ps2) = partitionPredSet $ minPredSet clsEnv $ reducePreds inEnv ps'
   theta' <- foldM (reportMissingInstance m p what doc inEnv) idSubst
@@ -1661,8 +1669,8 @@ reportMissingInstance m p what doc inEnv theta (Pred qcls ty) =
                    return theta
       [ty''] -> return (bindSubst tv ty'' theta)
       tys' | length tys == length tys' -> return theta
-           | otherwise                 -> liftM (flip (bindSubst tv) theta)
-                                                (freshConstrained tys')
+           | otherwise                 -> fmap (flip (bindSubst tv) theta)
+                                               (freshConstrained tys')
     ty' | hasInstance inEnv qcls ty' -> return theta
         | otherwise                  -> do
       report $ errMissingInstance m p what doc (Pred qcls ty')
@@ -1707,7 +1715,7 @@ applyDefaults p what doc fvs ps ty = do
   mapM_ (report . errAmbiguousTypeVariable m p what doc (TypeContext ps' ty'))
         tvs'
   modifyTypeSubst $ compose theta
-  return $ Set.filter (\(Pred _ (TypeVariable tv)) -> elem tv fvs) ps'
+  return $ Set.filter (\(Pred _ (TypeVariable tv)) -> tv `elem` fvs) ps'
 
 bindDefault :: [Type] -> InstEnv' -> PredSet -> Int -> TypeSubst -> TypeSubst
 bindDefault defs inEnv ps tv =
@@ -1771,6 +1779,9 @@ freshMonadType = freshPredType [qMonadId]
 
 freshMonadFailType :: TCM (PredSet, Type)
 freshMonadFailType = freshPredType [qMonadFailId]
+
+freshDataType :: TCM (PredSet, Type)
+freshDataType = freshPredType [qDataId]
 
 freshConstrained :: [Type] -> TCM Type
 freshConstrained = freshVar . TypeConstrained
