@@ -182,6 +182,7 @@ passInfos = map mkPassTest
   , "ScottEncoding"
   , "SelfExport"
   , "SpaceLeak"
+  , "Subsumption"
   , "TermInv"
   , "TyConsTest"
   , "TypedExpr"
@@ -296,15 +297,7 @@ failInfos = map (uncurry mkFailTest)
       ]
     )
   , ("IncompatibleTypes",
-      [ "Type error in application"
-      , "applyFun idBool"
-      , "Type error in application"
-      , "applyFun idFun"
-      , "Type error in application"
-      , "trueFun False"
-      , "Type error in application"
-      , "applyEqFun ((==) :: Bool -> Bool -> Bool)"
-      , "Type error in equation"
+      [ "Type error in equation"
       , "whereTest = whereTest'"
       ]
     )
@@ -328,6 +321,19 @@ failInfos = map (uncurry mkFailTest)
   , ("RankNTypes", ["Arbitrary-rank types are not supported in standard Curry."])
   , ("RecordLabelIDs", ["Multiple declarations of `RecordLabelIDs.id'"])
   , ("RecursiveTypeSyn", ["Mutually recursive synonym and/or renaming types A and B (line 12.6)"])
+  , ("Subsumption",
+      [ "Type error in application"
+      , "applyFun idFun"
+      , "Type error in application"
+      , "applyFun idBool"
+      , "Type error in application"
+      , "applyEqFun ((==) :: Bool -> Bool -> Bool)"
+      , "Type error in application"
+      , "trueFun False"
+      , "Type error in application"
+      , "fun1 fun2"
+      ]
+    )
   , ("SyntaxError", ["Type error in application"])
   , ("TypedFreeVariables",
       ["Variable x has a polymorphic type", "Type error in equation"]

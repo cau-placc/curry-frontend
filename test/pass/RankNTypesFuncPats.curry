@@ -8,4 +8,4 @@ funF :: (a -> b) -> a -> b
 funF g a = g a
 
 funHTest :: Int
-funHTest = funH id 4 4
+funHTest = funH (\x -> error "fail") 4 4
