@@ -22,7 +22,7 @@ module Base.Types
     Type (..)
   , applyType, unapplyType, rootOfType, isArrowType, isVarType, arrowArity
   , arrowArgs, arrowBase, arrowUnapply
-  , typeConstrs, qualifyType, unqualifyType, qualifyTC, weakPrenex
+  , typeConstrs, qualifyType, unqualifyType, qualifyTC
   , hasHigherRankPoly
   , IsType (..)
     -- * Representation of predicates and predicate sets
@@ -195,16 +195,6 @@ unqualifyType m (TypeForall tvs ty)      = TypeForall tvs (unqualifyType m ty)
 qualifyTC :: ModuleIdent -> QualIdent -> QualIdent
 qualifyTC m tc | isPrimTypeId tc = tc
                | otherwise       = qualQualify m tc
-
--- | Converts the given type into weak-prenex form.
-weakPrenex :: Type -> Type
-weakPrenex ty@(TypeArrow ty1 ty2)  = case weakPrenex ty2 of
-  TypeForall tvs ty2' -> TypeForall tvs (TypeArrow ty1 ty2')
-  _                   -> ty
-weakPrenex ty@(TypeForall tvs ty1) = case weakPrenex ty1 of
-  TypeForall tvs' ty1' -> TypeForall (tvs ++ tvs') ty1'
-  _                    -> ty
-weakPrenex ty                      = ty
 
 -- | Checks whether the given type contains higher-rank polymorphism.
 hasHigherRankPoly :: Type -> Bool

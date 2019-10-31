@@ -161,6 +161,7 @@ passInfos = map mkPassTest
   , "Hierarchical"
   , "ImportRestricted"
   , "ImportRestricted2"
+  , "ImpredDollar"
   , "Infix"
   , "Inline"
   , "Lambda"
@@ -185,6 +186,7 @@ passInfos = map mkPassTest
   , "ScottEncoding"
   , "SelfExport"
   , "SpaceLeak"
+  , "Subsumption"
   , "TermInv"
   , "TyConsTest"
   , "TypedExpr"
@@ -214,7 +216,7 @@ failInfos = map (uncurry mkFailTest)
       , "applyFunTest2 = applyFun funA 'a' 'b'"
       ]
     )
-  [ ("DataFail",
+  , ("DataFail",
       [ "Missing instance for Prelude.Data Test1"
       , "Missing instance for Prelude.Data (Test2 _3)"
       , "Missing instance for Prelude.Data (Test2 _5)"
@@ -257,6 +259,14 @@ failInfos = map (uncurry mkFailTest)
       , "Module Prelude does not export bar"
       ]
     )
+  , ("ImpredDollar",
+      [ "Type error in infix application"
+      , "constFun x $ f"
+      , "Cannot instantiate unification variable"
+      , "with a type involving foralls:"
+      , "Impredicative polymorphism isn't yet supported."
+      ]
+    )
   , ("ImpredPoly",
       [ "Illegal polymorphic type (Bool, forall b. a -> b, Int)"
       , "Illegal polymorphic type [forall a. a -> a]"
@@ -268,7 +278,7 @@ failInfos = map (uncurry mkFailTest)
     )
   , ("ImpredPolyUnify",
       [ "Type error in equation"
-      , "constFun = error \"fail\""
+      , "constFunFail = error \"fail\""
       , "Cannot instantiate unification variable"
       , "with a type involving foralls:"
       , "Impredicative polymorphism isn't yet supported."
@@ -277,8 +287,18 @@ failInfos = map (uncurry mkFailTest)
       , "Cannot instantiate unification variable"
       , "with a type involving foralls:"
       , "Impredicative polymorphism isn't yet supported."
-      , "Type error in infix application"
-      , "constFun x $ f"
+      , "Type error in application"
+      , "($) (constFun x)"
+      , "Cannot instantiate unification variable"
+      , "with a type involving foralls:"
+      , "Impredicative polymorphism isn't yet supported."
+      , "Type error in left section"
+      , "(constFun x $)"
+      , "Cannot instantiate unification variable"
+      , "with a type involving foralls:"
+      , "Impredicative polymorphism isn't yet supported."
+      , "Type error in application"
+      , "constFun x ($ f)"
       , "Cannot instantiate unification variable"
       , "with a type involving foralls:"
       , "Impredicative polymorphism isn't yet supported."
@@ -290,14 +310,8 @@ failInfos = map (uncurry mkFailTest)
       ]
     )
   , ("IncompatibleTypes",
-      [ "Type error in application"
-      , "applyFun idBool"
-      , "Type error in application"
-      , "applyFun idFun"
-      , "Type error in application"
-      , "trueFun False"
-      , "Type error in application"
-      , "applyEqFun ((==) :: Bool -> Bool -> Bool)"
+      [ "Type error in equation"
+      , "whereTest = whereTest'"
       ]
     )
   , ("KindCheck",
@@ -322,6 +336,19 @@ failInfos = map (uncurry mkFailTest)
   , ("RankNTypes", ["Arbitrary-rank types are not supported in standard Curry."])
   , ("RecordLabelIDs", ["Multiple declarations of `RecordLabelIDs.id'"])
   , ("RecursiveTypeSyn", ["Mutually recursive synonym and/or renaming types A and B (line 12.6)"])
+  , ("Subsumption",
+      [ "Type error in application"
+      , "applyFun idFun"
+      , "Type error in application"
+      , "applyFun idBool"
+      , "Type error in application"
+      , "applyEqFun ((==) :: Bool -> Bool -> Bool)"
+      , "Type error in application"
+      , "trueFun False"
+      , "Type error in application"
+      , "fun1 fun2"
+      ]
+    )
   , ("SyntaxError", ["Type error in application"])
   , ("TypedFreeVariables",
       ["Variable x has a polymorphic type", "Type error in equation"]

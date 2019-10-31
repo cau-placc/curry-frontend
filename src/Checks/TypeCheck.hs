@@ -59,7 +59,7 @@ import qualified Data.Map            as Map (Map, empty, insert, lookup)
 import           Data.Maybe          (fromJust, isJust)
 import qualified Data.Set.Extra      as Set (Set, concatMap, deleteMin, empty,
                                              filter, fromList, insert,
-                                             isSubsetOf, member, notMember,
+                                             isSubsetOf, map, member, notMember,
                                              partition, singleton, toList,
                                              union, unions)
 
@@ -97,7 +97,7 @@ typeCheck :: ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv -> InstEnv -> [Decl a]
 typeCheck m tcEnv vEnv clsEnv inEnv ds = runTCM (checkDecls ds) initState
   where
     initState = TcState m tcEnv vEnv clsEnv (inEnv, Map.empty)
-                        [intType, floatType] idSubst emptySigEnv 1 []
+                        [intType, floatType] idSubst emptySigEnv 1 [] []
 
 checkDecls :: [Decl a] -> TCM [Decl Type]
 checkDecls ds = do
@@ -143,6 +143,8 @@ data TcState = TcState
   , sigEnv       :: SigEnv
   , nextId       :: Int         -- automatic counter
   , errors       :: [Message]
+  , impVars      :: [Int]       -- type variables that can be instantiated with
+                                -- higher-rank types when necessary
   }
 
 (&&>) :: TCM () -> TCM () -> TCM ()
@@ -221,6 +223,12 @@ getNextId = do
   n <- S.gets nextId
   S.modify $ \s -> s { nextId = succ n }
   return n
+
+getImpVars :: TCM [Int]
+getImpVars = S.gets impVars
+
+addImpVars :: [Int] -> TCM ()
+addImpVars ivs = S.modify $ \s -> s { impVars = ivs ++ impVars s }
 
 report :: Message -> TCM ()
 report err = S.modify $ \s -> s { errors = err : errors s }
@@ -648,7 +656,7 @@ bindPatternVars cm         (LazyPattern _ p)             = bindPatternVars cm p
 bindPatternVars _          (FunctionPattern _ _ f ps)    = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  tys <- fst . arrowUnapply . snd <$> inst (funType m f vEnv)
+  tys <- fst . arrowUnapply . snd <$> inst (snd $ funType m f vEnv)
   mapM_ (uncurry bindPatternVars) $ zip (toCheckModeList tys) ps
 bindPatternVars cm         (InfixFuncPattern spi a p1 op p2)
   = bindPatternVars cm (FunctionPattern spi a op [p1, p2])
@@ -671,7 +679,7 @@ lambdaVar v = do
 unifyDecl :: HasPosition p => p -> String -> Doc -> PredSet -> Type -> PredSet
           -> Type -> TCM PredSet
 unifyDecl p what doc psLhs tyLhs psRhs tyRhs = do
-  ps <- unify p what doc psLhs tyLhs psRhs tyRhs
+  ps <- unifyHelp True p what doc psRhs tyRhs psLhs tyLhs
   fvs <- computeFvEnv
   applyDefaultsDecl p what doc fvs ps tyLhs
 
@@ -1034,7 +1042,7 @@ classMethodType :: (Ident -> QualIdent) -> Ident -> TCM Type
 classMethodType qual f = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  return $ funType m (qual $ unRenameIdent f) vEnv
+  return $ snd $ funType m (qual $ unRenameIdent f) vEnv
 
 -- Due to the sorting of the predicate set, we can simply remove the minimum
 -- element as this is guaranteed to be the class constraint (see module 'Types'
@@ -1150,7 +1158,7 @@ tcPattern p (LazyPattern spi t) = do
 tcPattern p t@(FunctionPattern spi _ f ts) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  (ps, ty) <- inst (funType m f vEnv)
+  (ps, ty) <- inst (snd $ funType m f vEnv)
   tcFuncPattern p spi (pPrintPrec 0 t) f id ps ty ts
 tcPattern p (InfixFuncPattern spi a t1 op t2) = do
   (ps, ty, t') <- tcPattern p (FunctionPattern spi a op [t1, t2])
@@ -1205,7 +1213,7 @@ tcExpr _     _ (Variable spi _ v) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- if isAnonId (unqualify v) then freshPredType []
-                                        else inst (funType m v vEnv)
+                                        else inst (snd $ funType m v vEnv)
   return (ps, ty, Variable spi ty v)
 tcExpr _     _ (Constructor spi _ c) = do
   m <- getModuleIdent
@@ -1287,19 +1295,22 @@ tcExpr _     p e@(Apply spi e1 e2) = do
   (ps', e2') <- tcArg (Check alpha) p "application" (pPrintPrec 0 e) ps alpha e2
   return (ps', beta, Apply spi e1' e2')
 tcExpr _     p e@(InfixApply spi e1 op e2) = do
-  (ps, (alpha, beta, gamma), op') <- tcInfixOp op >>=-
-    tcBinary p "infix application" (pPrintPrec 0 e $-$ text "Operator:" <+> pPrint op)
-  (ps', e1') <- tcArg (Check alpha) p "infix application" (pPrintPrec 0 e) ps alpha e1
-  (ps'', e2') <- tcArg (Check beta) p "infix application" (pPrintPrec 0 e) ps' beta e2
+  (ps, (alpha, beta, gamma), op') <- tcInfixOp True op >>=-
+    tcBinary p "infix application"
+      (pPrintPrec 0 e $-$ text "Operator:" <+> pPrint op)
+  (ps' , e1') <- tcArg (Check alpha) p "infix application"
+                   (pPrintPrec 0 e) ps alpha e1
+  (ps'', e2') <- tcArg (Check beta)  p "infix application"
+                   (pPrintPrec 0 e) ps' beta e2
   return (ps'', gamma, InfixApply spi e1' op' e2')
 tcExpr _     p e@(LeftSection spi e1 op) = do
-  (ps, (alpha, beta), op') <- tcInfixOp op >>=-
+  (ps, (alpha, beta), op') <- tcInfixOp False op >>=-
     tcArrow p "left section" (pPrintPrec 0 e $-$ text "Operator:" <+> pPrint op)
   (aps, _) <- inst alpha
   (ps', e1') <- tcArg Infer p "left section" (pPrintPrec 0 e) (ps `Set.union` aps) alpha e1
   return (ps', beta, LeftSection spi e1' op')
 tcExpr _     p e@(RightSection spi op e1) = do
-  (ps, (alpha, beta, gamma), op') <- tcInfixOp op >>=-
+  (ps, (alpha, beta, gamma), op') <- tcInfixOp False op >>=-
     tcBinary p "right section" (pPrintPrec 0 e $-$ text "Operator:" <+> pPrint op)
   (bps, _) <- inst beta
   (ps', e1') <- tcArg Infer p "right section" (pPrintPrec 0 e) (ps `Set.union` bps) beta e1
@@ -1438,13 +1449,15 @@ checkFailableBind (LazyPattern        _       _    ) = return False
 checkFailableBind (VariablePattern    _ _ _        ) = return False
 checkFailableBind _                                  = return True
 
-tcInfixOp :: InfixOp a -> TCM (PredSet, Type, InfixOp Type)
-tcInfixOp (InfixOp _ op) = do
+tcInfixOp :: Bool -> InfixOp a -> TCM (PredSet, Type, InfixOp Type)
+tcInfixOp b (InfixOp _ op) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  (ps, ty) <- inst (funType m op vEnv)
+  let (qid, ty') = funType m op vEnv
+  (ps, ty) <- inst ty'
+  when (b && qualName qid == "Prelude.$") $ addImpVars (typeVars ty)
   return (ps, ty, InfixOp ty op)
-tcInfixOp (InfixConstr _ op) = do
+tcInfixOp _ (InfixConstr _ op) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- inst (constrType m op vEnv)
@@ -1507,7 +1520,11 @@ tcBinary p what doc ty = tcArrow p what doc ty >>= uncurry binaryArrow
 
 unify :: HasPosition p => p -> String -> Doc -> PredSet -> Type -> PredSet
       -> Type -> TCM PredSet
-unify p what doc ps1 ty1 ps2 ty2 = do
+unify = unifyHelp False
+
+unifyHelp :: HasPosition p => Bool -> p -> String -> Doc -> PredSet -> Type
+          -> PredSet -> Type -> TCM PredSet
+unifyHelp b p what doc ps1 ty1 ps2 ty2 = do
   theta <- getTypeSubst
   let ty1' = subst theta ty1
       ty2' = subst theta ty2
@@ -1516,7 +1533,45 @@ unify p what doc ps1 ty1 ps2 ty2 = do
   case res of
     Left reason -> report $ errTypeMismatch p what doc m ty1' ty2' reason
     Right sigma -> modifyTypeSubst (compose sigma)
+  theta' <- getTypeSubst
+  let ty1'' = subst theta' ty1'
+      ty2'' = subst theta' ty2'
+  unlessM (subsumCheck b emptyPredSet emptyPredSet ty1'' ty2'') $
+    report $ errSubsumption p what doc m ty2' ty1'
   reducePredSet p what doc (ps1 `Set.union` ps2)
+
+subsumCheck :: Bool -> PredSet -> PredSet -> Type -> Type -> TCM Bool
+subsumCheck True ps1 ps2 (TypeArrow ty11@(TypeForall _ _) ty12) (TypeArrow ty21@(TypeForall _ _) ty22)
+  = subsumCheck' ps1 ps2 ty11 ty21 &&^ subsumCheck' ps1 ps2 ty12 ty22
+subsumCheck _ ps1 ps2 ty1 ty2 = subsumCheck' ps1 ps2 ty1 ty2
+
+subsumCheck' :: PredSet -> PredSet -> Type -> Type -> TCM Bool
+subsumCheck' _   _   (TypeConstructor _) (TypeConstructor _) = return True
+subsumCheck' ps1 ps2 (TypeVariable tv1) (TypeVariable tv2) = do
+  clsEnv <- getClassEnv
+  let ps1' = maxPredSet clsEnv ps1
+      preds = Set.map (\(Pred qid _) -> Pred qid (TypeVariable tv1))
+                      (Set.filter (\(Pred _ (TypeVariable v)) -> v == tv2) ps2)
+  return $ all (`elem` ps1') preds
+subsumCheck' _   _   _ (TypeVariable _) = return True
+subsumCheck' _   _   (TypeConstrained _ _) (TypeConstrained _ _) = return True
+subsumCheck' ps1 ps2 (TypeApply ty11 ty12) (TypeApply ty21 ty22)
+  = subsumCheck' ps1 ps2 ty11 ty21 &&^ subsumCheck' ps1 ps2 ty12 ty22
+subsumCheck' ps1 ps2 ty@(TypeApply _ _) (TypeArrow ty21 ty22)
+  = subsumCheck' ps1 ps2 ty (TypeApply (TypeApply (TypeConstructor qArrowId) ty21) ty22)
+subsumCheck' ps1 ps2 (TypeArrow ty11 ty12) ty@(TypeApply _ _)
+  = subsumCheck' ps1 ps2 (TypeApply (TypeApply (TypeConstructor qArrowId) ty11) ty12) ty
+subsumCheck' ps1 ps2 (TypeArrow ty11@(TypeForall _ _) ty12) (TypeArrow ty21@(TypeForall _ _) ty22)
+  = subsumCheck' ps2 ps1 ty21 ty11 &&^ subsumCheck' ps1 ps2 ty12 ty22
+subsumCheck' ps1 ps2 (TypeArrow ty11 ty12) (TypeArrow ty21 ty22)
+  = subsumCheck' ps1 ps2 ty11 ty21 &&^ subsumCheck' ps1 ps2 ty12 ty22
+subsumCheck' ps1 ps2 (TypeContext ps ty1) ty2
+  = subsumCheck' (ps1 `Set.union` ps) ps2 ty1 ty2
+subsumCheck' ps1 ps2 ty1 (TypeContext ps ty2)
+  = subsumCheck' ps1 (ps2 `Set.union` ps) ty1 ty2
+subsumCheck' ps1 ps2 (TypeForall _ ty1) ty2 = subsumCheck' ps1 ps2 ty1 ty2
+subsumCheck' ps1 ps2 ty1 (TypeForall _ ty2) = subsumCheck' ps1 ps2 ty1 ty2
+subsumCheck' _   _   _   _ = return False
 
 unifyTypes :: ModuleIdent -> Type -> Type -> TCM (Either Doc TypeSubst)
 unifyTypes _ (TypeVariable tv1)         ty@(TypeVariable tv2)
@@ -1524,11 +1579,19 @@ unifyTypes _ (TypeVariable tv1)         ty@(TypeVariable tv2)
   | otherwise  = return $ Right (singleSubst tv1 ty)
 unifyTypes m (TypeVariable tv)          ty
   | tv `elem` typeVars ty = return $ Left (errRecursiveType m tv ty)
-  | hasHigherRankPoly ty  = return $ Left (errImpredInst m tv ty)
+  | hasHigherRankPoly ty  = do
+    ivs <- getImpVars
+    return $ if tv `elem` ivs
+      then Right (singleSubst tv ty)
+      else Left (errImpredInst m tv ty)
   | otherwise             = return $ Right (singleSubst tv ty)
 unifyTypes m ty                         (TypeVariable tv)
   | tv `elem` typeVars ty = return $ Left (errRecursiveType m tv ty)
-  | hasHigherRankPoly ty  = return $ Left (errImpredInst m tv ty)
+  | hasHigherRankPoly ty  = do
+    ivs <- getImpVars
+    return $ if tv `elem` ivs
+      then Right (singleSubst tv ty)
+      else Left (errImpredInst m tv ty)
   | otherwise             = return $ Right (singleSubst tv ty)
 unifyTypes _ (TypeConstrained tys1 tv1) ty@(TypeConstrained tys2 tv2)
   | tv1 == tv2   = return $ Right idSubst
@@ -1565,16 +1628,13 @@ unifyTypes m ty1@(TypeForall _ _)       ty2@(TypeForall _ _)
          Left x  -> return $ Left x
          Right s -> do
            let (_, tys) = unzip $ substToList $ restrictSubstTo (vs1 ++ vs2) s
-           if all isVarType tys
-             then do
-               let vars = typeVars ty1 ++ typeVars ty2
-               let tvs = concatMap (typeVars . snd) $
-                           substToList $ restrictSubstTo vars s
-               let tys' = map (\(TypeVariable tv) -> tv) tys
-               case filter (`elem` tvs) (vs1 ++ vs2 ++ tys') of
-                 []   -> return $ Right s
-                 ev:_ -> return $ Left $ errEscapingTypeVariable m ev ty1 ty2
-             else return $ Left (errIncompatibleTypes m ty1 ty2)
+               vars = typeVars ty1 ++ typeVars ty2
+               tvs = concatMap (typeVars . snd) $  substToList $
+                     restrictSubstTo vars s
+               tys' = concatMap typeVars tys
+           case filter (`elem` tvs) (vs1 ++ vs2 ++ tys') of
+             []   -> return $ Right s
+             ev:_ -> return $ Left $ errEscapingTypeVariable m ev ty1 ty2
 unifyTypes m ty1@(TypeForall _ _)       ty2
   = do (vs, _, ty1') <- skolemise ty1
        res <- unifyTypes m ty1' ty2
@@ -1582,15 +1642,12 @@ unifyTypes m ty1@(TypeForall _ _)       ty2
          Left x  -> return $ Left x
          Right s -> do
            let (_, tys) = unzip $ substToList $ restrictSubstTo vs s
-           if all isVarType tys
-             then do
-               let tvs = concatMap (typeVars . snd) $
-                           substToList $ restrictSubstTo (typeVars ty1) s
-               let tys' = map (\(TypeVariable tv) -> tv) tys
-               case filter (`elem` tvs) (vs ++ tys') of
-                 []   -> return $ Right s
-                 ev:_ -> return $ Left $ errEscapingTypeVariable m ev ty1 ty2
-             else return $ Left (errIncompatibleTypes m ty1 ty2)
+               tvs = concatMap (typeVars . snd) $ substToList $
+                     restrictSubstTo (typeVars ty1) s
+               tys' = concatMap typeVars tys
+           case filter (`elem` tvs) (vs ++ tys') of
+             []   -> return $ Right s
+             ev:_ -> return $ Left $ errEscapingTypeVariable m ev ty1 ty2
 unifyTypes m ty1                        ty2@(TypeForall _ _)
   = do (vs, _, ty2') <- skolemise ty2
        res <- unifyTypes m ty1 ty2'
@@ -1598,15 +1655,12 @@ unifyTypes m ty1                        ty2@(TypeForall _ _)
          Left x  -> return $ Left x
          Right s -> do
            let (_, tys) = unzip $ substToList $ restrictSubstTo vs s
-           if all isVarType tys
-             then do
-               let tvs = concatMap (typeVars . snd) $
-                           substToList $ restrictSubstTo (typeVars ty2) s
-               let tys' = map (\(TypeVariable tv) -> tv) tys
-               case filter (`elem` tvs) (vs ++ tys') of
-                 []   -> return $ Right s
-                 ev:_ -> return $ Left $ errEscapingTypeVariable m ev ty1 ty2
-             else return $ Left (errIncompatibleTypes m ty1 ty2)
+               tvs = concatMap (typeVars. snd) $ substToList $
+                     restrictSubstTo (typeVars ty2) s
+               tys' = concatMap typeVars tys
+           case filter (`elem` tvs) (vs ++ tys') of
+             []   -> return $ Right s
+             ev:_ -> return $ Left $ errEscapingTypeVariable m ev ty1 ty2
 unifyTypes m ty1                        ty2
   = return $ Left (errIncompatibleTypes m ty1 ty2)
 
@@ -1863,14 +1917,14 @@ varArity v vEnv = case qualLookupValue v vEnv of
   Label _ _ _ : _   -> 1
   _                 -> internalError $ "TypeCheck.varArity: " ++ show v
 
-funType :: ModuleIdent -> QualIdent -> ValueEnv -> Type
+funType :: ModuleIdent -> QualIdent -> ValueEnv -> (QualIdent, Type)
 funType m f vEnv = case qualLookupValue f vEnv of
-  [Value _ _ _ tySc] -> tySc
-  [Label _ _ tySc]   -> tySc
+  [Value qid _ _ tySc] -> (qid, tySc)
+  [Label qid _ tySc]   -> (qid, tySc)
   _ -> case qualLookupValue (qualQualify m f) vEnv of
-         [Value _ _ _ tySc] -> tySc
-         [Label _ _ tySc]   -> tySc
-         _                  -> internalError $ "TypeCheck.funType: " ++ show f
+         [Value qid _ _ tySc] -> (qid, tySc)
+         [Label qid _ tySc]   -> (qid, tySc)
+         _                    -> internalError $ "TypeCheck.funType: " ++ show f
 
 labelType :: ModuleIdent -> QualIdent -> ValueEnv -> Type
 labelType m l vEnv = case qualLookupValue l vEnv of
@@ -1944,6 +1998,14 @@ errTypeMismatch p what doc m ety ity reason = posMessage p $ vcat
   , text "Inferred type:" <+> ppType m ity
   , text "Expected type:" <+> ppType m ety
   , reason ]
+
+errSubsumption :: HasPosition a => a -> String -> Doc -> ModuleIdent -> Type
+               -> Type -> Message
+errSubsumption p what doc m ety ity = posMessage p $ vcat
+  [ text "Type error in" <+> text what, doc
+  , text "The type" <+> ppType m ity
+  , text "is not as polymorphic as"
+  , text "the expected type" <+> ppType m ety ]
 
 errRecursiveType :: ModuleIdent -> Int -> Type -> Doc
 errRecursiveType m tv = errIncompatibleTypes m (TypeVariable tv)

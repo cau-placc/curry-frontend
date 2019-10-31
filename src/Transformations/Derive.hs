@@ -207,22 +207,20 @@ dataEqOpExpr i1 es1 i2 es2
 deriveAValue :: Type -> [ConstrInfo] -> PredSet -> DVM (Decl Type)
 deriveAValue ty cis ps = do
   pty <- getInstMethodType ps qDataId ty aValueId
+  let inty = instType ty
   return $ FunctionDecl NoSpanInfo pty aValueId $
     if null cis
       then [mkEquation NoSpanInfo aValueId [] $
-            preludeFailed $ instType ty]
-      else map (deriveAValueEquation ty) cis
+            preludeFailed inty]
+      else map (deriveAValueEquation inty) cis
 
 deriveAValueEquation :: Type -> ConstrInfo -> Equation Type
-deriveAValueEquation ty (arity, cns, _, tys)
-  | arity >= 0 = mkEquation NoSpanInfo aValueId [] $
-                  foldl (Apply NoSpanInfo)
-                    (Constructor NoSpanInfo constrType cns)
-                    (map mkAValue tys')
-  | otherwise  = internalError "Derive.aValueEquation: negative arity"
+deriveAValueEquation ty (_, cns, _, tys) =
+  mkEquation NoSpanInfo aValueId [] $
+  foldl (Apply NoSpanInfo)
+    (Constructor NoSpanInfo (foldr TypeArrow ty tys') cns)
+    (map (flip (Variable NoSpanInfo) qAValueId) tys')
   where
-    constrType = foldr TypeArrow (instType ty) tys'
-    mkAValue argty = Variable NoSpanInfo (instType argty) qAValueId
     tys' = map instType tys
 
 -- Ordering:
