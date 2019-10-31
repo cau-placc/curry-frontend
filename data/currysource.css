@@ -78,18 +78,18 @@ a:active {
 @media (prefers-color-scheme: dark) {
   :root {
     --link-bg-color: hsl(0, 0%, 17%);
-    --pragma-color: hsl(210, 10%, 50%);
-    --comment-color: hsl(210, 10%, 50%);
-    --keyword-color: hsl(225, 100%, 65%);
-    --symbol-color: hsl(5, 95%, 70%);
-    --type-color: hsl(50, 50%, 60%);
-    --cons-color: hsl(335, 95%, 70%);
-    --label-color: hsl(195, 100%, 70%);
-    --func-color: hsl(310, 85%, 35%);
+    --pragma-color: hsl(0, 0%, 60%);
+    --comment-color: hsl(0, 0%, 60%);
+    --keyword-color: hsl(300, 66%, 70%);
+    --symbol-color: hsl(0, 66%, 70%);
+    --type-color: hsl(60, 66%, 70%);
+    --cons-color: hsl(330, 66%, 70%);
+    --label-color: hsl(240, 66%, 70%);
+    --func-color: hsl(200, 66%, 70%);
     --ident-color: hsl(0, 0%, 85%);
-    --module-color: hsl(25, 45%, 55%);
-    --number-color: hsl(165, 35%, 55%);
-    --string-color: hsl(25, 100%, 60%);
-    --char-color: hsl(25, 100%, 60%);
+    --module-color: hsl(20, 66%, 70%);
+    --number-color: hsl(180, 66%, 70%);
+    --string-color: hsl(120, 66%, 70%);
+    --char-color: hsl(120, 66%, 70%);
   }
 }
