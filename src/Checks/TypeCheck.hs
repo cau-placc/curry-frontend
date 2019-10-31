@@ -1174,8 +1174,9 @@ tcFuncPattern _ spi _ f ts ps ty [] =
 tcFuncPattern p spi doc f ts ps ty (t':ts') = do
   (alpha, beta) <-
     tcArrow p "functional pattern" (doc $-$ text "Term:" <+> pPrintPrec 0 t) ty
-  (ps', t'') <- tcPatternArg p "functional pattern" doc ps alpha t'
-  tcFuncPattern p spi doc f (ts . (t'' :)) ps' beta ts'
+  let ps' = Set.insert (Pred qDataId alpha) ps
+  (ps'', t'') <- tcPatternArg p "functional pattern" doc ps' alpha t'
+  tcFuncPattern p spi doc f (ts . (t'' :)) ps'' beta ts'
   where t = FunctionPattern spi ty f (ts [])
 
 tcPatternArg :: HasPosition p => p -> String -> Doc -> PredSet -> Type
@@ -1212,7 +1213,7 @@ tcExpr _     _ (Literal spi _ l) = do
 tcExpr _     _ (Variable spi _ v) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  (ps, ty) <- if isAnonId (unqualify v) then freshPredType []
+  (ps, ty) <- if isAnonId (unqualify v) then freshPredType [qDataId]
                                         else inst (snd $ funType m v vEnv)
   return (ps, ty, Variable spi ty v)
 tcExpr _     _ (Constructor spi _ c) = do

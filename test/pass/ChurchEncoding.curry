@@ -27,6 +27,13 @@ append xs ys = ChurchList (\k z -> runList xs k (runList ys k z))
 instance Functor ChurchList where
   fmap f xs = ChurchList (\k z -> runList xs (\x xs' -> k (f x) xs') z)
 
+instance Applicative ChurchList where
+  pure      = singleton
+  mf <*> ma = do
+    f <- mf
+    a <- ma
+    return (f a)
+
 instance Monad ChurchList where
   return = singleton
   xs >>= f = runList xs (\x -> append (f x)) empty
@@ -63,6 +70,13 @@ instance Show a => Show (ChurchMaybe a) where
 
 instance Functor ChurchMaybe where
   fmap f (ChurchMaybe m) = ChurchMaybe (\n j -> m n (j . f))
+
+instance Applicative ChurchMaybe where
+  pure x = ChurchMaybe (\_ j -> j x)
+  mf <*> ma = do
+    f <- mf
+    a <- ma
+    return (f a)
 
 instance Monad ChurchMaybe where
   return x = ChurchMaybe (\_ j -> j x)

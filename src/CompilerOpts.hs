@@ -506,7 +506,7 @@ parseCppDefinition arg optErr
   = onCppOpts (addCppDefinition s v) optErr
   | otherwise
   = addErr (cppDefinitionErr arg) optErr
-  where (s, v) = fmap (drop 1) $ break ('=' ==) arg
+  where (s, v) = drop 1 <$> break ('=' ==) arg
 
 addCppDefinition :: String -> String -> CppOpts -> CppOpts
 addCppDefinition s v opts =
