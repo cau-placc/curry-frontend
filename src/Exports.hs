@@ -126,7 +126,7 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
       where tc'' = qualUnqualify m tc'
             k'   = fromKind' k n
             tvs' = take n tvs
-            ty'  = fromQualType m tvs' ty
+            ty'  = fromQualType m tvs ty
     [TypeClass qcls k ms] -> IClassDecl NoPos cx qcls' k' tv ms' hs : ds
       where qcls' = qualUnqualify m qcls
             cx    = [ Constraint NoSpanInfo (qualUnqualify m scls)
@@ -171,12 +171,13 @@ newConstrDecl m tvs (RecordConstr c ls tys)
 -- is assigned the index 0 and no other constraints on it are allowed.
 
 methodDecl :: ModuleIdent -> [Ident] -> ClassMethod -> IMethodDecl
-methodDecl m tvs (ClassMethod f a (PredType ps ty)) = IMethodDecl NoPos f a $
-  fromQualPredType m tvs $ PredType (Set.deleteMin ps) ty
+methodDecl m tvs (ClassMethod f a (TypeContext ps ty)) = IMethodDecl NoPos f a $
+  fromQualPredType m tvs $ TypeContext (Set.deleteMin ps) ty
+methodDecl _ _ _ = internalError "Exports.methodDecl"
 
 valueDecl :: ModuleIdent -> ValueEnv -> [Ident] -> Export -> [IDecl] -> [IDecl]
 valueDecl m vEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
-  [Value _ cm a (ForAll _ pty)] ->
+  [Value _ cm a tySc] -> let pty = rawPredType tySc in
     IFunctionDecl NoPos (qualUnqualify m f)
       (if cm then Just (head tvs) else Nothing) a (fromQualPredType m tvs pty) : ds
   _ -> internalError $ "Exports.valueDecl: " ++ show f
@@ -193,9 +194,9 @@ instDecl m tcEnv tvs ident@(cls, tc) info@(m', _, _) ds
 iInstDecl :: ModuleIdent -> TCEnv -> [Ident] -> InstIdent -> InstInfo -> IDecl
 iInstDecl m tcEnv tvs (cls, tc) (m', ps, is) =
   IInstanceDecl NoPos cx (qualUnqualify m cls) ty is mm
-  where pty = PredType ps $ applyType (TypeConstructor tc) $
+  where pty = TypeContext ps $ applyType (TypeConstructor tc) $
                 map TypeVariable [0 .. n-1]
-        QualTypeExpr _ cx ty = fromQualPredType m tvs pty
+        ContextType _ cx ty = fromQualPredType m tvs pty
         n = kindArity (tcKind m tc tcEnv) - kindArity (clsKind m cls tcEnv)
         mm = if m == m' then Nothing else Just m'
 
@@ -269,10 +270,8 @@ instance HasModule TypeExpr where
   modules (ListType        _ ty) = modules ty
   modules (ArrowType  _ ty1 ty2) = modules ty1 . modules ty2
   modules (ParenType       _ ty) = modules ty
+  modules (ContextType  _ cx ty) = modules cx . modules ty
   modules (ForallType    _ _ ty) = modules ty
-
-instance HasModule QualTypeExpr where
-  modules (QualTypeExpr _ cx ty) = modules cx . modules ty
 
 instance HasModule QualIdent where
   modules = modules . qidModule
@@ -418,7 +417,5 @@ instance HasType TypeExpr where
   usedTypes (ListType        _ ty) = usedTypes ty
   usedTypes (ArrowType  _ ty1 ty2) = usedTypes ty1 . usedTypes ty2
   usedTypes (ParenType       _ ty) = usedTypes ty
+  usedTypes (ContextType  _ cx ty) = usedTypes cx . usedTypes ty
   usedTypes (ForallType    _ _ ty) = usedTypes ty
-
-instance HasType QualTypeExpr where
-  usedTypes (QualTypeExpr _ cx ty) = usedTypes cx . usedTypes ty

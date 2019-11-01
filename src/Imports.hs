@@ -177,7 +177,7 @@ importInstances m = flip $ foldr (bindInstance m)
 bindInstance :: ModuleIdent -> IDecl -> InstEnv -> InstEnv
 bindInstance m (IInstanceDecl _ cx qcls ty is mm) = bindInstInfo
   (qualQualify m qcls, qualifyTC m $ typeConstr ty) (fromMaybe m mm, ps, is)
-  where PredType ps _ = toQualPredType m [] $ QualTypeExpr NoSpanInfo cx ty
+  where TypeContext ps _ = toQualPredType m [] $ ContextType NoSpanInfo cx ty
 bindInstance _ _ = id
 
 -- ---------------------------------------------------------------------------
@@ -225,7 +225,7 @@ types m (IClassDecl _ _ qcls k tv ds ids) =
   where
     isVis (IMethodDecl _ f _ _ ) = f `notElem` ids
     mkMethod (IMethodDecl _ f a qty) = ClassMethod f a $
-      qualifyPredType m $ normalize 1 $ toMethodType qcls tv qty
+      qualifyType m $ normalize 1 $ toMethodType qcls tv qty
 types _ _ = []
 
 -- type constructors
@@ -265,9 +265,9 @@ values m (INewtypeDecl _ tc _ tvs nc hs) =
   where tc' = qualQualify m tc
         ty' = constrType tc' tvs
 values m (IFunctionDecl _ f Nothing a qty) =
-  [Value (qualQualify m f) False a (typeScheme (toQualPredType m [] qty))]
+  [Value (qualQualify m f) False a (polyType (toQualPredType m [] qty))]
 values m (IFunctionDecl _ f (Just tv) _ qty) =
-  [Value (qualQualify m f) True 0 (typeScheme (toQualPredType m [tv] qty))]
+  [Value (qualQualify m f) True 0 (polyType (toQualPredType m [tv] qty))]
 values m (IClassDecl _ _ qcls _ tv ds hs) =
   map (classMethod m qcls' tv) (filter ((`notElem` hs) . imethod) ds)
   where qcls' = qualQualify m qcls
@@ -304,9 +304,9 @@ recLabel m tc tvs ty0 (l, cs, lty) = Label ql qcs tySc
         qcs  = map (qualifyLike tc) cs
         tySc = polyType (toQualType m tvs (ArrowType NoSpanInfo ty0 lty))
 
-constrType' :: ModuleIdent -> QualIdent -> [Ident] -> [TypeExpr] -> TypeScheme
-constrType' m tc tvs tys = ForAll (length tvs) pty
-  where pty  = qualifyPredType m $ toConstrType tc tvs tys
+constrType' :: ModuleIdent -> QualIdent -> [Ident] -> [TypeExpr] -> Type
+constrType' m tc tvs tys = TypeForall [0.. length tvs - 1] (TypeContext ps ty)
+  where TypeContext ps ty = qualifyType m $ toConstrType tc tvs tys
 
 constrType :: QualIdent -> [Ident] -> TypeExpr
 constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)
@@ -318,7 +318,7 @@ constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)
 classMethod :: ModuleIdent -> QualIdent -> Ident -> IMethodDecl -> ValueInfo
 classMethod m qcls tv (IMethodDecl _ f _ qty) =
   Value (qualifyLike qcls f) True 0 $
-    typeScheme $ qualifyPredType m $ toMethodType qcls tv qty
+    polyType $ qualifyType m $ toMethodType qcls tv qty
 
 -- ---------------------------------------------------------------------------
 

@@ -48,15 +48,15 @@ import Text.PrettyPrint
 
 data ValueInfo
   -- |Data constructor with original name, arity, list of record labels and type
-  = DataConstructor    QualIdent      Int [Ident] TypeScheme
+  = DataConstructor    QualIdent      Int [Ident] Type
   -- |Newtype constructor with original name, record label and type
   -- (arity is always 1)
-  | NewtypeConstructor QualIdent          Ident   TypeScheme
+  | NewtypeConstructor QualIdent          Ident   Type
   -- |Value with original name, class method flag, arity and type
-  | Value              QualIdent Bool Int         TypeScheme
+  | Value              QualIdent Bool Int         Type
   -- |Record label with original name, list of constructors for which label
   -- is valid field and type (arity is always 1)
-  | Label              QualIdent [QualIdent]      TypeScheme
+  | Label              QualIdent [QualIdent]      Type
     deriving Show
 
 instance Entity ValueInfo where
@@ -81,16 +81,18 @@ instance Entity ValueInfo where
   merge _ _ = Nothing
 
 instance Pretty ValueInfo where
-  pPrint (DataConstructor qid ar _ tySc) =     text "data" <+> pPrint qid
-                                           <>  text "/" <> int ar
-                                           <+> equals <+> pPrint tySc
-  pPrint (NewtypeConstructor qid _ tySc) =     text "newtype" <+> pPrint qid
-                                           <+> equals <+> pPrint tySc
-  pPrint (Value qid _ ar tySc)           =     pPrint qid
-                                           <>  text "/" <> int ar
-                                           <+> equals <+> pPrint tySc
-  pPrint (Label qid _ tySc)              =     text "label" <+> pPrint qid
-                                           <+> equals <+> pPrint tySc
+  pPrint (DataConstructor qid ar _ pty)
+    = text "data" <+> pPrint qid
+                  <>  text "/" <> int ar
+                  <+> equals <+> pPrint (rawPredType pty)
+  pPrint (NewtypeConstructor qid _ pty)
+    = text "newtype" <+> pPrint qid
+                     <+> equals <+> pPrint (rawPredType pty)
+  pPrint (Value qid _ ar pty)
+    = pPrint qid <>  text "/" <> int ar
+                 <+> equals <+> pPrint (rawPredType pty)
+  pPrint (Label qid _ pty)
+    = text "label" <+> pPrint qid <+> equals <+> pPrint (rawPredType pty)
 
 mergeLabel :: Ident -> Ident -> Maybe Ident
 mergeLabel l1 l2
@@ -115,7 +117,7 @@ bindGlobalInfo f m c ty = bindTopEnv c v . qualBindTopEnv qc v
   where qc = qualifyWith m c
         v  = f qc ty
 
-bindFun :: ModuleIdent -> Ident -> Bool -> Int -> TypeScheme -> ValueEnv
+bindFun :: ModuleIdent -> Ident -> Bool -> Int -> Type -> ValueEnv
         -> ValueEnv
 bindFun m f cm a ty
   | hasGlobalScope f = bindTopEnv f v . qualBindTopEnv qf v
@@ -123,12 +125,12 @@ bindFun m f cm a ty
   where qf = qualifyWith m f
         v  = Value qf cm a ty
 
-qualBindFun :: ModuleIdent -> Ident -> Bool -> Int -> TypeScheme -> ValueEnv
+qualBindFun :: ModuleIdent -> Ident -> Bool -> Int -> Type -> ValueEnv
             -> ValueEnv
 qualBindFun m f cm a ty = qualBindTopEnv qf $ Value qf cm a ty
   where qf = qualifyWith m f
 
-rebindFun :: ModuleIdent -> Ident -> Bool -> Int -> TypeScheme -> ValueEnv
+rebindFun :: ModuleIdent -> Ident -> Bool -> Int -> Type -> ValueEnv
           -> ValueEnv
 rebindFun m f cm a ty
   | hasGlobalScope f = rebindTopEnv f v . qualRebindTopEnv qf v
@@ -163,8 +165,8 @@ tupleDCs :: [ValueInfo]
 tupleDCs = map dataInfo tupleData
   where dataInfo (DataConstr _ tys) =
           let n = length tys
-          in  DataConstructor (qTupleId n) n (replicate n anonId) $
-                ForAll n $ predType $ foldr TypeArrow (tupleType tys) tys
+           in DataConstructor (qTupleId n) n (replicate n anonId) $
+                TypeForall [0..n-1] (foldr TypeArrow (tupleType tys) tys)
         dataInfo (RecordConstr _ _ _) =
           internalError $ "Env.Value.tupleDCs: " ++ show tupleDCs
 
@@ -179,8 +181,9 @@ initDCEnv = foldr predefDC emptyTopEnv
   where predefDC (c, a, ty) = predefTopEnv c' (DataConstructor c' a ls ty)
           where ls = replicate a anonId
                 c' = qualify c
-        constrType (ForAll n (PredType ps ty)) =
-          ForAll n . PredType ps . foldr TypeArrow ty
+        constrType (TypeForall vs ty) =
+          TypeForall vs . foldr TypeArrow ty
+        constrType pty = internalError $ "Env.Value.initDCEnv: " ++ show pty
 
 -- The functions 'bindLocalVar' and 'bindLocalVars' add the type of one or
 -- many local variables or functions to the value environment. In contrast
@@ -189,19 +192,16 @@ initDCEnv = foldr predefDC emptyTopEnv
 
 class ValueType t where
   toValueType :: Type -> t
-  fromValueType :: t -> PredType
+  fromValueType :: t -> Type
 
 instance ValueType Type where
   toValueType = id
-  fromValueType = predType
-
-instance ValueType PredType where
-  toValueType = predType
-  fromValueType = id
+  fromValueType ty@(TypeContext _ _) = ty
+  fromValueType ty = ty
 
 bindLocalVars :: ValueType t => [(Ident, Int, t)] -> ValueEnv -> ValueEnv
 bindLocalVars = flip $ foldr bindLocalVar
 
 bindLocalVar :: ValueType t => (Ident, Int, t) -> ValueEnv -> ValueEnv
 bindLocalVar (v, a, ty) =
-  bindTopEnv v $ Value (qualify v) False a $ typeScheme $ fromValueType ty
+  bindTopEnv v $ Value (qualify v) False a $ polyType $ fromValueType ty

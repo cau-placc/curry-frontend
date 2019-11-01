@@ -41,12 +41,13 @@ import Curry.Base.SpanInfo
 import Curry.Syntax
 import Curry.Syntax.Pretty (ppDecl, ppPattern, ppExpr, ppIdent)
 
-import Base.CurryTypes (ppTypeScheme)
+import Base.CurryTypes (ppPredType)
 import Base.Messages   (Message, posMessage, internalError)
 import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                        , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv
                        , qualModifyNestEnv)
 
+import Base.Expr  (Expr (fv))
 import Base.Types
 import Base.Utils (findMultiples)
 import Env.ModuleAlias
@@ -60,8 +61,8 @@ import CompilerOpts
 -- Find potentially incorrect code in a Curry program and generate warnings
 -- for the following issues:
 --   - multiply imported modules, multiply imported/hidden values
---   - unreferenced variables
---   - shadowing variables
+--   - unreferenced (type) variables
+--   - shadowing (type) variables
 --   - idle case alternatives
 --   - overlapping case alternatives
 --   - non-adjacent function rules
@@ -269,6 +270,9 @@ checkDecl (InstanceDecl p cx cls ty ds) = do
   checkOrphanInstance p cx cls ty
   checkMissingMethodImplementations p cls ds
   mapM_ checkDecl ds
+checkDecl (TypeSig              _ _ ty) = do
+  let tvs = map (setPosition $ getPosition ty) (nub (fv ty))
+  checkTypeExpr (ForallType NoSpanInfo tvs ty)
 checkDecl _                             = ok
 
 --TODO: shadowing und context etc.
@@ -301,9 +305,12 @@ checkTypeExpr (TupleType           _ tys) = mapM_ checkTypeExpr tys
 checkTypeExpr (ListType             _ ty) = checkTypeExpr ty
 checkTypeExpr (ArrowType       _ ty1 ty2) = mapM_ checkTypeExpr [ty1, ty2]
 checkTypeExpr (ParenType            _ ty) = checkTypeExpr ty
-checkTypeExpr (ForallType        _ vs ty) = do
+checkTypeExpr (ContextType        _ _ ty) = checkTypeExpr ty
+checkTypeExpr (ForallType        _ vs ty) = inNestedScope $ do
+  mapM_ checkTypeShadowing vs
   mapM_ insertTypeVar vs
   checkTypeExpr ty
+  reportUnusedTypeVars vs
 
 -- Checks locally declared identifiers (i.e. functions and logic variables)
 -- for shadowing
@@ -383,7 +390,10 @@ checkCondExpr (CondExpr _ c e) = checkExpr c >> checkExpr e
 checkExpr :: Expression () -> WCM ()
 checkExpr (Variable            _ _ v) = visitQId v
 checkExpr (Paren                 _ e) = checkExpr e
-checkExpr (Typed               _ e _) = checkExpr e
+checkExpr (Typed              _ e ty) = do
+  checkExpr e
+  let tvs = map (setPosition $ getPosition ty) (nub (fv ty))
+  checkTypeExpr (ForallType NoSpanInfo tvs ty)
 checkExpr (Record           _ _ _ fs) = mapM_ (checkField checkExpr) fs
 checkExpr (RecordUpdate       _ e fs) = do
   checkExpr e
@@ -493,7 +503,7 @@ checkMissingTypeSignatures ds = warnFor WarnMissingSignatures $ do
     tyScs <- mapM getTyScheme untypedFs
     mapM_ report $ zipWith (warnMissingTypeSignature mid) untypedFs tyScs
 
-getTyScheme :: Ident -> WCM TypeScheme
+getTyScheme :: Ident -> WCM Type
 getTyScheme q = do
   m     <- getModuleIdent
   tyEnv <- gets valueEnv
@@ -501,10 +511,11 @@ getTyScheme q = do
     [Value  _ _ _ tys] -> tys
     _ -> internalError $ "Checks.WarnCheck.getTyScheme: " ++ show q
 
-warnMissingTypeSignature :: ModuleIdent -> Ident -> TypeScheme -> Message
-warnMissingTypeSignature mid i tys = posMessage i $ fsep
+warnMissingTypeSignature :: ModuleIdent -> Ident -> Type -> Message
+warnMissingTypeSignature mid i pty = posMessage i $ fsep
   [ text "Top-level binding with no type signature:"
-  , nest 2 $ text (showIdent i) <+> text "::" <+> ppTypeScheme mid tys
+  , nest 2 $ text (showIdent i) <+> text "::"
+                                <+> ppPredType mid (rawPredType pty)
   ]
 
 -- -----------------------------------------------------------------------------
@@ -784,8 +795,8 @@ getConTy q = do
   tyEnv <- gets valueEnv
   tcEnv <- gets tyConsEnv
   case qualLookupValue q tyEnv of
-    [DataConstructor  _ _ _ (ForAll _ (PredType _ ty))] -> return ty
-    [NewtypeConstructor _ _ (ForAll _ (PredType _ ty))] -> return ty
+    [DataConstructor  _ _ _ tySc] -> return $ rawType tySc
+    [NewtypeConstructor _ _ tySc] -> return $ rawType tySc
     _ -> case qualLookupTypeInfo q tcEnv of
       [AliasType _ _ _ ty] -> return ty
       _ -> internalError $ "Checks.WarnCheck.getConTy: " ++ show q
@@ -1006,6 +1017,7 @@ insertTypeExpr (TupleType        _ tys) = mapM_ insertTypeExpr tys
 insertTypeExpr (ListType          _ ty) = insertTypeExpr ty
 insertTypeExpr (ArrowType    _ ty1 ty2) = mapM_ insertTypeExpr [ty1,ty2]
 insertTypeExpr (ParenType         _ ty) = insertTypeExpr ty
+insertTypeExpr (ContextType     _ _ ty) = insertTypeExpr ty
 insertTypeExpr (ForallType      _ _ ty) = insertTypeExpr ty
 
 insertConstrDecl :: ConstrDecl -> WCM ()
@@ -1217,7 +1229,7 @@ checkCaseModeDecl (TypeDecl _ tc vs ty) = do
   checkCaseModeTypeExpr ty
 checkCaseModeDecl (TypeSig _ fs qty) = do
   mapM_ (checkCaseModeID isFuncName) fs
-  checkCaseModeQualTypeExpr qty
+  checkCaseModeTypeExpr qty
 checkCaseModeDecl (FunctionDecl _ _ f eqs) = do
   checkCaseModeID isFuncName f
   mapM_ checkCaseModeEquation eqs
@@ -1283,15 +1295,13 @@ checkCaseModeTypeExpr (ArrowType _ ty1 ty2) = do
   checkCaseModeTypeExpr ty1
   checkCaseModeTypeExpr ty2
 checkCaseModeTypeExpr (ParenType _ ty) = checkCaseModeTypeExpr ty
+checkCaseModeTypeExpr (ContextType _ cx ty) = do
+  checkCaseModeContext cx
+  checkCaseModeTypeExpr ty
 checkCaseModeTypeExpr (ForallType _ tvs ty) = do
   mapM_ (checkCaseModeID isVarName) tvs
   checkCaseModeTypeExpr ty
 checkCaseModeTypeExpr _ = ok
-
-checkCaseModeQualTypeExpr :: QualTypeExpr -> WCM ()
-checkCaseModeQualTypeExpr (QualTypeExpr _ cx ty) = do
-  checkCaseModeContext cx
-  checkCaseModeTypeExpr ty
 
 checkCaseModeEquation :: Equation a -> WCM ()
 checkCaseModeEquation (Equation _ lhs rhs) = do
@@ -1349,7 +1359,7 @@ checkCaseModeExpr :: Expression a -> WCM ()
 checkCaseModeExpr (Paren _ e) = checkCaseModeExpr e
 checkCaseModeExpr (Typed _ e qty) = do
   checkCaseModeExpr e
-  checkCaseModeQualTypeExpr qty
+  checkCaseModeTypeExpr qty
 checkCaseModeExpr (Record _ _ _ fs) = mapM_ checkCaseModeFieldExpr fs
 checkCaseModeExpr (RecordUpdate _ e fs) = do
   checkCaseModeExpr e

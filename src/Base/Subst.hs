@@ -19,7 +19,7 @@
 
 module Base.Subst
   ( Subst (..), IntSubst (..), idSubst, singleSubst, bindSubst, unbindSubst
-  , substToList, compose, substVar', isubstVar, restrictSubstTo
+  , substToList, compose, lookupSubst, substVar', isubstVar, restrictSubstTo
   ) where
 
 import qualified Data.Map as Map
@@ -47,6 +47,9 @@ bindSubst v e (Subst comp sigma) = Subst comp $ Map.insert v e sigma
 -- |Remove a single replacement from a substitution
 unbindSubst :: Ord v => v -> Subst v e -> Subst v e
 unbindSubst v (Subst comp sigma) = Subst comp $ Map.delete v sigma
+
+lookupSubst :: Ord v => v -> Subst v e -> Maybe e
+lookupSubst v (Subst _ sigma) = Map.lookup v sigma
 
 -- For any substitution we have the following definitions:
 --     sigma(x)     = t_i   if x = x_i

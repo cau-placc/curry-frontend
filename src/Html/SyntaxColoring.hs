@@ -316,7 +316,7 @@ idsDecl (TypeDecl         _ t vs ty) =
   TypeCons TypeDeclare False (qualify t) :
     map (Identifier IdDeclare False . qualify) vs ++ idsTypeExpr ty
 idsDecl (TypeSig           _ fs qty) =
-  map (Function FuncTypeSig False . qualify) fs ++ idsQualTypeExpr qty
+  map (Function FuncTypeSig False . qualify) fs ++ idsTypeExpr qty
 idsDecl (FunctionDecl     _ _ _ eqs) = concatMap idsEquation eqs
 idsDecl (ExternalDecl          _ fs) =
   map (Function FuncDeclare False . qualify . varIdent) fs
@@ -347,7 +347,7 @@ idsNewConstrDecl (NewRecordDecl _ c (l,ty)) =
 
 idsClassDecl :: Decl a -> [Code]
 idsClassDecl (TypeSig       _ fs qty) =
-  map (Function FuncDeclare False . qualify) fs ++ idsQualTypeExpr qty
+  map (Function FuncDeclare False . qualify) fs ++ idsTypeExpr qty
 idsClassDecl (FunctionDecl _ _ _ eqs) = concatMap idsEquation eqs
 idsClassDecl _                        =
   internalError "SyntaxColoring.idsClassDecl"
@@ -356,9 +356,6 @@ idsInstanceDecl :: Decl a -> [Code]
 idsInstanceDecl (FunctionDecl _ _ _ eqs) = concatMap idsEquation eqs
 idsInstanceDecl _                        =
   internalError "SyntaxColoring.idsInstanceDecl"
-
-idsQualTypeExpr :: QualTypeExpr -> [Code]
-idsQualTypeExpr (QualTypeExpr _ cx ty) = idsContext cx ++ idsTypeExpr ty
 
 idsContext :: Context -> [Code]
 idsContext = concatMap idsConstraint
@@ -375,6 +372,7 @@ idsTypeExpr (TupleType       _ tys) = concatMap idsTypeExpr tys
 idsTypeExpr (ListType         _ ty) = idsTypeExpr ty
 idsTypeExpr (ArrowType   _ ty1 ty2) = concatMap idsTypeExpr [ty1, ty2]
 idsTypeExpr (ParenType        _ ty) = idsTypeExpr ty
+idsTypeExpr (ContextType   _ cx ty) = idsContext cx ++ idsTypeExpr ty
 idsTypeExpr (ForallType    _ vs ty) =
   map (Identifier IdDeclare False . qualify) vs ++ idsTypeExpr ty
 
@@ -428,7 +426,7 @@ idsExpr (Variable           _ _ qid)
   | otherwise                      = [Identifier IdRefer False qid]
 idsExpr (Constructor        _ _ qid) = [DataCons ConsCall False qid]
 idsExpr (Paren                  _ e) = idsExpr e
-idsExpr (Typed              _ e qty) = idsExpr e ++ idsQualTypeExpr qty
+idsExpr (Typed              _ e qty) = idsExpr e ++ idsTypeExpr qty
 idsExpr (Record          _ _ qid fs) =
   DataCons ConsCall False qid : concatMap (idsField idsExpr) fs
 idsExpr (RecordUpdate        _ e fs) =

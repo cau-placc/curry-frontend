@@ -430,10 +430,11 @@ instance SubstType a => SubstType [a] where
 
 instance SubstType Type where
   subst sigma (TypeConstructor q tys) = TypeConstructor q $ subst sigma tys
-  subst sigma (TypeVariable       tv) = substVar' TypeVariable subst sigma tv
-  subst sigma (TypeArrow     ty1 ty2) = TypeArrow (subst sigma ty1) (subst sigma ty2)
-  subst _     (TypeForall        _ _) =
-    internalError "Transformations.CaseCompletion.SubstType.Type.subst"
+  subst sigma (TypeVariable tv)       = substVar' TypeVariable subst sigma tv
+  subst sigma (TypeArrow ty1 ty2)
+    = TypeArrow (subst sigma ty1) (subst sigma ty2)
+  subst sigma (TypeForall tvs ty)
+    = TypeForall tvs (subst (foldr unbindSubst sigma tvs) ty)
 
 matchType :: Type -> Type -> TypeSubst -> TypeSubst
 matchType ty1 ty2 = fromMaybe noMatch (matchType' ty1 ty2)

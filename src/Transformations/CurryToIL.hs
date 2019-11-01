@@ -118,8 +118,8 @@ varType :: QualIdent -> TransM Type
 varType f = do
   tyEnv <- getValueEnv
   case qualLookupValue f tyEnv of
-    [Value _ _ _ (ForAll _ (PredType _ ty))] -> return ty
-    [Label _ _ (ForAll _ (PredType _ ty))] -> return ty
+    [Value _ _ _ tySc] -> return $ rawType tySc
+    [Label _ _ tySc] -> return $ rawType tySc
     _ -> internalError $ "CurryToIL.varType: " ++ show f
 
 -- Return the type of a constructor
@@ -127,8 +127,8 @@ constrType :: QualIdent -> TransM Type
 constrType c = do
   vEnv <- getValueEnv
   case qualLookupValue c vEnv of
-    [DataConstructor  _ _ _ (ForAll _ (PredType _ ty))] -> return ty
-    [NewtypeConstructor _ _ (ForAll _ (PredType _ ty))] -> return ty
+    [DataConstructor  _ _ _ tySc] -> return $ rawType tySc
+    [NewtypeConstructor _ _ tySc] -> return $ rawType tySc
     _ -> internalError $ "CurryToIL.constrType: " ++ show c
 
 -- -----------------------------------------------------------------------------
@@ -175,8 +175,8 @@ trExternal (Var ty f) = flip IL.ExternalDecl (transType ty) <$> trQualify f
 -- to transform all types to first order terms. To that end, we assume the
 -- existence of a type synonym 'type @ f a = f a'. In addition, the type
 -- representation of the intermediate language does not support constrained
--- type variables and skolem types. The former are fixed and the later are
--- replaced by fresh type constructors.
+-- type variables. The former are fixed and the later are replaced by fresh
+-- type constructors.
 
 transType :: Type -> IL.Type
 transType ty = transType' ty []
@@ -190,6 +190,8 @@ transType' (TypeArrow     ty1 ty2) =
   foldl applyType' (IL.TypeArrow (transType ty1) (transType ty2))
 transType' (TypeForall     tvs ty) =
   foldl applyType' (IL.TypeForall tvs (transType ty))
+transType' (TypeContext       _ _)
+  = internalError "Transformation.CurryToIL.transType'"
 
 applyType' :: IL.Type -> IL.Type -> IL.Type
 applyType' ty1 ty2 =
@@ -309,7 +311,9 @@ trExpr (v:vs) env (Case _ ct e alts) = do
         -- subject is referenced -> introduce binding for v as subject
       | v `elem` fv expr                -> IL.Let (IL.Binding v e') expr
       | otherwise                       -> expr
-trExpr  vs env (Typed _ e (QualTypeExpr _ _ ty)) =
+trExpr  vs env (Typed spi e (ContextType _ _ ty))
+  = trExpr vs env (Typed spi e ty)
+trExpr  vs env (Typed _ e ty) =
   flip IL.Typed ty' <$> trExpr vs env e
   where ty' = transType (toType [] ty)
 trExpr _ _ _ = internalError "CurryToIL.trExpr"

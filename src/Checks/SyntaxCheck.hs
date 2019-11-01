@@ -1,66 +1,66 @@
-{- |
-    Module      :  $Header$
-    Description :  Syntax checks
-    Copyright   :  (c) 1999 - 2004 Wolfgang Lux
-                                   Martin Engelke
-                                   Björn Peemöller
-                       2015        Jan Tikovsky
-                       2016        Finn Teegen
-    License     :  BSD-3-clause
+{-|
+Module      : Checks.SyntaxCheck
+Description : Checks the syntax of a Curry module
+Copyright   : (c) 1999–2004 Wolfgang Lux, Martin Engelke, Björn Peemöller
+                  2015 Jan Tikovsky
+                  2016 Finn Teegen
+                  2019 Jan-Hendrik Matthes
+License     : BSD-3-Clause
 
-    Maintainer  :  bjp@informatik.uni-kiel.de
-    Stability   :  experimental
-    Portability :  portable
+Maintainer  : fte@informatik.uni-kiel.de
+Stability   : experimental
+Portability : portable
 
-   After the type declarations have been checked, the compiler performs
-   a syntax check on the remaining declarations. This check disambiguates
-   nullary data constructors and variables which -- in contrast to Haskell --
-   is not possible on purely syntactic criteria. In addition, this pass checks
-   for undefined as well as ambiguous variables and constructors. In order to
-   allow lifting of local definitions in later phases, all local variables are
-   renamed by adding a key identifying their scope. Therefore, all variables
-   defined in the same scope share the same key so that multiple definitions
-   can be recognized. Finally, all (adjacent) equations of a function are
-   merged into a single definition.
+After the type declarations have been checked, the compiler performs a syntax
+check on the remaining declarations. This check disambiguates nullary data
+constructors and variables which -- in contrast to Haskell -- is not possible
+on purely syntactic criteria. In addition, this pass checks for undefined as
+well as ambiguous variables and constructors. In order to allow lifting of
+local definitions in later phases, all local variables are renamed by adding a
+key identifying their scope. Therefore, all variables defined in the same scope
+share the same key so that multiple definitions can be recognized. Finally, all
+(adjacent) equations of a function are merged into a single definition.
 -}
+
 {-# LANGUAGE CPP #-}
+
 module Checks.SyntaxCheck (syntaxCheck) where
 
 #if __GLASGOW_HASKELL__ >= 804
-import Prelude hiding ((<>))
+import           Prelude             hiding ((<>))
 #endif
 
 #if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative        ((<$>), (<*>))
+import           Control.Applicative ((<$>), (<*>))
 #endif
 
-import Control.Monad                      (unless, when)
-import qualified Control.Monad.State as S ( State, runState, gets, modify
-                                          , withState )
-import           Data.Function            (on)
-import           Data.List                (insertBy, intersect, nub, nubBy)
-import qualified Data.Map  as Map         ( Map, empty, findWithDefault
-                                          , fromList, insertWith, keys )
-import           Data.Maybe               (isJust, isNothing)
-import qualified Data.Set as Set          ( Set, empty, insert, member
-                                          , singleton, toList, union)
+import           Control.Monad       (unless, when)
+import qualified Control.Monad.State as S (State, gets, modify, runState,
+                                           withState)
+import           Data.Function       (on)
+import           Data.List           (insertBy, intersect, nub, nubBy)
+import qualified Data.Map            as Map (Map, empty, findWithDefault,
+                                             fromList, insertWith, keys)
+import           Data.Maybe          (isJust, isNothing)
+import qualified Data.Set            as Set (Set, empty, insert, member,
+                                             singleton, toList, union)
 
-import Curry.Base.Ident
-import Curry.Base.Position
-import Curry.Base.Pretty
-import Curry.Base.Span
-import Curry.Base.SpanInfo
-import Curry.Syntax
-import Curry.Syntax.Pretty (ppPattern)
+import           Curry.Base.Ident
+import           Curry.Base.Position
+import           Curry.Base.Pretty
+import           Curry.Base.Span
+import           Curry.Base.SpanInfo
+import           Curry.Syntax
+import           Curry.Syntax.Pretty (ppPattern)
 
-import Base.Expr
-import Base.Messages (Message, posMessage, internalError)
-import Base.NestEnv
-import Base.SCC      (scc)
-import Base.Utils    ((++!), findDouble, findMultiples)
+import           Base.Expr
+import           Base.Messages       (Message, internalError, posMessage)
+import           Base.NestEnv
+import           Base.SCC            (scc)
+import           Base.Utils          (findDouble, findMultiples, (++!))
 
-import Env.TypeConstructor (TCEnv, clsMethods)
-import Env.Value           (ValueEnv, ValueInfo (..))
+import           Env.TypeConstructor (TCEnv, clsMethods)
+import           Env.Value           (ValueEnv, ValueInfo (..))
 
 -- The syntax checking proceeds as follows. First, the compiler extracts
 -- information about all imported values and data constructors from the
@@ -375,7 +375,9 @@ bindFuncDecl _   _ (FunctionDecl _ _ _ []) _
 bindFuncDecl tcc m (FunctionDecl _ _ f (eq:_)) env
   = let arty = length $ snd $ getFlatLhs eq
     in  bindGlobal tcc m f (GlobalVar (qualifyWith m f) arty) env
-bindFuncDecl tcc m (TypeSig _ fs (QualTypeExpr _ _ ty)) env
+bindFuncDecl tcc m (TypeSig spi fs (ContextType _ _ ty)) env
+  = bindFuncDecl tcc m (TypeSig spi fs ty) env
+bindFuncDecl tcc m (TypeSig _ fs ty) env
   = foldr bindTS env $ map (qualifyWith m) fs
   where
     bindTS qf env'
@@ -389,7 +391,7 @@ bindFuncDecl _   _ _ env = env
 -- |Bind type class information, i.e. class methods
 bindClassDecl :: Decl a -> SCM ()
 bindClassDecl (ClassDecl _ _ _ _ ds) = mapM_ bindClassMethod ds
-bindClassDecl _ = ok
+bindClassDecl _                      = ok
 
 bindClassMethod :: Decl a -> SCM ()
 bindClassMethod ts@(TypeSig _ _ _) = do
