@@ -1980,18 +1980,18 @@ doSolve b | b = return ()
 --- `(e1 =:= e2)` is satisfiable if both sides `e1` and `e2` can be
 --- reduced to a unifiable data term (i.e., a term without defined
 --- function symbols).
-(=:=) :: a -> a -> Bool
+(=:=) :: Data a => a -> a -> Bool
 (=:=) external
 
 --- Non-strict equational constraint. Used to implement functional patterns.
-(=:<=) :: a -> a -> Bool
+(=:<=) :: Data a => a -> a -> Bool
 (=:<=) external
 
 #ifdef __PAKCS__
 --- Non-strict equational constraint for linear functional patterns.
 --- Thus, it must be ensured that the first argument is always (after evalutation
 --- by narrowing) a linear pattern. Experimental.
-(=:<<=) :: a -> a -> Bool
+(=:<<=) :: Data a => a -> a -> Bool
 (=:<<=) external
 
 --- internal function to implement =:<=
