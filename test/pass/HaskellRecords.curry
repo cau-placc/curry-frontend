@@ -7,7 +7,7 @@ data R1 a = C { l :: Int, x :: a }
 r1 :: R1 Bool
 r1 = C { l = 42, x = True }
 
-r2 :: R1 a
+r2 :: Data a => R1 a
 r2 = C {}
 
 -- pattern matching

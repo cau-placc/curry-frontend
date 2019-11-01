@@ -54,7 +54,7 @@ import           Control.Monad.Extra (allM, eitherM, filterM, foldM, (&&^),
 import qualified Control.Monad.State as S (State, gets, modify, runState)
 import           Data.Foldable       (foldrM)
 import           Data.Function       (on)
-import           Data.List           (nub, nubBy, partition, sortBy)
+import           Data.List           (nub, nubBy, partition, sortBy, (\\))
 import qualified Data.Map            as Map (Map, empty, insert, lookup)
 import           Data.Maybe          (fromJust, isJust)
 import qualified Data.Set.Extra      as Set (Set, concatMap, deleteMin, empty,
@@ -1239,13 +1239,16 @@ tcExpr _     p (Typed spi e qty) = do
       errTypeSigTooGeneral p m (text "Expression:" <+> pPrintPrec 0 e) qty
                            (rawPredType tySc)
   return (ps `Set.union` gps, ty, Typed spi e' qty)
-tcExpr _     _ e@(Record spi _ c fs) = do
+tcExpr _     p e@(Record spi _ c fs) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  (ps, ty) <- fmap (fmap arrowBase) (inst (constrType m c vEnv))
+  (ps, ty) <- fmap arrowBase <$> inst (constrType m c vEnv)
   (ps', fs') <- mapAccumM (tcField (tcExpr Infer) "construction"
     (\e' -> pPrintPrec 0 e $-$ text "Term:" <+> pPrintPrec 0 e') ty) ps fs
-  return (ps', ty, Record spi ty c fs')
+  let missing = map (qualifyLike c) (constrLabels m c vEnv)
+                  \\ map (\(Field _ qid _) -> qid) fs'
+  pss <- mapM (tcMissingField p ty) missing
+  return (Set.unions (ps':pss), ty, Record spi ty c fs')
 tcExpr _     p e@(RecordUpdate spi e1 fs) = do
   (ps, ty, e1') <- tcExpr Infer p e1
   (ps', fs') <- mapAccumM (tcField (tcExpr Infer) "update"
@@ -1479,6 +1482,15 @@ tcField check what doc ty ps (Field p l x) = do
   (ps'', x') <- check (spanInfo2Pos p) x >>-
     unify p ("record " ++ what) (doc x) (ps `Set.union` ps') ty2
   return (ps'', Field p l x')
+
+tcMissingField :: HasPosition p => p -> Type -> QualIdent -> TCM PredSet
+tcMissingField p ty l = do
+  m <- getModuleIdent
+  vEnv <- getValueEnv
+  (ps, ty') <- inst (labelType m l vEnv)
+  let TypeArrow _ ty2 = ty'
+  let ps' = Set.singleton (Pred qDataId ty2)
+  unify p "field label" empty ps ty' ps' (TypeArrow ty ty2)
 
 -- | Checks that its argument can be used as an arrow type @a -> b@ and returns
 -- the pair @(a, b)@.
