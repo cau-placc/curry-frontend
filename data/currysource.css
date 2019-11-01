@@ -1,7 +1,23 @@
-/* Use always white background. */
+:root {
+  --link-bg-color: lightyellow;
+  --line-number-color: grey;
+  --pragma-color: green;
+  --comment-color: green;
+  --keyword-color: blue;
+  --symbol-color: red;
+  --type-color: orange;
+  --cons-color: magenta;
+  --label-color: darkgreen;
+  --func-color: purple;
+  --ident-color: black;
+  --module-color: brown;
+  --number-color: teal;
+  --string-color: maroon;
+  --char-color: maroon;
+  color-scheme: light dark;
+}
+
 body {
-  background: white;
-  color: black;
   font-family: monospace;
   text-size-adjust: none;
   -moz-text-size-adjust: none;
@@ -13,18 +29,18 @@ table {
   border-collapse: collapse;
 }
 
-/* Show hyperlinks without text decoration, but in light yellow. */
+/* Hyperlinks */
 a:link,
 a:visited,
 a:active {
-  background: lightyellow;
+  background: var(--link-bg-color);
   text-decoration: none;
 }
 
 /* Line numbers */
 .line-numbers {
-  border-right: 1px solid grey;
-  color: grey;
+  border-right: 1px solid var(--line-number-color);
+  color: var(--line-number-color);
   min-width: 5ch;
   padding-right: 1em;
   text-align: right;
@@ -36,16 +52,44 @@ a:active {
 }
 
 /* Code highlighting */
-.pragma  { color: green     }
-.comment { color: green     }
-.keyword { color: blue      }
-.symbol  { color: red       }
-.type    { color: orange    }
-.cons    { color: magenta   }
-.label   { color: darkgreen }
-.func    { color: purple    }
-.ident   { color: black     }
-.module  { color: brown     }
-.number  { color: teal      }
-.string  { color: maroon    }
-.char    { color: maroon    }
+.pragma  { color: var(--pragma-color)  }
+.comment { color: var(--comment-color) }
+.keyword { color: var(--keyword-color) }
+.symbol  { color: var(--symbol-color)  }
+.type    { color: var(--type-color)    }
+.cons    { color: var(--cons-color)    }
+.label   { color: var(--label-color)   }
+.func    { color: var(--func-color)    }
+.ident   { color: var(--ident-color)   }
+.module  { color: var(--module-color)  }
+.number  { color: var(--number-color)  }
+.string  { color: var(--string-color)  }
+.char    { color: var(--char-color)    }
+
+@supports not (color-scheme: light dark) {
+  @media (prefers-color-scheme: dark) {
+    html {
+      background: hsl(0, 0%, 12%);
+      color: white;
+    }
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --link-bg-color: hsl(0, 0%, 17%);
+    --pragma-color: hsl(0, 0%, 60%);
+    --comment-color: hsl(0, 0%, 60%);
+    --keyword-color: hsl(300, 66%, 70%);
+    --symbol-color: hsl(0, 66%, 70%);
+    --type-color: hsl(60, 66%, 70%);
+    --cons-color: hsl(330, 66%, 70%);
+    --label-color: hsl(240, 66%, 70%);
+    --func-color: hsl(200, 66%, 70%);
+    --ident-color: hsl(0, 0%, 85%);
+    --module-color: hsl(20, 66%, 70%);
+    --number-color: hsl(180, 66%, 70%);
+    --string-color: hsl(120, 66%, 70%);
+    --char-color: hsl(120, 66%, 70%);
+  }
+}

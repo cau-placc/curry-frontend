@@ -12,38 +12,44 @@
     This module defines a function for generating HTML documentation pages
     for Curry source modules.
 -}
+{-# LANGUAGE TemplateHaskell   #-}
 module Html.CurryHtml (source2html) where
 
+import Prelude         as P
 import Control.Monad.Writer
 import Data.List             (mapAccumL)
 import Data.Maybe            (fromMaybe, isJust)
+import Data.ByteString as BS (ByteString, writeFile)
+import Data.FileEmbed
 import Network.URI           (escapeURIString, isUnreserved)
-import System.Directory      (copyFile, doesFileExist)
 import System.FilePath       ((</>))
 
 import Curry.Base.Ident      ( ModuleIdent (..), Ident (..), QualIdent (..)
                              , unqualify, moduleName)
-import Curry.Base.Monad      (CYIO, failMessages)
+import Curry.Base.Monad      (CYIO)
 import Curry.Base.Position   (Position)
-import Curry.Base.Pretty     ((<+>), text, vcat)
 import Curry.Files.Filenames (htmlName)
 import Curry.Syntax          (Module (..), Token)
 
 import Html.SyntaxColoring
 
-import Base.Messages         (message)
-import CompilerOpts          (Options (..))
-import Paths_curry_frontend  (getDataFileName)
 
--- |'FilePath' of the CSS style file to be added to the documentation.
-cssFile :: FilePath
-cssFile = "currysource.css"
+import CompilerOpts          (Options (..))
+
+-- |Read file via TemplateHaskell at compile time
+cssContent :: ByteString
+cssContent = $(makeRelativeToProject "data/currysource.css" >>= embedFile)
+
+-- | Name of the css file
+-- NOTE: The relative path is given above
+cssFileName :: String
+cssFileName = "currysource.css"
 
 -- |Translate source file into HTML file with syntaxcoloring
 source2html :: Options -> ModuleIdent -> [(Position, Token)] -> Module a
             -> CYIO ()
 source2html opts mid toks mdl = do
-  liftIO $ writeFile (outDir </> htmlName mid) doc
+  liftIO $ P.writeFile (outDir </> htmlName mid) doc
   updateCSSFile outDir
   where
   doc    = program2html mid (genProgram mdl toks)
@@ -52,16 +58,8 @@ source2html opts mid toks mdl = do
 -- |Update the CSS file
 updateCSSFile :: FilePath -> CYIO ()
 updateCSSFile dir = do
-  src <- liftIO $ getDataFileName cssFile
-  let target = dir </> cssFile
-  srcExists <- liftIO $ doesFileExist src
-  if srcExists then liftIO $ copyFile src target
-               else failMessages [message $ missingStyleFile src]
-  where
-  missingStyleFile f = vcat
-    [ text "Could not copy CSS style file:"
-    , text "File" <+> text ("`" ++ f ++ "'") <+> text "does not exist"
-    ]
+  let target = dir </> cssFileName
+  liftIO $ BS.writeFile target cssContent
 
 -- generates htmlcode with syntax highlighting
 -- @param modulname
@@ -75,7 +73,7 @@ program2html m codes = unlines
   , "<meta charset=\"utf-8\" />"
   , "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />"
   , "<title>" ++ titleHtml ++ "</title>"
-  , "<link rel=\"stylesheet\" href=\"" ++ cssFile ++ "\" />"
+  , "<link rel=\"stylesheet\" href=\"" ++ cssFileName ++ "\" />"
   , "</head>"
   , "<body>"
   , "<table><tbody><tr>"

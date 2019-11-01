@@ -45,11 +45,14 @@ Library
     , containers
     , curry-base == 1.1.0
     , directory
+    , template-haskell >= 2.10 && < 3
+    , bytestring >= 0.10 && < 0.11
     , extra >= 1.4.6
     , filepath
     , mtl
     , pretty
     , process
+    , file-embed
     , set-extra
     , transformers
   if flag(network-uri)
@@ -131,9 +134,11 @@ Library
     , Transformations.Newtypes
     , Transformations.Qual
     , Transformations.Simplify
-  Other-Modules:
+  other-modules:
     Paths_curry_frontend
-  ghc-options:       -Wall -fno-warn-orphans
+  autogen-modules:
+    Paths_curry_frontend
+  ghc-options:       -Wall
 
 Executable curry-frontend
   hs-source-dirs: src
@@ -145,18 +150,21 @@ Executable curry-frontend
     , curry-base == 1.1.0
     , curry-frontend
     , directory
+    , template-haskell >= 2.10 && < 3
+    , bytestring >= 0.10 && < 0.11
     , extra >= 1.4.6
     , filepath
     , mtl
     , pretty
     , process
+    , file-embed
     , set-extra
     , transformers
   if flag(network-uri)
     build-depends: network-uri >= 2.6
   else
     build-depends: network < 2.6
-  ghc-options: -Wall -fno-warn-orphans
+  ghc-options: -Wall
 
 Test-Suite test-frontend
   type:           detailed-0.9

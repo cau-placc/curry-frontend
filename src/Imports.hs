@@ -164,10 +164,11 @@ importClasses m = flip $ foldr (bindClass m)
 bindClass :: ModuleIdent -> IDecl -> ClassEnv -> ClassEnv
 bindClass m (HidingClassDecl p cx cls k tv) =
   bindClass m (IClassDecl p cx cls k tv [] [])
-bindClass m (IClassDecl _ cx cls _ _ ds _) =
+bindClass m (IClassDecl _ cx cls _ _ ds ids) =
   bindClassInfo (qualQualify m cls) (sclss, ms)
   where sclss = map (\(Constraint _ scls _) -> qualQualify m scls) cx
-        ms = map (\d -> (imethod d, isJust $ imethodArity d)) ds
+        ms = map (\d -> (imethod d, isJust $ imethodArity d)) $ filter isVis ds
+        isVis (IMethodDecl _ idt _ _ ) = idt `notElem` ids
 bindClass _ _ = id
 
 importInstances :: ModuleIdent -> [IDecl] -> InstEnv -> InstEnv
@@ -219,9 +220,10 @@ types m (ITypeDecl _ tc k tvs ty) =
   [typeCon aliasType m tc k tvs (toQualType m tvs ty)]
   where
     aliasType tc' k' = AliasType tc' k' (length tvs)
-types m (IClassDecl _ _ qcls k tv ds _) =
-  [typeCls m qcls k (map mkMethod ds)]
+types m (IClassDecl _ _ qcls k tv ds ids) =
+  [typeCls m qcls k (map mkMethod $ filter isVis ds)]
   where
+    isVis (IMethodDecl _ f _ _ ) = f `notElem` ids
     mkMethod (IMethodDecl _ f a qty) = ClassMethod f a $
       qualifyType m $ normalize 1 $ toMethodType qcls tv qty
 types _ _ = []
