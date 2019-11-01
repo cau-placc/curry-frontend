@@ -19,7 +19,7 @@
 -}
 module Checks.InstanceCheck (instanceCheck) where
 
-import           Control.Monad.Extra        (concatMapM, whileM, when)
+import           Control.Monad.Extra        (concatMapM, whileM, unless)
 import qualified Control.Monad.State as S   (State, execState, gets, modify)
 import           Data.List                  (nub, partition, sortBy)
 import           Data.Maybe                 (catMaybes)
@@ -202,38 +202,30 @@ groupDeriveInfos = scc bound free
         free (DeriveInfo _ _ _ tys _) = concatMap typeConstrs tys
 
 bindDerivedInstances :: ClassEnv -> [DeriveInfo] -> INCM ()
-bindDerivedInstances clsEnv dis = do
-  -- If any registration of initial pred sets failed, return immediately, as
-  -- there are no other (Data-)Instances that might succeed.
-  bs <- mapM (enterInitialPredSet clsEnv) dis
-  when (any or bs) $
-    whileM $ concatMapM (inferPredSets clsEnv) dis >>= updatePredSets
+bindDerivedInstances clsEnv dis = unless (any hasFunType dis) $ do
+  mapM_ (enterInitialPredSet clsEnv) dis
+  whileM $ concatMapM (inferPredSets clsEnv) dis >>= updatePredSets
+  where
+    hasFunType (DeriveInfo _ _ _ tys clss) =
+      clss == [qDataId] && any isFunType tys
 
 enterInitialPredSet :: ClassEnv -> DeriveInfo -> INCM [Bool]
-enterInitialPredSet clsEnv (DeriveInfo p tc pty tys clss) =
-  mapM (bindDerivedInstance clsEnv p tc pty tys) clss
+enterInitialPredSet clsEnv (DeriveInfo p tc pty _ clss) =
+  mapM (bindDerivedInstance clsEnv p tc pty) clss
 
 -- Note: The methods and arities entered into the instance environment have
 -- to match methods and arities of the later generated instance declarations.
 
-bindDerivedInstance :: ClassEnv -> Position -> QualIdent -> Type -> [Type]
-                    -> QualIdent -> INCM Bool
-bindDerivedInstance clsEnv p tc pty tys cls = do
+bindDerivedInstance :: ClassEnv -> Position -> QualIdent -> Type -> QualIdent
+                    -> INCM Bool
+bindDerivedInstance clsEnv p tc pty cls = do
   m <- getModuleIdent
-  -- immediately return if asked to derive Data for functional Datatype
-  if any isFunType tys && cls == qDataId
-    then return False
-  else do
-    -- bindDerivedInstances normally infers the PredSet with empty `tys`
-    -- in order to always bind the instance in a first step.
-    -- For DataDeriving, this leads to problems.
-    let tys' = if cls == qDataId then tys else []
-    mps <- inferPredSet clsEnv p tc pty tys' cls
-    case mps of
-      Just (i, ps) -> modifyInstEnv (bindInstInfo i (m, ps, impls)) >>
-                      return True
-      -- encountered unsatisfied DataClass constraint -> dont derive it here
-      Nothing      -> return False
+  mps <- inferPredSet clsEnv p tc pty [] cls
+  case mps of
+    Just (i, ps) -> modifyInstEnv (bindInstInfo i (m, ps, impls)) >>
+                    return True
+    -- encountered unsatisfied DataClass constraint -> dont derive it here
+    Nothing      -> return False
   where impls | cls == qEqId      = [(eqOpId, 2)]
               | cls == qOrdId     = [(leqOpId, 2)]
               | cls == qEnumId    = [ (succId, 1), (predId, 1), (toEnumId, 1)
