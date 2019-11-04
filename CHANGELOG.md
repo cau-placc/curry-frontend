@@ -6,6 +6,11 @@ Version 2.0.0
 
   * Implemented the "MonadFail-Proposal" for curry
     (see <https://wiki.haskell.org/MonadFail_Proposal>)
+  * Data class (see <https://arxiv.org/abs/1908.10607>)
+  * RankNTypes
+  * Fixed bug with partially imported Typeclasses
+  * Fixed bug with parsing of empty blocks
+  * Fixed bug with re-export of record labels
 
 Version 1.0.4
 =============
