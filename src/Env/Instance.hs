@@ -20,10 +20,10 @@
 
 module Env.Instance
   ( InstIdent, ppInstIdent, InstInfo
-  , InstEnv, initInstEnv, bindInstInfo, lookupInstInfo
+  , InstEnv, initInstEnv, bindInstInfo, removeInstInfo, lookupInstInfo
   ) where
 
-import qualified Data.Map as Map (Map, empty, insert, lookup)
+import qualified Data.Map as Map (Map, empty, insert, delete, lookup)
 
 import Curry.Base.Ident
 import Curry.Base.Pretty
@@ -45,6 +45,9 @@ initInstEnv = Map.empty
 
 bindInstInfo :: InstIdent -> InstInfo -> InstEnv -> InstEnv
 bindInstInfo = Map.insert
+
+removeInstInfo  :: InstIdent -> InstEnv -> InstEnv
+removeInstInfo = Map.delete
 
 lookupInstInfo :: InstIdent -> InstEnv -> Maybe InstInfo
 lookupInstInfo = Map.lookup

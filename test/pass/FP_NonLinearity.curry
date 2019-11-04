@@ -56,19 +56,19 @@ k a b | id x =:<= a &> id y =:<= b &> x =:= y = x
 
 {-# LANGUAGE FunctionalPatterns #-}
 
-f :: a -> a -> a
+f :: Data a => a -> a -> a
 f x (id x) = x
 
 -- Expected translation:
 -- f x y = let z free in id z =:<= y &> x =:= z &> x
 
-g :: a -> a -> a
+g :: Data a => a -> a -> a
 g (id x) (id x) = x
 
 -- Expected translation:
 -- g x y = let a, b free in id a =:<= x &> id b =:<= y &> a =:= b &> a
 
-h :: (a, a) -> a
+h :: Data a => (a, a) -> a
 h (pair x x) = x
 
 -- Expected translation:

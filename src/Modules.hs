@@ -55,7 +55,7 @@ import Env.Interface
 import qualified Curry.AbstractCurry as AC
 import qualified Curry.FlatCurry     as FC
 import qualified Curry.Syntax        as CS
-import qualified IL                  as IL
+import qualified IL
 
 import Checks
 import CompilerEnv
@@ -97,7 +97,7 @@ compileModule opts m fn = do
   writeAST      opts umdl
   writeShortAST opts umdl
   mdl' <- expandExports opts mdl
-  qmdl' <- dumpWith opts CS.showModule CS.ppModule DumpQualified $ qual mdl'
+  qmdl' <- dumpWith opts CS.showModule pPrint DumpQualified $ qual mdl'
   writeAbstractCurry opts qmdl'
   -- generate interface file
   let intf = uncurry exportInterface qmdl'
@@ -127,11 +127,12 @@ loadModule opts m fn = do
   -- load the imported interfaces into an InterfaceEnv
   let paths = map (addCurrySubdir (optUseSubdir opts))
                   ("." : optImportPaths opts)
-  iEnv   <- loadInterfaces paths mdl
+  let withPrel = importPrelude opts mdl
+  iEnv   <- loadInterfaces paths withPrel
   checkInterfaces opts iEnv
-  is     <- importSyntaxCheck iEnv mdl
+  is     <- importSyntaxCheck iEnv withPrel
   -- add information of imported modules
-  cEnv   <- importModules mdl iEnv is
+  cEnv   <- importModules withPrel iEnv is
   return (cEnv { filePath = fn, tokens = toks }, mdl)
 
 parseModule :: Options -> ModuleIdent -> FilePath
@@ -150,7 +151,7 @@ parseModule opts m fn = do
       -- they will be issued a second time during parsing.
       spanToks <- liftCYM $ silent $ CS.lexSource fn condC
       ast      <- liftCYM $ CS.parseModule fn condC
-      checked  <- checkModuleHeader opts m fn ast
+      checked  <- checkModuleHeader m fn ast
       return (spanToks, checked)
 
 preprocess :: PrepOpts -> FilePath -> String -> CYIO String
@@ -179,11 +180,10 @@ withTempFile act = do
   removeFile fn
   return res
 
-checkModuleHeader :: Monad m => Options -> ModuleIdent -> FilePath
+checkModuleHeader :: Monad m => ModuleIdent -> FilePath
                   -> CS.Module () -> CYT m (CS.Module ())
-checkModuleHeader opts m fn = checkModuleId m
-                            . importPrelude opts
-                            . CS.patchModuleId fn
+checkModuleHeader m fn = checkModuleId m
+                       . CS.patchModuleId fn
 
 -- |Check whether the 'ModuleIdent' and the 'FilePath' fit together
 checkModuleId :: Monad m => ModuleIdent -> CS.Module () -> CYT m (CS.Module ())
@@ -191,10 +191,11 @@ checkModuleId mid m@(CS.Module _ _ mid' _ _ _)
   | mid == mid' = ok m
   | otherwise   = failMessages [errModuleFileMismatch mid']
 
--- An implicit import of the prelude is added to the declarations of
--- every module, except for the prelude itself, or when the import is disabled
--- by a compiler option. If no explicit import for the prelude is present,
--- the prelude is imported unqualified, otherwise a qualified import is added.
+-- An implicit import of the prelude is temporariliy added to the declarations
+-- of every module, except for the prelude itself, or when the import is
+-- disabled by a compiler option. If no explicit import for the prelude is
+-- present, the prelude is imported unqualified,
+-- otherwise a qualified import is added.
 
 importPrelude :: Options -> CS.Module () -> CS.Module ()
 importPrelude opts m@(CS.Module spi ps mid es is ds)
@@ -253,7 +254,7 @@ checkModule opts mdl = do
   where
   dumpCS :: (MonadIO m, Show a) => DumpLevel -> CompEnv (CS.Module a)
          -> m (CompEnv (CS.Module a))
-  dumpCS = dumpWith opts CS.showModule CS.ppModule
+  dumpCS = dumpWith opts CS.showModule pPrint
 
 -- ---------------------------------------------------------------------------
 -- Translating a module
@@ -262,19 +263,22 @@ checkModule opts mdl = do
 transModule :: Options -> CompEnv (CS.Module Type)
             -> CYIO (CompEnv IL.Module, CompEnv (CS.Module Type))
 transModule opts mdl = do
-  derived    <- dumpCS DumpDerived       $ derive         mdl
-  desugared  <- dumpCS DumpDesugared     $ desugar        derived
-  dicts      <- dumpCS DumpDictionaries  $ insertDicts    desugared
-  newtypes   <- dumpCS DumpNewtypes      $ removeNewtypes dicts
-  simplified <- dumpCS DumpSimplified    $ simplify       newtypes
-  lifted     <- dumpCS DumpLifted        $ lift           simplified
-  il         <- dumpIL DumpTranslated    $ ilTrans        lifted
-  ilCaseComp <- dumpIL DumpCaseCompleted $ completeCase   il
+  derived    <- dumpCS DumpDerived       $ derive               mdl
+  desugared  <- dumpCS DumpDesugared     $ desugar              derived
+  dicts      <- dumpCS DumpDictionaries  $ insertDicts          desugared
+  newtypes   <- dumpCS DumpNewtypes      $ removeNewtypes remNT dicts
+  simplified <- dumpCS DumpSimplified    $ simplify             newtypes
+  lifted     <- dumpCS DumpLifted        $ lift                 simplified
+  il         <- dumpIL DumpTranslated    $ ilTrans        remIm lifted
+  ilCaseComp <- dumpIL DumpCaseCompleted $ completeCase         il
   return (ilCaseComp, newtypes)
   where
+  optOpts = optOptimizations opts
+  remIm = optRemoveUnusedImports optOpts
+  remNT = optDesugarNewtypes     optOpts
   dumpCS :: Show a => DumpLevel -> CompEnv (CS.Module a)
          -> CYIO (CompEnv (CS.Module a))
-  dumpCS = dumpWith opts CS.showModule CS.ppModule
+  dumpCS = dumpWith opts CS.showModule pPrint
   dumpIL = dumpWith opts IL.showModule IL.ppModule
 
 -- ---------------------------------------------------------------------------
@@ -331,7 +335,7 @@ writeInterface opts env intf@(CS.Interface m _ _)
   interfaceFile   = interfName (filePath env)
   outputInterface = liftIO $ writeModule
                     (addCurrySubdirModule (optUseSubdir opts) m interfaceFile)
-                    (show $ CS.ppInterface intf)
+                    (show $ pPrint intf)
 
 matchInterface :: FilePath -> CS.Interface -> IO Bool
 matchInterface ifn i = do
@@ -343,11 +347,11 @@ matchInterface ifn i = do
 
 writeFlat :: Options -> CompilerEnv -> CS.Module Type -> IL.Module -> CYIO ()
 writeFlat opts env mdl il = do
-  (_, tfc) <- dumpWith opts show (FC.ppProg . genFlatCurry) DumpTypedFlatCurry (env, tfcyProg)
+  (_, tfc) <- dumpWith opts show (pPrint . genFlatCurry) DumpTypedFlatCurry (env, tfcyProg)
   when tfcyTarget  $ liftIO $ FC.writeFlatCurry (useSubDir tfcyName) tafcyProg
   when tafcyTarget $ liftIO $ FC.writeFlatCurry (useSubDir tafcyName) tfc
   when fcyTarget $ do
-    (_, fc) <- dumpWith opts show FC.ppProg DumpFlatCurry (env, fcyProg)
+    (_, fc) <- dumpWith opts show pPrint DumpFlatCurry (env, fcyProg)
     liftIO $ FC.writeFlatCurry (useSubDir fcyName) fc
   writeFlatIntf opts env fcyProg
   where
@@ -370,7 +374,7 @@ writeFlatIntf opts env prog
       mfint <- liftIO $ FC.readFlatInterface targetFile
       let oldInterface = fromMaybe emptyIntf mfint
       when (mfint == mfint) $ return () -- necessary to close file -- TODO
-      unless (oldInterface `eqInterface` fint) $ outputInterface
+      unless (oldInterface `eqInterface` fint) outputInterface
   where
   targetFile      = flatIntName (filePath env)
   emptyIntf       = FC.Prog "" [] [] [] []

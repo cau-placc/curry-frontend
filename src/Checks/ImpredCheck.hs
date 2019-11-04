@@ -14,9 +14,6 @@ variables. An error is generated if one is found. It also ensures that
 default-declarations contain no universally quantified type variables or
 predicates.
 -}
-
-{-# LANGUAGE CPP #-}
-
 module Checks.ImpredCheck (impredCheck) where
 
 import           Control.Monad.Extra (allM, unlessM)
@@ -26,7 +23,7 @@ import           Curry.Base.Ident
 import           Curry.Base.Position
 import           Curry.Base.Pretty
 import           Curry.Syntax
-import           Curry.Syntax.Pretty (ppTypeExpr)
+import           Curry.Syntax.Pretty ()
 
 import           Base.CurryTypes
 import           Base.Messages       (Message, posMessage)
@@ -91,7 +88,7 @@ checkImpredDecl (InstanceDecl _ _ _ ty ds) = do
   mapM_ checkImpredDecl ds
 checkImpredDecl (DefaultDecl _ tys)        = mapM_ checkType tys
   where
-    checkType te = unlessM (checkSimpleType te) $ do
+    checkType te = unlessM (checkSimpleType te) $
       report $ errIllegalDefaultType (getPosition te) te
 checkImpredDecl _                          = ok
 
@@ -111,17 +108,17 @@ checkImpredNewConsDecl (NewRecordDecl _ _ (_, ty)) = checkImpredType ty
 checkImpredType :: TypeExpr -> ICM ()
 checkImpredType (ConstructorType _ _)      = ok
 checkImpredType te@(ApplyType spi ty1 ty2) = do
-  unlessM (checkSimpleType ty2) $ do
+  unlessM (checkSimpleType ty2) $
     report $ errIllegalPolymorphicType (getPosition spi) te
   checkImpredType ty1
   checkImpredType ty2
 checkImpredType (VariableType _ _)         = ok
 checkImpredType te@(TupleType spi tys)     = do
-  unlessM (allM checkSimpleType tys) $ do
+  unlessM (allM checkSimpleType tys) $
     report $ errIllegalPolymorphicType (getPosition spi) te
   mapM_ checkImpredType tys
 checkImpredType te@(ListType spi ty)       = do
-  unlessM (checkSimpleType ty) $ do
+  unlessM (checkSimpleType ty) $
     report $ errIllegalPolymorphicType (getPosition spi) te
   checkImpredType ty
 checkImpredType (ArrowType _ ty1 ty2)      = do
@@ -157,12 +154,12 @@ checkSimpleType (ForallType _ _ _)     = return False
 
 errIllegalPolymorphicType :: Position -> TypeExpr -> Message
 errIllegalPolymorphicType p ty = posMessage p $ vcat
-  [ text "Illegal polymorphic type" <+> ppTypeExpr 0 ty
+  [ text "Illegal polymorphic type" <+> pPrintPrec 0 ty
   , text "Impredicative polymorphism isn't yet supported."
   ]
 
 errIllegalDefaultType :: Position -> TypeExpr -> Message
 errIllegalDefaultType p ty = posMessage p $ vcat
-  [ text "Illegal polymorphic type:" <+> ppTypeExpr 0 ty
+  [ text "Illegal polymorphic type:" <+> pPrintPrec 0 ty
   , text "When checking the types in a default declaration."
   ]

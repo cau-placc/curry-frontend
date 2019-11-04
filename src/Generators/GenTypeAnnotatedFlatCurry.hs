@@ -263,6 +263,11 @@ trTypeDecl (IL.DataDecl      qid a cs) = do
   vis <- getTypeVisibility qid
   cs' <- mapM trConstrDecl cs
   return [Type q' vis [0 .. a - 1] cs']
+trTypeDecl (IL.NewtypeDecl   qid a nc) = do
+  q'  <- trQualIdent qid
+  vis <- getTypeVisibility qid
+  nc' <- trNewConstrDecl nc
+  return [TypeNew q' vis [0 .. a - 1] nc']
 trTypeDecl (IL.ExternalDataDecl qid a) = do
   q'  <- trQualIdent qid
   vis <- getTypeVisibility qid
@@ -275,6 +280,13 @@ trConstrDecl (IL.ConstrDecl qid tys) = flip Cons (length tys)
   <$> trQualIdent qid
   <*> getVisibility qid
   <*> mapM trType tys
+
+-- Translate a constructor declaration for newtypes
+trNewConstrDecl :: IL.NewConstrDecl -> FlatState NewConsDecl
+trNewConstrDecl (IL.NewConstrDecl qid ty) = NewCons
+  <$> trQualIdent qid
+  <*> getVisibility qid
+  <*> trType ty
 
 -- Translate a type expression
 trType :: IL.Type -> FlatState TypeExpr

@@ -51,7 +51,7 @@ import           Curry.Base.Pretty
 import           Curry.Base.Span
 import           Curry.Base.SpanInfo
 import           Curry.Syntax
-import           Curry.Syntax.Pretty (ppPattern)
+import           Curry.Syntax.Pretty (pPrintPrec)
 
 import           Base.Expr
 import           Base.Messages       (Message, internalError, posMessage)
@@ -361,7 +361,7 @@ bindRecordLabels cs =
 bindRecordLabel :: (Ident, [Ident]) -> SCM ()
 bindRecordLabel (l, cs) = do
   m   <- getModuleIdent
-  new <- (null . lookupVar l) <$> getRenameEnv
+  new <- null . lookupVar l <$> getRenameEnv
   unless new $ report $ errDuplicateDefinition l
   modifyRenameEnv $ bindGlobal False m l $
     RecordLabel (qualifyWith m l) (map (qualifyWith m) cs)
@@ -378,7 +378,7 @@ bindFuncDecl tcc m (FunctionDecl _ _ f (eq:_)) env
 bindFuncDecl tcc m (TypeSig spi fs (ContextType _ _ ty)) env
   = bindFuncDecl tcc m (TypeSig spi fs ty) env
 bindFuncDecl tcc m (TypeSig _ fs ty) env
-  = foldr bindTS env $ map (qualifyWith m) fs
+  = foldr (bindTS . qualifyWith m) env fs
   where
     bindTS qf env'
       | null $ qualLookupVar qf env'
@@ -408,8 +408,7 @@ bindVarDecl (FunctionDecl    _ _ f eqs) env
   | otherwise = let arty = length $ snd $ getFlatLhs $ head eqs
                 in  bindLocal (unRenameIdent f) (LocalVar f arty) env
 bindVarDecl (PatternDecl         _ t _) env = foldr bindVar env (bv t)
-bindVarDecl (FreeDecl             _ vs) env =
-  foldr bindVar env (map varIdent vs)
+bindVarDecl (FreeDecl             _ vs) env = foldr (bindVar . varIdent) env vs
 bindVarDecl _                           env = env
 
 bindVar :: Ident -> RenameEnv -> RenameEnv
@@ -470,7 +469,7 @@ checkFuncPatDeps = do
   fps  <- getFuncPats
   deps <- getGlobalDeps
   let levels   = scc (:[])
-                     (\k -> Set.toList (Map.findWithDefault (Set.empty) k deps))
+                     (\k -> Set.toList (Map.findWithDefault Set.empty k deps))
                      (Map.keys deps)
       levelMap = Map.fromList [ (f, l) | (fs, l) <- zip levels [1 ..], f <- fs ]
       level f  = Map.findWithDefault (0 :: Int) f levelMap
@@ -498,9 +497,23 @@ checkInstanceDecl (InstanceDecl p cx qcls ty ds) = do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv
   checkMethods qcls (clsMethods m qcls tcEnv) ds
+  mapM_ checkAmbiguousMethod ds
   InstanceDecl p cx qcls ty <$> checkTopDecls ds
 checkInstanceDecl _ =
   internalError "SyntaxCheck.checkInstanceDecl: no instance declaration"
+
+checkAmbiguousMethod :: Decl a -> SCM ()
+checkAmbiguousMethod (FunctionDecl _ _ f _) = do
+  m <- getModuleIdent
+  rename <- getRenameEnv
+  case lookupVar f rename of
+    rs1@(_:_:_) -> case qualLookupVar (qualifyWith m f) rename of
+      []          -> report $ errAmbiguousIdent rs1 (qualify f)
+      rs2@(_:_:_) -> report $ errAmbiguousIdent rs2 (qualify f)
+      _           -> return ()
+    _           -> return ()
+checkAmbiguousMethod _ =
+  internalError "SyntaxCheck.checkAmbiguousMethod: no function declaration"
 
 checkMethods :: QualIdent -> [Ident] -> [Decl a] -> SCM ()
 checkMethods qcls ms ds =
@@ -749,7 +762,7 @@ checkPattern _ (LiteralPattern        spi a l) =
 checkPattern _ (NegativePattern       spi a l) =
   return $ NegativePattern spi a l
 checkPattern p (VariablePattern       spi a v)
-  | isAnonId v = (VariablePattern spi a . renameIdent v) <$> newId
+  | isAnonId v = VariablePattern spi a . renameIdent v <$> newId
   | otherwise  = checkConstructorPattern p spi (qualify v) []
 checkPattern p (ConstructorPattern spi _ c ts) =
   checkConstructorPattern p spi c ts
@@ -769,9 +782,9 @@ checkPattern p (LazyPattern             spi t) = do
   t' <- checkPattern p t
   banFPTerm "lazy pattern" p t'
   return (LazyPattern spi t')
-checkPattern _ (FunctionPattern     _ _ _ _) = internalError $
+checkPattern _ (FunctionPattern     _ _ _ _) = internalError
   "SyntaxCheck.checkPattern: function pattern not defined"
-checkPattern _ (InfixFuncPattern  _ _ _ _ _) = internalError $
+checkPattern _ (InfixFuncPattern  _ _ _ _ _) = internalError
   "SyntaxCheck.checkPattern: infix function pattern not defined"
 
 checkConstructorPattern :: SpanInfo -> SpanInfo -> QualIdent -> [Pattern ()]
@@ -939,7 +952,7 @@ checkVariable spi a v
     -- anonymous free variable
   | isAnonId (unqualify v) = do
     checkAnonFreeVarsExtension $ getPosition v
-    (\n -> Variable spi a $ updQualIdent id (flip renameIdent n) v) <$> newId
+    (\n -> Variable spi a $ updQualIdent id (`renameIdent` n) v) <$> newId
     -- return $ Variable v
     -- normal variable
   | otherwise             = do
@@ -1083,7 +1096,7 @@ checkFieldLabel l = do
     [RecordLabel _ cs] -> processLabel cs
     rs                 -> case qualLookupVar (qualQualify m l) env of
       [RecordLabel _ cs] -> processLabel cs
-      rs'                -> if (null rs && null rs')
+      rs'                -> if null rs && null rs'
                                then do report $ errUndefinedLabel l
                                        return []
                                else do report $
@@ -1103,9 +1116,10 @@ checkLabels _ (Just c) ls css = do
                            [l | (l, cs) <- zip ls css, c' `notElem` cs]
     _             -> internalError $
                        "Checks.SyntaxCheck.checkLabels: " ++ show c
-checkLabels p Nothing ls css =
-  when (null (foldr1 intersect css))
-    $ report $ errNoCommonCons (spanInfo2Pos p) ls
+checkLabels p Nothing ls css
+  | not (null (foldr1 intersect css)) ||
+    any null css = ok
+  | otherwise    = report $ errNoCommonCons (spanInfo2Pos p) ls
 
 checkField :: (a -> SCM a) -> Field a -> SCM (Field a)
 checkField check (Field p l x) = Field p l <$> check x
@@ -1136,7 +1150,7 @@ recLabels _                        = []
 -- it is necessary to sort the list of declarations.
 
 sortFuncDecls :: [Decl a] -> [Decl a]
-sortFuncDecls decls = sortFD Set.empty [] decls
+sortFuncDecls = sortFD Set.empty []
  where
  sortFD _   res []              = reverse res
  sortFD env res (decl : decls') = case decl of
@@ -1264,12 +1278,12 @@ opAnnotation (InfixConstr a _) = a
 errUnsupportedFPTerm :: String -> Position -> Pattern a -> Message
 errUnsupportedFPTerm s p pat = posMessage p $ text s
   <+> text "patterns are not supported inside a functional pattern."
-  $+$ ppPattern 0 pat
+  $+$ pPrintPrec 0 pat
 
 errUnsupportedFuncPattern :: String -> Position -> Pattern a -> Message
 errUnsupportedFuncPattern s p pat = posMessage p $
   text "Functional patterns are not supported inside a" <+> text s <> dot
-  $+$ ppPattern 0 pat
+  $+$ pPrintPrec 0 pat
 
 errFuncPatNotGlobal :: QualIdent -> Message
 errFuncPatNotGlobal f = posMessage f $ hsep $ map text

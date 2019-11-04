@@ -22,13 +22,14 @@
 {-# LANGUAGE CPP #-}
 module TestFrontend (tests) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative    ((<$>))
-#endif
+import           Prelude                hiding (fail)
 import qualified Control.Exception as E (SomeException, catch)
 
 import           Data.List              (isInfixOf, sort)
-import           Distribution.TestSuite
+import qualified Data.Map as Map        (insert)
+import           Distribution.TestSuite ( Test (..), TestInstance (..)
+                                        , Progress (..), Result (..)
+                                        , OptionDescr)
 import           System.FilePath        (FilePath, (</>), (<.>))
 
 import           Curry.Base.Message     (Message, message, ppMessages, ppError)
@@ -36,11 +37,12 @@ import           Curry.Base.Monad       (CYIO, runCYIO)
 import           Curry.Base.Pretty      (text)
 import qualified CompilerOpts as CO     ( Options (..), WarnOpts (..)
                                         , WarnFlag (..), Verbosity (VerbQuiet)
-                                        , defaultOptions, defaultWarnOpts)
+                                        , CppOpts (..)
+                                        , defaultOptions)
 import CurryBuilder                     (buildCurry)
 
 tests :: IO [Test]
-tests = return [passingTests, warningTests, failingTests]
+tests = return [failingTests, passingTests, warningTests]
 
 runSecure :: CYIO a -> IO (Either [Message] (a, [Message]))
 runSecure act = runCYIO act `E.catch` handler
@@ -48,52 +50,52 @@ runSecure act = runCYIO act `E.catch` handler
 
 -- Execute a test by calling cymake
 runTest :: CO.Options -> String -> [String] -> IO Progress
-runTest opts test [] = passOrFail <$> runSecure (buildCurry opts' test)
- where
-  wOpts         = CO.optWarnOpts opts
-  wFlags        =   CO.WarnUnusedBindings
-                  : CO.WarnUnusedGlobalBindings
-                  : CO.wnWarnFlags wOpts
-  opts'         = opts { CO.optForce    = True
-                       , CO.optWarnOpts = wOpts { CO.wnWarnFlags = wFlags }
-                       }
-  passOrFail    = Finished . either fail pass
-  fail msgs
-    | null msgs = Pass
-    | otherwise = Fail $ "An unexpected failure occurred: " ++ showMessages msgs
-  pass _        = Pass
-runTest opts test errorMsgs = catchE <$> runSecure (buildCurry opts' test)
- where
-  wOpts         = CO.optWarnOpts opts
-  wFlags        =   CO.WarnUnusedBindings
-                  : CO.WarnUnusedGlobalBindings
-                  : CO.wnWarnFlags wOpts
-  opts'         = opts { CO.optForce    = True
-                       , CO.optWarnOpts = wOpts { CO.wnWarnFlags = wFlags }
-                       }
-  catchE        = Finished . either pass fail
-  pass msgs = let errorStr     = showMessages msgs
-                  leftOverMsgs = filter (not . flip isInfixOf errorStr) errorMsgs
-               in if null leftOverMsgs
-                 then Pass
-                 else Fail $ "Expected warnings/failures did not occur: " ++ unwords leftOverMsgs
-  fail          = pass . snd
+runTest opts test errorMsgs =
+  if null errorMsgs
+    then passOrFail <$> runSecure (buildCurry opts' test)
+    else catchE     <$> runSecure (buildCurry opts' test)
+  where
+    cppOpts       = CO.optCppOpts opts
+    cppDefs       = Map.insert "__PAKCS__" 3 (CO.cppDefinitions cppOpts)
+    wOpts         = CO.optWarnOpts opts
+    wFlags        =   CO.WarnUnusedBindings
+                    : CO.WarnUnusedGlobalBindings
+                    : CO.wnWarnFlags wOpts
+    opts'         = opts { CO.optForce    = True
+                         , CO.optWarnOpts = wOpts
+                            { CO.wnWarnFlags    = wFlags  }
+                         , CO.optCppOpts  = cppOpts
+                            { CO.cppDefinitions = cppDefs }
+                         }
+    passOrFail    = Finished . either fail (const Pass)
+    catchE        = Finished . either pass (pass . snd)
+    fail msgs
+      | null msgs = Pass
+      | otherwise = Fail $ "An unexpected failure occurred: " ++
+                           showMessages msgs
+    pass msgs
+      | null otherMsgs = Pass
+      | otherwise      = Fail $ "Expected warnings/failures did not occur: " ++
+                                unwords otherMsgs
+      where
+        errorStr  = showMessages msgs
+        otherMsgs = filter (not . flip isInfixOf errorStr) errorMsgs
 
 showMessages :: [Message] -> String
 showMessages = show . ppMessages ppError . sort
+
+-- group of test which should fail yielding a specific error message
+failingTests :: Test
+failingTests = Group { groupName    = "Failing Tests"
+, concurrently = False
+, groupTests   = map (mkTest "test/fail/") failInfos
+}
 
 -- group of tests which should pass
 passingTests :: Test
 passingTests = Group { groupName    = "Passing Tests"
                      , concurrently = False
                      , groupTests   = map (mkTest "test/pass/") passInfos
-                     }
-
--- group of test which should fail yielding a specific error message
-failingTests :: Test
-failingTests = Group { groupName    = "Failing Tests"
-                     , concurrently = False
-                     , groupTests   = map (mkTest "test/fail/") failInfos
                      }
 
 -- group of tests which should pass producing a specific warning message
@@ -130,73 +132,12 @@ type TestInfo = (String, [String], [OptionDescr], Maybe SetOption, [String])
 type SetOption = String -> String -> Either String TestInstance
 
 --------------------------------------------------------------------------------
--- Definition of passing tests
---------------------------------------------------------------------------------
-
--- generate a simple passing test
-mkPassTest :: String -> TestInfo
-mkPassTest name = (name, [], [], Nothing, [])
-
--- To add a passing test to the test suite simply add the module name of the
--- test code to the following list
-passInfos :: [TestInfo]
-passInfos = map mkPassTest
-  [ "AbstractCurryBug"
-  , "ACVisibility"
-  , "AnonymVar"
-  , "CaseComplete"
-  , "ChurchEncoding"
-  , "ClassMethods"
-  , "DefaultPrecedence"
-  , "Dequeue"
-  , "ExplicitLayout"
-  , "FCase"
-  , "FP_Lifting"
-  , "FP_NonCyclic"
-  , "FP_NonLinearity"
-  , "FunctionalPatterns"
-  , "HaskellRecords"
-  , "Hierarchical"
-  , "ImpredDollar"
-  , "Infix"
-  , "Inline"
-  , "Lambda"
-  , "Maybe"
-  , "Monad"
-  , "NegLit"
-  , "Newtype1"
-  , "Newtype2"
-  , "NonLinearLHS"
-  , "OperatorDefinition"
-  , "PatDecl"
-  , "Prelude"
-  , "Pretty"
-  , "RankNTypes"
-  , "RankNTypesFuncPats"
-  , "RankNTypesImport"
-  , "RecordsPolymorphism"
-  , "RecordTest1"
-  , "RecordTest2"
-  , "RecordTest3"
-  , "ReexportTest"
-  , "ScottEncoding"
-  , "SelfExport"
-  , "SpaceLeak"
-  , "Subsumption"
-  , "TermInv"
-  , "TyConsTest"
-  , "TypedExpr"
-  , "UntypedAcy"
-  , "Unzip"
-  ]
-
---------------------------------------------------------------------------------
 -- Definition of failing tests
 --------------------------------------------------------------------------------
 
 -- generate a simple failing test
 mkFailTest :: String -> [String] -> TestInfo
-mkFailTest name errorMsgs = (name, [], [], Nothing, errorMsgs)
+mkFailTest n errorMsgs = (n, [], [], Nothing, errorMsgs)
 
 -- To add a failing test to the test suite simply add the module name of the
 -- test code and the expected error message(s) to the following list
@@ -211,6 +152,14 @@ failInfos = map (uncurry mkFailTest)
       , "applyFunTest2 = applyFun funA 'a' 'b'"
       ]
     )
+  , ("DataFail",
+      [ "Missing instance for Prelude.Data Test1"
+      , "Missing instance for Prelude.Data (Test2"
+      , "Missing instance for Prelude.Data (Test2"
+      , "Missing instance for Prelude.Data Test1"
+      ]
+    )
+  , ("ErrorMultipleSignature", ["More than one type signature for `f'"])
   , ("ErrorMultipleSignature", ["More than one type signature for `f'"])
   , ("EscapingTypeVariable",
       [ "Type error in application"
@@ -306,6 +255,8 @@ failInfos = map (uncurry mkFailTest)
       , "Type variable b occurs more than once in left hand side of type declaration"
       ]
     )
+  , ("MissingLabelInUpdate",
+      ["Undefined record label `l1'"] )
   , ("MultipleArities", ["Equations for `test' have different arities"])
   , ("MultipleDefinitions",
       ["Multiple definitions for data/record constructor `Rec'"]
@@ -319,6 +270,7 @@ failInfos = map (uncurry mkFailTest)
   , ("PragmaError", ["Unknown language extension"])
   , ("PrecedenceRange", ["Precedence out of range"])
   , ("RankNTypes", ["Arbitrary-rank types are not supported in standard Curry."])
+  , ("RankNTypesFuncPats", ["Missing instance for Prelude.Data (forall c. Prelude.Int ->"])
   , ("RecordLabelIDs", ["Multiple declarations of `RecordLabelIDs.id'"])
   , ("RecursiveTypeSyn", ["Mutually recursive synonym and/or renaming types A and B (line 12.6)"])
   , ("Subsumption",
@@ -353,6 +305,71 @@ failInfos = map (uncurry mkFailTest)
       , "Unbound type variable c"
       ]
     )
+  ]
+
+--------------------------------------------------------------------------------
+-- Definition of passing tests
+--------------------------------------------------------------------------------
+
+-- generate a simple passing test
+mkPassTest :: String -> TestInfo
+mkPassTest = flip mkFailTest []
+
+-- To add a passing test to the test suite simply add the module name of the
+-- test code to the following list
+passInfos :: [TestInfo]
+passInfos = map mkPassTest
+  [ "AbstractCurryBug"
+  , "ACVisibility"
+  , "AnonymVar"
+  , "CaseComplete"
+  , "ChurchEncoding"
+  , "ClassMethods"
+  , "DataPass"
+  , "DefaultPrecedence"
+  , "Dequeue"
+  , "EmptyWhere"
+  , "ExplicitLayout"
+  , "FCase"
+  , "FP_Lifting"
+  , "FP_NonCyclic"
+  , "FP_NonLinearity"
+  , "FunctionalPatterns"
+  , "HaskellRecords"
+  , "Hierarchical"
+  , "ImportRestricted"
+  , "ImportRestricted2"
+  , "ImpredDollar"
+  , "Infix"
+  , "Inline"
+  , "Lambda"
+  , "Maybe"
+  , "Monad"
+  , "NegLit"
+  , "Newtype1"
+  , "Newtype2"
+  , "NonLinearLHS"
+  , "OperatorDefinition"
+  , "PatDecl"
+  , "Prelude"
+  , "Pretty"
+  , "RankNTypes"
+  , "RankNTypesImport"
+  , "RecordsPolymorphism"
+  , "RecordTest1"
+  , "RecordTest2"
+  , "RecordTest3"
+  , "ReexportTest"
+  , "ScottEncoding"
+  , "SelfExport"
+  , "SpaceLeak"
+  , "Subsumption"
+  , "TermInv"
+  , "TyConsTest"
+  , "TypedExpr"
+  , "UntypedAcy"
+  , "Unzip"
+  , "WhereAfterDo"
   ]
 
 --------------------------------------------------------------------------------
@@ -408,6 +425,7 @@ warnInfos = map (uncurry mkFailTest)
       , "In an equation for `tuple'", "In an equation for `tuple2'"
       , "In an equation for `g'", "In an equation for `rec'"]
     )
+  , ("NoRedundant", [])
   , ("OverlappingPatterns",
       [ "Pattern matches are potentially unreachable", "In a case alternative"
       , "An fcase expression is potentially non-deterministic due to overlapping rules"
@@ -415,6 +433,12 @@ warnInfos = map (uncurry mkFailTest)
       , "Function `j' is potentially non-deterministic due to overlapping rules"
       , "Function `k' is potentially non-deterministic due to overlapping rules"
       ]
+    )
+  , ("QualRedundant",
+      [ "Redundant context in type signature for function `f': 'P.Eq a'"]
+    )
+  , ("Redundant",
+      [ "Redundant context in type signature for function `f': 'Eq a'"]
     )
   , ("ShadowingSymbols",
       [ "Unused declaration of variable `x'", "Shadowing symbol `x'"])
