@@ -270,7 +270,7 @@ failInfos = map (uncurry mkFailTest)
   , ("PragmaError", ["Unknown language extension"])
   , ("PrecedenceRange", ["Precedence out of range"])
   , ("RankNTypes", ["Arbitrary-rank types are not supported in standard Curry."])
-  , ("RankNTypesFuncPats", ["Missing instance for Prelude.Data (forall c . Prelude.Int ->"])
+  , ("RankNTypesFuncPats", ["Missing instance for Prelude.Data (forall c. Prelude.Int ->"])
   , ("RecordLabelIDs", ["Multiple declarations of `RecordLabelIDs.id'"])
   , ("RecursiveTypeSyn", ["Mutually recursive synonym and/or renaming types A and B (line 12.6)"])
   , ("Subsumption",
