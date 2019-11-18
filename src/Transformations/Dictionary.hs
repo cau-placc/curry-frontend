@@ -926,13 +926,16 @@ instPredList (Pred cls ty) = case unapplyType True ty of
 matchPredList :: (ValueEnv -> Type) -> Type -> DTM [Pred]
 matchPredList tySc ty2 = do
   pty <- tySc <$> getValueEnv
-  let ps = case pty of
-             TypeForall _ (TypeContext ps' _) -> ps'
-             _                                -> emptyPredSet
+  let ps = getPredSet pty
   return $ foldr (\(pls1, pls2) pls' ->
                    fromMaybe pls' $ qualMatch pls1 (rawType pty) pls2 ty2)
                  (internalError $ "Dictionary.matchPredList: " ++ show ps)
                  (splits $ Set.toAscList ps)
+  where
+    getPredSet :: Type -> PredSet
+    getPredSet (TypeForall _ ty)  = getPredSet ty
+    getPredSet (TypeContext ps _) = ps
+    getPredSet _                  = emptyPredSet
 
 qualMatch :: [Pred] -> Type -> [Pred] -> Type -> Maybe [Pred]
 qualMatch pls1 ty1 pls2 ty2 = case predListMatch pls2 ty2 of
