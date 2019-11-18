@@ -576,7 +576,17 @@ checkClosedTypeSig tvs ty@(ForallType _ _ _) = checkClosedType tvs ty
 checkClosedTypeSig _   ty                    = checkType ty
 
 checkType :: TypeExpr -> TSCM TypeExpr
-checkType c@(ConstructorType spi tc) = do
+checkType (ForallType spi vs ty) = do
+  -- Allow forall types at the beginning of a type when the `ExplicitForAll`
+  -- language extension is enabled.
+  enabled <- hasExtension ExplicitForAll
+  unless enabled $ do
+    checkUsedExtension (getPosition spi) "Arbitrary-rank types" RankNTypes
+  ForallType spi vs <$> checkType ty
+checkType ty = checkType' ty
+
+checkType' :: TypeExpr -> TSCM TypeExpr
+checkType' c@(ConstructorType spi tc) = do
   m <- getModuleIdent
   tEnv <- getTypeEnv
   case qualLookupTypeKind tc tEnv of
@@ -590,23 +600,23 @@ checkType c@(ConstructorType spi tc) = do
       [_]         -> return c
       _           -> do report (errAmbiguousIdent tc $ map origName tks)
                         return c
-checkType (ApplyType spi ty1 ty2)
-  = ApplyType spi <$> checkType ty1 <*> checkType ty2
-checkType v@(VariableType spi tv)
+checkType' (ApplyType spi ty1 ty2)
+  = ApplyType spi <$> checkType' ty1 <*> checkType' ty2
+checkType' v@(VariableType spi tv)
   | isAnonId tv = return v
-  | otherwise   = checkType $ ConstructorType spi (qualify tv)
-checkType (TupleType spi tys)     = TupleType spi <$> mapM checkType tys
-checkType (ListType spi ty)       = ListType spi <$> checkType ty
-checkType (ArrowType spi ty1 ty2) = ArrowType spi <$> checkType ty1
-                                                  <*> checkType ty2
-checkType (ParenType spi ty)      = ParenType spi <$> checkType ty
-checkType (ContextType spi cx ty) = do
-  ty' <- checkType ty
+  | otherwise   = checkType' $ ConstructorType spi (qualify tv)
+checkType' (TupleType spi tys)     = TupleType spi <$> mapM checkType' tys
+checkType' (ListType spi ty)       = ListType spi <$> checkType' ty
+checkType' (ArrowType spi ty1 ty2) = ArrowType spi <$> checkType' ty1
+                                                  <*> checkType' ty2
+checkType' (ParenType spi ty)      = ParenType spi <$> checkType' ty
+checkType' (ContextType spi cx ty) = do
+  ty' <- checkType' ty
   cx' <- checkClosedContext (fv ty') cx
   return $ ContextType spi cx' ty'
-checkType (ForallType spi vs ty)  = do
+checkType' (ForallType spi vs ty)  = do
   checkUsedExtension (getPosition spi) "Arbitrary-rank types" RankNTypes
-  ForallType spi vs <$> checkType ty
+  ForallType spi vs <$> checkType' ty
 
 checkClosed :: [Ident] -> TypeExpr -> TSCM ()
 checkClosed _   (ConstructorType _ _) = ok

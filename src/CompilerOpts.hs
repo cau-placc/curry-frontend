@@ -325,6 +325,8 @@ extensions =
     , "do not implicitly import the Prelude"         )
   , ( RankNTypes               , "RankNTypes"
     , "enable arbitrary-rank types"                  )
+  , ( ExplicitForAll           , "ExplicitForAll"
+    , "enable explicit foralls"                      )
   ]
 
 -- -----------------------------------------------------------------------------
