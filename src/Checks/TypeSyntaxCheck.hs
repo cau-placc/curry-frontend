@@ -579,9 +579,9 @@ checkType :: TypeExpr -> TSCM TypeExpr
 checkType (ForallType spi vs ty) = do
   -- Allow forall types at the beginning of a type when the `ExplicitForAll`
   -- language extension is enabled.
-  enabled <- hasExtension ExplicitForAll
-  unless enabled $ do
-    checkUsedExtension (getPosition spi) "Arbitrary-rank types" RankNTypes
+  rankNTypesEnabled <- hasExtension RankNTypes
+  unless rankNTypesEnabled $ do
+    checkUsedExtension (getPosition spi) "Explicit foralls" ExplicitForAll
   ForallType spi vs <$> checkType ty
 checkType ty = checkType' ty
 
