@@ -43,7 +43,7 @@ Library
   Build-Depends:
       base == 4.*
     , containers
-    , curry-base == 1.1.0
+    , curry-base == 1.1.1
     , directory
     , template-haskell >= 2.10 && < 3
     , bytestring >= 0.10 && < 0.11
