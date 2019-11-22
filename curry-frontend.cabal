@@ -146,7 +146,7 @@ Executable curry-frontend
   Build-Depends:
       base == 4.*
     , containers
-    , curry-base == 1.1.0
+    , curry-base == 1.1.1
     , curry-frontend
     , directory
     , template-haskell >= 2.10 && < 3
@@ -170,5 +170,5 @@ Test-Suite test-frontend
   hs-source-dirs: test
   default-language:  Haskell2010
   test-module:    TestFrontend
-  build-depends:  base == 4.*, Cabal >= 1.20, curry-base == 1.1.0
+  build-depends:  base == 4.*, Cabal >= 1.20, curry-base == 1.1.1
     , curry-frontend, filepath
