@@ -782,7 +782,7 @@ instance DictTrans Decl where
       dictTrans $ FunctionDecl p pty v [Equation p (FunLhs NoSpanInfo v []) rhs]
     _ -> withLocalDictEnv $ PatternDecl p <$> dictTrans t <*> dictTrans rhs
   dictTrans d@(FreeDecl                _ _) = return $ fmap unpredType d
-  dictTrans d@(ExternalDecl            _ _) = return $ fmap unpredType d
+  dictTrans d@(ExternalDecl            _ _) = return $ fmap transformPredType d
   dictTrans d                               =
     internalError $ "Dictionary.dictTrans: " ++ show d
 
