@@ -327,6 +327,8 @@ extensions =
     , "enable arbitrary-rank types"                  )
   , ( ExplicitForAll           , "ExplicitForAll"
     , "enable explicit foralls"                      )
+  , ( ScopedTypeVariables      , "ScopedTypeVariables"
+    , "enable scoped type variables"                 )
   ]
 
 -- -----------------------------------------------------------------------------
