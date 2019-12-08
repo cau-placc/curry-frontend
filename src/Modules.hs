@@ -93,9 +93,8 @@ compileModule opts m fn = do
   writeParsed   opts mdl
   let qmdl = qual mdl
   writeHtml     opts qmdl
-  let umdl = (fst qmdl, fmap (const ()) (snd qmdl))
-  writeAST      opts umdl
-  writeShortAST opts umdl
+  writeAST      opts (fst  mdl, fmap (const ()) (snd  mdl))
+  writeShortAST opts (fst qmdl, fmap (const ()) (snd qmdl))
   mdl' <- expandExports opts mdl
   qmdl' <- dumpWith opts CS.showModule CS.ppModule DumpQualified $ qual mdl'
   writeAbstractCurry opts qmdl'
