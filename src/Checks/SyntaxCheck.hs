@@ -962,7 +962,9 @@ checkVariable spi a v
                             return $ Variable spi a v
       [Constr    _ _]   -> return $ Constructor spi a v
       [GlobalVar f _]   -> addGlobalDep f >> return (Variable spi a v)
-      [LocalVar v' _]   -> return $ Variable spi a $ qualify v' @> v
+      [LocalVar v' _]   -> return $ Variable spi a
+                                  $ qualify
+                                  $ spanInfoLike v' (qidIdent v)
       [RecordLabel _ _] -> return $ Variable spi a v
       rs -> do
         m <- getModuleIdent
@@ -971,7 +973,9 @@ checkVariable spi a v
                                 return $ Variable spi a v
           [Constr    _ _]   -> return $ Constructor spi a v
           [GlobalVar f _]   -> addGlobalDep f >> return (Variable spi a v)
-          [LocalVar v' _]   -> return $ Variable spi a $ qualify v' @> v
+          [LocalVar v' _]   -> return $ Variable spi a
+                                      $ qualify
+                                      $ spanInfoLike v' (qidIdent v)
           [RecordLabel _ _] -> return $ Variable spi a v
           rs'               -> do report $ errAmbiguousIdent rs' v
                                   return $ Variable spi a v
