@@ -51,7 +51,7 @@ module Checks.InterfaceCheck (interfaceCheck) where
 import           Control.Monad            (unless)
 import qualified Control.Monad.State as S
 import           Data.List                (sort)
-import           Data.Maybe               (fromMaybe)
+import           Data.Maybe               (fromMaybe, isJust, isNothing)
 
 import Curry.Base.Ident
 import Curry.Base.Position
@@ -110,7 +110,8 @@ ok = return ()
 
 interfaceCheck :: OpPrecEnv -> TCEnv -> ClassEnv -> InstEnv -> ValueEnv
                -> Interface -> [Message]
-interfaceCheck pEnv tcEnv clsEnv inEnv tyEnv (Interface m _ ds) = reverse (errors s)
+interfaceCheck pEnv tcEnv clsEnv inEnv tyEnv (Interface m _ ds) =
+  reverse (errors s)
   where s = S.execState (mapM_ checkImport ds) initState
         initState = ICState m pEnv tcEnv clsEnv inEnv tyEnv []
 
@@ -151,13 +152,15 @@ checkImport (ITypeDecl p tc k tvs ty) = do
 checkImport (IFunctionDecl p f (Just tv) n ty) = do
   m <- getModuleIdent
   let check (Value f' cm' n' pty) =
-        f == f' && cm' && n' == n && toQualPredType m [tv] ty == rawPredType pty
+        f == f' && isJust cm' && n' == n &&
+        toQualPredType m [tv] ty == rawPredType pty
       check _ = False
   checkValueInfo "method" check p f
 checkImport (IFunctionDecl p f Nothing n ty) = do
   m <- getModuleIdent
   let check (Value f' cm' n' pty) =
-        f == f' && not cm' && n' == n && toQualPredType m [] ty == rawPredType pty
+        f == f' && isNothing cm' && n' == n &&
+        toQualPredType m [] ty == rawPredType pty
       check _ = False
   checkValueInfo "function" check p f
 checkImport (HidingClassDecl p cx cls k _) = do
@@ -215,7 +218,8 @@ checkNewConstrImport tc tvs (NewConstrDecl p c ty) = do
   m <- getModuleIdent
   let qc = qualifyLike tc c
       check (NewtypeConstructor c' _ (TypeForall uqvs (TypeContext _ ty'))) =
-        qc == c' && length tvs == length uqvs && toQualType m tvs ty == head (arrowArgs ty')
+        qc == c' && length tvs == length uqvs &&
+        toQualType m tvs ty == head (arrowArgs ty')
       check _ = False
   checkValueInfo "newtype constructor" check p qc
 checkNewConstrImport tc tvs (NewRecordDecl p c (l, ty)) = do
@@ -232,7 +236,8 @@ checkMethodImport qcls clsvar (IMethodDecl p f _ qty) =
   checkValueInfo "method" check p qf
   where qf = qualifyLike qcls f
         check (Value f' cm' _ pty) =
-          qf == f' && cm' && toMethodType qcls clsvar qty == rawPredType pty
+          qf == f' && isJust cm' &&
+          toMethodType qcls clsvar qty == rawPredType pty
         check _ = False
 
 checkPrecInfo :: (PrecInfo -> Bool) -> Position -> QualIdent -> IC ()

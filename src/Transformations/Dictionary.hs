@@ -167,7 +167,7 @@ emptyAugEnv = []
 
 initAugEnv :: ValueEnv -> AugmentEnv
 initAugEnv = foldr (bindValue . snd) emptyAugEnv . allBindings
-  where bindValue (Value f True _ pty)
+  where bindValue (Value f (Just _) _ pty)
           | arrowArity (rawType pty) == 0 = (f :)
         bindValue _ = id
 
@@ -178,9 +178,9 @@ augmentValues :: ValueEnv -> ValueEnv
 augmentValues = fmap augmentValueInfo
 
 augmentValueInfo :: ValueInfo -> ValueInfo
-augmentValueInfo (Value f True a (TypeForall vs ty))
+augmentValueInfo (Value f (Just cls) a (TypeForall vs ty))
   | arrowArity ty == 0
-    = Value f True a $ TypeForall vs $ augmentType ty
+    = Value f (Just cls) a $ TypeForall vs $ augmentType ty
 augmentValueInfo vi = vi
 
 augmentTypes :: TCEnv -> TCEnv
@@ -599,7 +599,7 @@ bindSuperStubs :: ModuleIdent -> QualIdent -> [QualIdent] -> ValueEnv
 bindSuperStubs m = flip . foldr . bindSuperStub m
 
 bindSuperStub :: ModuleIdent -> QualIdent -> QualIdent -> ValueEnv -> ValueEnv
-bindSuperStub m cls scls = bindEntity m f $ Value f False 1 $ polyType ty
+bindSuperStub m cls scls = bindEntity m f $ Value f Nothing 1 $ polyType ty
   where f  = qSuperDictStubId cls scls
         ty = superDictStubType cls scls (TypeVariable 0)
 
@@ -634,7 +634,7 @@ bindInstMethod m cls ty m' ps is f vEnv = bindMethod m f' a pty vEnv
 
 bindMethod :: ModuleIdent -> QualIdent -> Int -> Type -> ValueEnv
            -> ValueEnv
-bindMethod m f n pty = bindEntity m f $ Value f False n $ polyType pty
+bindMethod m f n pty = bindEntity m f $ Value f Nothing n $ polyType pty
 
 -- The function 'bindEntity' introduces a binding for an entity into a top-level
 -- environment. Depending on whether the entity is defined in the current module
@@ -690,8 +690,8 @@ dictTransValueInfo (DataConstructor c a ls (TypeForall vs ty)) =
         ls' = replicate (a' - a) anonId ++ ls
         ty' = transformPredType ty
 dictTransValueInfo (Value f cm a (TypeForall vs ty)) =
-  Value f False a' $ TypeForall vs ty'
-  where a' = a + if cm then 1 else arrowArity ty' - arrowArity ty
+  Value f Nothing a' $ TypeForall vs ty'
+  where a' = a + if isJust cm then 1 else arrowArity ty' - arrowArity ty
         ty' = transformPredType ty
 dictTransValueInfo vi = vi
 

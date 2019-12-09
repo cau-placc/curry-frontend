@@ -407,15 +407,18 @@ bindClassMethods' :: ModuleIdent -> TCEnv -> ValueEnv -> ValueEnv
 bindClassMethods' m tcEnv vEnv
   = foldr (bindMethods . snd) vEnv $ localBindings tcEnv
   where
-    bindMethods (TypeClass _ _ ms) vEnv' = foldr (bindClassMethod m) vEnv' ms
-    bindMethods _                  vEnv' = vEnv'
+    bindMethods (TypeClass cls _ ms) vEnv' =
+      foldr (bindClassMethod m cls) vEnv' ms
+    bindMethods _                    vEnv' =
+      vEnv'
 
 -- Since the implementations of class methods can differ in their arity, we
 -- assume an arity of 0 when we enter one into the value environment.
 
-bindClassMethod :: ModuleIdent -> ClassMethod -> ValueEnv -> ValueEnv
-bindClassMethod m (ClassMethod f _ ty) =
-  bindGlobalInfo (\qc tySc -> Value qc True 0 tySc) m f (polyType ty)
+bindClassMethod :: ModuleIdent -> QualIdent -> ClassMethod -> ValueEnv
+                -> ValueEnv
+bindClassMethod m cls (ClassMethod f _ ty) =
+  bindGlobalInfo (\qc tySc -> Value qc (Just cls) 0 tySc) m f (polyType ty)
 
 -- -----------------------------------------------------------------------------
 -- Default Types
@@ -546,10 +549,10 @@ partitionPDecls sigs =
     typeSig _                                         = Nothing
 
 bindVars :: ModuleIdent -> ValueEnv -> [(Ident, Int, Type)] -> ValueEnv
-bindVars m = foldr $ uncurry3 $ flip (bindFun m) False
+bindVars m = foldr $ uncurry3 $ flip (bindFun m) Nothing
 
 rebindVars :: ModuleIdent -> ValueEnv -> [(Ident, Int, Type)] -> ValueEnv
-rebindVars m = foldr $ uncurry3 $ flip (rebindFun m) False
+rebindVars m = foldr $ uncurry3 $ flip (rebindFun m) Nothing
 
 tcDeclVars :: Decl a -> TCM [(Ident, Int, Type)]
 tcDeclVars (FunctionDecl _ _ f eqs) = do
@@ -934,7 +937,7 @@ bindVarArity :: Ident -> ValueEnv -> ValueEnv
 bindVarArity v = bindArity v 0
 
 bindArity :: Ident -> Int -> ValueEnv -> ValueEnv
-bindArity v n = bindTopEnv v (Value (qualify v) False n undefined)
+bindArity v n = bindTopEnv v (Value (qualify v) Nothing n undefined)
 
 -- -----------------------------------------------------------------------------
 -- Class and instance declarations
@@ -992,7 +995,7 @@ tcTopPDecl _ = internalError "TypeCheck.tcTopDecl"
 tcClassMethodPDecl :: QualIdent -> Ident -> PDecl a -> TCM (PDecl Type)
 tcClassMethodPDecl qcls tv pd@(_, FunctionDecl _ _ f _) = do
   methTy <- classMethodType qualify f
-  (tySc, pd') <- tcMethodPDecl methTy pd
+  (tySc, pd') <- tcMethodPDecl qcls methTy pd
   sigs <- getSigEnv
   let qty = toClassMethodTypeExpr qcls tv $ fromJust $ lookupTypeSig f sigs
   checkClassMethodType qty tySc pd'
@@ -1007,18 +1010,18 @@ toClassMethodTypeExpr qcls clsvar ty
 tcInstanceMethodPDecl :: QualIdent -> Type -> PDecl a -> TCM (PDecl Type)
 tcInstanceMethodPDecl qcls pty pd@(_, FunctionDecl _ _ f _) = do
   methTy <- instMethodType (qualifyLike qcls) pty f
-  (tySc, pd') <- tcMethodPDecl (polyType methTy) pd
+  (tySc, pd') <- tcMethodPDecl qcls (polyType methTy) pd
   checkInstMethodType (normalize 0 methTy) tySc pd'
 tcInstanceMethodPDecl _ _ _ = internalError "TypeCheck.tcInstanceMethodPDecl"
 
-tcMethodPDecl :: Type -> PDecl a -> TCM (Type, PDecl Type)
-tcMethodPDecl tySc (i, FunctionDecl p _ f eqs) = withLocalValueEnv $ do
+tcMethodPDecl :: QualIdent -> Type -> PDecl a -> TCM (Type, PDecl Type)
+tcMethodPDecl qcls tySc (i, FunctionDecl p _ f eqs) = withLocalValueEnv $ do
   m <- getModuleIdent
-  modifyValueEnv $ bindFun m f True (eqnArity $ head eqs) tySc
+  modifyValueEnv $ bindFun m f (Just qcls) (eqnArity $ head eqs) tySc
   (ps, (ty, pd)) <- tcFunctionPDecl i emptyPredSet tySc p f eqs
   theta <- getTypeSubst
   return (gen Set.empty $ TypeContext ps $ subst theta ty, pd)
-tcMethodPDecl _ _ = internalError "TypeCheck.tcMethodPDecl"
+tcMethodPDecl _ _ _ = internalError "TypeCheck.tcMethodPDecl"
 
 checkClassMethodType :: TypeExpr -> Type -> PDecl Type
                      -> TCM (PDecl Type)
@@ -1069,7 +1072,7 @@ tcExternal f = do
     Just ty -> do
       m <- getModuleIdent
       ty' <- expandTypeExpr ty
-      modifyValueEnv $ bindFun m f False (arrowArity ty') (polyType ty')
+      modifyValueEnv $ bindFun m f Nothing (arrowArity ty') (polyType ty')
       return ty'
 
 -- Patterns and Expressions:

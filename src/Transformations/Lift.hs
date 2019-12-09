@@ -248,7 +248,8 @@ absFunDecl pre fvs lvs (FunctionDecl p _ f eqs) = do
   d <- absDecl pre lvs $ FunctionDecl p undefined f' eqs'
   let FunctionDecl _ _ _ eqs'' = d
   modifyValueEnv $ bindGlobalInfo
-    (\qf tySc -> Value qf False (eqnArity $ head eqs') tySc) m f' $ polyType ty''
+    (\qf tySc -> Value qf Nothing (eqnArity $ head eqs') tySc) m f' $
+                 polyType ty''
   return $ FunctionDecl p ty'' f' eqs''
   where f' = liftIdent pre f
         ty' = foldr TypeArrow (typeOf rhs') (map typeOf ts')
@@ -269,7 +270,7 @@ absVar :: String -> Var Type -> LiftM (Var Type)
 absVar pre (Var ty f) = do
   m <- getModuleIdent
   modifyValueEnv $ bindGlobalInfo
-    (\qf tySc -> Value qf False (arrowArity ty) tySc) m f' $ polyType ty
+    (\qf tySc -> Value qf Nothing (arrowArity ty) tySc) m f' $ polyType ty
   return $ Var ty f'
   where f' = liftIdent pre f
 

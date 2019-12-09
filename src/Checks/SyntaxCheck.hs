@@ -59,8 +59,10 @@ import           Base.NestEnv
 import           Base.SCC            (scc)
 import           Base.Utils          (findDouble, findMultiples, (++!))
 
-import           Env.TypeConstructor (TCEnv, clsMethods)
-import           Env.Value           (ValueEnv, ValueInfo (..))
+import           Env.TypeConstructor (TCEnv, clsMethods, getOrigName)
+import           Env.Value           (ValueEnv, ValueInfo (..),
+                                      qualLookupValueUnique)
+
 
 -- The syntax checking proceeds as follows. First, the compiler extracts
 -- information about all imported values and data constructors from the
@@ -92,7 +94,7 @@ syntaxCheck exts tcEnv vEnv mdl@(Module _ _ m _ _ ds) =
     fs    = nub $ concatMap vars vds
     cs    = concatMap (concatMap methods) [ds' | ClassDecl _ _ _ _ ds' <- cds]
     rEnv  = globalEnv $ fmap renameInfo vEnv
-    state = initState exts m tcEnv rEnv
+    state = initState exts m tcEnv rEnv vEnv
 
 -- A global state transformer is used for generating fresh integer keys with
 -- which the variables are renamed.
@@ -109,6 +111,7 @@ data SCState = SCState
   , moduleIdent      :: ModuleIdent      -- ^ 'ModuleIdent' of the current module
   , tyConsEnv        :: TCEnv
   , renameEnv        :: RenameEnv        -- ^ Information store
+  , valueEnv         :: ValueEnv         -- ^ To check instance method visibility
   , scopeId          :: Integer          -- ^ Identifier for the current scope
   , nextId           :: Integer          -- ^ Next fresh identifier
   , funcDeps         :: FuncDeps         -- ^ Stores data about functions dependencies
@@ -117,9 +120,10 @@ data SCState = SCState
   }
 
 -- |Initial syntax check state
-initState :: [KnownExtension] -> ModuleIdent -> TCEnv -> RenameEnv -> SCState
-initState exts m tcEnv rEnv =
-  SCState exts m tcEnv rEnv globalScopeId 1 noFuncDeps False []
+initState :: [KnownExtension] -> ModuleIdent -> TCEnv -> RenameEnv -> ValueEnv
+          -> SCState
+initState exts m tcEnv rEnv vEnv =
+  SCState exts m tcEnv rEnv vEnv globalScopeId 1 noFuncDeps False []
 
 -- |Identifier for global (top-level) declarations
 globalScopeId :: Integer
@@ -153,6 +157,10 @@ getTyConsEnv = S.gets tyConsEnv
 -- |Retrieve the 'RenameEnv'
 getRenameEnv :: SCM RenameEnv
 getRenameEnv = S.gets renameEnv
+
+-- |Retrieve the 'ValueEnv'
+getValueEnv :: SCM ValueEnv
+getValueEnv = S.gets valueEnv
 
 -- |Modify the 'RenameEnv'
 modifyRenameEnv :: (RenameEnv -> RenameEnv) -> SCM ()
@@ -495,10 +503,23 @@ checkClassDecl _ =
 checkInstanceDecl :: Decl () -> SCM (Decl ())
 checkInstanceDecl (InstanceDecl p cx qcls ty ds) = do
   m <- getModuleIdent
+  vEnv <- getValueEnv
   tcEnv <- getTyConsEnv
-  checkMethods qcls (clsMethods m qcls tcEnv) ds
+  let clsMthds = clsMethods m qcls tcEnv
+  let orig = getOrigName m qcls tcEnv
+  let mthds =
+        if isLocalIdent m orig
+          then clsMthds
+          else filter (isFromCls orig m vEnv) clsMthds
+  checkMethods qcls mthds ds
   mapM_ checkAmbiguousMethod ds
   InstanceDecl p cx qcls ty <$> checkTopDecls ds
+  where
+    isFromCls orig m vEnv f = case qualLookupValueUnique m (qualify f) vEnv of
+      [Value _ (Just cls) _ _]
+        | cls == orig -> True
+      _               -> False
+
 checkInstanceDecl _ =
   internalError "SyntaxCheck.checkInstanceDecl: no instance declaration"
 

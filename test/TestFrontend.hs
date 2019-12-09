@@ -152,6 +152,9 @@ failInfos = map (uncurry mkFailTest)
       , "applyFunTest2 = applyFun funA 'a' 'b'"
       ]
     )
+  , ("ClassHiddenFail",
+      [ "`methodB' is not a (visible) method of class `A'" ]
+    )
   , ("DataFail",
       [ "Missing instance for Prelude.Data Test1"
       , "Missing instance for Prelude.Data (Test2"
