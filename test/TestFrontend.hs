@@ -325,6 +325,7 @@ passInfos = map mkPassTest
   [ "AbstractCurryBug"
   , "ACVisibility"
   , "AnonymVar"
+  , "ApLhs"
   , "CaseComplete"
   , "ChurchEncoding"
   , "ClassMethods"

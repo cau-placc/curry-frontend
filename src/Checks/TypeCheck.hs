@@ -613,7 +613,7 @@ tcEqn tySc p lhs rhs = do
     let lhsArity = length $ snd $ flatLhs lhs
         (psTys, resTy) = arrowUnapply tySc
         resTy' = foldr TypeArrow resTy (drop lhsArity psTys)
-    bindLhsVars psTys lhs
+    bindLhsVars (take lhsArity psTys) lhs
     (ps, tys, lhs') <- S.evalStateT (tcLhs p lhs) Set.empty
     (ps', ty, rhs') <- tcRhs (Check resTy') rhs
     return (ps, tys, lhs', ps', ty, rhs')
@@ -632,8 +632,8 @@ bindLhsVars tys (OpLhs _ p1 _ p2)
   = mapM_ (uncurry bindPatternVars) $ zip (toCheckModeList tys) [p1, p2]
 bindLhsVars tys (ApLhs _ lhs ps) = do
   let (tys1, tys2) = splitAt (length ps) (reverse tys)
-  mapM_ (uncurry bindPatternVars) $ zip (toCheckModeList $ reverse tys2) ps
-  bindLhsVars (reverse tys1) lhs
+  mapM_ (uncurry bindPatternVars) $ zip (toCheckModeList $ reverse tys1) ps
+  bindLhsVars (reverse tys2) lhs
 
 bindPatternVars :: CheckMode -> Pattern a -> TCM ()
 bindPatternVars Infer      (VariablePattern _ _ v)       = do
