@@ -298,7 +298,8 @@ instance Rename a => Rename (Field a) where
 
 instance Rename Ident where
   rename tv | isAnonId tv = renameIdent tv <$> newId
-            | otherwise   = fromMaybe tv <$> lookupVar tv
+            | otherwise   = setSpanInfo (getSpanInfo tv) .
+                            fromMaybe tv <$> lookupVar tv
 
 bindVar :: Ident -> TSCM ()
 bindVar tv = do
