@@ -148,7 +148,8 @@ typeCheck :: Monad m => Options -> CompEnv (Module a)
 typeCheck _ (env, Module spi ps m es is ds)
   | null msgs = ok (env { valueEnv = vEnv' }, Module spi ps m es is ds')
   | otherwise = failMessages msgs
-  where (ds', vEnv', msgs) = TC.typeCheck (moduleIdent env) (tyConsEnv env)
+  where (ds', vEnv', msgs) = TC.typeCheck (extensions env)
+                                          (moduleIdent env) (tyConsEnv env)
                                           (valueEnv env) (classEnv env)
                                           (instEnv env) ds
 

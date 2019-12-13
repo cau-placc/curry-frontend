@@ -95,11 +95,11 @@ import           Env.Value
 -- constructors, field labels and class methods are entered into the value
 -- environment and then a type inference for all function and value definitions
 -- is performed.
-typeCheck :: ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv -> InstEnv -> [Decl a]
-          -> ([Decl Type], ValueEnv, [Message])
-typeCheck m tcEnv vEnv clsEnv inEnv ds = runTCM (checkDecls ds) initState
+typeCheck :: [KnownExtension] -> ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv
+          -> InstEnv -> [Decl a] -> ([Decl Type], ValueEnv, [Message])
+typeCheck exts m tcEnv vEnv clsEnv inEnv ds = runTCM (checkDecls ds) initState
   where
-    initState = TcState m tcEnv vEnv clsEnv (inEnv, Map.empty)
+    initState = TcState m exts tcEnv vEnv clsEnv (inEnv, Map.empty)
                         [intType, floatType] idSubst emptySigEnv 1 [] []
 
 checkDecls :: [Decl a] -> TCM [Decl Type]
@@ -137,6 +137,7 @@ type InstEnv' = (InstEnv, Map.Map QualIdent [Type])
 
 data TcState = TcState
   { moduleIdent  :: ModuleIdent -- read-only
+  , extensions   :: [KnownExtension]
   , tyConsEnv    :: TCEnv
   , valueEnv     :: ValueEnv
   , classEnv     :: ClassEnv
@@ -173,6 +174,9 @@ runTCM tcm s = let (a, s') = S.runState tcm s
 
 getModuleIdent :: TCM ModuleIdent
 getModuleIdent = S.gets moduleIdent
+
+hasExtension :: KnownExtension -> TCM Bool
+hasExtension ext = S.gets (elem ext . extensions)
 
 getTyConsEnv :: TCM TCEnv
 getTyConsEnv = S.gets tyConsEnv
