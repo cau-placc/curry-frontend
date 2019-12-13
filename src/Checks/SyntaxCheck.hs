@@ -839,16 +839,11 @@ checkConstructorPattern p spi c ts = do
     | null ts && not (isQualified c)
     = return $ VariablePattern spi () $ renameIdent (unqualify c) k -- (varIdent r) k
     | otherwise = do
-      let n = arity r
       checkFuncPatsExtension (spanInfo2Pos p)
       checkFuncPatCall r c
       ts' <- mapM (checkPattern p) ts
       mapM_ (checkFPTerm p) ts'
-      return $ if n' > n
-                 then let (ts1, ts2) = splitAt n ts'
-                      in  genFuncPattAppl
-                          (FunctionPattern spi () (qualVarIdent r) ts1) ts2
-                 else FunctionPattern spi () (qualVarIdent r) ts'
+      return $ FunctionPattern spi () (qualVarIdent r) ts'
 
 checkInfixPattern :: SpanInfo -> SpanInfo -> Pattern () -> QualIdent -> Pattern ()
                   -> SCM (Pattern ())
@@ -1231,23 +1226,6 @@ qualVarIdent :: RenameInfo -> QualIdent
 qualVarIdent (GlobalVar v _) = v
 qualVarIdent (LocalVar  v _) = qualify v
 qualVarIdent _ = internalError "SyntaxCheck.qualVarIdent: no variable"
-
-arity :: RenameInfo -> Int
-arity (Constr      _ n) = n
-arity (GlobalVar   _ n) = n
-arity (LocalVar    _ n) = n
-arity (RecordLabel _ _) = 1
-
--- Unlike expressions, constructor terms have no possibility to represent
--- over-applications in functional patterns. Therefore it is necessary to
--- transform them to nested function patterns using the prelude function
--- apply. E.g., the function pattern (id id 10) is transformed to
--- (apply (id id) 10).
-
-genFuncPattAppl :: Pattern () -> [Pattern ()] -> Pattern ()
-genFuncPattAppl term []     = term
-genFuncPattAppl term (t:ts)
-   = FunctionPattern NoSpanInfo () qApplyId [genFuncPattAppl term ts, t] -- TODO FIXME major problem
 
 checkFPTerm :: SpanInfo -> Pattern a -> SCM ()
 checkFPTerm _ (LiteralPattern        _ _ _) = ok
