@@ -47,11 +47,11 @@ import Base.Utils
 import Env.Value
 
 lift :: ValueEnv -> Module Type -> (Module Type, ValueEnv)
-lift vEnv (Module spi ps m es is ds) = (lifted, valueEnv s')
+lift vEnv (Module spi li ps m es is ds) = (lifted, valueEnv s')
   where
   (ds', s') = S.runState (mapM (absDecl "" []) ds) initState
   initState = LiftState m vEnv Map.empty
-  lifted    = Module spi ps m es is $ concatMap liftFunDecl ds'
+  lifted    = Module spi li ps m es is $ concatMap liftFunDecl ds'
 
 -- -----------------------------------------------------------------------------
 -- Abstraction
@@ -113,8 +113,8 @@ absEquation lvs (Equation p lhs@(FunLhs _ f ts) rhs) =
 absEquation _ _ = error "Lift.absEquation: no pattern match"
 
 absRhs :: String -> [Ident] -> Rhs Type -> LiftM (Rhs Type)
-absRhs pre lvs (SimpleRhs p e _) = simpleRhs p <$> absExpr pre lvs e
-absRhs _   _   _                 = error "Lift.absRhs: no simple RHS"
+absRhs pre lvs (SimpleRhs p _ e _) = simpleRhs p <$> absExpr pre lvs e
+absRhs _   _   _                   = error "Lift.absRhs: no simple RHS"
 
 -- Within a declaration group we have to split the list of declarations
 -- into the function and value declarations. Only the function
@@ -178,7 +178,7 @@ absFunDecls :: String -> [Ident] -> [[Decl Type]] -> [Decl Type]
 absFunDecls pre lvs []         vds e = do
   vds' <- mapM (absDecl pre lvs) vds
   e' <- absExpr pre lvs e
-  return (Let NoSpanInfo vds' e')
+  return (mkLet vds' e')
 absFunDecls pre lvs (fds:fdss) vds e = do
   m <- getModuleIdent
   env <- getAbstractEnv
@@ -236,7 +236,7 @@ absFunDecls pre lvs (fds:fdss) vds e = do
     fds' <- mapM (absFunDecl pre fvs lvs) [d | d <- fds, any (`elem` fs') (bv d)]
     -- abstract remaining declarations
     e'   <- absFunDecls pre lvs fdss vds e
-    return (Let NoSpanInfo fds' e')
+    return (mkLet fds' e')
 
 -- When the free variables of a function are abstracted, the type of the
 -- function must be changed as well.
@@ -297,9 +297,9 @@ absExpr pre lvs var@(Variable _ ty v)
 absExpr _   _   c@(Constructor _ _ _) = return c
 absExpr pre lvs (Apply       spi e1 e2) = Apply spi <$> absExpr pre lvs e1
                                                     <*> absExpr pre lvs e2
-absExpr pre lvs (Let            _ ds e) = absDeclGroup pre lvs ds e
-absExpr pre lvs (Case      spi ct e bs) =
-  Case spi ct <$> absExpr pre lvs e <*> mapM (absAlt pre lvs) bs
+absExpr pre lvs (Let          _ _ ds e) = absDeclGroup pre lvs ds e
+absExpr pre lvs (Case      _ _ ct e bs) =
+  mkCase ct <$> absExpr pre lvs e <*> mapM (absAlt pre lvs) bs
 absExpr pre lvs (Typed        spi e ty) =
   flip (Typed spi) ty <$> absExpr pre lvs e
 absExpr _   _   e                   = internalError $ "Lift.absExpr: " ++ show e
@@ -332,8 +332,8 @@ liftEquation (Equation p lhs rhs) = (Equation p lhs rhs', ds')
   where (rhs', ds') = liftRhs rhs
 
 liftRhs :: Eq a => Rhs a -> (Rhs a, [Decl a])
-liftRhs (SimpleRhs p e _) = first (simpleRhs p) (liftExpr e)
-liftRhs _                 = error "Lift.liftRhs: no pattern match"
+liftRhs (SimpleRhs p _ e _) = first (simpleRhs p) (liftExpr e)
+liftRhs _                   = error "Lift.liftRhs: no pattern match"
 
 liftDeclGroup :: Eq a => [Decl a] -> ([Decl a], [Decl a])
 liftDeclGroup ds = (vds', concat (map liftFunDecl fds ++ dss'))
@@ -347,10 +347,10 @@ liftExpr c@(Constructor _ _ _) = (c, [])
 liftExpr (Apply       spi e1 e2) = (Apply spi e1' e2', ds1 ++ ds2)
   where (e1', ds1) = liftExpr e1
         (e2', ds2) = liftExpr e2
-liftExpr (Let          _ ds e) = (mkLet ds' e', ds1 ++ ds2)
+liftExpr (Let        _ _ ds e) = (mkLet ds' e', ds1 ++ ds2)
   where (ds', ds1) = liftDeclGroup ds
         (e' , ds2) = liftExpr e
-liftExpr (Case    spi ct e alts) = (Case spi ct e' alts', concat $ ds' : dss')
+liftExpr (Case    _ _ ct e alts) = (mkCase ct e' alts', concat $ ds' : dss')
   where (e'   , ds' ) = liftExpr e
         (alts', dss') = unzip $ map liftAlt alts
 liftExpr (Typed        spi e ty) =
@@ -394,8 +394,8 @@ renamePattern (VariablePattern spi a v) (rm, ts)
 renamePattern t                     (rm, ts) = (rm, t : ts)
 
 renameRhs :: Eq a => RenameMap a -> Rhs a -> Rhs a
-renameRhs rm (SimpleRhs p e _) = simpleRhs p (renameExpr rm e)
-renameRhs _  _                 = error "Lift.renameRhs"
+renameRhs rm (SimpleRhs p _ e _) = simpleRhs p (renameExpr rm e)
+renameRhs _  _                   = error "Lift.renameRhs"
 
 renameExpr :: Eq a => RenameMap a -> Expression a -> Expression a
 renameExpr _  l@(Literal       _ _ _) = l
@@ -408,10 +408,10 @@ renameExpr _  c@(Constructor _ _ _) = c
 renameExpr rm (Typed       spi e ty) = Typed spi (renameExpr rm e) ty
 renameExpr rm (Apply       spi e1 e2) =
   Apply spi (renameExpr rm e1) (renameExpr rm e2)
-renameExpr rm (Let         spi ds e) =
-  Let spi (map (renameDecl rm) ds) (renameExpr rm e)
-renameExpr rm (Case    spi ct e alts) =
-  Case spi ct (renameExpr rm e) (map (renameAlt rm) alts)
+renameExpr rm (Let       _ _ ds e) =
+  mkLet (map (renameDecl rm) ds) (renameExpr rm e)
+renameExpr rm (Case    _ _ ct e alts) =
+  mkCase ct (renameExpr rm e) (map (renameAlt rm) alts)
 renameExpr _  _                   = error "Lift.renameExpr"
 
 renameDecl :: Eq a => RenameMap a -> Decl a -> Decl a

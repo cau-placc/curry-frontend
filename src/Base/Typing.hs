@@ -44,8 +44,8 @@ instance Typeable Type where
   typeOf ty = ty
 
 instance Typeable a => Typeable (Rhs a) where
-  typeOf (SimpleRhs  _ e _ ) = typeOf e
-  typeOf (GuardedRhs _ es _) = head [typeOf e | CondExpr _ _ e <- es]
+  typeOf (SimpleRhs  _ _ e _ ) = typeOf e
+  typeOf (GuardedRhs _ _ es _) = head [typeOf e | CondExpr _ _ e <- es]
 
 instance Typeable a => Typeable (Pattern a) where
   typeOf (LiteralPattern _ a _) = typeOf a
@@ -91,10 +91,10 @@ instance Typeable a => Typeable (Expression a) where
     TypeArrow ty1 (TypeArrow _ ty2) -> TypeArrow ty1 ty2
     _ -> internalError "Base.Typing.typeOf: right section"
   typeOf (Lambda _ ts e) = foldr (TypeArrow . typeOf) (typeOf e) ts
-  typeOf (Let _ _ e) = typeOf e
-  typeOf (Do _ _ e) = typeOf e
+  typeOf (Let _ _ _ e) = typeOf e
+  typeOf (Do _ _ _ e) = typeOf e
   typeOf (IfThenElse _ _ e _) = typeOf e
-  typeOf (Case _ _ _ as) = typeOf $ head as
+  typeOf (Case _ _ _ _ as) = typeOf $ head as
 
 instType :: Type -> Type
 instType (TypeForall _ ty)  = instType ty

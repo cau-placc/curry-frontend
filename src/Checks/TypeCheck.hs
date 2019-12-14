@@ -861,8 +861,8 @@ instance Binding (Decl a) where
   isNonExpansive _ = internalError "TypeCheck.isNonExpansive"
 
 instance Binding (Rhs a) where
-  isNonExpansive (GuardedRhs _ _ _) = return False
-  isNonExpansive (SimpleRhs _ e ds) = withLocalValueEnv $ do
+  isNonExpansive (GuardedRhs _ _ _ _) = return False
+  isNonExpansive (SimpleRhs _ _ e ds) = withLocalValueEnv $ do
     m <- getModuleIdent
     tcEnv <- getTyConsEnv
     clsEnv <- getClassEnv
@@ -903,7 +903,7 @@ isNonExpansive' n (Lambda _ ts e)         = withLocalValueEnv $ do
   modifyValueEnv $ flip (foldr bindVarArity) (bv ts)
   fmap (((n < length ts) ||) . (all isVariablePattern ts &&))
     (isNonExpansive' (n - length ts) e)
-isNonExpansive' n (Let _ ds e)            = withLocalValueEnv $ do
+isNonExpansive' n (Let _ _ ds e)          = withLocalValueEnv $ do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv
   clsEnv <- getClassEnv
@@ -974,12 +974,12 @@ tcTopPDecl (i, TypeDecl p tc tvs ty)
   = return (i, TypeDecl p tc tvs ty)
 tcTopPDecl (i, DefaultDecl p tys)
   = return (i, DefaultDecl p tys)
-tcTopPDecl (i, ClassDecl p cx cls tv ds)     = withLocalSigEnv $ do
+tcTopPDecl (i, ClassDecl p li cx cls tv ds)     = withLocalSigEnv $ do
   let (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
   setSigEnv $ foldr (bindTypeSigs . snd) emptySigEnv opds
   vpds' <- mapM (tcClassMethodPDecl (qualify cls) tv) vpds
-  return (i, ClassDecl p cx cls tv $ fromPDecls $ map untyped opds ++ vpds')
-tcTopPDecl (i, InstanceDecl p cx qcls ty ds) = do
+  return (i, ClassDecl p li cx cls tv $ fromPDecls $ map untyped opds ++ vpds')
+tcTopPDecl (i, InstanceDecl p li cx qcls ty ds) = do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv
   pty <- expandTypeExpr $ ContextType NoSpanInfo cx ty
@@ -989,7 +989,7 @@ tcTopPDecl (i, InstanceDecl p cx qcls ty ds) = do
       qQualCls = qualQualify (fromJust $ qidModule clsQual) qcls
       (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
   vpds' <- mapM (tcInstanceMethodPDecl qQualCls pty) vpds
-  return (i, InstanceDecl p cx qcls ty $ fromPDecls $ map untyped opds ++ vpds')
+  return (i,InstanceDecl p li cx qcls ty $ fromPDecls $ map untyped opds++vpds')
 tcTopPDecl _ = internalError "TypeCheck.tcTopDecl"
 
 tcClassMethodPDecl :: QualIdent -> Ident -> PDecl a -> TCM (PDecl Type)
@@ -1221,18 +1221,18 @@ tcPatternArg p what doc ps ty t =
     unify p what (doc $-$ text "Term:" <+> pPrintPrec 0 t) ps ty
 
 tcRhs :: CheckMode -> Rhs a -> TCM (PredSet, Type, Rhs Type)
-tcRhs cm (SimpleRhs p e ds) = do
+tcRhs cm (SimpleRhs p li e ds) = do
   (ps, ds', ps', ty, e') <- withLocalValueEnv $ do
     (ps, ds') <- tcDecls ds
     (ps', ty, e') <- tcExpr cm p e
     return (ps, ds', ps', ty, e')
   ps'' <- reducePredSet p "expression" (pPrintPrec 0 e') (ps `Set.union` ps')
-  return (ps'', ty, SimpleRhs p e' ds')
-tcRhs cm (GuardedRhs spi es ds) = withLocalValueEnv $ do
+  return (ps'', ty, SimpleRhs p li e' ds')
+tcRhs cm (GuardedRhs spi li es ds) = withLocalValueEnv $ do
   (ps, ds') <- tcDecls ds
   ty <- freshTypeVar
   (ps', es') <- mapAccumM (tcCondExpr cm ty) ps es
-  return (ps', ty, GuardedRhs spi es' ds')
+  return (ps', ty, GuardedRhs spi li es' ds')
 
 tcCondExpr :: CheckMode -> Type -> PredSet -> CondExpr a -> TCM (PredSet, CondExpr Type)
 tcCondExpr cm ty ps (CondExpr p g e) = do
@@ -1365,31 +1365,31 @@ tcExpr cm    p (Lambda spi ts e) = do
     return (pss, tys, ts', ps, ty, e')
   ps' <- reducePredSet p "expression" (pPrintPrec 0 e') (Set.unions $ ps : pss)
   return (ps', foldr TypeArrow ty tys, Lambda spi ts' e')
-tcExpr cm    p (Let spi ds e) = do
+tcExpr cm    p (Let spi li ds e) = do
   (ps, ds', ps', ty, e') <- withLocalValueEnv $ do
     (ps, ds') <- tcDecls ds
     (ps', ty, e') <- tcExpr cm p e
     return (ps, ds', ps', ty, e')
   ps'' <- reducePredSet p "expression" (pPrintPrec 0 e') (ps `Set.union` ps')
-  return (ps'', ty, Let spi ds' e')
-tcExpr _     p (Do spi sts e) = do
+  return (ps'', ty, Let spi li ds' e')
+tcExpr _     p (Do spi li sts e) = do
   (sts', ty, ps', e') <- withLocalValueEnv $ do
     ((ps, mTy), sts') <-
       mapAccumM (uncurry (tcStmt p)) (emptyPredSet, Nothing) sts
     ty <- fmap (maybe id TypeApply mTy) freshTypeVar
     (ps', e') <- tcExpr Infer p e >>- unify p "statement" (pPrintPrec 0 e) ps ty
     return (sts', ty, ps', e')
-  return (ps', ty, Do spi sts' e')
+  return (ps', ty, Do spi li sts' e')
 tcExpr cm    p e@(IfThenElse spi e1 e2 e3) = do
   (ps, e1') <- tcArg Infer p "expression" (pPrintPrec 0 e) emptyPredSet boolType e1
   (ps', ty, e2') <- tcExpr cm p e2
   (ps'', e3') <- tcArg cm p "expression" (pPrintPrec 0 e) (ps `Set.union` ps') ty e3
   return (ps'', ty, IfThenElse spi e1' e2' e3')
-tcExpr cm    p (Case spi ct e as) = do
+tcExpr cm    p (Case spi li ct e as) = do
   (ps, tyLhs, e') <- tcExpr Infer p e
   tyRhs <- freshTypeVar
   (ps', as') <- mapAccumM (tcAlt cm tyLhs tyRhs) ps as
-  return (ps', tyRhs, Case spi ct e' as')
+  return (ps', tyRhs, Case spi li ct e' as')
 
 tcArg :: HasPosition p => CheckMode -> p -> String -> Doc -> PredSet -> Type
       -> Expression a -> TCM (PredSet, Expression Type)
@@ -1420,9 +1420,9 @@ tcQual :: HasPosition p => p -> PredSet -> Statement a
 tcQual p ps (StmtExpr spi e) = do
   (ps', e') <- tcExpr Infer p e >>- unify p "guard" (pPrintPrec 0 e) ps boolType
   return (ps', StmtExpr spi e')
-tcQual _ ps (StmtDecl spi ds) = do
+tcQual _ ps (StmtDecl spi li ds) = do
   (ps', ds') <- tcDecls ds
-  return (ps `Set.union` ps', StmtDecl spi ds')
+  return (ps `Set.union` ps', StmtDecl spi li ds')
 tcQual p ps q@(StmtBind spi t e) = do
   alpha <- freshTypeVar
   (ps', e') <- tcArg Infer p "generator" (pPrint q) ps (listType alpha) e
@@ -1438,9 +1438,9 @@ tcStmt p ps mTy (StmtExpr spi e) = do
   (ps'', e') <- tcExpr Infer p e >>-
     unify p "statement" (pPrintPrec 0 e) (ps `Set.union` ps') (applyType ty [alpha])
   return ((ps'', Just ty), StmtExpr spi e')
-tcStmt _ ps mTy (StmtDecl spi ds) = do
+tcStmt _ ps mTy (StmtDecl spi li ds) = do
   (ps', ds') <- tcDecls ds
-  return ((ps `Set.union` ps', mTy), StmtDecl spi ds')
+  return ((ps `Set.union` ps', mTy), StmtDecl spi li ds')
 tcStmt p ps mTy st@(StmtBind spi t e) = do
   failable <- checkFailableBind t
   let freshMType = if failable then freshMonadFailType else freshMonadType

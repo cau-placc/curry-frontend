@@ -63,10 +63,10 @@ import Base.Kinds
 -- exported function.
 
 exportInterface :: CompilerEnv -> Module a -> Interface
-exportInterface env (Module _ _ m (Just (Exporting _ es)) _ _) =
+exportInterface env (Module _ _ _ m (Just (Exporting _ es)) _ _) =
   exportInterface' m es (opPrecEnv env) (tyConsEnv env) (valueEnv env)
     (classEnv env) (instEnv env)
-exportInterface _   (Module _ _ _ Nothing                 _ _) =
+exportInterface _   (Module _ _ _ _ Nothing                 _ _) =
   internalError "Exports.exportInterface: no export specification"
 
 exportInterface' :: ModuleIdent -> [Export] -> OpPrecEnv -> TCEnv -> ValueEnv

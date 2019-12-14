@@ -79,7 +79,7 @@ import           Env.Value           (ValueEnv, ValueInfo (..),
 
 syntaxCheck :: [KnownExtension] -> TCEnv -> ValueEnv -> Module ()
             -> ((Module (), [KnownExtension]), [Message])
-syntaxCheck exts tcEnv vEnv mdl@(Module _ _ m _ _ ds) =
+syntaxCheck exts tcEnv vEnv mdl@(Module _ _ _ m _ _ ds) =
   case findMultiples cons of
     []  -> case findMultiples (ls ++ fs ++ cons ++ cs) of
              []  -> runSC (checkModule mdl) state
@@ -92,7 +92,7 @@ syntaxCheck exts tcEnv vEnv mdl@(Module _ _ m _ _ ds) =
     cons  = concatMap constrs tds
     ls    = nub $ concatMap recLabels tds
     fs    = nub $ concatMap vars vds
-    cs    = concatMap (concatMap methods) [ds' | ClassDecl _ _ _ _ ds' <- cds]
+    cs    = concatMap (concatMap methods) [ds' | ClassDecl _ _ _ _ _ ds' <- cds]
     rEnv  = globalEnv $ fmap renameInfo vEnv
     state = initState exts m tcEnv rEnv vEnv
 
@@ -398,8 +398,8 @@ bindFuncDecl _   _ _ env = env
 
 -- |Bind type class information, i.e. class methods
 bindClassDecl :: Decl a -> SCM ()
-bindClassDecl (ClassDecl _ _ _ _ ds) = mapM_ bindClassMethod ds
-bindClassDecl _                      = ok
+bindClassDecl (ClassDecl _ _ _ _ _ ds) = mapM_ bindClassMethod ds
+bindClassDecl _                        = ok
 
 bindClassMethod :: Decl a -> SCM ()
 bindClassMethod ts@(TypeSig _ _ _) = do
@@ -456,7 +456,7 @@ qualLookupListCons v env
 -- declaration are allowed to be declared).
 
 checkModule :: Module () -> SCM (Module (), [KnownExtension])
-checkModule (Module spi ps m es is ds) = do
+checkModule (Module spi li ps m es is ds) = do
   mapM_ bindTypeDecl tds
   mapM_ bindClassDecl cds
   ds' <- checkTopDecls ds
@@ -465,7 +465,7 @@ checkModule (Module spi ps m es is ds) = do
   let ds'' = updateClassAndInstanceDecls cds' ids' ds'
   checkFuncPatDeps
   exts <- getExtensions
-  return (Module spi ps m es is ds'', exts)
+  return (Module spi li ps m es is ds'', exts)
   where tds = filter isTypeDecl ds
         cds = filter isClassDecl ds
         ids = filter isInstanceDecl ds
@@ -494,14 +494,14 @@ checkTopDecls ds = do
   checkDeclGroup (bindFuncDecl tcc m) ds
 
 checkClassDecl :: Decl () -> SCM (Decl ())
-checkClassDecl (ClassDecl p cx cls tv ds) = do
+checkClassDecl (ClassDecl p li cx cls tv ds) = do
   checkMethods (qualify cls) (concatMap methods ds) ds
-  ClassDecl p cx cls tv <$> checkTopDecls ds
+  ClassDecl p li cx cls tv <$> checkTopDecls ds
 checkClassDecl _ =
   internalError "SyntaxCheck.checkClassDecl: no class declaration"
 
 checkInstanceDecl :: Decl () -> SCM (Decl ())
-checkInstanceDecl (InstanceDecl p cx qcls ty ds) = do
+checkInstanceDecl (InstanceDecl p li cx qcls ty ds) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   tcEnv <- getTyConsEnv
@@ -513,7 +513,7 @@ checkInstanceDecl (InstanceDecl p cx qcls ty ds) = do
           else filter (isFromCls orig m vEnv) clsMthds
   checkMethods qcls mthds ds
   mapM_ checkAmbiguousMethod ds
-  InstanceDecl p cx qcls ty <$> checkTopDecls ds
+  InstanceDecl p li cx qcls ty <$> checkTopDecls ds
   where
     isFromCls orig m vEnv f = case qualLookupValueUnique m (qualify f) vEnv of
       [Value _ (Just cls) _ _]
@@ -543,9 +543,9 @@ checkMethods qcls ms ds =
 
 updateClassAndInstanceDecls :: [Decl a] -> [Decl a] -> [Decl a] -> [Decl a]
 updateClassAndInstanceDecls [] [] ds = ds
-updateClassAndInstanceDecls (c:cs) is (ClassDecl _ _ _ _ _:ds) =
+updateClassAndInstanceDecls (c:cs) is (ClassDecl _ _ _ _ _ _:ds) =
   c : updateClassAndInstanceDecls cs is ds
-updateClassAndInstanceDecls cs (i:is) (InstanceDecl _ _ _ _ _:ds) =
+updateClassAndInstanceDecls cs (i:is) (InstanceDecl _ _ _ _ _ _:ds) =
   i : updateClassAndInstanceDecls cs is ds
 updateClassAndInstanceDecls cs is (d:ds) =
   d : updateClassAndInstanceDecls cs is ds
@@ -902,10 +902,14 @@ checkFuncPatCall r f = case r of
 
 -- Note: process decls first
 checkRhs :: Rhs () -> SCM (Rhs ())
-checkRhs (SimpleRhs spi e ds) = inNestedScope $
-  flip (SimpleRhs spi) <$> checkDeclGroup bindVarDecl ds <*> checkExpr spi e
-checkRhs (GuardedRhs spi es ds) = inNestedScope $
-  flip (GuardedRhs spi) <$> checkDeclGroup bindVarDecl ds <*> mapM checkCondExpr es
+checkRhs (SimpleRhs spi li e ds) = inNestedScope $
+  flip (SimpleRhs spi li) <$>
+    checkDeclGroup bindVarDecl ds <*>
+    checkExpr spi e
+checkRhs (GuardedRhs spi li es ds) = inNestedScope $
+  flip (GuardedRhs spi li) <$>
+    checkDeclGroup bindVarDecl ds <*>
+    mapM checkCondExpr es
 
 checkCondExpr :: CondExpr () -> SCM (CondExpr ())
 checkCondExpr (CondExpr spi g e) =  CondExpr spi <$> checkExpr spi g <*> checkExpr spi e
@@ -940,14 +944,14 @@ checkExpr p (LeftSection        spi e op) =
 checkExpr p (RightSection       spi op e) =
   RightSection spi <$> checkOp op <*> checkExpr p e
 checkExpr p (Lambda             spi ts e) = inNestedScope $ checkLambda p spi ts e
-checkExpr p (Let                spi ds e) = inNestedScope $
-  Let spi <$> checkDeclGroup bindVarDecl ds <*> checkExpr p e
-checkExpr p (Do                spi sts e) = withLocalEnv $
-  Do spi <$> mapM (checkStatement "do sequence" p) sts <*> checkExpr p e
+checkExpr p (Let             spi li ds e) = inNestedScope $
+  Let spi li <$> checkDeclGroup bindVarDecl ds <*> checkExpr p e
+checkExpr p (Do             spi li sts e) = withLocalEnv $
+  Do spi li <$> mapM (checkStatement "do sequence" p) sts <*> checkExpr p e
 checkExpr p (IfThenElse     spi e1 e2 e3) =
   IfThenElse spi <$> checkExpr p e1 <*> checkExpr p e2 <*> checkExpr p e3
-checkExpr p (Case          spi ct e alts) =
-  Case spi ct <$> checkExpr p e <*> mapM checkAlt alts
+checkExpr p (Case       spi li ct e alts) =
+  Case spi li ct <$> checkExpr p e <*> mapM checkAlt alts
 
 checkLambda :: SpanInfo -> SpanInfo -> [Pattern ()] -> Expression ()
             -> SCM (Expression ())
@@ -1030,11 +1034,11 @@ checkRecordUpdExpr p spi e fs = do
 -- * Because statements are processed list-wise, inNestedEnv can not be
 --   used as this nesting must be visible to following statements.
 checkStatement :: String -> SpanInfo -> Statement () -> SCM (Statement ())
-checkStatement _ p (StmtExpr spi   e) = StmtExpr spi <$> checkExpr p e
-checkStatement s p (StmtBind spi t e) =
+checkStatement _ p (StmtExpr spi     e) = StmtExpr spi <$> checkExpr p e
+checkStatement s p (StmtBind spi   t e) =
   flip (StmtBind spi) <$> checkExpr p e <*> (incNesting >> bindPattern s p t)
-checkStatement _ _ (StmtDecl spi  ds) =
-  StmtDecl spi <$> (incNesting >> checkDeclGroup bindVarDecl ds)
+checkStatement _ _ (StmtDecl spi li ds) =
+  StmtDecl spi li <$> (incNesting >> checkDeclGroup bindVarDecl ds)
 
 bindPattern :: String -> SpanInfo -> Pattern () -> SCM (Pattern ())
 bindPattern s p t = do

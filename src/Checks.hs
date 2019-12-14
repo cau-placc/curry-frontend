@@ -114,8 +114,8 @@ syntaxCheck _ (env, mdl)
 --                 precedences
 -- * Environment:  The operator precedence environment is updated
 precCheck :: Monad m => Check m (Module a)
-precCheck _ (env, Module spi ps m es is ds)
-  | null msgs = ok (env { opPrecEnv = pEnv' }, Module spi ps m es is ds')
+precCheck _ (env, Module spi li ps m es is ds)
+  | null msgs = ok (env { opPrecEnv = pEnv' }, Module spi li ps m es is ds')
   | otherwise = failMessages msgs
   where (ds', pEnv', msgs) = PC.precCheck (moduleIdent env) (opPrecEnv env) ds
 
@@ -133,8 +133,8 @@ deriveCheck _ (env, mdl) = case DC.deriveCheck (tyConsEnv env) mdl of
 -- * Declarations: remain unchanged
 -- * Environment:  The instance environment is updated
 instanceCheck :: Monad m => Check m (Module a)
-instanceCheck _ (env, Module spi ps m es is ds)
-  | null msgs = ok (env { instEnv = inEnv' }, Module spi ps m es is ds)
+instanceCheck _ (env, Module spi li ps m es is ds)
+  | null msgs = ok (env { instEnv = inEnv' }, Module spi li ps m es is ds)
   | otherwise = failMessages msgs
   where (inEnv', msgs) = INC.instanceCheck (moduleIdent env) (tyConsEnv env)
                                            (classEnv env) (instEnv env) ds
@@ -145,8 +145,8 @@ instanceCheck _ (env, Module spi ps m es is ds)
 -- * Environment:  The value environment is updated.
 typeCheck :: Monad m => Options -> CompEnv (Module a)
           -> CYT m (CompEnv (Module Type))
-typeCheck _ (env, Module spi ps m es is ds)
-  | null msgs = ok (env { valueEnv = vEnv' }, Module spi ps m es is ds')
+typeCheck _ (env, Module spi li ps m es is ds)
+  | null msgs = ok (env { valueEnv = vEnv' }, Module spi li ps m es is ds')
   | otherwise = failMessages msgs
   where (ds', vEnv', msgs) = TC.typeCheck (moduleIdent env) (tyConsEnv env)
                                           (valueEnv env) (classEnv env)
@@ -154,7 +154,7 @@ typeCheck _ (env, Module spi ps m es is ds)
 
 -- |Check the export specification
 exportCheck :: Monad m => Check m (Module a)
-exportCheck _ (env, mdl@(Module _ _ _ es _ _))
+exportCheck _ (env, mdl@(Module _ _ _ _ es _ _))
   | null msgs = ok (env, mdl)
   | otherwise = failMessages msgs
   where msgs = EC.exportCheck (moduleIdent env) (aliasEnv env)
@@ -162,8 +162,8 @@ exportCheck _ (env, mdl@(Module _ _ _ es _ _))
 
 -- |Check the export specification
 expandExports :: Monad m => Options -> CompEnv (Module a) -> m (CompEnv (Module a))
-expandExports _ (env, Module spi ps m es is ds)
-  = return (env, Module spi ps m (Just es') is ds)
+expandExports _ (env, Module spi li ps m es is ds)
+  = return (env, Module spi li ps m (Just es') is ds)
   where es' = EC.expandExports (moduleIdent env) (aliasEnv env)
                                (tyConsEnv env) (valueEnv env) es
 

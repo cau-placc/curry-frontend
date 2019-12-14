@@ -120,7 +120,7 @@ data FlatEnv = FlatEnv
 
 -- Runs a 'FlatState' action and returns the result
 run :: CompilerEnv -> CS.Module Type -> FlatState a -> a
-run env (CS.Module _ _ mid es is ds) act = S.evalState act env0
+run env (CS.Module _ _ _ mid es is ds) act = S.evalState act env0
   where
   es'  = case es of Just (CS.Exporting _ e) -> e
                     _                       -> []

@@ -31,11 +31,11 @@ import           Base.Messages       (Message, posMessage)
 import           Env.TypeConstructor (TCEnv, TypeInfo (..), qualLookupTypeInfo)
 
 impredCheck :: TCEnv -> Module () -> (Module (), [Message])
-impredCheck tcEnv mdl@(Module _ _ m _ _ _) =
+impredCheck tcEnv mdl@(Module _ _ _ m _ _ _) =
   runIC (checkModule mdl) $ initState m tcEnv
 
 checkModule :: Module () -> ICM (Module ())
-checkModule mdl@(Module _ _ _ _ _ ds) = do
+checkModule mdl@(Module _ _ _ _ _ _ ds) = do
   mapM_ checkImpredDecl ds
   return mdl
 
@@ -78,19 +78,19 @@ ok = return ()
 -- -----------------------------------------------------------------------------
 
 checkImpredDecl :: Decl a -> ICM ()
-checkImpredDecl (DataDecl _ _ _ cs _)      = mapM_ checkImpredConsDecl cs
-checkImpredDecl (NewtypeDecl _ _ _ c _)    = checkImpredNewConsDecl c
-checkImpredDecl (TypeDecl _ _ _ ty)        = checkImpredType ty
-checkImpredDecl (TypeSig _ _ ty)           = checkImpredType ty
-checkImpredDecl (ClassDecl _ _ _ _ ds)     = mapM_ checkImpredDecl ds
-checkImpredDecl (InstanceDecl _ _ _ ty ds) = do
+checkImpredDecl (DataDecl _ _ _ cs _)        = mapM_ checkImpredConsDecl cs
+checkImpredDecl (NewtypeDecl _ _ _ c _)      = checkImpredNewConsDecl c
+checkImpredDecl (TypeDecl _ _ _ ty)          = checkImpredType ty
+checkImpredDecl (TypeSig _ _ ty)             = checkImpredType ty
+checkImpredDecl (ClassDecl _ _ _ _ _ ds)     = mapM_ checkImpredDecl ds
+checkImpredDecl (InstanceDecl _ _ _ _ ty ds) = do
   checkImpredType ty
   mapM_ checkImpredDecl ds
-checkImpredDecl (DefaultDecl _ tys)        = mapM_ checkType tys
+checkImpredDecl (DefaultDecl _ tys)          = mapM_ checkType tys
   where
     checkType te = unlessM (checkSimpleType te) $
       report $ errIllegalDefaultType (getPosition te) te
-checkImpredDecl _                          = ok
+checkImpredDecl _                            = ok
 
 checkImpredConsDecl :: ConstrDecl -> ICM ()
 checkImpredConsDecl (ConstrDecl _ _ tys)    = mapM_ checkImpredType tys

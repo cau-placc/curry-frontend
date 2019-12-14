@@ -73,7 +73,7 @@ type DTM = S.State DTState
 insertDicts :: InterfaceEnv -> TCEnv -> ValueEnv -> ClassEnv -> InstEnv
             -> OpPrecEnv -> Module Type
             -> (Module Type, InterfaceEnv, TCEnv, ValueEnv, OpPrecEnv)
-insertDicts intfEnv tcEnv vEnv clsEnv inEnv pEnv mdl@(Module _ _ m _ _ _) =
+insertDicts intfEnv tcEnv vEnv clsEnv inEnv pEnv mdl@(Module _ _ _ m _ _ _) =
   (mdl', intfEnv', tcEnv', vEnv', pEnv')
   where initState =
           DTState m tcEnv vEnv clsEnv inEnv pEnv emptyAugEnv emptyDictEnv emptySpEnv 1
@@ -213,13 +213,13 @@ class Augment a where
   augment :: a Type -> DTM (a Type)
 
 instance Augment Module where
-  augment (Module spi ps m es is ds) = do
+  augment (Module spi li ps m es is ds) = do
     augEnv <- initAugEnv <$> getValueEnv
     setAugEnv augEnv
     modifyValueEnv $ augmentValues
     modifyTyConsEnv $ augmentTypes
     modifyInstEnv $ augmentInstances augEnv
-    Module spi ps m es is <$> mapM (augmentDecl Nothing) ds
+    Module spi li ps m es is <$> mapM (augmentDecl Nothing) ds
 
 -- The first parameter of the functions 'augmentDecl', 'augmentEquation' and
 -- 'augmentLhs' determines whether we have to unrename the function identifiers
@@ -237,13 +237,13 @@ instance Augment Module where
 -- first one is affected.
 
 augmentDecl :: Maybe ModuleIdent -> Decl Type -> DTM (Decl Type)
-augmentDecl _  d@(TypeSig          p fs qty) = do
+augmentDecl _  d@(TypeSig            p fs qty) = do
   m <- getModuleIdent
   augEnv <- getAugEnv
   return $ if isAugmented augEnv (qualifyWith m $ unRenameIdent $ head fs)
               then TypeSig p fs $ augmentTypeExpr qty
               else d
-augmentDecl mm (FunctionDecl    p pty f eqs) = do
+augmentDecl mm (FunctionDecl      p pty f eqs) = do
     eqs' <- mapM (augmentEquation mm) eqs
     m <- maybe getModuleIdent return mm
     augEnv <- getAugEnv
@@ -251,11 +251,11 @@ augmentDecl mm (FunctionDecl    p pty f eqs) = do
       then return $ FunctionDecl p (augmentType pty) f eqs'
       else return $ FunctionDecl p pty f eqs'
 augmentDecl _  (PatternDecl         p t rhs) = PatternDecl p t <$> augment rhs
-augmentDecl _  (ClassDecl    p cx cls tv ds) = do
+augmentDecl _  (ClassDecl    p li cx cls tv ds) = do
   m <- getModuleIdent
-  ClassDecl p cx cls tv <$> mapM (augmentDecl $ Just m) ds
-augmentDecl _  (InstanceDecl p cx cls ty ds) =
-  InstanceDecl p cx cls ty <$> mapM (augmentDecl $ qidModule cls) ds
+  ClassDecl p li cx cls tv <$> mapM (augmentDecl $ Just m) ds
+augmentDecl _  (InstanceDecl p li cx cls ty ds) =
+  InstanceDecl p li cx cls ty <$> mapM (augmentDecl $ qidModule cls) ds
 augmentDecl _ d                             = return d
 
 augmentEquation :: Maybe ModuleIdent -> Equation Type
@@ -275,8 +275,8 @@ augmentLhs _ lhs               =
   internalError $ "Dictionary.augmentLhs" ++ show lhs
 
 instance Augment Rhs where
-  augment (SimpleRhs p e []) = simpleRhs p <$> augment e
-  augment rhs                =
+  augment (SimpleRhs p _ e []) = simpleRhs p <$> augment e
+  augment rhs                  =
     internalError $ "Dictionary.augment: " ++ show rhs
 
 instance Augment Expression where
@@ -291,10 +291,10 @@ instance Augment Expression where
   augment (Typed       spi e qty) = flip (Typed spi) qty <$> augment e
   augment (Apply       spi e1 e2) = Apply spi <$> augment e1 <*> augment e2
   augment (Lambda       spi ts e) = Lambda spi ts <$> augment e
-  augment (Let          spi ds e) =
-    Let spi <$> mapM (augmentDecl Nothing) ds <*> augment e
-  augment (Case      spi ct e as) =
-    Case spi ct <$> augment e <*> mapM augment as
+  augment (Let       spi li ds e) =
+    Let spi li <$> mapM (augmentDecl Nothing) ds <*> augment e
+  augment (Case   spi li ct e as) =
+    Case spi li ct <$> augment e <*> mapM augment as
   augment e                     =
     internalError $ "Dictionary.augment: " ++ show e
 
@@ -320,10 +320,10 @@ augmentTypeExpr ty = ArrowType NoSpanInfo (ConstructorType NoSpanInfo qUnitId) t
 
 liftDecls :: Decl Type -> DTM [Decl Type]
 liftDecls (DefaultDecl _ _) = return []
-liftDecls (ClassDecl _ _ cls tv ds) = do
+liftDecls (ClassDecl _ _ _ cls tv ds) = do
   m <- getModuleIdent
   liftClassDecls (qualifyWith m cls) tv ds
-liftDecls (InstanceDecl _ cx cls ty ds) = do
+liftDecls (InstanceDecl _ _ cx cls ty ds) = do
   clsEnv <- getClassEnv
   let TypeContext ps ty' = toPredType [] $ ContextType NoSpanInfo cx ty
       ps' = minPredSet clsEnv ps
@@ -478,7 +478,7 @@ renameDecl _ _ = internalError "Dictionary.renameDecl"
 -- class dictionary from the provided class dictionary.
 
 createStubs :: Decl Type -> DTM [Decl Type]
-createStubs (ClassDecl _ _ cls _ _) = do
+createStubs (ClassDecl _ _ _ cls _ _) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   clsEnv <- getClassEnv
@@ -704,11 +704,11 @@ addExports (Just (Exporting p es)) es' = Just $ Exporting p $ es ++ es'
 addExports Nothing                 _   = internalError "Dictionary.addExports"
 
 dictExports :: Decl a -> DTM [Export]
-dictExports (ClassDecl _ _ cls _ _) = do
+dictExports (ClassDecl _ _ _ cls _ _) = do
   m <- getModuleIdent
   clsEnv <- getClassEnv
   return $ classExports m clsEnv cls
-dictExports (InstanceDecl _ _ cls ty _) = do
+dictExports (InstanceDecl _ _ _ cls ty _) = do
   m <- getModuleIdent
   clsEnv <- getClassEnv
   return $ instExports m clsEnv cls (toType [] ty)
@@ -739,7 +739,7 @@ class DictTrans a where
   dictTrans :: a Type -> DTM (a Type)
 
 instance DictTrans Module where
-  dictTrans (Module spi ps m es is ds) = do
+  dictTrans (Module spi li ps m es is ds) = do
     liftedDs <- concatMapM liftDecls ds
     stubDs <- concatMapM createStubs ds
     tcEnv <- getTyConsEnv
@@ -752,7 +752,7 @@ instance DictTrans Module where
     modifyValueEnv $ dictTransValues
     modifyTyConsEnv $ dictTransTypes
     dictEs <- addExports es <$> concatMapM dictExports ds
-    return $ Module spi ps m dictEs is $ transDs ++ stubDs
+    return $ Module spi li ps m dictEs is $ transDs ++ stubDs
 
 -- We use and transform the type from the type constructor environment for
 -- transforming a constructor declaration as it contains the reduced and
@@ -806,8 +806,8 @@ instance DictTrans Equation where
     internalError $ "Dictionary.dictTrans: " ++ show eq
 
 instance DictTrans Rhs where
-  dictTrans (SimpleRhs p e []) = simpleRhs p <$> dictTrans e
-  dictTrans rhs                =
+  dictTrans (SimpleRhs p _ e []) = simpleRhs p <$> dictTrans e
+  dictTrans rhs                  =
     internalError $ "Dictionary.dictTrans: " ++ show rhs
 
 instance DictTrans Pattern where
@@ -844,12 +844,12 @@ instance DictTrans Expression where
   dictTrans (Lambda       _ ts e) = withLocalValueEnv $ withLocalDictEnv $ do
     ts' <- mapM dictTrans ts
     modifyValueEnv $ bindPatterns ts'
-    Lambda NoSpanInfo ts' <$> dictTrans e
-  dictTrans (Let          _ ds e) = withLocalValueEnv $ do
+    mkLambda ts' <$> dictTrans e
+  dictTrans (Let        _ _ ds e) = withLocalValueEnv $ do
     modifyValueEnv $ bindDecls ds
-    Let NoSpanInfo <$> mapM dictTrans ds <*> dictTrans e
-  dictTrans (Case      _ ct e as) =
-    Case NoSpanInfo ct <$> dictTrans e <*> mapM dictTrans as
+    mkLet <$> mapM dictTrans ds <*> dictTrans e
+  dictTrans (Case    _ _ ct e as) =
+    mkCase ct <$> dictTrans e <*> mapM dictTrans as
   dictTrans e                   =
     internalError $ "Dictionary.dictTrans: " ++ show e
 
@@ -978,11 +978,11 @@ class Specialize a where
   specialize :: a Type -> DTM (a Type)
 
 instance Specialize Module where
-  specialize (Module spi ps m es is ds) = do
+  specialize (Module spi li ps m es is ds) = do
     clsEnv <- getClassEnv
     inEnv <- getInstEnv
     setSpEnv $ initSpEnv clsEnv inEnv
-    Module spi ps m es is <$> mapM specialize ds
+    Module spi li ps m es is <$> mapM specialize ds
 
 instance Specialize Decl where
   specialize (FunctionDecl p ty f eqs) =
@@ -994,8 +994,8 @@ instance Specialize Equation where
   specialize (Equation p lhs rhs) = Equation p lhs <$> specialize rhs
 
 instance Specialize Rhs where
-  specialize (SimpleRhs p e []) = simpleRhs p <$> specialize e
-  specialize rhs                =
+  specialize (SimpleRhs p _ e []) = simpleRhs p <$> specialize e
+  specialize rhs                  =
     internalError $ "Dictionary.specialize: " ++ show rhs
 
 instance Specialize Expression where
@@ -1021,14 +1021,14 @@ specialize' (Apply       _ e1 e2) es = do
 specialize' (Lambda       _ ts e) es = do
   e' <- specialize e
   return $ apply (Lambda NoSpanInfo ts e') es
-specialize' (Let          _ ds e) es = do
+specialize' (Let        _ _ ds e) es = do
   ds' <- mapM specialize ds
   e' <- specialize e
-  return $ apply (Let NoSpanInfo ds' e') es
-specialize' (Case      _ ct e as) es = do
+  return $ apply (mkLet ds' e') es
+specialize' (Case    _ _ ct e as) es = do
   e' <- specialize e
   as' <- mapM specialize as
-  return $ apply (Case NoSpanInfo ct e' as') es
+  return $ apply (mkCase ct e' as') es
 specialize' e                   _  =
   internalError $ "Dictionary.specialize': " ++ show e
 
@@ -1047,12 +1047,12 @@ instance Specialize Alt where
 -- transformation.
 
 cleanup :: Module a -> DTM (Module a)
-cleanup (Module spi ps m es is ds) = do
+cleanup (Module spi li ps m es is ds) = do
   cleanedEs <- traverse cleanupExportSpec es
   cleanedDs <- concatMapM cleanupInfixDecl ds
   cleanupTyConsEnv
   cleanupPrecEnv
-  return $ Module spi ps m cleanedEs is cleanedDs
+  return $ Module spi li ps m cleanedEs is cleanedDs
 
 cleanupExportSpec :: ExportSpec -> DTM ExportSpec
 cleanupExportSpec (Exporting p es) = Exporting p <$> concatMapM cleanupExport es

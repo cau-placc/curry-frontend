@@ -49,7 +49,7 @@ import CompilerEnv
 
 importModules :: Monad m => Module a -> InterfaceEnv -> [ImportDecl]
               -> CYT m CompilerEnv
-importModules mdl@(Module _ _ mid _ _ _) iEnv expImps
+importModules mdl@(Module _ _ _ mid _ _ _) iEnv expImps
   = ok $ foldl importModule initEnv expImps
   where
     initEnv = (initCompilerEnv mid)
@@ -274,7 +274,7 @@ values m (IFunctionDecl _ f (Just tv) _ qty) =
     isVar (VariableType _ i) = i == tv
     isVar _                  = False
 values m (IClassDecl _ _ qcls _ tv ds hs) =
-  map (classMethod m qcls' tv) (filter ((`notElem` hs) . imethod) ds)
+  map (classMethod m qcls' tv hs) ds
   where qcls' = qualQualify m qcls
 values _ _                        = []
 
@@ -320,10 +320,13 @@ constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)
 -- We always enter class methods with an arity of 0 into the value environment
 -- because there may be different implementations with different arities.
 
-classMethod :: ModuleIdent -> QualIdent -> Ident -> IMethodDecl -> ValueInfo
-classMethod m qcls tv (IMethodDecl _ f _ qty) =
-  Value (qualifyLike qcls f) (Just qcls) 0 $
+classMethod :: ModuleIdent -> QualIdent -> Ident -> [Ident] -> IMethodDecl
+            -> ValueInfo
+classMethod m qcls tv hs (IMethodDecl _ f _ qty) =
+  Value (qualifyLike qcls f) mcls 0 $
     polyType $ qualifyType m $ toMethodType qcls tv qty
+  where
+    mcls = if f `elem` hs then Nothing else Just qcls
 
 -- ---------------------------------------------------------------------------
 

@@ -58,7 +58,7 @@ import           Env.TypeConstructor (TCEnv)
 -- environment.
 typeSyntaxCheck :: [KnownExtension] -> TCEnv -> Module a
                 -> ((Module a, [KnownExtension]), [Message])
-typeSyntaxCheck exts tcEnv mdl@(Module _ _ m _ _ ds) =
+typeSyntaxCheck exts tcEnv mdl@(Module _ _ _ m _ _ ds) =
   case findMultiples $ map getIdent tcds of
     []  -> if length dfds <= 1
              then runTSCM (checkModule mdl) state
@@ -150,7 +150,7 @@ bindType m (NewtypeDecl _ tc _ nc _) = bindTypeKind m tc (Data qtc ids)
 bindType m (TypeDecl _ tc _ _)       = bindTypeKind m tc (Alias qtc)
   where
     qtc = qualifyWith m tc
-bindType m (ClassDecl _ _ cls _ ds)  = bindTypeKind m cls (Class qcls ms)
+bindType m (ClassDecl _ _ _ cls _ ds)  = bindTypeKind m cls (Class qcls ms)
   where
     qcls = qualifyWith m cls
     ms = concatMap methods ds
@@ -196,18 +196,21 @@ instance Rename (Decl a) where
   rename (TypeDecl p tc tvs ty)         = withLocalEnv $ do
     bindVars tvs
     TypeDecl p tc <$> rename tvs <*> rename ty
-  rename (TypeSig p fs qty)             = TypeSig p fs <$> renameTypeSig qty
-  rename (FunctionDecl p a f eqs)       = FunctionDecl p a f <$> renameReset eqs
-  rename (PatternDecl p ts rhs)         = PatternDecl p ts <$> renameReset rhs
-  rename (DefaultDecl p tys)            = DefaultDecl p <$>
-    mapM renameTypeSig tys
-  rename (ClassDecl p cx cls tv ds)     = withLocalEnv $ do
+  rename (TypeSig p fs qty)                =
+    TypeSig p fs <$> renameTypeSig qty
+  rename (FunctionDecl p a f eqs)          =
+    FunctionDecl p a f <$> renameReset eqs
+  rename (PatternDecl p ts rhs)            =
+    PatternDecl p ts <$> renameReset rhs
+  rename (DefaultDecl p tys)               =
+    DefaultDecl p <$> mapM renameTypeSig tys
+  rename (ClassDecl p li cx cls tv ds)     = withLocalEnv $ do
     bindVar tv
-    ClassDecl p <$> rename cx <*> pure cls <*> rename tv <*> rename ds
-  rename (InstanceDecl p cx cls ty ds)  = withLocalEnv $ do
+    ClassDecl p li <$> rename cx <*> pure cls <*> rename tv <*> rename ds
+  rename (InstanceDecl p li cx cls ty ds)  = withLocalEnv $ do
     bindVars (fv ty)
-    InstanceDecl p <$> rename cx <*> pure cls <*> rename ty <*> renameReset ds
-  rename decl                           = return decl
+    flip (InstanceDecl p li) cls <$> rename cx <*> rename ty <*> renameReset ds
+  rename decl                              = return decl
 
 instance Rename ConstrDecl where
   rename (ConstrDecl p c tys)     = withLocalEnv $
@@ -244,8 +247,10 @@ instance Rename (Equation a) where
   rename (Equation p lhs rhs) = Equation p lhs <$> rename rhs
 
 instance Rename (Rhs a) where
-  rename (SimpleRhs spi e ds)   = SimpleRhs spi <$> rename e <*> rename ds
-  rename (GuardedRhs spi es ds) = GuardedRhs spi <$> rename es <*> rename ds
+  rename (SimpleRhs spi li e ds)   =
+    SimpleRhs spi li <$> rename e <*> rename ds
+  rename (GuardedRhs spi li es ds) =
+    GuardedRhs spi li <$> rename es <*> rename ds
 
 instance Rename (CondExpr a) where
   rename (CondExpr spi c e) = CondExpr spi <$> rename c <*> rename e
@@ -276,19 +281,19 @@ instance Rename (Expression a) where
   rename (LeftSection spi e op)        = flip (LeftSection spi) op <$> rename e
   rename (RightSection spi op e)       = RightSection spi op <$> rename e
   rename (Lambda spi ts e)             = Lambda spi ts <$> rename e
-  rename (Let spi ds e)                = Let spi <$> rename ds <*> rename e
-  rename (Do spi stmts e)              = Do spi <$> rename stmts <*> rename e
+  rename (Let spi li ds e)             = Let spi li <$> rename ds <*> rename e
+  rename (Do spi li stmts e)           = Do spi li <$> rename stmts <*> rename e
   rename (IfThenElse spi c e1 e2)      = IfThenElse spi <$> rename c
                                                         <*> rename e1
                                                         <*> rename e2
-  rename (Case spi ct e alts)          = Case spi ct <$> rename e
-                                                     <*> rename alts
+  rename (Case spi li ct e alts)       = Case spi li ct <$> rename e
+                                                        <*> rename alts
   rename expr                          = return expr
 
 instance Rename (Statement a) where
-  rename (StmtExpr spi e)   = StmtExpr spi <$> rename e
-  rename (StmtDecl spi ds)  = StmtDecl spi <$> rename ds
-  rename (StmtBind spi t e) = StmtBind spi t <$> rename e
+  rename (StmtExpr spi e)     = StmtExpr spi    <$> rename e
+  rename (StmtDecl spi li ds) = StmtDecl spi li <$> rename ds
+  rename (StmtBind spi t e)   = StmtBind spi t  <$> rename e
 
 instance Rename (Alt a) where
   rename (Alt spi t rhs) = Alt spi t <$> rename rhs
@@ -322,49 +327,49 @@ lookupVar tv = Map.lookup tv <$> getRenameEnv
 -- contain local type signatures.
 
 checkModule :: Module a -> TSCM (Module a, [KnownExtension])
-checkModule (Module spi ps m es is ds) = do
+checkModule (Module spi li ps m es is ds) = do
   ds' <- mapM checkDecl ds
   ds'' <- rename ds'
   exts <- getExtensions
-  return (Module spi ps m es is ds'', exts)
+  return (Module spi li ps m es is ds'', exts)
 
 checkDecl :: Decl a -> TSCM (Decl a)
-checkDecl (DataDecl p tc tvs cs clss)      = do
+checkDecl (DataDecl p tc tvs cs clss)         = do
   checkTypeLhs tvs
   cs' <- mapM (checkConstrDecl tvs) cs
   mapM_ (checkClass False) clss
   return $ DataDecl p tc tvs cs' clss
-checkDecl (NewtypeDecl p tc tvs nc clss)   = do
+checkDecl (NewtypeDecl p tc tvs nc clss)      = do
   checkTypeLhs tvs
   nc' <- checkNewConstrDecl tvs nc
   mapM_ (checkClass False) clss
   return $ NewtypeDecl p tc tvs nc' clss
-checkDecl (TypeDecl p tc tvs ty)           = do
+checkDecl (TypeDecl p tc tvs ty)              = do
   checkTypeLhs tvs
   ty' <- checkClosedType tvs ty
   return $ TypeDecl p tc tvs ty'
-checkDecl (TypeSig p vs ty)                = TypeSig p vs
-                                               <$> checkClosedTypeSig [] ty
-checkDecl (FunctionDecl a p f eqs)         = FunctionDecl a p f <$>
+checkDecl (TypeSig p vs ty)                   =
+  TypeSig p vs <$> checkClosedTypeSig [] ty
+checkDecl (FunctionDecl a p f eqs)            = FunctionDecl a p f <$>
   mapM checkEquation eqs
-checkDecl (PatternDecl p t rhs)            = PatternDecl p t <$> checkRhs rhs
-checkDecl (DefaultDecl p tys)              = DefaultDecl p <$>
+checkDecl (PatternDecl p t rhs)               = PatternDecl p t <$> checkRhs rhs
+checkDecl (DefaultDecl p tys)                 = DefaultDecl p <$>
   mapM (checkClosedType []) tys
-checkDecl (ClassDecl p cx cls clsvar ds)   = do
+checkDecl (ClassDecl p li cx cls clsvar ds)   = do
   checkTypeVars "class declaration" [clsvar]
   cx' <- checkClosedContext [clsvar] cx
   checkSimpleContext cx'
   ds' <- mapM (checkClassDecl clsvar) ds
   mapM_ (checkClassMethod clsvar) ds'
-  return $ ClassDecl p cx' cls clsvar ds'
-checkDecl (InstanceDecl p cx qcls inst ds) = do
+  return $ ClassDecl p li cx' cls clsvar ds'
+checkDecl (InstanceDecl p li cx qcls inst ds) = do
   checkClass True qcls
   cxty <- checkType $ ContextType NoSpanInfo cx inst
   let ContextType _ cx' inst' = cxty
   checkSimpleContext cx'
   checkInstanceType p inst'
-  InstanceDecl p cx' qcls inst' <$> mapM checkDecl ds
-checkDecl d                                = return d
+  InstanceDecl p li cx' qcls inst' <$> mapM checkDecl ds
+checkDecl d                                   = return d
 
 checkClassDecl :: Ident -> Decl a -> TSCM (Decl a)
 checkClassDecl tv (TypeSig p vs ty)
@@ -462,10 +467,10 @@ checkEquation :: Equation a -> TSCM (Equation a)
 checkEquation (Equation p lhs rhs) = Equation p lhs <$> checkRhs rhs
 
 checkRhs :: Rhs a -> TSCM (Rhs a)
-checkRhs (SimpleRhs spi e ds)   = SimpleRhs spi <$> checkExpr e
-                                                <*> mapM checkDecl ds
-checkRhs (GuardedRhs spi es ds) = GuardedRhs spi <$> mapM checkCondExpr es
-                                                 <*> mapM checkDecl ds
+checkRhs (SimpleRhs spi li e ds)   =
+  SimpleRhs spi li <$> checkExpr e <*> mapM checkDecl ds
+checkRhs (GuardedRhs spi li es ds) =
+  GuardedRhs spi li <$> mapM checkCondExpr es <*> mapM checkDecl ds
 
 checkCondExpr :: CondExpr a -> TSCM (CondExpr a)
 checkCondExpr (CondExpr spi g e) = CondExpr spi <$> checkExpr g <*> checkExpr e
@@ -500,21 +505,21 @@ checkExpr (LeftSection spi e op)        = flip (LeftSection spi) op <$>
   checkExpr e
 checkExpr (RightSection spi op e)       = RightSection spi op <$> checkExpr e
 checkExpr (Lambda spi ts e)             = Lambda spi ts <$> checkExpr e
-checkExpr (Let spi ds e)                = Let spi <$> mapM checkDecl ds
-                                                  <*> checkExpr e
-checkExpr (Do spi sts e)                = Do spi <$> mapM checkStmt sts
-                                                 <*> checkExpr e
+checkExpr (Let spi li ds e)             = Let spi li <$> mapM checkDecl ds
+                                                     <*> checkExpr e
+checkExpr (Do spi li sts e)             = Do spi li <$> mapM checkStmt sts
+                                                    <*> checkExpr e
 checkExpr (IfThenElse spi e1 e2 e3)     = IfThenElse spi <$> checkExpr e1
                                                          <*> checkExpr e2
                                                          <*> checkExpr e3
-checkExpr (Case spi ct e alts)          = Case spi ct <$> checkExpr e
-                                                      <*> mapM checkAlt alts
+checkExpr (Case spi li ct e alts)       = Case spi li ct <$> checkExpr e
+                                                         <*> mapM checkAlt alts
 checkExpr expr                          = return expr
 
 checkStmt :: Statement a -> TSCM (Statement a)
-checkStmt (StmtExpr spi e)   = StmtExpr spi <$> checkExpr e
-checkStmt (StmtBind spi t e) = StmtBind spi t <$> checkExpr e
-checkStmt (StmtDecl spi ds)  = StmtDecl spi <$> mapM checkDecl ds
+checkStmt (StmtExpr spi e)     = StmtExpr spi    <$> checkExpr e
+checkStmt (StmtBind spi t e)   = StmtBind spi t  <$> checkExpr e
+checkStmt (StmtDecl spi li ds) = StmtDecl spi li <$> mapM checkDecl ds
 
 checkAlt :: Alt a -> TSCM (Alt a)
 checkAlt (Alt spi t rhs) = Alt spi t <$> checkRhs rhs
@@ -648,7 +653,7 @@ getIdent (DataDecl _ tc _ _ _)     = tc
 getIdent (ExternalDataDecl _ tc _) = tc
 getIdent (NewtypeDecl _ tc _ _ _)  = tc
 getIdent (TypeDecl _ tc _ _)       = tc
-getIdent (ClassDecl _ _ cls _ _)   = cls
+getIdent (ClassDecl _ _ _ cls _ _) = cls
 getIdent _                         = internalError
   "Checks.TypeSyntaxCheck.getIdent: no type or class declaration"
 

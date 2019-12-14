@@ -56,7 +56,7 @@ runTest opts test errorMsgs =
     else catchE     <$> runSecure (buildCurry opts' test)
   where
     cppOpts       = CO.optCppOpts opts
-    cppDefs       = Map.insert "__PAKCS__" 3 (CO.cppDefinitions cppOpts)
+    cppDefs       = Map.insert "__PAKCS__" 300 (CO.cppDefinitions cppOpts)
     wOpts         = CO.optWarnOpts opts
     wFlags        =   CO.WarnUnusedBindings
                     : CO.WarnUnusedGlobalBindings
@@ -328,6 +328,7 @@ passInfos = map mkPassTest
   , "ApLhs"
   , "CaseComplete"
   , "ChurchEncoding"
+  , "ClassHiddenPass"
   , "ClassMethods"
   , "DataPass"
   , "DefaultPrecedence"

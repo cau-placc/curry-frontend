@@ -58,20 +58,20 @@ instance QuantExpr e => QuantExpr [e] where
 -- variables cannot be computed independently for each declaration.
 
 instance QualExpr (Decl a) where
-  qfv m (FunctionDecl  _ _ _ eqs) = qfv m eqs
-  qfv m (PatternDecl     _ _ rhs) = qfv m rhs
-  qfv m (ClassDecl    _ _ _ _ ds) = qfv m ds
-  qfv m (InstanceDecl _ _ _ _ ds) = qfv m ds
-  qfv _ _                         = []
+  qfv m (FunctionDecl    _ _ _ eqs) = qfv m eqs
+  qfv m (PatternDecl       _ _ rhs) = qfv m rhs
+  qfv m (ClassDecl    _ _ _ _ _ ds) = qfv m ds
+  qfv m (InstanceDecl _ _ _ _ _ ds) = qfv m ds
+  qfv _ _                           = []
 
 instance QuantExpr (Decl a) where
-  bv (TypeSig          _ vs _) = vs
-  bv (FunctionDecl    _ _ f _) = [f]
-  bv (ExternalDecl       _ vs) = bv vs
-  bv (PatternDecl       _ t _) = bv t
-  bv (FreeDecl           _ vs) = bv vs
-  bv (ClassDecl    _ _ _ _ ds) = concatMap methods ds
-  bv _                         = []
+  bv (TypeSig         _ vs _) = vs
+  bv (FunctionDecl   _ _ f _) = [f]
+  bv (ExternalDecl      _ vs) = bv vs
+  bv (PatternDecl      _ t _) = bv t
+  bv (FreeDecl          _ vs) = bv vs
+  bv (ClassDecl _ _ _ _ _ ds) = concatMap methods ds
+  bv _                        = []
 
 instance QualExpr (Equation a) where
   qfv m (Equation _ lhs rhs) = filterBv lhs $ qfv m lhs ++ qfv m rhs
@@ -83,8 +83,8 @@ instance QualExpr (Lhs a) where
   qfv m lhs = qfv m $ snd $ flatLhs lhs
 
 instance QualExpr (Rhs a) where
-  qfv m (SimpleRhs _ e ds) = filterBv ds $ qfv m e  ++ qfv m ds
-  qfv m (GuardedRhs _ es ds) = filterBv ds $ qfv m es ++ qfv m ds
+  qfv m (SimpleRhs _ _ e ds) = filterBv ds $ qfv m e  ++ qfv m ds
+  qfv m (GuardedRhs _ _ es ds) = filterBv ds $ qfv m es ++ qfv m ds
 
 instance QualExpr (CondExpr a) where
   qfv m (CondExpr _ g e) = qfv m g ++ qfv m e
@@ -110,18 +110,18 @@ instance QualExpr (Expression a) where
   qfv m (LeftSection        _ e op) = qfv m op ++ qfv m e
   qfv m (RightSection       _ op e) = qfv m op ++ qfv m e
   qfv m (Lambda             _ ts e) = filterBv ts $ qfv m e
-  qfv m (Let                _ ds e) = filterBv ds $ qfv m ds ++ qfv m e
-  qfv m (Do                _ sts e) = foldr (qfvStmt m) (qfv m e) sts
+  qfv m (Let              _ _ ds e) = filterBv ds $ qfv m ds ++ qfv m e
+  qfv m (Do              _ _ sts e) = foldr (qfvStmt m) (qfv m e) sts
   qfv m (IfThenElse     _ e1 e2 e3) = qfv m e1 ++ qfv m e2 ++ qfv m e3
-  qfv m (Case           _ _ e alts) = qfv m e ++ qfv m alts
+  qfv m (Case         _ _ _ e alts) = qfv m e ++ qfv m alts
 
 qfvStmt :: ModuleIdent -> (Statement a) -> [Ident] -> [Ident]
 qfvStmt m st fvs = qfv m st ++ filterBv st fvs
 
 instance QualExpr (Statement a) where
-  qfv m (StmtExpr   _ e) = qfv m e
-  qfv m (StmtDecl  _ ds) = filterBv ds $ qfv m ds
-  qfv m (StmtBind _ _ e) = qfv m e
+  qfv m (StmtExpr   _ e)  = qfv m e
+  qfv m (StmtDecl _ _ ds) = filterBv ds $ qfv m ds
+  qfv m (StmtBind _ _ e)  = qfv m e
 
 instance QualExpr (Alt a) where
   qfv m (Alt _ t rhs) = filterBv t $ qfv m rhs
@@ -136,9 +136,9 @@ instance QualExpr a => QualExpr (Field a) where
   qfv m (Field _ _ t) = qfv m t
 
 instance QuantExpr (Statement a) where
-  bv (StmtExpr   _ _) = []
-  bv (StmtBind _ t _) = bv t
-  bv (StmtDecl  _ ds) = bv ds
+  bv (StmtExpr   _ _)  = []
+  bv (StmtBind _ t _)  = bv t
+  bv (StmtDecl _ _ ds) = bv ds
 
 instance QualExpr (InfixOp a) where
   qfv m (InfixOp     a op) = qfv m $ Variable NoSpanInfo a op

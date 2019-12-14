@@ -51,7 +51,8 @@ type DVM = S.State DVState
 
 derive :: TCEnv -> ValueEnv -> InstEnv -> OpPrecEnv -> Module Type
        -> Module Type
-derive tcEnv vEnv inEnv pEnv (Module spi ps m es is ds) = Module spi ps m es is $
+derive tcEnv vEnv inEnv pEnv (Module spi li ps m es is ds) =
+  Module spi li ps m es is $
   ds ++ concat (S.evalState (deriveAllInstances tds) initState)
   where tds = filter isTypeDecl ds
         initState = DVState m tcEnv vEnv inEnv pEnv 1
@@ -133,7 +134,7 @@ deriveInstance tc tvs cis cls = do
              take (length tvs) $ map TypeVariable [0 ..]
       ContextType _ cx inst = fromPredType tvs $ TypeContext ps ty
   ds <- deriveMethods cls ty cis ps
-  return $ InstanceDecl NoSpanInfo cx cls inst ds
+  return $ InstanceDecl NoSpanInfo WhitespaceLayout cx cls inst ds
 
 -- Note: The methods and arities of the generated instance declarations have to
 -- correspond to the methods and arities entered previously into the instance
