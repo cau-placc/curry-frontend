@@ -144,11 +144,33 @@ runOn s f = sort $ warnings $ execState f s
 checkExports :: Maybe ExportSpec -> WCM () -- TODO checks
 checkExports Nothing                      = ok
 checkExports (Just (Exporting _ exports)) = do
-  mapM_ visitExport exports
-  reportUnusedGlobalVars
+  m <- getModuleIdent
+  if any (isCurrentModuleExport m) exports
+    then ok
+    else mapM_ (visitExport m ) exports >> reportUnusedGlobalVars
     where
-      visitExport (Export _ qid) = visitQId qid
-      visitExport _              = ok
+      isCurrentModuleExport m (ExportModule _ m') = m == m'
+      isCurrentModuleExport _ _                   = False
+
+      visitExport _ (Export         _ qid    ) =
+        visitQId qid
+      visitExport m (ExportTypeWith _ qid ids) = do
+        visitQId qid
+        mapM_ (visitQId . qualifyWith m) ids
+      visitExport m (ExportTypeAll  _ qid    ) = do
+        tcEnv <- gets tyConsEnv
+        case qualLookupTypeInfo (qualQualify m qid) tcEnv of
+          [DataType     _ _ cns] -> mapM_ (visitCons m) cns
+          [RenamingType _ _ cn ] -> visitCons m cn
+          [TypeClass    _ _ mts] -> mapM_ (visitMethod m) mts
+          _                      -> ok
+      visitExport _ _              = ok
+
+      visitMethod m (ClassMethod f _ _) = visitQId (qualifyWith m f)
+
+      visitCons m (DataConstr   c    _) = visitQId (qualifyWith m c)
+      visitCons m (RecordConstr c fs _) = visitQId (qualifyWith m c) >>
+                                          mapM_ (visitQId . qualifyWith m) fs
 
 -- ---------------------------------------------------------------------------
 -- checkImports
