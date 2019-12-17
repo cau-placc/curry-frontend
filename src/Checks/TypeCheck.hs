@@ -1956,11 +1956,23 @@ gen gvs ty = TypeForall tvs (subst theta ty)
 inst :: Type -> TCM (PredSet, Type)
 inst ty = skolemise ty >>= \(_, ps, ty') -> return (ps, ty')
 
+getFreshTypeVar :: Int -> TCM Type
+getFreshTypeVar tv = do
+  scoped <- hasExtension ScopedTypeVariables
+  if scoped
+    then do
+      env <- getScopedTyVarsEnv
+      let xs = lookupNestEnv (mkIdent $ show tv) env
+      if null xs
+        then freshTypeVar
+        else return $ TypeVariable $ head xs
+    else freshTypeVar
+
 -- | Instantiates the given type with fresh type variables. The first argument
 -- of the triple is the list of fresh type variables.
 skolemise :: Type -> TCM ([(Int, Int)], PredSet, Type)
 skolemise (TypeForall tvs ty) = do
-  tys <- replicateM (length tvs) freshTypeVar
+  tys <- mapM getFreshTypeVar tvs
   let tvs' = zip tvs $ map (\(TypeVariable tv) -> tv) tys
   (tvs'', ps, ty') <- skolemise $ subst (foldr2 bindSubst idSubst tvs tys) ty
   return (tvs' ++ tvs'', ps, ty')
