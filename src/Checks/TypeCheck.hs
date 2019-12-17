@@ -78,6 +78,7 @@ import           Base.CurryTypes
 import           Base.Expr
 import           Base.Kinds
 import           Base.Messages       (Message, internalError, posMessage)
+import           Base.NestEnv
 import           Base.SCC
 import           Base.TopEnv
 import           Base.TypeExpansion
@@ -100,7 +101,8 @@ typeCheck :: [KnownExtension] -> ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv
 typeCheck exts m tcEnv vEnv clsEnv inEnv ds = runTCM (checkDecls ds) initState
   where
     initState = TcState m exts tcEnv vEnv clsEnv (inEnv, Map.empty)
-                        [intType, floatType] idSubst emptySigEnv 1 [] []
+                        [intType, floatType] idSubst emptySigEnv
+                        emptyScopedTyVarsEnv 1 [] []
 
 checkDecls :: [Decl a] -> TCM [Decl Type]
 checkDecls ds = do
@@ -136,19 +138,20 @@ type TCM = S.State TcState
 type InstEnv' = (InstEnv, Map.Map QualIdent [Type])
 
 data TcState = TcState
-  { moduleIdent  :: ModuleIdent -- read-only
-  , extensions   :: [KnownExtension]
-  , tyConsEnv    :: TCEnv
-  , valueEnv     :: ValueEnv
-  , classEnv     :: ClassEnv
-  , instEnv      :: InstEnv'    -- instances (static and dynamic)
-  , defaultTypes :: [Type]
-  , typeSubst    :: TypeSubst
-  , sigEnv       :: SigEnv
-  , nextId       :: Int         -- automatic counter
-  , errors       :: [Message]
-  , impVars      :: [Int]       -- type variables that can be instantiated with
-                                -- higher-rank types when necessary
+  { moduleIdent     :: ModuleIdent -- read-only
+  , extensions      :: [KnownExtension]
+  , tyConsEnv       :: TCEnv
+  , valueEnv        :: ValueEnv
+  , classEnv        :: ClassEnv
+  , instEnv         :: InstEnv'    -- instances (static and dynamic)
+  , defaultTypes    :: [Type]
+  , typeSubst       :: TypeSubst
+  , sigEnv          :: SigEnv
+  , scopedTyVarsEnv :: ScopedTyVarsEnv
+  , nextId          :: Int         -- automatic counter
+  , errors          :: [Message]
+  , impVars         :: [Int]       -- type variables that can be instantiated
+                                  -- with higher-rank types when necessary
   }
 
 (&&>) :: TCM () -> TCM () -> TCM ()
@@ -224,6 +227,40 @@ withLocalSigEnv act = do
   res <- act
   setSigEnv oldSigs
   return res
+
+-- | This environment contains the scoped type variables of a type signature
+-- with its corresponding freshly instantiated type variable.
+type ScopedTyVarsEnv = NestEnv Int
+
+emptyScopedTyVarsEnv :: ScopedTyVarsEnv
+emptyScopedTyVarsEnv = globalEnv emptyTopEnv
+
+-- | Retrieve the 'ScopedTyVarsEnv'.
+getScopedTyVarsEnv :: TCM ScopedTyVarsEnv
+getScopedTyVarsEnv = S.gets scopedTyVarsEnv
+
+-- | Modify the 'ScopedTyVarsEnv'.
+modifyScopedTyVarsEnv :: (ScopedTyVarsEnv -> ScopedTyVarsEnv) -> TCM ()
+modifyScopedTyVarsEnv f
+  = S.modify $ \s -> s { scopedTyVarsEnv = f $ scopedTyVarsEnv s }
+
+-- | Increase the nesting of the 'ScopedTyVarsEnv' to introduce a new local
+-- scope.
+incScopedTyVarsNesting :: TCM ()
+incScopedTyVarsNesting = modifyScopedTyVarsEnv nestEnv
+
+withLocalScopedTyVarsEnv :: TCM a -> TCM a
+withLocalScopedTyVarsEnv act = do
+  oldEnv <- getScopedTyVarsEnv
+  res <- act
+  modifyScopedTyVarsEnv $ const oldEnv
+  return res
+
+-- | Performs an action in a nested scope (by creating a nested
+-- 'ScopedTyVarsEnv') and discard the nested 'ScopedTyVarsEnv' afterwards.
+inNestedScopedTyVarsScope :: TCM a -> TCM a
+inNestedScopedTyVarsScope act
+  = withLocalScopedTyVarsEnv (incScopedTyVarsNesting >> act)
 
 getNextId :: TCM Int
 getNextId = do
