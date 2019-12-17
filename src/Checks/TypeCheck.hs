@@ -1974,15 +1974,23 @@ skolemise :: Type -> TCM ([(Int, Int)], PredSet, Type)
 skolemise (TypeForall tvs ty) = do
   tys <- mapM getFreshTypeVar tvs
   let tvs' = zip tvs $ map (\(TypeVariable tv) -> tv) tys
-  (tvs'', ps, ty') <- skolemise $ subst (foldr2 bindSubst idSubst tvs tys) ty
+  (tvs'', ps, ty') <- skolemise' $ subst (foldr2 bindSubst idSubst tvs tys) ty
   return (tvs' ++ tvs'', ps, ty')
-skolemise (TypeContext ps ty) = do
-  (tvs, ps', ty') <- skolemise ty
+skolemise ty                  = skolemise' ty
+
+skolemise' :: Type -> TCM ([(Int, Int)], PredSet, Type)
+skolemise' (TypeForall tvs ty) = do
+  tys <- replicateM (length tvs) freshTypeVar
+  let tvs' = zip tvs $ map (\(TypeVariable tv) -> tv) tys
+  (tvs'', ps, ty') <- skolemise' $ subst (foldr2 bindSubst idSubst tvs tys) ty
+  return (tvs' ++ tvs'', ps, ty')
+skolemise' (TypeContext ps ty) = do
+  (tvs, ps', ty') <- skolemise' ty
   return (tvs, Set.union ps ps', ty')
-skolemise (TypeArrow ty1 ty2) = do
-  (tvs, ps, ty2') <- skolemise ty2
+skolemise' (TypeArrow ty1 ty2) = do
+  (tvs, ps, ty2') <- skolemise' ty2
   return (tvs, ps, TypeArrow ty1 ty2')
-skolemise ty                  = return ([], emptyPredSet, ty)
+skolemise' ty                  = return ([], emptyPredSet, ty)
 
 -- -----------------------------------------------------------------------------
 -- Auxiliary functions
