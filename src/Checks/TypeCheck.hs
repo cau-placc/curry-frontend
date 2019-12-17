@@ -636,9 +636,15 @@ tcPDecl _  _                            = internalError "TypeCheck.tcPDecl"
 tcFunctionPDecl :: Int -> PredSet -> Type -> SpanInfo -> Ident
                 -> [Equation a] -> TCM (PredSet, (Type, PDecl Type))
 tcFunctionPDecl i ps tySc p f eqs = do
-  ty <- snd <$> inst tySc
-  (ps', eqs') <- mapAccumM (tcEquation ty) ps eqs
-  return (ps', (ty, (i, FunctionDecl p (rawPredType tySc) f eqs')))
+  (vs, _, ty) <- skolemise tySc
+  let uqvs = case tySc of
+               TypeForall tvs _ -> tvs
+               _ -> []
+      vs' = filter ((`elem` uqvs) . fst) vs
+  inNestedScopedTyVarsScope $ do
+    modifyScopedTyVarsEnv $ \env -> foldr (\(a, b) -> bindNestEnv (mkIdent $ show a) b) env vs'
+    (ps', eqs') <- mapAccumM (tcEquation ty) ps eqs
+    return (ps', (ty, (i, FunctionDecl p (rawPredType tySc) f eqs')))
 
 tcEquation :: Type -> PredSet -> Equation a -> TCM (PredSet, Equation Type)
 tcEquation ty ps eqn@(Equation p lhs rhs) =
@@ -1299,19 +1305,26 @@ tcExpr cm    p (Paren spi e) = do
   return (ps, ty, Paren spi e')
 tcExpr _     p (Typed spi e qty) = do
   pty <- expandTypeExpr qty
-  (ps, ty) <- inst (polyType pty)
-  (ps', e') <- tcExpr (Check ty) p e >>-
-    unifyDecl p "explicitly typed expression" (pPrintPrec 0 e) emptyPredSet ty
-  fvs <- computeFvEnv
-  theta <- getTypeSubst
-  let (gps, lps) = splitPredSet fvs ps'
-      tySc = gen fvs (TypeContext lps (subst theta ty))
-  unlessM (checkTypeSig pty tySc) $ do
-    m <- getModuleIdent
-    report $
-      errTypeSigTooGeneral p m (text "Expression:" <+> pPrintPrec 0 e) qty
-                           (rawPredType tySc)
-  return (ps `Set.union` gps, ty, Typed spi e' qty)
+  let pty' = polyType pty
+  (vs, ps, ty) <- skolemise pty'
+  let uqvs = case pty' of
+               TypeForall tvs _ -> tvs
+               _ -> []
+      vs' = filter ((`elem` uqvs) . fst) vs
+  inNestedScopedTyVarsScope $ do
+    modifyScopedTyVarsEnv $ \env -> foldr (\(a, b) -> bindNestEnv (mkIdent $ show a) b) env vs'
+    (ps', e') <- tcExpr (Check ty) p e >>-
+      unifyDecl p "explicitly typed expression" (pPrintPrec 0 e) emptyPredSet ty
+    fvs <- computeFvEnv
+    theta <- getTypeSubst
+    let (gps, lps) = splitPredSet fvs ps'
+        tySc = gen fvs (TypeContext lps (subst theta ty))
+    unlessM (checkTypeSig pty tySc) $ do
+      m <- getModuleIdent
+      report $
+        errTypeSigTooGeneral p m (text "Expression:" <+> pPrintPrec 0 e) qty
+                             (rawPredType tySc)
+    return (ps `Set.union` gps, ty, Typed spi e' qty)
 tcExpr _     p e@(Record spi _ c fs) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
@@ -1707,8 +1720,10 @@ unifyTypes m (TypeArrow ty11 ty12)      ty@(TypeApply _ _)
 unifyTypes m (TypeArrow ty11 ty12)      (TypeArrow ty21 ty22)
   = unifyTypeLists m [ty11, ty12] [ty21, ty22]
 unifyTypes m ty1@(TypeForall _ _)       ty2@(TypeForall _ _)
-  = do (vs1, _, ty1') <- skolemise ty1
-       (vs2, _, ty2') <- skolemise ty2
+  = do (vs1p, _, ty1') <- skolemise ty1
+       (vs2p, _, ty2') <- skolemise ty2
+       let vs1 = map snd vs1p
+       let vs2 = map snd vs2p
        res <- unifyTypes m ty1' ty2'
        case res of
          Left x  -> return $ Left x
@@ -1722,7 +1737,8 @@ unifyTypes m ty1@(TypeForall _ _)       ty2@(TypeForall _ _)
              []   -> return $ Right s
              ev:_ -> return $ Left $ errEscapingTypeVariable m ev ty1 ty2
 unifyTypes m ty1@(TypeForall _ _)       ty2
-  = do (vs, _, ty1') <- skolemise ty1
+  = do (vsp, _, ty1') <- skolemise ty1
+       let vs = map snd vsp
        res <- unifyTypes m ty1' ty2
        case res of
          Left x  -> return $ Left x
@@ -1735,7 +1751,8 @@ unifyTypes m ty1@(TypeForall _ _)       ty2
              []   -> return $ Right s
              ev:_ -> return $ Left $ errEscapingTypeVariable m ev ty1 ty2
 unifyTypes m ty1                        ty2@(TypeForall _ _)
-  = do (vs, _, ty2') <- skolemise ty2
+  = do (vsp, _, ty2') <- skolemise ty2
+       let vs = map snd vsp
        res <- unifyTypes m ty1 ty2'
        case res of
          Left x  -> return $ Left x
@@ -1941,10 +1958,10 @@ inst ty = skolemise ty >>= \(_, ps, ty') -> return (ps, ty')
 
 -- | Instantiates the given type with fresh type variables. The first argument
 -- of the triple is the list of fresh type variables.
-skolemise :: Type -> TCM ([Int], PredSet, Type)
+skolemise :: Type -> TCM ([(Int, Int)], PredSet, Type)
 skolemise (TypeForall tvs ty) = do
   tys <- replicateM (length tvs) freshTypeVar
-  let tvs' = map (\(TypeVariable tv) -> tv) tys
+  let tvs' = zip tvs $ map (\(TypeVariable tv) -> tv) tys
   (tvs'', ps, ty') <- skolemise $ subst (foldr2 bindSubst idSubst tvs tys) ty
   return (tvs' ++ tvs'', ps, ty')
 skolemise (TypeContext ps ty) = do
