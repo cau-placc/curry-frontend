@@ -80,7 +80,6 @@ import           Base.Kinds
 import           Base.Messages       (Message, internalError, posMessage)
 import           Base.NestEnv
 import           Base.SCC
-import           Base.TopEnv
 import           Base.TypeExpansion
 import           Base.Types
 import           Base.TypeSubst
@@ -592,6 +591,36 @@ bindVars m = foldr $ uncurry3 $ flip (bindFun m) False
 rebindVars :: ModuleIdent -> ValueEnv -> [(Ident, Int, Type)] -> ValueEnv
 rebindVars m = foldr $ uncurry3 $ flip (rebindFun m) False
 
+scopeType :: TypeExpr -> Type -> TCM Type
+scopeType tyExpr ty = do
+  scoped <- hasExtension ScopedTypeVariables
+  if scoped
+    then do
+      env <- getScopedTyVarsEnv
+      return $ scope env (zip (typeVars ty) (typeExprVars tyExpr)) ty
+    else return ty
+  where
+    scope env vids t@(TypeVariable v) = case lookup v vids of
+      Nothing -> t
+      Just i  -> case lookupNestEnv i env of
+                   []  -> t
+                   x:_ -> TypeVariable x
+    scope env vids (TypeApply t1 t2)  = TypeApply (scope env vids t1) (scope env vids t2)
+    scope env vids (TypeArrow t1 t2)  = TypeArrow (scope env vids t1) (scope env vids t2)
+    scope env vids (TypeContext ps t) = TypeContext ps (scope env vids t)
+    scope env vids (TypeForall tvs t) = TypeForall tvs $ scope env vids t
+    scope _   _    t                  = t
+
+    typeExprVars (ConstructorType _ _) = []
+    typeExprVars (ApplyType _ ty1 ty2) = typeExprVars ty1 ++ typeExprVars ty2
+    typeExprVars (VariableType _ tv)   = [mkIdent $ idName tv]
+    typeExprVars (TupleType _ tys)     = concatMap typeExprVars tys
+    typeExprVars (ListType _ ty1)      = typeExprVars ty1
+    typeExprVars (ArrowType _ ty1 ty2) = typeExprVars ty1 ++ typeExprVars ty2
+    typeExprVars (ParenType _ ty1)     = typeExprVars ty1
+    typeExprVars (ContextType _ _ ty1) = typeExprVars ty1
+    typeExprVars (ForallType _ vs ty1) = filter (not . (`elem` (map (mkIdent . idName) vs))) $ typeExprVars ty1
+
 tcDeclVars :: Decl a -> TCM [(Ident, Int, Type)]
 tcDeclVars (FunctionDecl _ _ f eqs) = do
   sigs <- getSigEnv
@@ -599,7 +628,8 @@ tcDeclVars (FunctionDecl _ _ f eqs) = do
   case lookupTypeSig f sigs of
     Just ty -> do
       ty' <- expandTypeExpr ty
-      return [(f, n, polyType ty')]
+      ty'' <- scopeType ty ty'
+      return [(f, n, polyType ty'')]
     Nothing -> do
       tys <- replicateM (n + 1) freshTypeVar
       return [(f, n, monoType $ foldr1 TypeArrow tys)]
@@ -613,7 +643,8 @@ tcDeclVar poly v = do
   sigs <- getSigEnv
   case lookupTypeSig v sigs of
     Just ty | poly || null (fv ty) -> do ty' <- expandTypeExpr ty
-                                         return (v, 0, polyType ty')
+                                         ty'' <- scopeType ty ty'
+                                         return (v, 0, polyType ty'')
             | otherwise            -> do report $ errPolymorphicVar v
                                          lambdaVar v
     Nothing                        -> lambdaVar v
@@ -636,13 +667,15 @@ tcPDecl _  _                            = internalError "TypeCheck.tcPDecl"
 tcFunctionPDecl :: Int -> PredSet -> Type -> SpanInfo -> Ident
                 -> [Equation a] -> TCM (PredSet, (Type, PDecl Type))
 tcFunctionPDecl i ps tySc p f eqs = do
+  sigs <- getSigEnv
+  scoped <- hasExtension ScopedTypeVariables
+  let idVars = case lookupTypeSig f sigs of
+                 Just (ForallType _ ids _) | scoped -> map (mkIdent . idName) ids
+                 _                                  -> []
   (vs, _, ty) <- skolemise tySc
-  let uqvs = case tySc of
-               TypeForall tvs _ -> tvs
-               _ -> []
-      vs' = filter ((`elem` uqvs) . fst) vs
+  let varMap = zipWith (\ident (_, b) -> (ident, b)) idVars vs
   inNestedScopedTyVarsScope $ do
-    modifyScopedTyVarsEnv $ \env -> foldr (\(a, b) -> bindNestEnv (mkIdent $ show a) b) env vs'
+    modifyScopedTyVarsEnv $ \env -> foldr (uncurry bindNestEnv) env varMap
     (ps', eqs') <- mapAccumM (tcEquation ty) ps eqs
     return (ps', (ty, (i, FunctionDecl p (rawPredType tySc) f eqs')))
 
@@ -802,14 +835,16 @@ tcCheckPDecl ps tySc pd = do
 checkPDeclType :: TypeExpr -> PredSet -> Type -> PDecl Type
                -> TCM (PredSet, PDecl Type)
 checkPDeclType tySc ps ty (i, FunctionDecl p _ f eqs) = do
-  tySc' <- expandTypeExpr tySc
+  tySc'' <- expandTypeExpr tySc
+  tySc' <- scopeType tySc tySc''
   unlessM (checkTypeSig tySc' ty) $ do
     m <- getModuleIdent
     report $ errTypeSigTooGeneral p m (text "Function:" <+> ppIdent f) tySc
                                   (rawPredType ty)
   return (ps, (i, FunctionDecl p tySc' f eqs))
 checkPDeclType tySc ps ty (i, PatternDecl p (VariablePattern spi _ v) rhs) = do
-  tySc' <- expandTypeExpr tySc
+  tySc'' <- expandTypeExpr tySc
+  tySc' <- scopeType tySc tySc''
   unlessM (checkTypeSig tySc' ty) $ do
     m <- getModuleIdent
     report $ errTypeSigTooGeneral p m (text "Variable:" <+> ppIdent v) tySc
@@ -844,9 +879,9 @@ eqTypes fvs = eq idSubst
     eq sub (TypeConstructor tc1)     (TypeConstructor tc2)
       = return (tc1 == tc2, sub, emptyPredSet, emptyPredSet)
     eq sub (TypeVariable tv1)        (TypeVariable tv2)
-      | tv1 `elem` fvs = return (False, sub, emptyPredSet, emptyPredSet)
-      | otherwise      = do let (eqb, sub') = eqVar sub tv1 tv2
-                            return (eqb, sub', emptyPredSet, emptyPredSet)
+      | tv1 `elem` fvs && tv2 >= 0 = return (False, sub, emptyPredSet, emptyPredSet)
+      | otherwise = do let (eqb, sub') = eqVar sub tv1 tv2
+                       return (eqb, sub', emptyPredSet, emptyPredSet)
     eq sub (TypeConstrained ts1 tv1) (TypeConstrained ts2 tv2) = do
       (eqb1, sub1, ps1, ps2) <- eqs sub ts1 ts2
       let (eqb2, sub2) = eqVar sub1 tv1 tv2
@@ -1304,15 +1339,16 @@ tcExpr cm    p (Paren spi e) = do
   (ps, ty, e') <- tcExpr cm p e
   return (ps, ty, Paren spi e')
 tcExpr _     p (Typed spi e qty) = do
-  pty <- expandTypeExpr qty
-  let pty' = polyType pty
-  (vs, ps, ty) <- skolemise pty'
-  let uqvs = case pty' of
-               TypeForall tvs _ -> tvs
-               _ -> []
-      vs' = filter ((`elem` uqvs) . fst) vs
+  scoped <- hasExtension ScopedTypeVariables
+  pty' <- expandTypeExpr qty
+  let idVars = case qty of
+                 ForallType _ ids _ | scoped -> map (mkIdent . idName) ids
+                 _                           -> []
+  pty <- scopeType qty pty'
+  (vs, ps, ty) <- skolemise (polyType pty)
+  let varMap = zipWith (\i (_, b) -> (i, b)) idVars vs
   inNestedScopedTyVarsScope $ do
-    modifyScopedTyVarsEnv $ \env -> foldr (\(a, b) -> bindNestEnv (mkIdent $ show a) b) env vs'
+    modifyScopedTyVarsEnv $ \env -> foldr (uncurry bindNestEnv) env varMap
     (ps', e') <- tcExpr (Check ty) p e >>-
       unifyDecl p "explicitly typed expression" (pPrintPrec 0 e) emptyPredSet ty
     fvs <- computeFvEnv
@@ -1956,41 +1992,21 @@ gen gvs ty = TypeForall tvs (subst theta ty)
 inst :: Type -> TCM (PredSet, Type)
 inst ty = skolemise ty >>= \(_, ps, ty') -> return (ps, ty')
 
-getFreshTypeVar :: Int -> TCM Type
-getFreshTypeVar tv = do
-  scoped <- hasExtension ScopedTypeVariables
-  if scoped
-    then do
-      env <- getScopedTyVarsEnv
-      let xs = lookupNestEnv (mkIdent $ show tv) env
-      if null xs
-        then freshTypeVar
-        else return $ TypeVariable $ head xs
-    else freshTypeVar
-
 -- | Instantiates the given type with fresh type variables. The first argument
 -- of the triple is the list of fresh type variables.
 skolemise :: Type -> TCM ([(Int, Int)], PredSet, Type)
 skolemise (TypeForall tvs ty) = do
-  tys <- mapM getFreshTypeVar tvs
-  let tvs' = zip tvs $ map (\(TypeVariable tv) -> tv) tys
-  (tvs'', ps, ty') <- skolemise' $ subst (foldr2 bindSubst idSubst tvs tys) ty
-  return (tvs' ++ tvs'', ps, ty')
-skolemise ty                  = skolemise' ty
-
-skolemise' :: Type -> TCM ([(Int, Int)], PredSet, Type)
-skolemise' (TypeForall tvs ty) = do
   tys <- replicateM (length tvs) freshTypeVar
   let tvs' = zip tvs $ map (\(TypeVariable tv) -> tv) tys
-  (tvs'', ps, ty') <- skolemise' $ subst (foldr2 bindSubst idSubst tvs tys) ty
+  (tvs'', ps, ty') <- skolemise $ subst (foldr2 bindSubst idSubst tvs tys) ty
   return (tvs' ++ tvs'', ps, ty')
-skolemise' (TypeContext ps ty) = do
-  (tvs, ps', ty') <- skolemise' ty
+skolemise (TypeContext ps ty) = do
+  (tvs, ps', ty') <- skolemise ty
   return (tvs, Set.union ps ps', ty')
-skolemise' (TypeArrow ty1 ty2) = do
-  (tvs, ps, ty2') <- skolemise' ty2
+skolemise (TypeArrow ty1 ty2) = do
+  (tvs, ps, ty2') <- skolemise ty2
   return (tvs, ps, TypeArrow ty1 ty2')
-skolemise' ty                  = return ([], emptyPredSet, ty)
+skolemise ty                  = return ([], emptyPredSet, ty)
 
 -- -----------------------------------------------------------------------------
 -- Auxiliary functions

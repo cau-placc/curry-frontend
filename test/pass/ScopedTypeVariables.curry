@@ -29,8 +29,8 @@ class A a where
                 ys = reverse xs
              in head ys
 
-instance A b => A [b] where
-  funA xs = reverse (head (xs :: [[b]]))
+-- instance A b => A [b] where
+--   funA xs = reverse (head (xs :: [[b]]))
 
 class B a where
   funB :: a -> a

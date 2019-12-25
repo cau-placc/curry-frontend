@@ -1,4 +1,4 @@
-{-# LANGUAGE ExplicitForAll      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 fun1 :: forall a b. a -> b -> (a, b)

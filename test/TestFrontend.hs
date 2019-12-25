@@ -273,7 +273,13 @@ failInfos = map (uncurry mkFailTest)
   , ("RankNTypesFuncPats", ["Missing instance for Prelude.Data (forall c. Prelude.Int ->"])
   , ("RecordLabelIDs", ["Multiple declarations of `RecordLabelIDs.id'"])
   , ("RecursiveTypeSyn", ["Mutually recursive synonym and/or renaming types A and B (line 12.6)"])
-  , ("ScopedTypeVariables", ["Type signature too general"])
+  , ("ScopedTypeVariables",
+      [ "Type signature too general"
+      , "Function: fun1"
+      , "Expression: x"
+      , "in (g x, g y))"
+      ]
+    )
   , ("Subsumption",
       [ "Type error in application"
       , "applyFun idFun"
