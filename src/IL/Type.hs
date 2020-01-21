@@ -44,7 +44,7 @@
 module IL.Type
   ( -- * Data types
     Module (..), Decl (..), ConstrDecl (..), NewConstrDecl (..), Type (..)
-  , Literal (..), ConstrTerm (..), Expression (..), Eval (..)
+  , Kind (..), Literal (..), ConstrTerm (..), Expression (..), Eval (..)
   , Alt (..), Binding (..)
   ) where
 
@@ -73,7 +73,12 @@ data Type
   = TypeConstructor QualIdent [Type]
   | TypeVariable    Int
   | TypeArrow       Type Type
-  | TypeForall      [Int] Type
+  | TypeForall      [(Int, Kind)] Type
+    deriving (Eq, Show)
+
+data Kind
+  = KindStar
+  | KindArrow Kind Kind
     deriving (Eq, Show)
 
 data Literal
