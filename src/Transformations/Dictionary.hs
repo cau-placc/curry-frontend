@@ -691,7 +691,7 @@ dictTransValueInfo (DataConstructor c a ls (TypeForall vs ty)) =
         ty' = transformPredType ty
 dictTransValueInfo (Value f cm a (TypeForall vs ty)) =
   Value f Nothing a' $ TypeForall vs ty'
-  where a' = a + if isJust cm then 1 else arrowArity ty' - arrowArity ty
+  where a' = if isJust cm then 1 else a + arrowArity ty' - arrowArity ty
         ty' = transformPredType ty
 dictTransValueInfo vi = vi
 
