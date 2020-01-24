@@ -242,7 +242,9 @@ trTypeSynonym (CS.TypeDecl _ t tvs ty) = do
   t'   <- trQualIdent qid
   vis  <- getTypeVisibility qid
   tEnv <- S.gets tcEnv
-  ty'  <- trType (transType $ expandType m tEnv initClassEnv $ toType tvs ty)
+  ty'  <- trType (transType tEnv $
+                  expandType m tEnv initClassEnv $
+                  toType tvs ty)
   return [TypeSyn t' vis [0 .. length tvs - 1] ty']
 trTypeSynonym _                        = return []
 
@@ -293,7 +295,12 @@ trType :: IL.Type -> FlatState TypeExpr
 trType (IL.TypeConstructor t tys) = TCons <$> trQualIdent t <*> mapM trType tys
 trType (IL.TypeVariable      idx) = return $ TVar $ abs idx
 trType (IL.TypeArrow     ty1 ty2) = FuncType <$> trType ty1 <*> trType ty2
-trType (IL.TypeForall    idxs ty) = ForallType (map abs idxs) <$> trType ty
+trType (IL.TypeForall    idxs ty) = ForallType (map trVar idxs) <$> trType ty
+  where
+    trVar (i, k) = (abs i, trKind k)
+    trKind IL.KindStar          = KStar
+    trKind (IL.KindVariable  _) = KStar
+    trKind (IL.KindArrow k1 k2) = KArrow (trKind k1) (trKind k2)
 
 -- Convert a fixity
 cvFixity :: CS.Infix -> Fixity
@@ -307,15 +314,14 @@ cvFixity CS.Infix  = InfixOp
 
 -- Translate a function declaration
 trAFuncDecl :: IL.Decl -> FlatState [AFuncDecl TypeExpr]
-trAFuncDecl (IL.FunctionDecl f vs _ e) = do
+trAFuncDecl (IL.FunctionDecl f vs ty e) = do
   f'  <- trQualIdent f
   a   <- getArity f
   vis <- getVisibility f
   ty' <- trType ty
   r'  <- trARule ty vs e
   return [AFunc f' a vis ty' r']
-  where ty = foldr IL.TypeArrow (IL.typeOf e) $ map fst vs
-trAFuncDecl (IL.ExternalDecl     f ty) = do
+trAFuncDecl (IL.ExternalDecl      f ty) = do
   f'   <- trQualIdent f
   a    <- getArity f
   vis  <- getVisibility f
@@ -363,8 +369,8 @@ trAExpr (IL.Letrec   bs e) = inNestedEnv $ do
   ALet <$> trType (IL.typeOf e)
        <*> (zip <$> mapM (uncurry newVar) vs <*> mapM trAExpr es)
        <*> trAExpr e
-trAExpr (IL.Typed e _) = ATyped <$> ty' <*> trAExpr e <*> ty'
-  where ty' = trType $ IL.typeOf e
+trAExpr (IL.Typed e ty) = ATyped <$> ty' <*> trAExpr e <*> ty'
+  where ty' = trType $ ty
 
 -- Translate a literal
 trLiteral :: IL.Literal -> FlatState Literal
@@ -467,8 +473,17 @@ instance Normalize TypeExpr where
   normalize (ForallType is ty) =
     ForallType <$> mapM normalize is <*> normalize ty
 
-instance Normalize b => Normalize (a, b) where
-  normalize (x, y) = ((,) x) <$> normalize y
+instance (Normalize a, Normalize b) => Normalize (a, b) where
+  normalize (x, y) = (,) <$> normalize x <*> normalize y
+
+instance Normalize a => Normalize [a] where
+  normalize = mapM normalize
+
+instance Normalize Char where
+  normalize = return
+
+instance Normalize Kind where
+  normalize = return
 
 instance Normalize a => Normalize (AFuncDecl a) where
   normalize (AFunc f a v ty r) = AFunc f a v <$> normalize ty <*> normalize r

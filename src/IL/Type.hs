@@ -78,8 +78,9 @@ data Type
 
 data Kind
   = KindStar
+  | KindVariable Int
   | KindArrow Kind Kind
-    deriving (Eq, Show)
+    deriving (Eq, Ord, Show)
 
 data Literal
   = Char  Char

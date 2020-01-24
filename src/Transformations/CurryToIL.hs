@@ -30,8 +30,10 @@ import           Control.Applicative        ((<$>), (<*>))
 
 import           Control.Monad.Extra         (concatMapM)
 import qualified Control.Monad.Reader as R
+import qualified Control.Monad.State  as S
 import           Data.List                   (nub, partition)
-import qualified Data.Map             as Map (Map, empty, insert, lookup)
+import           Data.Maybe                  (fromJust)
+import qualified Data.Map             as Map
 import qualified Data.Set             as Set (Set, empty, insert, delete, toList)
 
 import Curry.Base.Ident
@@ -40,17 +42,19 @@ import Curry.Syntax hiding (caseAlt)
 import Base.CurryTypes (toType)
 import Base.Expr
 import Base.Messages (internalError)
-import Base.Types
+import Base.Types hiding (polyType)
+import Base.Kinds
 import Base.Typing
 import Base.Utils (foldr2)
 
+import Env.TypeConstructor
 import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 
 import qualified IL as IL
 
-ilTrans :: Bool -> ValueEnv -> Module Type -> IL.Module
-ilTrans remIm vEnv (Module _ _ _ m _ im ds) = IL.Module m im' ds'
-  where ds' = R.runReader (concatMapM trDecl ds) (TransEnv m vEnv)
+ilTrans :: Bool -> ValueEnv -> TCEnv -> Module Type -> IL.Module
+ilTrans remIm vEnv tcEnv (Module _ _ _ m _ im ds) = IL.Module m im' ds'
+  where ds' = R.runReader (concatMapM trDecl ds) (TransEnv m vEnv tcEnv)
         im' = if remIm then imports m ds' else map moduleImport im
         moduleImport (ImportDecl _ mdl _ _ _) = mdl
 
@@ -108,12 +112,16 @@ modules x ms = maybe ms (`Set.insert` ms) (qidModule x)
 data TransEnv = TransEnv
   { moduleIdent :: ModuleIdent
   , valueEnv    :: ValueEnv
+  , tyconEnv    :: TCEnv
   }
 
 type TransM a = R.Reader TransEnv a
 
 getValueEnv :: TransM ValueEnv
 getValueEnv = R.asks valueEnv
+
+getTCEnv :: TransM TCEnv
+getTCEnv = R.asks tyconEnv
 
 trQualify :: Ident -> TransM QualIdent
 trQualify i = flip qualifyWith i <$> R.asks moduleIdent
@@ -169,7 +177,8 @@ trConstrDecl :: ConstrDecl -> TransM IL.ConstrDecl
 trConstrDecl d = do
   c' <- trQualify (constr d)
   ty' <- arrowArgs <$> constrType c'
-  return $ IL.ConstrDecl c' (map transType ty')
+  tcEnv <- getTCEnv
+  return $ IL.ConstrDecl c' (map (transType tcEnv) ty')
   where
   constr (ConstrDecl    _ c _) = c
   constr (ConOpDecl  _ _ op _) = op
@@ -179,8 +188,9 @@ trNewConstrDecl :: NewConstrDecl -> TransM IL.NewConstrDecl
 trNewConstrDecl d = do
   c' <- trQualify (constr d)
   ty' <- arrowArgs <$> constrType c'
+  tcEnv <- getTCEnv
   case ty' of
-    [ty] -> return $ IL.NewConstrDecl c' (transType ty)
+    [ty] -> return $ IL.NewConstrDecl c' (transType tcEnv ty)
     _    -> internalError "CurryToIL.trNewConstrDecl: invalid constructor type"
   where
   constr (NewConstrDecl    _ c _) = c
@@ -190,7 +200,10 @@ trExternalData :: Ident -> [Ident] -> TransM IL.Decl
 trExternalData tc tvs = flip IL.ExternalDataDecl (length tvs) <$> trQualify tc
 
 trExternal :: Var Type -> TransM IL.Decl
-trExternal (Var ty f) = flip IL.ExternalDecl (transType ty) <$> trQualify f
+trExternal (Var ty f) = do
+  tcEnv <- getTCEnv
+  f' <- trQualify f
+  return $ IL.ExternalDecl f' (transType tcEnv $ polyType ty)
 
 -- The type representation in the intermediate language does not support
 -- types with higher order kinds. Therefore, the type transformations has
@@ -200,24 +213,111 @@ trExternal (Var ty f) = flip IL.ExternalDecl (transType ty) <$> trQualify f
 -- type variables. The former are fixed and the later are replaced by fresh
 -- type constructors.
 
-transType :: Type -> IL.Type
-transType ty = transType' ty []
-
-transType' :: Type -> [IL.Type] -> IL.Type
-transType' (TypeConstructor    tc) = IL.TypeConstructor tc
-transType' (TypeApply     ty1 ty2) = transType' ty1 . (transType ty2 :)
-transType' (TypeVariable       tv) = foldl applyType' (IL.TypeVariable tv)
-transType' (TypeConstrained tys _) = transType' (head tys)
-transType' (TypeArrow     ty1 ty2) =
-  foldl applyType' (IL.TypeArrow (transType ty1) (transType ty2))
-transType' (TypeForall     tvs ty) =
-  foldl applyType' (IL.TypeForall tvs (transType ty))
-transType' (TypeContext       _ _)
-  = internalError "Transformation.CurryToIL.transType'"
+transType :: TCEnv -> Type -> IL.Type
+transType tcEnv ty' = transType' ty' []
+  where
+    ks = transTVars tcEnv ty'
+    transType' (TypeConstructor    tc) = IL.TypeConstructor tc
+    transType' (TypeApply     ty1 ty2) = transType' ty1 . (transType' ty2 [] :)
+    transType' (TypeVariable       tv) = foldl applyType' (IL.TypeVariable tv)
+    transType' (TypeConstrained tys _) = transType' (head tys)
+    transType' (TypeArrow     ty1 ty2) =
+      foldl applyType' (IL.TypeArrow (transType' ty1 []) (transType' ty2 []))
+    transType' (TypeForall     tvs ty) =
+      foldl applyType' (IL.TypeForall tvs' (transType' ty []))
+      where tvs' = filter ((`elem` tvs) . fst) ks
+    transType' (TypeContext       _ _)
+      = internalError "Transformation.CurryToIL.transType'"
 
 applyType' :: IL.Type -> IL.Type -> IL.Type
 applyType' ty1 ty2 =
   IL.TypeConstructor (qualifyWith preludeMIdent (mkIdent "Apply")) [ty1, ty2]
+
+-- We need to existentially quantify all variables in some types
+polyType :: Type -> Type
+polyType (TypeForall _ ty) = polyType ty
+polyType ty                =
+  let vs = nub $ typeVars ty
+  in if null vs then ty else TypeForall vs ty
+
+-- We need to infer kinds for the quantified variables.
+-- We already checked the correctness of all Kinds earlier,
+-- thus we know that we will be able to unify all the inferred equations.
+-- We can also keep a flat environment,
+-- as all variables have already been renamed.
+
+data KIS = KIS
+  { nextId :: Int
+  , kinds  :: Map.Map Int IL.Kind
+  }
+
+transTVars :: TCEnv -> Type -> [(Int, IL.Kind)]
+transTVars tcEnv ty' =
+  Map.toList $ kinds $ S.execState (build ty' IL.KindStar) (KIS 0 Map.empty)
+  where
+    build :: Type -> IL.Kind -> S.State KIS ()
+    build (TypeArrow     ty1 ty2) _ =
+      build ty1 IL.KindStar >> build ty2 IL.KindStar
+    build (TypeConstrained tys _) k =
+      build (head tys) k
+    build (TypeForall       _ ty) k =
+      build ty k
+    build (TypeVariable       tv) k = do
+      KIS i ks <- S.get
+      -- get current kind
+      let k' = Map.findWithDefault k tv ks
+      -- unify it
+      let s = unifyKind k k'
+      -- apply substitution
+      let ks' = fmap (applyKindSubst s) $ Map.insert tv k' ks
+      S.put (KIS i ks')
+    build (TypeConstructor     _) _ = return ()
+    build ta@(TypeApply       _ _) k =
+      let (ty, tys) = unapplyType True ta
+      in case ty of
+        TypeConstructor tc -> do
+          let k' = tcKind (fromJust $ qidModule tc) tc tcEnv
+          mapM_ (uncurry build) (zip tys $ unarrowKind $ transKind k')
+        _ -> do -- var of forall
+          -- construct new kind vars
+          ks <- mapM (const (S.gets nextId >>= return . IL.KindVariable)) tys
+          -- infer kind for v
+          build ty (foldl IL.KindArrow k ks)
+          -- infer kinds for args
+          mapM_ (uncurry build) (zip tys ks)
+    build _ _ = error "Transformation.CurryToIL.transTVars"
+
+type KindSubst = Map.Map Int IL.Kind
+
+transKind :: Kind -> IL.Kind
+transKind KindStar          = IL.KindStar
+transKind (KindVariable  _) = IL.KindStar
+transKind (KindArrow k1 k2) = IL.KindArrow (transKind k1) (transKind k2)
+
+unarrowKind :: IL.Kind -> [IL.Kind]
+unarrowKind (IL.KindArrow k1 k2) = k1 : unarrowKind k2
+unarrowKind k                    = [k]
+
+applyKindSubst :: KindSubst -> IL.Kind -> IL.Kind
+applyKindSubst _ IL.KindStar =
+  IL.KindStar
+applyKindSubst s (IL.KindArrow k1 k2) =
+  IL.KindArrow (applyKindSubst s k1) (applyKindSubst s k2)
+applyKindSubst s v@(IL.KindVariable i) =
+  Map.findWithDefault v i s
+
+composeKindSubst :: KindSubst -> KindSubst -> KindSubst
+composeKindSubst s1 s2 = Map.map (applyKindSubst s1) s2 `Map.union` s1
+
+unifyKind :: IL.Kind -> IL.Kind -> KindSubst
+unifyKind IL.KindStar          IL.KindStar            = Map.empty
+unifyKind (IL.KindVariable i)  k                      = Map.singleton i k
+unifyKind k                    (IL.KindVariable i)    = Map.singleton i k
+unifyKind (IL.KindArrow k1 k2) (IL.KindArrow k1' k2') =
+  let s1 = unifyKind k1 k1'
+      s2 = unifyKind (applyKindSubst s1 k2) (applyKindSubst s1 k2')
+  in s1 `composeKindSubst` s2
+unifyKind _ _ = error "Transformation.CurryToIL.unifyKind"
 
 -- Each function in the program is translated into a function of the
 -- intermediate language. The arguments of the function are renamed such
@@ -242,8 +342,9 @@ applyType' ty1 ty2 =
 trFunction :: Ident -> Type -> [Equation Type] -> TransM IL.Decl
 trFunction f ty eqs = do
   f' <- trQualify f
-  let ty' = transType ty
-      vs' = zip (map (transType . typeOf) ts) vs
+  tcEnv <- getTCEnv
+  let ty' = transType tcEnv $ polyType ty
+      vs' = zip (map (transType tcEnv . typeOf) ts) vs
   alts <- mapM (trEquation vs ws) eqs
   return $ IL.FunctionDecl f' vs' ty' (flexMatch vs' alts)
   where
@@ -263,7 +364,8 @@ trEquation vs vs' (Equation _ (FunLhs _ _ ts) rhs) = do
   -- translate right-hand-side
   rhs' <- trRhs vs' patternRenaming rhs
   -- convert patterns
-  return (zipWith trPattern vs ts, rhs')
+  tcEnv <- getTCEnv
+  return (zipWith (trPattern tcEnv) vs ts, rhs')
 trEquation _  _    _
   = internalError "Translation of non-FunLhs euqation not defined"
 
@@ -293,22 +395,30 @@ trRhs _  _   (GuardedRhs _ _ _ _) = internalError "CurryToIL.trRhs: GuardedRhs"
 -- instance, if one of the alternatives contains an as-pattern.
 
 trExpr :: [Ident] -> RenameEnv -> Expression Type -> TransM IL.Expression
-trExpr _  _   (Literal     _ ty l) = return $ IL.Literal (transType ty) (trLiteral l)
+trExpr _  _   (Literal     _ ty l) = do
+  tcEnv <- getTCEnv
+  return $ IL.Literal (transType tcEnv ty) (trLiteral l)
 trExpr _  env (Variable    _ ty v)
-  | isQualified v = fun
-  | otherwise     = case Map.lookup (unqualify v) env of
-      Nothing -> fun
-      Just v' -> return $ IL.Variable (transType ty) v' -- apply renaming
-  where fun = (IL.Function (transType ty) v . arrowArity) <$> varType v
-trExpr _  _   (Constructor _ ty c)
-  = (IL.Constructor (transType ty) c . arrowArity) <$> constrType c
+  | isQualified v = getTCEnv >>= fun
+  | otherwise     = do
+    tcEnv <- getTCEnv
+    case Map.lookup (unqualify v) env of
+      Nothing -> fun tcEnv
+      Just v' -> return $ IL.Variable (transType tcEnv ty) v' -- apply renaming
+  where
+    fun tcEnv = (IL.Function (transType tcEnv ty) v . arrowArity) <$> varType v
+trExpr _  _   (Constructor _ ty c) = do
+  tcEnv <- getTCEnv
+  (IL.Constructor (transType tcEnv ty) c . arrowArity) <$> constrType c
 trExpr vs env (Apply     _ e1 e2)
   = IL.Apply <$> trExpr vs env e1 <*> trExpr vs env e2
 trExpr vs env (Let      _ _ ds e) = do
   e' <- trExpr vs env' e
   case ds of
     [FreeDecl _ vs']
-       -> return $ foldr (\ (Var ty v) -> IL.Exist v (transType ty)) e' vs'
+       -> do tcEnv <- getTCEnv
+             return $
+               foldr (\ (Var ty v) -> IL.Exist v (transType tcEnv ty)) e' vs'
     [d] | all (`notElem` bv d) (qfv emptyMIdent d)
       -> flip IL.Let    e' <$>      trBinding d
     _ -> flip IL.Letrec e' <$> mapM trBinding ds
@@ -322,8 +432,9 @@ trExpr (v:vs) env (Case _ _ ct e alts) = do
   -- the ident v is used for the case expression subject, as this could
   -- be referenced in the case alternatives by a variable pattern
   e' <- trExpr vs env e
+  tcEnv <- getTCEnv
   let matcher = if ct == Flex then flexMatch else rigidMatch
-      ty'     = transType $ typeOf e
+      ty'     = transType tcEnv $ typeOf e
   expr <- matcher [(ty', v)] <$> mapM (trAlt (v:vs) env) alts
   return $ case expr of
     IL.Case mode (IL.Variable _ v') alts'
@@ -333,17 +444,19 @@ trExpr (v:vs) env (Case _ _ ct e alts) = do
         -- subject is referenced -> introduce binding for v as subject
       | v `elem` fv expr                -> IL.Let (IL.Binding v e') expr
       | otherwise                       -> expr
-trExpr  vs env (Typed spi e (ContextType _ _ ty))
+trExpr vs env (Typed spi e (ContextType _ _ ty))
   = trExpr vs env (Typed spi e ty)
-trExpr  vs env (Typed _ e ty) =
-  flip IL.Typed ty' <$> trExpr vs env e
-  where ty' = transType (toType [] ty)
+trExpr vs env (Typed _ e ty) = do
+  tcEnv <- getTCEnv
+  e' <- trExpr vs env e
+  return $ IL.Typed e' (transType tcEnv $ polyType $ typeOf e)
 trExpr _ _ _ = internalError "CurryToIL.trExpr"
 
 trAlt :: [Ident] -> RenameEnv -> Alt Type -> TransM Match
 trAlt ~(v:vs) env (Alt _ t rhs) = do
+  tcEnv <- getTCEnv
   rhs' <- trRhs vs (bindRenameEnv v t env) rhs
-  return ([trPattern v t], rhs')
+  return ([trPattern tcEnv v t], rhs')
 
 trLiteral :: Literal -> IL.Literal
 trLiteral (Char  c) = IL.Char c
@@ -363,18 +476,20 @@ pattern (NestedTerm t _) = t
 arguments :: NestedTerm -> [NestedTerm]
 arguments (NestedTerm _ ts) = ts
 
-trPattern :: Ident -> Pattern Type -> NestedTerm
-trPattern _ (LiteralPattern        _ ty l)
-  = NestedTerm (IL.LiteralPattern (transType ty) $ trLiteral l) []
-trPattern v (VariablePattern       _ ty _)
-  = NestedTerm (IL.VariablePattern (transType ty) v) []
-trPattern v (ConstructorPattern _ ty c ts)
-  = NestedTerm (IL.ConstructorPattern (transType ty) c vs')
-               (zipWith trPattern vs ts)
+trPattern :: TCEnv -> Ident -> Pattern Type -> NestedTerm
+trPattern tcEnv _ (LiteralPattern        _ ty l)
+  = NestedTerm (IL.LiteralPattern (transType tcEnv ty) $ trLiteral l) []
+trPattern tcEnv v (VariablePattern       _ ty _)
+  = NestedTerm (IL.VariablePattern (transType tcEnv ty) v) []
+trPattern tcEnv v (ConstructorPattern _ ty c ts)
+  = NestedTerm (IL.ConstructorPattern (transType tcEnv ty) c vs')
+               (zipWith (trPattern tcEnv) vs ts)
   where vs  = argNames v
-        vs' = zip (map (transType . typeOf) ts) vs
-trPattern v (AsPattern              _ _ t) = trPattern v t
-trPattern _ _                            = internalError "CurryToIL.trPattern"
+        vs' = zip (map (transType tcEnv . typeOf) ts) vs
+trPattern tcEnv v (AsPattern              _ _ t)
+  = trPattern tcEnv v t
+trPattern _ _ _
+  = internalError "CurryToIL.trPattern"
 
 argNames :: Ident -> [Ident]
 argNames v = [mkIdent (prefix ++ show i) | i <- [1 :: Integer ..] ]
