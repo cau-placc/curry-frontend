@@ -22,6 +22,12 @@ idFun' x = id x
 idFun'' :: (forall b. Eq b => b) -> forall c. Ord c => c
 idFun'' = idFun
 
+idFun'''' :: (forall b . b) a -> (forall b . b) a
+idFun'''' x = x
+
+shadow :: forall a m . ((forall a . a m) -> a -> Int)
+shadow _ _= 1
+
 idBool :: Bool -> Bool
 idBool = id
 

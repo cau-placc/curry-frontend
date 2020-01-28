@@ -26,6 +26,8 @@ import Transformations.Newtypes       as NT (removeNewtypes)
 import Transformations.Qual           as Q  (qual)
 import Transformations.Simplify       as S  (simplify)
 
+import Env.TypeConstructor
+
 import CompilerEnv
 import Imports (qualifyEnv)
 import qualified IL
@@ -75,12 +77,12 @@ lift (env, mdl) = (env { valueEnv = tyEnv' }, mdl')
 -- |Translate into the intermediate language
 ilTrans :: Bool -> CompEnv (Module Type) -> CompEnv IL.Module
 ilTrans remIm (env, mdl) = (env, il)
-  where il = IL.ilTrans remIm (valueEnv env) mdl
+  where il = IL.ilTrans remIm (valueEnv env) (tyConsEnv env) mdl
 
--- |Translate a type into its representation in the intermediate language
-transType :: Type -> IL.Type
+transType :: TCEnv -> Type -> IL.Type
 transType = IL.transType
 
 -- |Add missing case branches
 completeCase :: CompEnv IL.Module -> CompEnv IL.Module
-completeCase (env, mdl) = (env, CC.completeCase (interfaceEnv env) mdl)
+completeCase (env, mdl) =
+  (env, CC.completeCase (interfaceEnv env) (tyConsEnv env) mdl)
