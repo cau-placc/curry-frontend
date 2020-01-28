@@ -281,7 +281,7 @@ transTVars tcEnv ty' =
           -- construct new kind vars
           ks <- mapM (const (S.gets nextId >>= return . IL.KindVariable)) tys
           -- infer kind for v
-          build ty (foldl IL.KindArrow k ks)
+          build ty (foldr IL.KindArrow k ks)
           -- infer kinds for args
           mapM_ (uncurry build) (zip tys ks)
     build _ _ = error "Transformation.CurryToIL.transTVars"
