@@ -39,7 +39,6 @@ import qualified Data.Set             as Set (Set, empty, insert, delete, toList
 import Curry.Base.Ident
 import Curry.Syntax hiding (caseAlt)
 
-import Base.CurryTypes (toType)
 import Base.Expr
 import Base.Messages (internalError)
 import Base.Types hiding (polyType)
@@ -446,10 +445,10 @@ trExpr (v:vs) env (Case _ _ ct e alts) = do
       | otherwise                       -> expr
 trExpr vs env (Typed spi e (ContextType _ _ ty))
   = trExpr vs env (Typed spi e ty)
-trExpr vs env (Typed _ e ty) = do
+trExpr vs env (Typed _ e _) = do
   tcEnv <- getTCEnv
   e' <- trExpr vs env e
-  return $ IL.Typed e' (transType tcEnv $ polyType $ typeOf e)
+  return $ IL.Typed e' (transType tcEnv $ polyType $ typeOf e) -- TODO: When supporting scoped type variables, we should consider the given type signature instead of the annotated type.
 trExpr _ _ _ = internalError "CurryToIL.trExpr"
 
 trAlt :: [Ident] -> RenameEnv -> Alt Type -> TransM Match
