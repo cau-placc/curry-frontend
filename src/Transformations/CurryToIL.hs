@@ -246,9 +246,15 @@ polyType ty                =
 -- as all variables have already been renamed.
 
 data KIS = KIS
-  { nextId :: Int
+  { _nextId :: Int
   , kinds  :: Map.Map Int IL.Kind
   }
+
+freshId :: S.State KIS Int
+freshId = do
+  KIS i ks <- S.get
+  S.put (KIS (i+1) ks)
+  return i
 
 transTVars :: TCEnv -> Type -> [(Int, IL.Kind)]
 transTVars tcEnv ty' =
@@ -277,9 +283,9 @@ transTVars tcEnv ty' =
         TypeConstructor tc -> do
           let k' = tcKind (fromJust $ qidModule tc) tc tcEnv
           mapM_ (uncurry build) (zip tys $ unarrowKind $ transKind k')
-        _ -> do -- var of forall
+        _ -> do -- var or forall
           -- construct new kind vars
-          ks <- mapM (const (S.gets nextId >>= return . IL.KindVariable)) tys
+          ks <- mapM (const (freshId >>= return . IL.KindVariable)) tys
           -- infer kind for v
           build ty (foldr IL.KindArrow k ks)
           -- infer kinds for args
@@ -316,7 +322,7 @@ unifyKind (IL.KindArrow k1 k2) (IL.KindArrow k1' k2') =
   let s1 = unifyKind k1 k1'
       s2 = unifyKind (applyKindSubst s1 k2) (applyKindSubst s1 k2')
   in s1 `composeKindSubst` s2
-unifyKind _ _ = error "Transformation.CurryToIL.unifyKind"
+unifyKind _ _ = error "Transformations.CurryToIL.unifyKind"
 
 -- Each function in the program is translated into a function of the
 -- intermediate language. The arguments of the function are renamed such
