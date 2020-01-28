@@ -453,6 +453,9 @@ type NormState a = S.State (Int, Map.Map Int Int) a
 class Normalize a where
   normalize :: a -> NormState a
 
+instance Normalize a => Normalize [a] where
+  normalize = mapM normalize
+
 instance Normalize Int where
   normalize i = do
     (n, m) <- S.get
@@ -464,45 +467,37 @@ instance Normalize Int where
 
 instance Normalize TypeExpr where
   normalize (TVar           i) = TVar <$> normalize i
-  normalize (TCons      q tys) = TCons q <$> mapM normalize tys
+  normalize (TCons      q tys) = TCons q <$> normalize tys
   normalize (FuncType ty1 ty2) = FuncType <$> normalize ty1 <*> normalize ty2
-  normalize (ForallType is ty) =
-    ForallType <$> mapM normalize is <*> normalize ty
-
-instance (Normalize a, Normalize b) => Normalize (a, b) where
-  normalize (x, y) = (,) <$> normalize x <*> normalize y
-
-instance Normalize a => Normalize [a] where
-  normalize = mapM normalize
-
-instance Normalize Char where
-  normalize = return
-
-instance Normalize Kind where
-  normalize = return
+  normalize (ForallType is ty) = ForallType <$> mapM normalizeTypeVar is
+                                            <*> normalize ty
+    where normalizeTypeVar (tv, k) = (,) <$> normalize tv <*> pure k
 
 instance Normalize TFuncDecl where
   normalize (TFunc f a v ty r) = TFunc f a v <$> normalize ty <*> normalize r
 
 instance Normalize TRule where
-  normalize (TRule        vs e) = TRule <$> mapM normalize vs
+  normalize (TRule        vs e) = TRule <$> mapM normalizeVar vs
                                         <*> normalize e
   normalize (TExternal ty    s) = flip TExternal s <$> normalize ty
 
+normalizeVar :: (VarIndex, TypeExpr) -> NormState (VarIndex, TypeExpr)
+normalizeVar (v, ty) = (,) <$> pure v <*> normalize ty  
+  
 instance Normalize TExpr where
   normalize (TVarE  ty       v) = flip TVarE  v <$> normalize ty
   normalize (TLit   ty       l) = flip TLit  l  <$> normalize ty
   normalize (TComb  ty ct f es) = flip TComb ct <$> normalize ty
                                                 <*> pure f
-                                                <*> mapM normalize es
+                                                <*> normalize es
   normalize (TLet        ds e) = TLet <$> mapM normalizeBinding ds
                                       <*> normalize e
-    where normalizeBinding (v, b) = (,) <$> normalize v <*> normalize b
+    where normalizeBinding (v, b) = (,) <$> normalizeVar v <*> normalize b
   normalize (TOr          a b) = TOr <$> normalize a
                                      <*> normalize b
   normalize (TCase    ct e bs) = TCase ct <$> normalize e
-                                          <*> mapM normalize bs
-  normalize (TFree       vs e) = TFree <$> mapM normalize vs
+                                          <*> normalize bs
+  normalize (TFree       vs e) = TFree <$> mapM normalizeVar vs
                                        <*> normalize e
   normalize (TTyped     e ty') = TTyped <$> normalize e
                                         <*> normalize ty'
@@ -513,7 +508,7 @@ instance Normalize TBranchExpr where
 instance Normalize TPattern where
   normalize (TPattern  ty c vs) = TPattern <$> normalize ty
                                            <*> pure c
-                                           <*> mapM normalize vs
+                                           <*> mapM normalizeVar vs
   normalize (TLPattern ty    l) = flip TLPattern l <$> normalize ty
 
 -- -----------------------------------------------------------------------------
