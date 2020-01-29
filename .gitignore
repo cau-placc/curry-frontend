@@ -3,6 +3,8 @@ dist/
 dist-newstyle/
 .stack-work/
 .vscode/
+.cabal-sandbox/
 cabal.project.local
+cabal.sandbox.*
 .ghc.environment.*
 .curry
