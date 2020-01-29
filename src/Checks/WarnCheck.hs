@@ -708,8 +708,12 @@ type EqnSet  = IntSet.IntSet
 -- categorize them as literal, constructor or variable patterns.
 processEqs :: [EqnInfo] -> WCM ([ExhaustivePats], EqnSet, Bool)
 processEqs []              = return ([], IntSet.empty, False)
-processEqs eqs@((n, ps, _):_)
-  | null ps                    = return ([], IntSet.singleton n, length eqs > 1)
+processEqs eqs@((n, ps, gs):eqs')
+  | null ps                    = if null gs then return ([], IntSet.singleton n, length eqs > 1)
+                                            else do -- Current expression is guarded, thus potentially
+                                                    -- non-exhaustive. Therefore process remaining expressions.
+                                                    (missing', used', _) <- processEqs eqs'
+                                                    return (missing', IntSet.insert n used', length eqs > 1)
   | any isLitPat firstPats     = processLits eqs
   | any isConPat firstPats     = processCons eqs
   | all isVarPat firstPats     = processVars eqs
