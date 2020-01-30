@@ -709,16 +709,22 @@ type EqnSet  = IntSet.IntSet
 processEqs :: [EqnInfo] -> WCM ([ExhaustivePats], EqnSet, Bool)
 processEqs []              = return ([], IntSet.empty, False)
 processEqs eqs@((n, ps, gs):eqs')
-  | null ps                    = if null gs then return ([], IntSet.singleton n, length eqs > 1)
-                                            else do -- Current expression is guarded, thus potentially
-                                                    -- non-exhaustive. Therefore process remaining expressions.
-                                                    (missing', used', _) <- processEqs eqs'
-                                                    return (missing', IntSet.insert n used', length eqs > 1)
-  | any isLitPat firstPats     = processLits eqs
-  | any isConPat firstPats     = processCons eqs
-  | all isVarPat firstPats     = processVars eqs
-  | otherwise                  = internalError "Checks.WarnCheck.processEqs"
+  | null ps                = if guardsExhaustive then return ([], IntSet.singleton n, length eqs > 1)
+                                                 else do -- Current expression is guarded, thus potentially
+                                                         -- non-exhaustive. Therefore process remaining expressions.
+                                                         (missing', used', _) <- processEqs eqs'
+                                                         return (missing', IntSet.insert n used', length eqs > 1)
+  | any isLitPat firstPats = processLits eqs
+  | any isConPat firstPats = processCons eqs
+  | all isVarPat firstPats = processVars eqs
+  | otherwise              = internalError "Checks.WarnCheck.processEqs"
   where firstPats = map firstPat eqs
+        guardsExhaustive = null gs || all alwaysTrue gs
+        alwaysTrue :: CondExpr () -> Bool
+        alwaysTrue (CondExpr _ (Constructor _ _ q) _) = elem ident ["True", "success", "otherwise"]
+          where ident = idName $ qidIdent q
+        alwaysTrue _ = False
+        
 
 -- |Literal patterns are checked by extracting the matched literals
 --  and constructing a pattern for any missing case.
