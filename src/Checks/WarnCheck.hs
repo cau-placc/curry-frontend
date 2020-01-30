@@ -719,11 +719,14 @@ processEqs eqs@((n, ps, gs):eqs')
   | all isVarPat firstPats = processVars eqs
   | otherwise              = internalError "Checks.WarnCheck.processEqs"
   where firstPats = map firstPat eqs
-        guardsExhaustive = null gs || all alwaysTrue gs
-        alwaysTrue :: CondExpr () -> Bool
-        alwaysTrue (CondExpr _ (Constructor _ _ q) _) = elem ident ["True", "success", "otherwise"]
-          where ident = idName $ qidIdent q
-        alwaysTrue _ = False
+        guardsExhaustive = null gs || all guardAlwaysTrue gs
+        guardAlwaysTrue :: CondExpr () -> Bool
+        guardAlwaysTrue (CondExpr _ e _) = case e of
+          Constructor _ _ q -> qidAlwaysTrue q
+          Variable    _ _ q -> qidAlwaysTrue q
+          _ -> False
+        qidAlwaysTrue :: QualIdent -> Bool
+        qidAlwaysTrue q = elem (idName $ qidIdent q) ["True", "success", "otherwise"]
         
 
 -- |Literal patterns are checked by extracting the matched literals
