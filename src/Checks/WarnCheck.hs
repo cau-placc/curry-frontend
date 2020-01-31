@@ -719,7 +719,7 @@ processEqs eqs@((n, ps, gs):eqs')
   | all isVarPat firstPats = processVars eqs
   | otherwise              = internalError "Checks.WarnCheck.processEqs"
   where firstPats = map firstPat eqs
-        guardsExhaustive = null gs || all guardAlwaysTrue gs
+        guardsExhaustive = null gs || any guardAlwaysTrue gs
         guardAlwaysTrue :: CondExpr () -> Bool
         guardAlwaysTrue (CondExpr _ e _) = case e of
           Constructor _ _ q -> qidAlwaysTrue q
