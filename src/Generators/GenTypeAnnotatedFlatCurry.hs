@@ -326,8 +326,7 @@ trAFuncDecl (IL.ExternalDecl      f ty) = do
   a    <- getArity f
   vis  <- getVisibility f
   ty'  <- trType ty
-  r'   <- trAExternal ty f
-  return [AFunc f' a vis ty' r']
+  return [AFunc f' a vis ty' (AExternal ty' (qualName f))]
 trAFuncDecl _                           = return []
 
 -- Translate a function rule.
@@ -337,9 +336,6 @@ trARule :: IL.Type -> [(IL.Type, Ident)] -> IL.Expression
 trARule ty vs e = withFreshEnv $ ARule <$> trType ty
                                     <*> mapM (uncurry newVar) vs
                                     <*> trAExpr e
-
-trAExternal :: IL.Type -> QualIdent -> FlatState (ARule TypeExpr)
-trAExternal ty f = flip AExternal (qualName f) <$> trType ty
 
 -- Translate an expression
 trAExpr :: IL.Expression -> FlatState (AExpr TypeExpr)
@@ -487,7 +483,7 @@ instance Normalize a => Normalize (ARule a) where
   normalize (AExternal ty    s) = flip AExternal s <$> normalize ty
 
 normalizeTuple :: Normalize b => (a, b) -> NormState (a, b)
-normalizeTuple (a, b) = (,) <$> pure a <*> normalize b  
+normalizeTuple (a, b) = (,) <$> pure a <*> normalize b
 
 instance Normalize a => Normalize (AExpr a) where
   normalize (AVar  ty       v) = flip AVar  v  <$> normalize ty

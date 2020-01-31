@@ -325,8 +325,7 @@ trTFuncDecl (IL.ExternalDecl      f ty) = do
   a    <- getArity f
   vis  <- getVisibility f
   ty'  <- trType ty
-  r'   <- trTExternal ty f
-  return [TFunc f' a vis ty' r']
+  return [TFunc f' a vis ty' (TExternal ty' (qualName f))]
 trTFuncDecl _                           = return []
 
 -- Translate a function rule.
@@ -335,9 +334,6 @@ trTRule :: [(IL.Type, Ident)] -> IL.Expression
         -> FlatState TRule
 trTRule vs e = withFreshEnv $ TRule <$> mapM (uncurry newVar) vs
                                     <*> trTExpr e
-
-trTExternal :: IL.Type -> QualIdent -> FlatState TRule
-trTExternal ty f = flip TExternal (qualName f) <$> trType ty
 
 -- Translate an expression
 trTExpr :: IL.Expression -> FlatState TExpr
@@ -482,8 +478,8 @@ instance Normalize TRule where
   normalize (TExternal ty    s) = flip TExternal s <$> normalize ty
 
 normalizeVar :: (VarIndex, TypeExpr) -> NormState (VarIndex, TypeExpr)
-normalizeVar (v, ty) = (,) <$> pure v <*> normalize ty  
-  
+normalizeVar (v, ty) = (,) <$> pure v <*> normalize ty
+
 instance Normalize TExpr where
   normalize (TVarE  ty       v) = flip TVarE  v <$> normalize ty
   normalize (TLit   ty       l) = flip TLit  l  <$> normalize ty
