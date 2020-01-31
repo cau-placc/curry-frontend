@@ -11,11 +11,22 @@
    TODO
 -}
 
-module IL.Typing (Typeable(..)) where
+module IL.Typing (Typeable(..), prenexType) where
 
 import Base.Messages (internalError)
 
 import IL.Type
+
+-- | Converts the given type into prenex form.
+prenexType :: Type -> Type
+prenexType (TypeConstructor tc tys) = TypeConstructor tc $ map prenexType tys
+prenexType tv@(TypeVariable _)      = tv
+prenexType (TypeArrow ty1 ty2)      = case prenexType ty2 of
+  TypeForall tvs ty2' -> TypeForall tvs $ TypeArrow (prenexType ty1) ty2'
+  ty2'                -> TypeArrow (prenexType ty1) ty2'
+prenexType (TypeForall tvs ty)      = case prenexType ty of
+  TypeForall tvs' ty' -> TypeForall (tvs ++ tvs') ty'
+  ty'                 -> TypeForall tvs ty'
 
 class Typeable a where
   typeOf :: a -> Type

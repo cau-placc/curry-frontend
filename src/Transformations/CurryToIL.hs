@@ -213,7 +213,7 @@ trExternal (Var ty f) = do
 -- type constructors.
 
 transType :: TCEnv -> Type -> IL.Type
-transType tcEnv ty' = transType' ty' []
+transType tcEnv ty' = IL.prenexType $ transType' ty' []
   where
     ks = transTVars tcEnv ty'
     transType' (TypeConstructor    tc) = IL.TypeConstructor tc
