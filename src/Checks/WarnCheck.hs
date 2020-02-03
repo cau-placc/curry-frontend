@@ -589,7 +589,9 @@ checkCaseAlts _ []                      = ok
 checkCaseAlts ct alts@(Alt spi _ _ : _) = do
   let pats = map (\(Alt _ pat _) -> [pat]) alts
   let guards = map alt2Guards alts
+  let rhss = map alt2Rhs alts
   (nonExhaustive, overlapped, nondet) <- checkPatternMatching pats guards
+
   case ct of
     Flex -> do
       unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
@@ -600,11 +602,23 @@ checkCaseAlts ct alts@(Alt spi _ _ : _) = do
       unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
         warnMissingPattern p "a case alternative" nonExhaustive
       unless (null overlapped) $ warnFor WarnOverlapping $ report $
-        warnUnreachablePattern p overlapped
+        warnUnreachablePattern p $ map (\(i, o) -> (o, ppRhs $ rhss !! i)) overlapped
   where p = spanInfo2Pos spi
+        alt2Rhs :: Alt () -> Rhs ()
+        alt2Rhs (Alt _ _ rhs) = rhs
         alt2Guards :: Alt () -> [CondExpr ()]
-        alt2Guards (Alt _ _ (GuardedRhs _ _ conds _)) = conds
-        alt2Guards _ = []
+        alt2Guards a = case alt2Rhs a of
+          GuardedRhs _ _ conds _ -> conds
+          _ -> []
+        -- TODO: Not all expressions can currently be pretty-printed
+        ppRhs :: Rhs () -> Doc
+        ppRhs (SimpleRhs _ _ e _) = ppExpr e
+        ppRhs (GuardedRhs _ _ ((CondExpr _ g e):_) _) = ppExpr g <+> text "|" <+> ppExpr e
+        ppRhs _ = text "..."
+        ppExpr :: Expression () -> Doc
+        ppExpr (Constructor _ _ q) = pPrint q
+        ppExpr (Variable _ _ q) = pPrint q
+        ppExpr _ = text "..."
 
 -- -----------------------------------------------------------------------------
 -- Check for non-exhaustive and overlapping patterns.
@@ -623,7 +637,7 @@ checkCaseAlts ct alts@(Alt spi _ _ : _) = do
 -- -----------------------------------------------------------------------------
 
 checkPatternMatching :: [[Pattern ()]] -> [[CondExpr ()]]
-                     -> WCM ([ExhaustivePats], [[Pattern ()]], Bool)
+                     -> WCM ([ExhaustivePats], [OverlappingPats], Bool)
 checkPatternMatching pats guards = do
   -- 1. We simplify the patterns by removing syntactic sugar temporarily
   --    for a simpler implementation.
@@ -633,7 +647,7 @@ checkPatternMatching pats guards = do
   -- 3. If any, we report the missing patterns, whereby we re-add the syntactic
   --    sugar removed in step (1) for a more precise output.
   nonExhaustive <- mapM tidyExhaustivePats missing
-  let overlap = [eqn | (i, eqn) <- zip [1..] pats, i `IntSet.notMember` used]
+  let overlap = [(i, eqn) | (i, eqn) <- zip [1..] pats, i `IntSet.notMember` used]
   return (nonExhaustive, overlap, nondet)
 
 -- |Simplify a 'Pattern' until it only consists of
@@ -702,6 +716,7 @@ type EqnNo   = Int
 type EqnInfo = (EqnNo, EqnPats, EqnGuards)
 
 type ExhaustivePats = (EqnPats, [(Ident, [Literal])])
+type OverlappingPats = (EqnNo, EqnPats)
 type EqnSet  = IntSet.IntSet
 
 -- |Compute the missing pattern by inspecting the first patterns and
@@ -984,20 +999,21 @@ warnMissingPattern p loc pats = posMessage p
   ppCons (i, lits) = ppIdent i <+> text "`notElem`"
             <+> pPrintPrec 0 (List NoSpanInfo () (map (Literal NoSpanInfo ()) lits))
 
--- |Warning message for unreachable patterns.
+-- |Warning message for unreachable pattern branches.
 -- To shorten the output only the first 'maxPattern' are printed,
 -- additional pattern are abbreviated by dots.
-warnUnreachablePattern :: Position  -> [[Pattern a]] -> Message
-warnUnreachablePattern p pats = posMessage p
+warnUnreachablePattern :: Position -> [([Pattern ()], Doc)] -> Message
+warnUnreachablePattern p branches = posMessage p
   $   text "Pattern matches are potentially unreachable"
   $+$ text "In a case alternative:"
-  $+$ nest 2 (vcat (ppExPats pats) <+> text "->" <+> text "...")
+  $+$ nest 2 (vcat (ppExBranches branches))
   where
-  ppExPats ps
-    | length ps > maxPattern = ppPats ++ [text "..."]
-    | otherwise              = ppPats
-    where ppPats = map ppPat (take maxPattern ps)
-  ppPat ps = hsep (map (pPrintPrec 2) ps)
+  ppExBranches bs
+    | length bs > maxPattern = ppBranches ++ [text "..."]
+    | otherwise              = ppBranches
+    where ppBranches = map ppBranch (take maxPattern bs)
+  ppBranch :: ([Pattern ()], Doc) -> Doc
+  ppBranch (pats, rhs) = (hsep $ map (pPrintPrec 2) pats) <+> rhs
 
 -- |Maximum number of missing patterns to be shown.
 maxPattern :: Int
