@@ -34,6 +34,8 @@ import           Data.List
 import           Data.Char
   (isLower, isUpper, toLower, toUpper, isAlpha)
 import qualified Data.Set.Extra as Set
+import           Data.Tuple.Extra
+  (snd3)
 
 import Curry.Base.Ident
 import Curry.Base.Position
@@ -355,12 +357,16 @@ checkFunctionDecl p f eqs = inNestedScope $ do
 checkFunctionPatternMatch :: SpanInfo -> Ident -> [Equation ()] -> WCM ()
 checkFunctionPatternMatch spi f eqs = do
   let pats = map (\(Equation _ lhs _) -> snd (flatLhs lhs)) eqs
-  (nonExhaustive, overlapped, nondet) <- checkPatternMatching pats
+  let guards = map eq2Guards eqs
+  (nonExhaustive, overlapped, nondet) <- checkPatternMatching pats guards
   unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
     warnMissingPattern p ("an equation for " ++ escName f) nonExhaustive
   when (nondet || not (null overlapped)) $ warnFor WarnOverlapping $ report $
     warnNondetOverlapping p ("Function " ++ escName f)
   where p = spanInfo2Pos spi
+        eq2Guards :: Equation () -> [CondExpr ()]
+        eq2Guards (Equation _ _ (GuardedRhs _ _ conds _)) = conds
+        eq2Guards _ = []
 
 -- Check an equation for warnings.
 -- This is done in a seperate scope as the left-hand-side may introduce
@@ -579,10 +585,11 @@ warnAliasNameClash mids = posMessage (head mids) $ text
 -- -----------------------------------------------------------------------------
 
 checkCaseAlts :: CaseType -> [Alt ()] -> WCM ()
-checkCaseAlts _  []                   = ok
+checkCaseAlts _ []                      = ok
 checkCaseAlts ct alts@(Alt spi _ _ : _) = do
   let pats = map (\(Alt _ pat _) -> [pat]) alts
-  (nonExhaustive, overlapped, nondet) <- checkPatternMatching pats
+  let guards = map alt2Guards alts
+  (nonExhaustive, overlapped, nondet) <- checkPatternMatching pats guards
   case ct of
     Flex -> do
       unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
@@ -595,6 +602,9 @@ checkCaseAlts ct alts@(Alt spi _ _ : _) = do
       unless (null overlapped) $ warnFor WarnOverlapping $ report $
         warnUnreachablePattern p overlapped
   where p = spanInfo2Pos spi
+        alt2Guards :: Alt () -> [CondExpr ()]
+        alt2Guards (Alt _ _ (GuardedRhs _ _ conds _)) = conds
+        alt2Guards _ = []
 
 -- -----------------------------------------------------------------------------
 -- Check for non-exhaustive and overlapping patterns.
@@ -612,19 +622,19 @@ checkCaseAlts ct alts@(Alt spi _ _ : _) = do
 -- matching in function declarations and (f)case expressions.
 -- -----------------------------------------------------------------------------
 
-checkPatternMatching :: [[Pattern ()]]
+checkPatternMatching :: [[Pattern ()]] -> [[CondExpr ()]]
                      -> WCM ([ExhaustivePats], [[Pattern ()]], Bool)
-checkPatternMatching pats = do
+checkPatternMatching pats guards = do
   -- 1. We simplify the patterns by removing syntactic sugar temporarily
   --    for a simpler implementation.
   simplePats <- mapM (mapM simplifyPat) pats
   -- 2. We compute missing and used pattern matching alternatives
-  (missing, used, nondet) <- processEqs (zip [1..] simplePats)
+  (missing, used, nondet) <- processEqs (zip3 [1..] simplePats guards)
   -- 3. If any, we report the missing patterns, whereby we re-add the syntactic
   --    sugar removed in step (1) for a more precise output.
   nonExhaustive <- mapM tidyExhaustivePats missing
-  let overlap = [ eqn | (i, eqn) <- zip [1..] pats, i `IntSet.notMember` used]
-  return (nonExhaustive , overlap, nondet)
+  let overlap = [eqn | (i, eqn) <- zip [1..] pats, i `IntSet.notMember` used]
+  return (nonExhaustive, overlap, nondet)
 
 -- |Simplify a 'Pattern' until it only consists of
 --   * Variables
@@ -687,8 +697,9 @@ simplifyListPattern =
 -- number of possible patterns. Missing literals are therefore converted
 -- into the form @ ... x ... with x `notElem` [l1, ..., ln]@.
 type EqnPats = [Pattern ()]
+type EqnGuards = [CondExpr ()]
 type EqnNo   = Int
-type EqnInfo = (EqnNo, EqnPats)
+type EqnInfo = (EqnNo, EqnPats, EqnGuards)
 
 type ExhaustivePats = (EqnPats, [(Ident, [Literal])])
 type EqnSet  = IntSet.IntSet
@@ -697,13 +708,26 @@ type EqnSet  = IntSet.IntSet
 -- categorize them as literal, constructor or variable patterns.
 processEqs :: [EqnInfo] -> WCM ([ExhaustivePats], EqnSet, Bool)
 processEqs []              = return ([], IntSet.empty, False)
-processEqs eqs@((n, ps):_)
-  | null ps                    = return ([], IntSet.singleton n, length eqs > 1)
-  | any isLitPat firstPats     = processLits eqs
-  | any isConPat firstPats     = processCons eqs
-  | all isVarPat firstPats     = processVars eqs
-  | otherwise                  = internalError "Checks.WarnCheck.processEqs"
+processEqs eqs@((n, ps, gs):eqs')
+  | null ps                = if guardsExhaustive then return ([], IntSet.singleton n, length eqs > 1)
+                                                 else do -- Current expression is guarded, thus potentially
+                                                         -- non-exhaustive. Therefore process remaining expressions.
+                                                         (missing', used', _) <- processEqs eqs'
+                                                         return (missing', IntSet.insert n used', length eqs > 1)
+  | any isLitPat firstPats = processLits eqs
+  | any isConPat firstPats = processCons eqs
+  | all isVarPat firstPats = processVars eqs
+  | otherwise              = internalError "Checks.WarnCheck.processEqs"
   where firstPats = map firstPat eqs
+        guardsExhaustive = null gs || any guardAlwaysTrue gs
+        guardAlwaysTrue :: CondExpr () -> Bool
+        guardAlwaysTrue (CondExpr _ e _) = case e of
+          Constructor _ _ q -> qidAlwaysTrue q
+          Variable    _ _ q -> qidAlwaysTrue q
+          _ -> False
+        qidAlwaysTrue :: QualIdent -> Bool
+        qidAlwaysTrue q = elem (idName $ qidIdent q) ["True", "success", "otherwise"]
+        
 
 -- |Literal patterns are checked by extracting the matched literals
 --  and constructing a pattern for any missing case.
@@ -726,7 +750,7 @@ processLits qs@(q:_) = do
   defaults   = [ shiftPat q' | q' <- qs, isVarPat (firstPat q') ]
   -- Pattern for all non-matched literals
   defaultPat = ( VariablePattern NoSpanInfo () newVar :
-                   replicate (length (snd q) - 1) wildPat
+                   replicate (length (snd3 q) - 1) wildPat
                , [(newVar, usedLits)]
                )
   newVar     = mkIdent "x"
@@ -773,7 +797,7 @@ processCons qs@(q:_) = do
   -- default alternatives (variable pattern)
   defaults     = [ shiftPat q' | q' <- qs, isVarPat (firstPat q') ]
   -- Pattern for a non-matched constructors
-  defaultPat c = (mkPattern c : replicate (length (snd q) - 1) wildPat, [])
+  defaultPat c = (mkPattern c : replicate (length (snd3 q) - 1) wildPat, [])
   mkPattern  c = ConstructorPattern NoSpanInfo ()
                   (qualifyLike (fst $ head used_cons) (constrIdent c))
                   (replicate (length $ constrTypes c) wildPat)
@@ -793,17 +817,17 @@ processUsedCons cons qs = do
 
   makeCon c a ps = let (args, rest) = splitAt a ps
                    in ConstructorPattern NoSpanInfo () c args : rest
-
-  removeFirstCon c a (n, p:ps)
-    | isVarPat p = (n, replicate a wildPat ++ ps)
-    | isCon c  p = (n, patArgs p           ++ ps)
+  
+  removeFirstCon c a (n, p:ps, gs)
+    | isVarPat p = (n, replicate a wildPat ++ ps, gs)
+    | isCon c  p = (n, patArgs p           ++ ps, gs)
   removeFirstCon _ _ _ = internalError "Checks.WarnCheck.removeFirstCon"
 
 -- |Variable patterns are exhaustive, so they are checked by simply
 -- checking the following patterns.
 processVars :: [EqnInfo] -> WCM ([ExhaustivePats], EqnSet, Bool)
 processVars []               = error "WarnCheck.processVars"
-processVars eqs@((n, _) : _) = do
+processVars eqs@((n, _, _) : _) = do
   let ovlp = length eqs > 1
   (missing, used, nd) <- processEqs (map shiftPat eqs)
   return ( map (\(xs, ys) -> (wildPat : xs, ys)) missing
@@ -880,13 +904,13 @@ tidyPat p = internalError $ "Checks.WarnCheck.tidyPat: " ++ show p
 
 -- |Get the first pattern of a list.
 firstPat :: EqnInfo -> Pattern ()
-firstPat (_, []   ) = internalError "Checks.WarnCheck.firstPat: empty list"
-firstPat (_, (p:_)) = p
+firstPat (_, [],    _) = internalError "Checks.WarnCheck.firstPat: empty list"
+firstPat (_, (p:_), _) = p
 
 -- |Drop the first pattern of a list.
 shiftPat :: EqnInfo -> EqnInfo
-shiftPat (_, []    ) = internalError "Checks.WarnCheck.shiftPat: empty list"
-shiftPat (n, (_:ps)) = (n, ps)
+shiftPat (_, [],     _ ) = internalError "Checks.WarnCheck.shiftPat: empty list"
+shiftPat (n, (_:ps), gs) = (n, ps, gs)
 
 -- |Wildcard pattern.
 wildPat :: Pattern ()
