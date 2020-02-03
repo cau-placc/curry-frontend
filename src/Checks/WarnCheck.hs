@@ -643,11 +643,11 @@ checkPatternMatching pats guards = do
   --    for a simpler implementation.
   simplePats <- mapM (mapM simplifyPat) pats
   -- 2. We compute missing and used pattern matching alternatives
-  (missing, used, nondet) <- processEqs (zip3 [1..] simplePats guards)
+  (missing, used, nondet) <- processEqs (zip3 [0..] simplePats guards)
   -- 3. If any, we report the missing patterns, whereby we re-add the syntactic
   --    sugar removed in step (1) for a more precise output.
   nonExhaustive <- mapM tidyExhaustivePats missing
-  let overlap = [(i, eqn) | (i, eqn) <- zip [1..] pats, i `IntSet.notMember` used]
+  let overlap = [(i, eqn) | (i, eqn) <- zip [0..] pats, i `IntSet.notMember` used]
   return (nonExhaustive, overlap, nondet)
 
 -- |Simplify a 'Pattern' until it only consists of
