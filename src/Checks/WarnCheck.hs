@@ -426,10 +426,10 @@ checkExpr (Let                _ ds e) = inNestedScope $ do
   reportUnusedVars
 checkExpr (Do                _ sts e) = checkStatements sts e
 checkExpr (IfThenElse     _ e1 e2 e3) = mapM_ checkExpr [e1, e2, e3]
-checkExpr (Case          _ ct e alts) = do
+checkExpr (Case      spi _ ct e alts) = do
   checkExpr e
   mapM_ checkAlt alts
-  checkCaseAlts ct alts
+  checkCaseAlts spi ct alts
 checkExpr _                       = ok
 
 checkStatements :: [Statement ()] -> Expression () -> WCM ()
@@ -553,11 +553,13 @@ warnAliasNameClash mids = posMessage (head mids) $ text
 -- Check for overlapping/unreachable and non-exhaustive case alternatives
 -- -----------------------------------------------------------------------------
 
-checkCaseAlts :: CaseType -> [Alt ()] -> WCM ()
-checkCaseAlts _  []                   = ok
-checkCaseAlts ct alts@(Alt spi _ _ : _) = do
+checkCaseAlts :: SpanInfo -> CaseType -> [Alt ()] -> WCM ()
+checkCaseAlts _ _ []      = ok
+checkCaseAlts spi ct alts = do
+  let spis = map (\(Alt s _ _) -> s) alts
   let pats = map (\(Alt _ pat _) -> [pat]) alts
-  (nonExhaustive, overlapped, nondet) <- checkPatternMatching pats
+  let guards = map alt2Guards alts
+  (nonExhaustive, overlapped, nondet) <- checkPatternMatching pats guards
   case ct of
     Flex -> do
       unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
@@ -568,8 +570,11 @@ checkCaseAlts ct alts@(Alt spi _ _ : _) = do
       unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
         warnMissingPattern p "a case alternative" nonExhaustive
       unless (null overlapped) $ warnFor WarnOverlapping $ report $
-        warnUnreachablePattern p overlapped
+        warnUnreachablePattern (spanInfo2Pos $ (spis !!) $ fst $ head overlapped) $ map snd overlapped
   where p = spanInfo2Pos spi
+        alt2Guards :: Alt () -> [CondExpr ()]
+        alt2Guards (Alt _ _ (GuardedRhs _ _ conds _)) = conds
+        alt2Guards _ = []
 
 -- -----------------------------------------------------------------------------
 -- Check for non-exhaustive and overlapping patterns.
@@ -587,19 +592,19 @@ checkCaseAlts ct alts@(Alt spi _ _ : _) = do
 -- matching in function declarations and (f)case expressions.
 -- -----------------------------------------------------------------------------
 
-checkPatternMatching :: [[Pattern ()]]
-                     -> WCM ([ExhaustivePats], [[Pattern ()]], Bool)
-checkPatternMatching pats = do
+checkPatternMatching :: [[Pattern ()]] -> [[CondExpr ()]]
+                     -> WCM ([ExhaustivePats], [OverlappingPats], Bool)
+checkPatternMatching pats guards = do
   -- 1. We simplify the patterns by removing syntactic sugar temporarily
   --    for a simpler implementation.
   simplePats <- mapM (mapM simplifyPat) pats
   -- 2. We compute missing and used pattern matching alternatives
-  (missing, used, nondet) <- processEqs (zip [1..] simplePats)
+  (missing, used, nondet) <- processEqs (zip3 [0..] simplePats guards)
   -- 3. If any, we report the missing patterns, whereby we re-add the syntactic
   --    sugar removed in step (1) for a more precise output.
   nonExhaustive <- mapM tidyExhaustivePats missing
-  let overlap = [ eqn | (i, eqn) <- zip [1..] pats, i `IntSet.notMember` used]
-  return (nonExhaustive , overlap, nondet)
+  let overlap = [(i, eqn) | (i, eqn) <- zip [0..] pats, i `IntSet.notMember` used]
+  return (nonExhaustive, overlap, nondet)
 
 -- |Simplify a 'Pattern' until it only consists of
 --   * Variables
@@ -666,6 +671,7 @@ type EqnNo   = Int
 type EqnInfo = (EqnNo, EqnPats)
 
 type ExhaustivePats = (EqnPats, [(Ident, [Literal])])
+type OverlappingPats = (EqnNo, EqnPats)
 type EqnSet  = IntSet.IntSet
 
 -- |Compute the missing pattern by inspecting the first patterns and
@@ -948,7 +954,7 @@ warnUnreachablePattern p pats = posMessage p
     | length ps > maxPattern = ppPats ++ [text "..."]
     | otherwise              = ppPats
     where ppPats = map ppPat (take maxPattern ps)
-  ppPat ps = hsep (map (ppPattern 2) ps)
+  ppPat ps = hsep (map (pPrintPrec 2) ps)
 
 -- |Maximum number of missing patterns to be shown.
 maxPattern :: Int
