@@ -612,8 +612,8 @@ checkCaseAlts ct alts@(Alt spi _ _ : _) = do
           _ -> []
         -- TODO: Not all expressions can currently be pretty-printed
         ppRhs :: Rhs () -> Doc
-        ppRhs (SimpleRhs _ _ e _) = ppExpr e
-        ppRhs (GuardedRhs _ _ ((CondExpr _ g e):_) _) = ppExpr g <+> text "|" <+> ppExpr e
+        ppRhs (SimpleRhs _ _ e _) = text "->" <+> ppExpr e
+        ppRhs (GuardedRhs _ _ ((CondExpr _ g e):_) _) = text "|" <+> ppExpr g <+> text "->" <+> ppExpr e
         ppRhs _ = text "..."
         ppExpr :: Expression () -> Doc
         ppExpr (Literal _ _ l) = pPrint l
@@ -1014,7 +1014,7 @@ warnUnreachablePattern p branches = posMessage p
     | otherwise              = ppBranches
     where ppBranches = map ppBranch (take maxPattern bs)
   ppBranch :: ([Pattern ()], Doc) -> Doc
-  ppBranch (pats, rhs) = (hsep $ map (pPrintPrec 2) pats) <+> text "->" <+> rhs
+  ppBranch (pats, rhs) = (hsep $ map (pPrintPrec 2) pats) <+> rhs
 
 -- |Maximum number of missing patterns to be shown.
 maxPattern :: Int
