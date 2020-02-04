@@ -455,10 +455,10 @@ checkExpr (Let              _ _ ds e) = inNestedScope $ do
   reportUnusedVars
 checkExpr (Do              _ _ sts e) = checkStatements sts e
 checkExpr (IfThenElse     _ e1 e2 e3) = mapM_ checkExpr [e1, e2, e3]
-checkExpr (Case        _ _ ct e alts) = do
+checkExpr (Case      spi _ ct e alts) = do
   checkExpr e
   mapM_ checkAlt alts
-  checkCaseAlts ct alts
+  checkCaseAlts spi ct alts
 checkExpr _                       = ok
 
 checkStatements :: [Statement ()] -> Expression () -> WCM ()
@@ -584,9 +584,9 @@ warnAliasNameClash mids = posMessage (head mids) $ text
 -- Check for overlapping/unreachable and non-exhaustive case alternatives
 -- -----------------------------------------------------------------------------
 
-checkCaseAlts :: CaseType -> [Alt ()] -> WCM ()
-checkCaseAlts _ []                      = ok
-checkCaseAlts ct alts@(Alt spi _ _ : _) = do
+checkCaseAlts :: SpanInfo -> CaseType -> [Alt ()] -> WCM ()
+checkCaseAlts _ _ []      = ok
+checkCaseAlts spi ct alts = do
   let pats = map (\(Alt _ pat _) -> [pat]) alts
   let guards = map alt2Guards alts
   let rhss = map alt2Rhs alts
