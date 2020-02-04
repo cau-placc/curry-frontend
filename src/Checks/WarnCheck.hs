@@ -587,9 +587,10 @@ warnAliasNameClash mids = posMessage (head mids) $ text
 checkCaseAlts :: SpanInfo -> CaseType -> [Alt ()] -> WCM ()
 checkCaseAlts _ _ []      = ok
 checkCaseAlts spi ct alts = do
+  let spis = map (\(Alt s _ _) -> s) alts
   let pats = map (\(Alt _ pat _) -> [pat]) alts
-  let guards = map alt2Guards alts
-  let rhss = map alt2Rhs alts
+  let rhss = map (\(Alt _ _ rhs) -> rhs) alts
+  let guards = map rhs2Guards rhss
   (nonExhaustive, overlapped, nondet) <- checkPatternMatching pats guards
 
   case ct of
@@ -602,14 +603,12 @@ checkCaseAlts spi ct alts = do
       unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
         warnMissingPattern p "a case alternative" nonExhaustive
       unless (null overlapped) $ warnFor WarnOverlapping $ report $
-        warnUnreachablePattern p $ map (\(i, o) -> (o, ppRhs $ rhss !! i)) overlapped
+        warnUnreachablePattern (spanInfo2Pos $ (spis !!) $ fst $ last overlapped)
+          $ map (\(i, o) -> (o, ppRhs $ rhss !! i)) overlapped
   where p = spanInfo2Pos spi
-        alt2Rhs :: Alt () -> Rhs ()
-        alt2Rhs (Alt _ _ rhs) = rhs
-        alt2Guards :: Alt () -> [CondExpr ()]
-        alt2Guards a = case alt2Rhs a of
-          GuardedRhs _ _ conds _ -> conds
-          _ -> []
+        rhs2Guards :: Rhs () -> [CondExpr ()]
+        rhs2Guards (GuardedRhs _ _ conds _) = conds
+        rhs2Guards _ = []
         -- TODO: Not all expressions can currently be pretty-printed
         ppRhs :: Rhs () -> Doc
         ppRhs (SimpleRhs _ _ e _) = text "->" <+> ppExpr e
