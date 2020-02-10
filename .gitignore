@@ -1,10 +1,32 @@
-cabal-dev/
-dist/
-dist-newstyle/
-.stack-work/
-.vscode/
+# Haskell and Cabal related files and folders
+dist
+dist-*
+cabal-dev
+*.o
+*.hi
+*.hie
+*.chi
+*.chs.h
+*.dyn_o
+*.dyn_hi
+.hpc
+.hsenv
 .cabal-sandbox/
+cabal.sandbox.config
+*.prof
+*.aux
+*.hp
+*.eventlog
+.stack-work/
 cabal.project.local
-cabal.sandbox.*
+cabal.project.local~
+.HTF/
 .ghc.environment.*
-.curry
+
+# Curry related files and folders
+.cpm/
+.curry/
+Curry_Main_Goal.curry
+
+# Visual Studio Code related files and folders
+.vscode/
