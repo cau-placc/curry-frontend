@@ -30,7 +30,7 @@ import qualified Data.Set            as Set (Set, empty, insert, member)
 
 import           Curry.Base.Ident
 import           Curry.Base.SpanInfo
-import           Curry.FlatCurry.Typed.Goodies (typeName)
+import           Curry.FlatCurry.Typed.Goodies (typeName, allVarsInTypeExpr)
 import           Curry.FlatCurry.Typed.Type
 import qualified Curry.Syntax as CS
 
@@ -422,12 +422,25 @@ genCall call ty f es = do
 genTComb :: IL.Type -> QName -> [IL.Expression] -> CombType -> FlatState TExpr
 genTComb ty qid es ct = do
   ty' <- trType ty
-  let ty'' = defunc ty' (length es)
+  let ty'' = snd $ defunc ty' (length es)
   TComb ty'' ct qid <$> mapM trTExpr es
   where
-  defunc t               0 = t
-  defunc (FuncType _ t2) n = defunc t2 (n - 1)
-  defunc _               _ = internalError "GenTypedFlatCurry.genTComb.defunc"
+    -- The types are in weak prenex normal form.
+    -- So for a ForallType we just need to call defunc on the inner type.
+    -- If a type variable occurs in one of the removed parts of the type,
+    -- We have to remove it from the Variables bound by forall, as that variable
+    -- is not polymorphic anymore.
+    defunc ty'                 0 =
+      ([], ty')
+    defunc (ForallType vs ty1) n =
+      let (tys, ty') = defunc ty1 n
+          tvs = nub $ concatMap allVarsInTypeExpr tys
+      in ([], ForallType (filter ((`elem` tvs) . fst) vs) ty')
+    defunc (FuncType  ty1 ty2) n =
+      let (tys, ty') = defunc ty2 (n - 1)
+      in (ty1:tys, ty')
+    defunc _                _ =
+      internalError $ "GenTypeAnnotatedFlatCurry.genAComb.defunc: " ++ show ty
 
 genApply :: TExpr -> [IL.Expression] -> FlatState TExpr
 genApply e es = do
