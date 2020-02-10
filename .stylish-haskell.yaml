@@ -18,6 +18,7 @@ steps:
       style: vertical
       align: true
       remove_redundant: true
+      language_prefix: LANGUAGE
 
   - tabs:
       spaces: 2
