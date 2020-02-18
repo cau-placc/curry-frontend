@@ -816,9 +816,9 @@ instance DictTrans Pattern where
   dictTrans (VariablePattern       _ pty v) =
     return $ VariablePattern NoSpanInfo (transformPredType $ unpredType pty) v
   dictTrans (ConstructorPattern _ pty c ts) = do
-    pls <- matchPredList (conType c) $
-             foldr (TypeArrow . typeOf) (transformPredType $ unpredType pty) ts
-    ConstructorPattern NoSpanInfo (transformPredType $ unpredType pty) c <$> addDictArgs pls ts
+    let tpty = transformPredType (unpredType pty)
+    pls <- matchPredList (conType c) $ foldr (TypeArrow . typeOf) tpty ts
+    ConstructorPattern NoSpanInfo tpty c <$> addDictArgs pls ts
   dictTrans (AsPattern               _ v t) =
     AsPattern NoSpanInfo v <$> dictTrans t
   dictTrans t                               =
