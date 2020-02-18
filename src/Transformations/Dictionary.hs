@@ -828,14 +828,16 @@ instance DictTrans Expression where
   dictTrans (Literal     _ pty l) =
     return $ Literal NoSpanInfo (transformPredType $ unpredType pty) l
   dictTrans (Variable    _ pty v) = do
-    pls <- matchPredList (funType v) (transformPredType $ unpredType pty)
+    let tpty = transformPredType (unpredType pty)
+    pls <- matchPredList (funType v) tpty
     es <- mapM dictArg pls
-    let ty = foldr (TypeArrow . typeOf) (transformPredType $ unpredType pty) es
+    let ty = foldr (TypeArrow . typeOf) tpty es
     return $ apply (Variable NoSpanInfo ty v) es
   dictTrans (Constructor _ pty c) = do
-    pls <- matchPredList (conType c) (transformPredType $ unpredType pty)
+    let tpty = transformPredType (unpredType pty)
+    pls <- matchPredList (conType c) tpty
     es <- mapM dictArg pls
-    let ty = foldr (TypeArrow . typeOf) (transformPredType $ unpredType pty) es
+    let ty = foldr (TypeArrow . typeOf) tpty es
     return $ apply (Constructor NoSpanInfo ty c) es
   dictTrans (Apply       _ e1 e2) =
     Apply NoSpanInfo <$> dictTrans e1 <*> dictTrans e2
