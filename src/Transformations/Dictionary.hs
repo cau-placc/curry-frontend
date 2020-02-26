@@ -12,6 +12,7 @@
 -}
 
 {-# LANGUAGE CPP #-}
+
 module Transformations.Dictionary
   ( insertDicts
   , dictTypeId, qDictTypeId, dictConstrId, qDictConstrId
@@ -20,40 +21,39 @@ module Transformations.Dictionary
   ) where
 
 #if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative      ((<$>), (<*>))
-import           Data.Traversable         (traverse)
+import           Control.Applicative ((<$>), (<*>))
+import           Data.Traversable    (traverse)
 #endif
-import           Control.Monad.Extra      ( concatMapM, liftM, maybeM, when
-                                          , zipWithM )
-import qualified Control.Monad.State as S (State, runState, gets, modify)
+import           Control.Monad.Extra (concatMapM, liftM, maybeM, when, zipWithM)
+import qualified Control.Monad.State as S (State, gets, modify, runState)
 
-import           Data.List         (inits, nub, partition, tails, zipWith4)
-import qualified Data.Map   as Map ( Map, empty, insert, lookup, mapWithKey
-                                   , toList )
-import           Data.Maybe        (fromMaybe, isJust)
-import qualified Data.Set   as Set ( deleteMin, fromList, null, size, toAscList
-                                   , toList, union )
+import           Data.List           (inits, nub, partition, tails, zipWith4)
+import qualified Data.Map            as Map (Map, empty, insert, lookup,
+                                             mapWithKey, toList)
+import           Data.Maybe          (fromMaybe, isJust)
+import qualified Data.Set            as Set (deleteMin, fromList, null, size,
+                                             toAscList, toList, union)
 
-import Curry.Base.Ident
-import Curry.Base.Position
-import Curry.Base.SpanInfo
-import Curry.Syntax
+import           Curry.Base.Ident
+import           Curry.Base.Position
+import           Curry.Base.SpanInfo
+import           Curry.Syntax
 
-import Base.CurryTypes
-import Base.Expr
-import Base.Kinds
-import Base.Messages (internalError)
-import Base.TopEnv
-import Base.Types
-import Base.TypeSubst
-import Base.Typing
+import           Base.CurryTypes
+import           Base.Expr
+import           Base.Kinds
+import           Base.Messages       (internalError)
+import           Base.TopEnv
+import           Base.Types
+import           Base.TypeSubst
+import           Base.Typing
 
-import Env.Class
-import Env.Instance
-import Env.Interface
-import Env.OpPrec
-import Env.TypeConstructor
-import Env.Value
+import           Env.Class
+import           Env.Instance
+import           Env.Interface
+import           Env.OpPrec
+import           Env.TypeConstructor
+import           Env.Value
 
 data DTState = DTState
   { moduleIdent :: ModuleIdent
@@ -942,7 +942,7 @@ matchPredList tySc ty2 = do
 qualMatch :: [Pred] -> Type -> [Pred] -> Type -> Maybe [Pred]
 qualMatch pls1 ty1 pls2 ty2 = case predListMatch pls2 ty2 of
   Just ty2' -> Just $ subst (matchType ty1 ty2' idSubst) pls1
-  Nothing -> Nothing
+  Nothing   -> Nothing
 
 predListMatch :: [Pred] -> Type -> Maybe Type
 predListMatch []     ty = Just ty
@@ -1287,7 +1287,7 @@ instType (TypeVariable    tv) = TypeVariable (instTypeVar tv)
 instType (TypeApply  ty1 ty2) = TypeApply (instType ty1) (instType ty2)
 instType (TypeArrow  ty1 ty2) = TypeArrow (instType ty1) (instType ty2)
 instType (TypeForall  tvs ty) = TypeForall (map instTypeVar tvs) (instType ty)
-instType ty = ty
+instType ty                   = ty
 
 instPred :: Pred -> Pred
 instPred (Pred cls ty) = Pred cls (instType ty)
@@ -1324,7 +1324,7 @@ varType m v vEnv = case qualLookupValue (qualify v) vEnv of
   _ -> case qualLookupValue (qualifyWith m v) vEnv of
     Value _ _ _ tySc : _ -> tySc
     Label _ _   tySc : _ -> tySc
-    _ -> internalError $ "Dictionary.varType: " ++ show v
+    _                    -> internalError $ "Dictionary.varType: " ++ show v
 
 conType :: QualIdent -> ValueEnv -> Type
 conType c vEnv = case qualLookupValue c vEnv of
@@ -1336,7 +1336,7 @@ funType :: QualIdent -> ValueEnv -> Type
 funType f vEnv = case qualLookupValue f vEnv of
   [Value _ _ _ tySc] -> tySc
   [Label _ _   tySc] -> tySc
-  _ -> internalError $ "Dictionary.funType " ++ show f
+  _                  -> internalError $ "Dictionary.funType " ++ show f
 
 opType :: QualIdent -> ValueEnv -> Type
 opType op vEnv = case qualLookupValue op vEnv of
