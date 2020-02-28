@@ -109,6 +109,12 @@ applyFoo (Bar x) f = f $ Bar x
 applyEqFun :: Eq a => (forall b. Eq b => b -> b -> Bool) -> a -> a -> Bool
 applyEqFun f x y = x `f` y
 
+-- applyEqFunTest1 :: Bool
+-- applyEqFunTest1 = applyEqFun (==) True False
+
+-- applyEqFunTest2 :: Bool -> Bool -> Bool
+-- applyEqFunTest2 = applyEqFun (==)
+
 applyMaybe :: Maybe a -> (forall b. b -> b) -> a
 applyMaybe Nothing  _ = error "fail"
 applyMaybe (Just x) f = f x
@@ -170,3 +176,22 @@ constFun' = const
 
 constFunTest :: Bool
 constFunTest = (id `constFun` 73) True
+
+data Showable = Showable (forall b. (forall a. Show a => a -> b) -> b)
+
+showableTest :: Show a => a -> Showable
+showableTest g = Showable (\f -> f g)
+
+showableFun1 :: Showable -> String
+showableFun1 (Showable f) = let k x = show x in f k
+
+-- showableFun2 :: Showable -> String
+-- showableFun2 (Showable f) = f (\x -> show x)
+
+showableFun3 :: Showable -> String
+showableFun3 showable = case showable of
+  Showable f -> let k x = show x in f k
+
+showableFun4 :: Showable -> String
+showableFun4 showable = case showable of
+  Showable f -> f show

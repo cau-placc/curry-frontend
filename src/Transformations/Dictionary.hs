@@ -812,11 +812,11 @@ instance DictTrans Rhs where
 
 instance DictTrans Pattern where
   dictTrans (LiteralPattern        _ pty l) =
-    return $ LiteralPattern NoSpanInfo (transformPredType $ unpredType pty) l
+    return $ LiteralPattern NoSpanInfo (transformPredType pty) l
   dictTrans (VariablePattern       _ pty v) =
-    return $ VariablePattern NoSpanInfo (transformPredType $ unpredType pty) v
+    return $ VariablePattern NoSpanInfo (transformPredType pty) v
   dictTrans (ConstructorPattern _ pty c ts) = do
-    let tpty = transformPredType (unpredType pty)
+    let tpty = transformPredType pty
     pls <- matchPredList (conType c) $ foldr (TypeArrow . typeOf) tpty ts
     ConstructorPattern NoSpanInfo tpty c <$> addDictArgs pls ts
   dictTrans (AsPattern               _ v t) =
@@ -826,15 +826,17 @@ instance DictTrans Pattern where
 
 instance DictTrans Expression where
   dictTrans (Literal     _ pty l) =
-    return $ Literal NoSpanInfo (transformPredType $ unpredType pty) l
+    return $ Literal NoSpanInfo (transformPredType pty) l
   dictTrans (Variable    _ pty v) = do
-    let tpty = transformPredType (unpredType pty)
-    pls <- matchPredList (funType v) tpty
+    let tpty = transformPredType pty
+    pls <- case pty of
+             TypeContext _ _ -> return []
+             _               -> matchPredList (funType v) tpty
     es <- mapM dictArg pls
     let ty = foldr (TypeArrow . typeOf) tpty es
     return $ apply (Variable NoSpanInfo ty v) es
   dictTrans (Constructor _ pty c) = do
-    let tpty = transformPredType (unpredType pty)
+    let tpty = transformPredType pty
     pls <- matchPredList (conType c) tpty
     es <- mapM dictArg pls
     let ty = foldr (TypeArrow . typeOf) tpty es
@@ -928,16 +930,11 @@ instPredList (Pred cls ty) = case unapplyType True ty of
 matchPredList :: (ValueEnv -> Type) -> Type -> DTM [Pred]
 matchPredList tySc ty2 = do
   pty <- tySc <$> getValueEnv
-  let ps = getPredSet pty
+  let ps = predSet pty
   return $ foldr (\(pls1, pls2) pls' ->
                    fromMaybe pls' $ qualMatch pls1 (rawType pty) pls2 ty2)
                  (internalError $ "Dictionary.matchPredList: " ++ show ps)
                  (splits $ Set.toAscList ps)
-  where
-    getPredSet :: Type -> PredSet
-    getPredSet (TypeForall _ ty)  = getPredSet ty
-    getPredSet (TypeContext ps _) = ps
-    getPredSet _                  = emptyPredSet
 
 qualMatch :: [Pred] -> Type -> [Pred] -> Type -> Maybe [Pred]
 qualMatch pls1 ty1 pls2 ty2 = case predListMatch pls2 ty2 of
@@ -1005,6 +1002,7 @@ instance Specialize Expression where
 
 specialize' :: Expression Type -> [Expression Type] -> DTM (Expression Type)
 specialize' l@(Literal     _ _ _) es = return $ apply l es
+specialize' v@(Variable    _ _ _) [] = return v
 specialize' v@(Variable   _ _ v') es = do
   spEnv <- getSpEnv
   return $ case Map.lookup (v', f) spEnv of

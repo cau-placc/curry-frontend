@@ -32,6 +32,7 @@ module Base.Types
   , emptyPredSet, partitionPredSet, minPredSet, maxPredSet, qualifyPredSet
   , unqualifyPredSet
   , unpredType
+  , predSet
     -- * Representation of data constructors
   , DataConstr (..)
   , constrIdent, constrTypes, recLabels, recLabelTypes, tupleData
@@ -311,6 +312,12 @@ unqualifyPredSet m = Set.map (unqualifyPred m)
 unpredType :: Type -> Type
 unpredType (TypeContext _ ty) = ty
 unpredType ty                 = ty
+
+-- | Returns the predicate set in the beginning of the given type.
+predSet :: Type -> PredSet
+predSet (TypeContext ps ty) = Set.union ps (predSet ty)
+predSet (TypeForall _ ty)   = predSet ty
+predSet _                   = emptyPredSet
 
 -- -----------------------------------------------------------------------------
 -- Data constructors

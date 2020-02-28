@@ -5,7 +5,7 @@ Copyright   : (c) 1999–2004 Wolfgang Lux, Martin Engelke
                   2011–2015 Björn Peemöller
                   2014–2015 Jan Tikovsky
                   2016–2017 Finn Teegen
-                  2019 Jan-Hendrik Matthes
+                  2019–2020 Jan-Hendrik Matthes
 License     : BSD-3-Clause
 
 Maintainer  : fte@informatik.uni-kiel.de
@@ -49,12 +49,11 @@ import           Prelude             hiding ((<>))
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative ((<$>), (<*>))
 #endif
+import           Control.Monad.Extra (allM, eitherM, filterM, foldM, notM,
+                                      replicateM, unless, unlessM, when, (&&^))
+import qualified Control.Monad.State as S (State, StateT, evalStateT, get, gets,
+                                           modify, put, runState)
 import           Control.Monad.Trans (lift)
-import           Control.Monad.Extra (allM, eitherM, filterM, foldM, (&&^),
-                                      notM, replicateM, when, unless, unlessM)
-import qualified Control.Monad.State as S
-                                     (State, StateT, get, gets, put, modify,
-                                      runState, evalStateT)
 import           Data.Foldable       (foldrM)
 import           Data.Function       (on)
 import           Data.List           (nub, nubBy, partition, sortBy, (\\))
@@ -63,7 +62,7 @@ import           Data.Maybe          (fromJust, isJust)
 import qualified Data.Set.Extra      as Set (Set, concatMap, deleteMin, empty,
                                              filter, fromList, insert,
                                              isSubsetOf, map, member, notMember,
-                                             partition, singleton, toList,
+                                             null, partition, singleton, toList,
                                              union, unions)
 
 import           Curry.Base.Ident
@@ -1393,8 +1392,14 @@ tcExpr cm    p (Case spi li ct e as) = do
 
 tcArg :: HasPosition p => CheckMode -> p -> String -> Doc -> PredSet -> Type
       -> Expression a -> TCM (PredSet, Expression Type)
-tcArg cm p what doc ps ty e =
-  tcExpr cm p e >>- unify p what (doc $-$ text "Term:" <+> pPrintPrec 0 e) ps ty
+tcArg cm p what doc ps ty e = do
+  (ps', ty', expr) <- tcExpr cm p e
+  ps'' <- unify p what (doc $-$ text "Term:" <+> pPrintPrec 0 e) ps ty ps' ty'
+  let expr' = if Set.null (predSet ty) then expr else updateType ps' expr
+  return (ps'', expr')
+  where
+    updateType preds (Variable spi t v) = Variable spi (TypeContext preds t) v
+    updateType _     e                  = e
 
 tcAlt :: CheckMode -> Type -> Type -> PredSet -> Alt a
       -> TCM (PredSet, Alt Type)
@@ -1582,11 +1587,15 @@ unifyHelp b p what doc ps1 ty1 ps2 ty2 = do
     Left reason -> report $ errTypeMismatch p what doc m ty1' ty2' reason
     Right sigma -> modifyTypeSubst (compose sigma)
   theta' <- getTypeSubst
-  let ty1'' = subst theta' ty1'
-      ty2'' = subst theta' ty2'
+  let predicated = Set.null $ predSet ty1'
+      ty1'' = subst theta' ty1'
+      ty2'' = subst theta' (if predicated
+                              then ty2'
+                              else TypeContext (subst theta ps2) ty2')
   unlessM (subsumCheck b emptyPredSet emptyPredSet ty1'' ty2'') $
     report $ errSubsumption p what doc m ty2' ty1'
-  reducePredSet p what doc (ps1 `Set.union` ps2)
+  reducePredSet p what doc
+                (ps1 `Set.union` (if predicated then ps2 else emptyPredSet))
 
 subsumCheck :: Bool -> PredSet -> PredSet -> Type -> Type -> TCM Bool
 subsumCheck True ps1 ps2 (TypeArrow ty11@(TypeForall _ _) ty12) (TypeArrow ty21@(TypeForall _ _) ty22)
