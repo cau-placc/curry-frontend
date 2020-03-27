@@ -1,0 +1,6 @@
+packages: .
+
+source-repository-package
+  type: git
+  location: https://git.ps.informatik.uni-kiel.de/curry/curry-base.git
+  tag: 45f5cf3304c4dd011f49ad21dcc32497cdd5fd88
