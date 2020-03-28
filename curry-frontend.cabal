@@ -129,7 +129,8 @@ library
     , Transformations.Newtypes
     , Transformations.Qual
     , Transformations.Simplify
-    , Paths_curry_frontend
+  other-modules:
+      Paths_curry_frontend
   autogen-modules:
       Paths_curry_frontend
 
