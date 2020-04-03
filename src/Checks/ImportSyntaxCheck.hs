@@ -259,21 +259,21 @@ expandTypeAll spi tc = do
 -- error messages
 
 errUndefinedElement :: Ident -> Ident -> Message
-errUndefinedElement tc c = posMessage c $ hsep $ map text
+errUndefinedElement tc c = spanInfoMessage c $ hsep $ map text
   [ idName c, "is not a constructor or label of type ", idName tc ]
 
 errUndefinedMethod :: Ident -> Ident -> Message
-errUndefinedMethod cls f = posMessage f $ hsep $ map text
+errUndefinedMethod cls f = spanInfoMessage f $ hsep $ map text
   [ idName f, "is not a method of class", idName cls ]
 
 errUndefinedEntity :: ModuleIdent -> Ident -> Message
-errUndefinedEntity m x = posMessage x $ hsep $ map text
+errUndefinedEntity m x = spanInfoMessage x $ hsep $ map text
   [ "Module", moduleName m, "does not export", idName x ]
 
 errNonDataTypeOrTypeClass :: Ident -> Message
-errNonDataTypeOrTypeClass tc = posMessage tc $ hsep $ map text
+errNonDataTypeOrTypeClass tc = spanInfoMessage tc $ hsep $ map text
   [ idName tc, "is not a data type or type class" ]
 
 errImportDataConstr :: ModuleIdent -> Ident -> Message
-errImportDataConstr _ c = posMessage c $ hsep $ map text
+errImportDataConstr _ c = spanInfoMessage c $ hsep $ map text
   [ "Explicit import for data constructor", idName c ]
