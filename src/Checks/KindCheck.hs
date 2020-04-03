@@ -39,7 +39,7 @@ import Base.CurryKinds
 import Base.Expr
 import Base.Kinds
 import Base.KindSubst
-import Base.Messages (Message, posMessage, internalError)
+import Base.Messages (Message, posMessage, spanInfoMessage, internalError)
 import Base.SCC
 import Base.TopEnv
 import Base.Types
@@ -717,9 +717,9 @@ isTypeOrNewtypeDecl _                       = False
 errRecursiveTypes :: [Ident] -> Message
 errRecursiveTypes []       = internalError
   "KindCheck.errRecursiveTypes: empty list"
-errRecursiveTypes [tc]     = posMessage tc $ hsep $ map text
+errRecursiveTypes [tc]     = spanInfoMessage tc $ hsep $ map text
   ["Recursive synonym or renaming type", idName tc]
-errRecursiveTypes (tc:tcs) = posMessage tc $
+errRecursiveTypes (tc:tcs) = spanInfoMessage tc $
   text "Mutually recursive synonym and/or renaming types" <+>
     text (idName tc) <> types empty tcs
   where
@@ -732,9 +732,9 @@ errRecursiveTypes (tc:tcs) = posMessage tc $
 errRecursiveClasses :: [Ident] -> Message
 errRecursiveClasses []         = internalError
   "KindCheck.errRecursiveClasses: empty list"
-errRecursiveClasses [cls]      = posMessage cls $ hsep $ map text
+errRecursiveClasses [cls]      = spanInfoMessage cls $ hsep $ map text
   ["Recursive type class", idName cls]
-errRecursiveClasses (cls:clss) = posMessage cls $
+errRecursiveClasses (cls:clss) = spanInfoMessage cls $
   text "Mutually recursive type classes" <+> text (idName cls) <>
     classes empty clss
   where
