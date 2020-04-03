@@ -46,7 +46,7 @@ import Curry.Syntax.Utils  (typeVariables)
 import Curry.Syntax.Pretty (pPrint, pPrintPrec, ppIdent)
 
 import Base.CurryTypes (ppPredType, toPredSet, fromPred)
-import Base.Messages   (Message, posMessage, internalError)
+import Base.Messages   (Message, spanInfoMessage, internalError)
 import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                        , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv
                        , qualModifyNestEnv)
@@ -225,16 +225,16 @@ checkImports = warnFor WarnMultipleImports . foldM_ checkImport Map.empty
   impName (ImportTypeWith _ t _) = t
 
 warnMultiplyImportedModule :: ModuleIdent -> Message
-warnMultiplyImportedModule mid = posMessage mid $ hsep $ map text
+warnMultiplyImportedModule mid = spanInfoMessage mid $ hsep $ map text
   ["Module", moduleName mid, "is imported more than once"]
 
 warnMultiplyImportedSymbol :: ModuleIdent -> Ident -> Message
-warnMultiplyImportedSymbol mid ident = posMessage ident $ hsep $ map text
+warnMultiplyImportedSymbol mid ident = spanInfoMessage ident $ hsep $ map text
   [ "Symbol", escName ident, "from module", moduleName mid
   , "is imported more than once" ]
 
 warnMultiplyHiddenSymbol :: ModuleIdent -> Ident -> Message
-warnMultiplyHiddenSymbol mid ident = posMessage ident $ hsep $ map text
+warnMultiplyHiddenSymbol mid ident = spanInfoMessage ident $ hsep $ map text
   [ "Symbol", escName ident, "from module", moduleName mid
   , "is hidden more than once" ]
 
@@ -273,7 +273,7 @@ checkRuleAdjacency decls = warnFor WarnDisjoinedRules
   check (_    , env) _                     = return (mkIdent "", env)
 
 warnDisjoinedFunctionRules :: Ident -> Position -> Message
-warnDisjoinedFunctionRules ident pos = posMessage ident $ hsep (map text
+warnDisjoinedFunctionRules ident pos = spanInfoMessage ident $ hsep (map text
   [ "Rules for function", escName ident, "are disjoined" ])
   <+> parens (text "first occurrence at" <+> text (showLine pos))
 
@@ -360,11 +360,10 @@ checkFunctionPatternMatch spi f eqs = do
   let guards = map eq2Guards eqs
   (nonExhaustive, overlapped, nondet) <- checkPatternMatching pats guards
   unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
-    warnMissingPattern p ("an equation for " ++ escName f) nonExhaustive
+    warnMissingPattern spi ("an equation for " ++ escName f) nonExhaustive
   when (nondet || not (null overlapped)) $ warnFor WarnOverlapping $ report $
-    warnNondetOverlapping p ("Function " ++ escName f)
-  where p = spanInfo2Pos spi
-        eq2Guards :: Equation () -> [CondExpr ()]
+    warnNondetOverlapping spi ("Function " ++ escName f)
+  where eq2Guards :: Equation () -> [CondExpr ()]
         eq2Guards (Equation _ _ (GuardedRhs _ _ conds _)) = conds
         eq2Guards _ = []
 
@@ -494,12 +493,12 @@ checkOrphanInstance p cx cls ty = warnFor WarnOrphanInstances $ do
   let ocls = getOrigName m cls tcEnv
       otc  = getOrigName m tc  tcEnv
   unless (isLocalIdent m ocls || isLocalIdent m otc) $ report $
-    warnOrphanInstance (spanInfo2Pos p) $ pPrint $
+    warnOrphanInstance p $ pPrint $
     InstanceDecl p WhitespaceLayout cx cls ty []
   where tc = typeConstr ty
 
-warnOrphanInstance :: Position -> Doc -> Message
-warnOrphanInstance p doc = posMessage p $ text "Orphan instance:" <+> doc
+warnOrphanInstance :: SpanInfo -> Doc -> Message
+warnOrphanInstance spi doc = spanInfoMessage spi $ text "Orphan instance:" <+> doc
 
 -- -----------------------------------------------------------------------------
 -- Check for missing method implementations
@@ -512,12 +511,12 @@ checkMissingMethodImplementations p cls ds = warnFor WarnMissingMethods $ do
   clsEnv <- gets classEnv
   let ocls = getOrigName m cls tcEnv
       ms   = classMethods ocls clsEnv
-  mapM_ (report . warnMissingMethodImplementation (spanInfo2Pos p)) $
+  mapM_ (report . warnMissingMethodImplementation p) $
     filter ((null fs ||) . not . flip (hasDefaultImpl ocls) clsEnv) $ ms \\ fs
   where fs = map unRenameIdent $ concatMap impls ds
 
-warnMissingMethodImplementation :: Position -> Ident -> Message
-warnMissingMethodImplementation p f = posMessage p $ hsep $ map text
+warnMissingMethodImplementation :: SpanInfo -> Ident -> Message
+warnMissingMethodImplementation spi f = spanInfoMessage spi $ hsep $ map text
   ["No explicit implementation for method", escName f]
 
 -- -----------------------------------------------------------------------------
@@ -545,7 +544,7 @@ getTyScheme q = do
     _ -> internalError $ "Checks.WarnCheck.getTyScheme: " ++ show q
 
 warnMissingTypeSignature :: ModuleIdent -> Ident -> Type -> Message
-warnMissingTypeSignature mid i pty = posMessage i $ fsep
+warnMissingTypeSignature mid i pty = spanInfoMessage i $ fsep
   [ text "Top-level binding with no type signature:"
   , nest 2 $ text (showIdent i) <+> text "::"
                                 <+> ppPredType mid (rawPredType pty)
@@ -568,14 +567,14 @@ checkModuleAlias is = do
   unless (null aliasClash) $ mapM_ (report . warnAliasNameClash ) aliasClash
 
 warnModuleNameClash :: ModuleIdent -> Message
-warnModuleNameClash mid = posMessage mid $ hsep $ map text
+warnModuleNameClash mid = spanInfoMessage mid $ hsep $ map text
   ["The module alias", escModuleName mid
   , "overlaps with the current module name"]
 
 warnAliasNameClash :: [ModuleIdent] -> Message
 warnAliasNameClash []         = internalError
   "WarnCheck.warnAliasNameClash: empty list"
-warnAliasNameClash mids = posMessage (head mids) $ text
+warnAliasNameClash mids = spanInfoMessage (head mids) $ text
   "Overlapping module aliases" $+$ nest 2 (vcat (map myppAlias mids))
   where myppAlias mid =
           ppLine (getPosition mid) <> text ":" <+> text (escModuleName mid)
@@ -594,16 +593,15 @@ checkCaseAlts spi ct alts = do
   case ct of
     Flex -> do
       unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
-        warnMissingPattern p "an fcase alternative" nonExhaustive
+        warnMissingPattern spi "an fcase alternative" nonExhaustive
       when (nondet || not (null overlapped)) $ warnFor WarnOverlapping $ report
-        $ warnNondetOverlapping p "An fcase expression"
+        $ warnNondetOverlapping spi "An fcase expression"
     Rigid -> do
       unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
-        warnMissingPattern p "a case alternative" nonExhaustive
+        warnMissingPattern spi "a case alternative" nonExhaustive
       unless (null overlapped) $ warnFor WarnOverlapping $ report $
-        warnUnreachablePattern (spanInfo2Pos $ (spis !!) $ fst $ head overlapped) $ map snd overlapped
-  where p = spanInfo2Pos spi
-        alt2Guards :: Alt () -> [CondExpr ()]
+        warnUnreachablePattern ((spis !!) $ fst $ head overlapped) $ map snd overlapped
+  where alt2Guards :: Alt () -> [CondExpr ()]
         alt2Guards (Alt _ _ (GuardedRhs _ _ conds _)) = conds
         alt2Guards _ = []
 
@@ -969,8 +967,8 @@ patArgs _                             = []
 -- |Warning message for non-exhaustive patterns.
 -- To shorten the output only the first 'maxPattern' are printed,
 -- additional pattern are abbreviated by dots.
-warnMissingPattern :: Position -> String -> [ExhaustivePats] -> Message
-warnMissingPattern p loc pats = posMessage p
+warnMissingPattern :: SpanInfo -> String -> [ExhaustivePats] -> Message
+warnMissingPattern spi loc pats = spanInfoMessage spi
   $   text "Pattern matches are non-exhaustive"
   $+$ text "In" <+> text loc <> char ':'
   $+$ nest 2 (text "Patterns not matched:" $+$ nest 2 (vcat (ppExPats pats)))
@@ -989,8 +987,8 @@ warnMissingPattern p loc pats = posMessage p
 -- |Warning message for unreachable patterns.
 -- To shorten the output only the first 'maxPattern' are printed,
 -- additional pattern are abbreviated by dots.
-warnUnreachablePattern :: Position  -> [[Pattern a]] -> Message
-warnUnreachablePattern p pats = posMessage p
+warnUnreachablePattern :: SpanInfo  -> [[Pattern a]] -> Message
+warnUnreachablePattern spi pats = spanInfoMessage spi
   $   text "Pattern matches are potentially unreachable"
   $+$ text "In a case alternative:"
   $+$ nest 2 (vcat (ppExPats pats) <+> text "->" <+> text "...")
@@ -1005,8 +1003,8 @@ warnUnreachablePattern p pats = posMessage p
 maxPattern :: Int
 maxPattern = 4
 
-warnNondetOverlapping :: Position -> String -> Message
-warnNondetOverlapping p loc = posMessage p $
+warnNondetOverlapping :: SpanInfo -> String -> Message
+warnNondetOverlapping spi loc = spanInfoMessage spi $
   text loc <+> text "is potentially non-deterministic due to overlapping rules"
 
 -- -----------------------------------------------------------------------------
@@ -1665,7 +1663,7 @@ warnRedFuncString is = text "type signature for function" <>
 
 -- Doc description -> TypeVars -> Pred -> Warning
 warnRedContext :: Doc -> [Ident] -> Pred -> Message
-warnRedContext d vs p@(Pred qid _) = posMessage qid $
+warnRedContext d vs p@(Pred qid _) = spanInfoMessage qid $
   text "Redundant context in" <+> d <> colon <+>
   quotes (pPrint $ fromPred vs p) -- idents use ` ' as quotes not ' '
 
@@ -1676,7 +1674,7 @@ csep [x]    = x
 csep (x:xs) = x <> comma <+> csep xs
 
 warnCaseMode :: Ident -> CaseMode -> Message
-warnCaseMode i@(Ident _ name _ ) c = posMessage i $
+warnCaseMode i@(Ident _ name _ ) c = spanInfoMessage i $
   text "Wrong case mode in symbol" <+> text (escName i) <+>
   text "due to selected case mode" <+> text (escapeCaseMode c) <> comma <+>
   text "try renaming to" <+> text (caseSuggestion name) <+> text "instead"
@@ -1694,19 +1692,19 @@ escapeCaseMode CaseModeProlog  = "`prolog`"
 escapeCaseMode CaseModeGoedel  = "`goedel`"
 
 warnUnrefTypeVar :: Ident -> Message
-warnUnrefTypeVar v = posMessage v $ hsep $ map text
+warnUnrefTypeVar v = spanInfoMessage v $ hsep $ map text
   [ "Unreferenced type variable", escName v ]
 
 warnUnrefVar :: Ident -> Message
-warnUnrefVar v = posMessage v $ hsep $ map text
+warnUnrefVar v = spanInfoMessage v $ hsep $ map text
   [ "Unused declaration of variable", escName v ]
 
 warnShadowing :: Ident -> Ident -> Message
-warnShadowing x v = posMessage x $
+warnShadowing x v = spanInfoMessage x $
   text "Shadowing symbol" <+> text (escName x)
   <> comma <+> text "bound at:" <+> ppPosition (getPosition v)
 
 warnTypeShadowing :: Ident -> Ident -> Message
-warnTypeShadowing x v = posMessage x $
+warnTypeShadowing x v = spanInfoMessage x $
   text "Shadowing type variable" <+> text (escName x)
   <> comma <+> text "bound at:" <+> ppPosition (getPosition v)
