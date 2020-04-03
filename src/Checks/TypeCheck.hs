@@ -77,7 +77,8 @@ import           Curry.Syntax.Utils  (flatLhs)
 import           Base.CurryTypes
 import           Base.Expr
 import           Base.Kinds
-import           Base.Messages       (Message, internalError, posMessage)
+import           Base.Messages       (Message, internalError, posMessage,
+                                      spanInfoMessage)
 import           Base.SCC
 import           Base.TopEnv
 import           Base.TypeExpansion
@@ -2008,7 +2009,7 @@ localTypes vEnv = [tySc | (_, Value _ _ _ tySc) <- localBindings vEnv]
 -- -----------------------------------------------------------------------------
 
 errPolymorphicVar :: Ident -> Message
-errPolymorphicVar v = posMessage v $ hsep $ map text
+errPolymorphicVar v = spanInfoMessage v $ hsep $ map text
   ["Variable", idName v, "has a polymorphic type"]
 
 errTypeSigTooGeneral :: HasPosition a => a -> ModuleIdent -> Doc -> TypeExpr
