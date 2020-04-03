@@ -40,7 +40,7 @@ import           Curry.Syntax
 import           Curry.Syntax.Pretty
 
 import           Base.Expr           (Expr (fv))
-import           Base.Messages       (Message, internalError, posMessage)
+import           Base.Messages       (Message, internalError, posMessage, spanInfoMessage)
 import           Base.TopEnv
 import           Base.Utils          (findDouble, findMultiples)
 import           Env.Type
@@ -698,7 +698,7 @@ errUndefinedType :: QualIdent -> Message
 errUndefinedType = errUndefined "type"
 
 errAmbiguousIdent :: QualIdent -> [QualIdent] -> Message
-errAmbiguousIdent qident qidents = posMessage qident $
+errAmbiguousIdent qident qidents = spanInfoMessage qident $
   text "Ambiguous identifier" <+> text (escQualName qident)
                               $+$ text "It could refer to:"
                               $+$ nest 2 (vcat (map (text . qualName) qidents))
@@ -746,7 +746,7 @@ errIllegalInstanceType p inst = posMessage p $ vcat
   ]
 
 errIllegalDataInstance :: QualIdent -> Message
-errIllegalDataInstance qcls = posMessage qcls $ vcat
+errIllegalDataInstance qcls = spanInfoMessage qcls $ vcat
   [ text "Illegal instance of" <+> ppQIdent qcls
   , text "Instances of this class cannot be defined."
   , text "Instead, they are automatically derived if possible."

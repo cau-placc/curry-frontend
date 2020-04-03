@@ -54,7 +54,8 @@ import           Curry.Syntax
 import           Curry.Syntax.Pretty (pPrintPrec)
 
 import           Base.Expr
-import           Base.Messages       (Message, internalError, posMessage)
+import           Base.Messages       (Message, internalError, posMessage,
+                                      spanInfoMessage)
 import           Base.NestEnv
 import           Base.SCC            (scc)
 import           Base.Utils          (findDouble, findMultiples, (++!))
@@ -1293,11 +1294,11 @@ errUnsupportedFuncPattern s p pat = posMessage p $
   $+$ pPrintPrec 0 pat
 
 errFuncPatNotGlobal :: QualIdent -> Message
-errFuncPatNotGlobal f = posMessage f $ hsep $ map text
+errFuncPatNotGlobal f = spanInfoMessage f $ hsep $ map text
   ["Function", escQualName f, "in functional pattern is not global"]
 
 errFuncPatCyclic :: QualIdent -> QualIdent -> Message
-errFuncPatCyclic fp f = posMessage fp $ hsep $ map text
+errFuncPatCyclic fp f = spanInfoMessage fp $ hsep $ map text
   [ "Function", escName $ unqualify fp, "used in functional pattern depends on"
   , escName $ unqualify f, " causing a cyclic dependency"]
 
@@ -1306,19 +1307,19 @@ errPrecedenceOutOfRange p i = posMessage p $ hsep $ map text
   ["Precedence out of range:", show i]
 
 errUndefinedVariable :: QualIdent -> Message
-errUndefinedVariable v = posMessage v $ hsep $ map text
+errUndefinedVariable v = spanInfoMessage v $ hsep $ map text
   [escQualName v, "is undefined"]
 
 errUndefinedData :: QualIdent -> Message
-errUndefinedData c = posMessage c $ hsep $ map text
+errUndefinedData c = spanInfoMessage c $ hsep $ map text
   ["Undefined data constructor", escQualName c]
 
 errUndefinedLabel :: QualIdent -> Message
-errUndefinedLabel l = posMessage l $  hsep $ map text
+errUndefinedLabel l = spanInfoMessage l $  hsep $ map text
   ["Undefined record label", escQualName l]
 
 errUndefinedMethod :: QualIdent -> Ident -> Message
-errUndefinedMethod qcls f = posMessage f $ hsep $ map text
+errUndefinedMethod qcls f = spanInfoMessage f $ hsep $ map text
   [escName f, "is not a (visible) method of class", escQualName qcls]
 
 errAmbiguousIdent :: [RenameInfo] -> QualIdent -> Message
@@ -1390,7 +1391,7 @@ errNoCommonCons p ls = posMessage p $
   $+$ nest 2 (vcat (map (text . escQualName) ls))
 
 errNoLabel :: QualIdent -> QualIdent -> Message
-errNoLabel c l = posMessage l $ hsep $ map text
+errNoLabel c l = spanInfoMessage l $ hsep $ map text
   [escQualName l, "is not a field label of constructor", escQualName c]
 
 errNoTypeSig :: Ident -> Message
@@ -1410,7 +1411,7 @@ errDifferentArity (i:is) = posMessage i $
   nest 2 (vcat (map (ppPosition . getPosition) (i:is)))
 
 errWrongArity :: QualIdent -> Int -> Int -> Message
-errWrongArity c arity' argc = posMessage c $ hsep (map text
+errWrongArity c arity' argc = spanInfoMessage c $ hsep (map text
   ["Data constructor", escQualName c, "expects", arguments arity'])
   <> comma <+> text "but is applied to" <+> text (show argc)
   where arguments 0 = "no arguments"

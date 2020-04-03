@@ -29,7 +29,7 @@ import           Data.List                (nub, partition)
 import           Data.Maybe               (isNothing)
 
 import Base.Expr
-import Base.Messages (Message, posMessage, internalError)
+import Base.Messages (Message, posMessage, spanInfoMessage, internalError)
 import Base.TopEnv
 import Base.Utils    (findMultiples, findDouble)
 
@@ -331,7 +331,7 @@ errUnboundVariable tv = posMessage tv $
   text "Undefined type variable" <+> text (escName tv)
 
 errBadTypeSynonym :: QualIdent -> Message
-errBadTypeSynonym tc = posMessage tc $ text "Synonym type"
+errBadTypeSynonym tc = spanInfoMessage tc $ text "Synonym type"
                     <+> text (qualName tc) <+> text "in interface"
 
 errNoElement :: String -> String -> QualIdent -> Ident -> Message

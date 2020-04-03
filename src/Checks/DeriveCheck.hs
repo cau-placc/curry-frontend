@@ -19,7 +19,7 @@ import Curry.Base.Position
 import Curry.Base.Pretty
 import Curry.Syntax
 
-import Base.Messages (Message, posMessage)
+import Base.Messages (Message, posMessage, spanInfoMessage)
 
 import Env.TypeConstructor
 
@@ -86,11 +86,11 @@ errNoAbstractDerive p = posMessage p $
   text "at least one constructor"
 
 errNotDerivable :: QualIdent -> Message
-errNotDerivable cls = posMessage cls $ hsep $ map text
+errNotDerivable cls = spanInfoMessage cls $ hsep $ map text
   ["Instances of type class", escQualName cls, "cannot be derived"]
 
 errNoDataDerive :: QualIdent -> Message
-errNoDataDerive qcls = posMessage qcls $ hsep $ map text
+errNoDataDerive qcls = spanInfoMessage qcls $ hsep $ map text
   [ "Instances of type class"
   , escQualName qcls
   , "are automatically derived if possible"]

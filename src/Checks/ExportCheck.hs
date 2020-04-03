@@ -48,7 +48,7 @@ import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
 
-import Base.Messages       (Message, internalError, posMessage)
+import Base.Messages       (Message, internalError, posMessage, spanInfoMessage)
 import Base.TopEnv         (allEntities, origName, localBindings, moduleImports)
 import Base.Types          ( Type (..), unapplyType, arrowBase, rootOfType
                            , DataConstr (..), constrIdent, recLabels
@@ -465,7 +465,7 @@ errMultiple what (i:is) = posMessage i $
   where showPos = text . showLine . getPosition
 
 errNonDataTypeOrTypeClass :: QualIdent -> Message
-errNonDataTypeOrTypeClass tc = posMessage tc $ hsep $ map text
+errNonDataTypeOrTypeClass tc = spanInfoMessage tc $ hsep $ map text
   [escQualName tc, "is not a data type or type class"]
 
 errOutsideTypeConstructor :: QualIdent -> QualIdent -> Message
@@ -482,11 +482,11 @@ errOutsideTypeExport what q tc = posMessage q
   <>  text "' instead"
 
 errUndefinedElement :: QualIdent -> Ident -> Message
-errUndefinedElement tc c = posMessage c $ hsep $ map text
+errUndefinedElement tc c = spanInfoMessage c $ hsep $ map text
   [ escName c, "is not a constructor or label of type", escQualName tc ]
 
 errUndefinedMethod :: QualIdent -> Ident -> Message
-errUndefinedMethod cls f = posMessage f $ hsep $ map text
+errUndefinedMethod cls f = spanInfoMessage f $ hsep $ map text
   [ escName f, "is not a method of class", escQualName cls ]
 
 errUndefinedName :: QualIdent -> Message

@@ -17,7 +17,7 @@ module Base.Messages
     -- * program abortion
   , abortWith, abortWithMessage, abortWithMessages, warnOrAbort, internalError
     -- * creating messages
-  , Message, message, posMessage
+  , Message, message, posMessage, spanInfoMessage
   ) where
 
 import Control.Monad              (unless, when)
@@ -26,8 +26,8 @@ import Data.List                  (sort)
 import System.IO                  (hFlush, hPutStrLn, stderr, stdout)
 import System.Exit                (exitFailure)
 
-import Curry.Base.Message         ( Message, message, posMessage, ppWarning
-                                  , ppMessages, ppError)
+import Curry.Base.Message         ( Message, message, posMessage, spanInfoMessage
+                                  , ppWarning, ppMessages, ppError)
 import Curry.Base.Pretty          (Doc, text)
 import CompilerOpts               (Options (..), WarnOpts (..), Verbosity (..))
 
