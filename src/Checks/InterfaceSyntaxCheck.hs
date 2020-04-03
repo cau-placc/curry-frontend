@@ -297,7 +297,7 @@ isTypeSyn tc tEnv = case qualLookupTypeKind tc tEnv of
 -- ---------------------------------------------------------------------------
 
 errUndefined :: String -> QualIdent -> Message
-errUndefined what qident = posMessage qident $ hsep $ map text
+errUndefined what qident = spanInfoMessage qident $ hsep $ map text
   ["Undefined", what, qualName qident]
 
 errUndefinedClass :: QualIdent -> Message
@@ -307,7 +307,7 @@ errUndefinedType :: QualIdent -> Message
 errUndefinedType = errUndefined "type"
 
 errMultipleImplementation :: Ident -> Message
-errMultipleImplementation f = posMessage f $ hsep $ map text
+errMultipleImplementation f = spanInfoMessage f $ hsep $ map text
   ["Arity information for method", idName f, "occurs more than once"]
 
 errAmbiguousType :: Position -> Ident -> Message
@@ -319,15 +319,15 @@ errConstrainedClassVariable p ident = posMessage p $ hsep $ map text
   [ "Method context must not constrain class variable", idName ident ]
 
 errNonLinear :: Ident -> String -> Message
-errNonLinear tv what = posMessage tv $ hsep $ map text
+errNonLinear tv what = spanInfoMessage tv $ hsep $ map text
   [ "Type variable", escName tv, "occurs more than once in", what ]
 
 errNoVariable :: Ident -> String -> Message
-errNoVariable tv what = posMessage tv $ hsep $ map text
+errNoVariable tv what = spanInfoMessage tv $ hsep $ map text
   [ "Type constructor or type class identifier", escName tv, "used in", what ]
 
 errUnboundVariable :: Ident -> Message
-errUnboundVariable tv = posMessage tv $
+errUnboundVariable tv = spanInfoMessage tv $
   text "Undefined type variable" <+> text (escName tv)
 
 errBadTypeSynonym :: QualIdent -> Message
@@ -335,11 +335,11 @@ errBadTypeSynonym tc = spanInfoMessage tc $ text "Synonym type"
                     <+> text (qualName tc) <+> text "in interface"
 
 errNoElement :: String -> String -> QualIdent -> Ident -> Message
-errNoElement what for tc x = posMessage tc $ hsep $ map text
+errNoElement what for tc x = spanInfoMessage tc $ hsep $ map text
   [ "Hidden", what, escName x, "is not defined for", for, qualName tc ]
 
 errIllegalSimpleConstraint :: Constraint -> Message
-errIllegalSimpleConstraint c@(Constraint _ qcls _) = posMessage qcls $ vcat
+errIllegalSimpleConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
   [ text "Illegal class constraint" <+> pPrint c
   , text "Constraints in class and instance declarations must be of"
   , text "the form C u, where C is a type class and u is a type variable."
