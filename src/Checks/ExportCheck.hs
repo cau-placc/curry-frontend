@@ -48,7 +48,7 @@ import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
 
-import Base.Messages       (Message, internalError, posMessage, spanInfoMessage)
+import Base.Messages       (Message, internalError, spanInfoMessage)
 import Base.TopEnv         (allEntities, origName, localBindings, moduleImports)
 import Base.Types          ( Type (..), unapplyType, arrowBase, rootOfType
                            , DataConstr (..), constrIdent, recLabels
@@ -441,13 +441,13 @@ errAmbiguousType :: QualIdent -> [TypeInfo] -> Message
 errAmbiguousType tc tcs = errAmbiguous "type" tc (map origName tcs)
 
 errAmbiguous :: String -> QualIdent -> [QualIdent] -> Message
-errAmbiguous what qn qns = posMessage qn
+errAmbiguous what qn qns = spanInfoMessage qn
   $   text "Ambiguous" <+> text what <+> text (escQualName qn)
   $+$ text "It could refer to:"
   $+$ nest 2 (vcat (map (text . escQualName) qns))
 
 errModuleNotImported :: ModuleIdent -> Message
-errModuleNotImported m = posMessage m $ hsep $ map text
+errModuleNotImported m = spanInfoMessage m $ hsep $ map text
   ["Module", escModuleName m, "not imported"]
 
 errMultipleName :: [Ident] -> Message
@@ -459,7 +459,7 @@ errMultipleType = errMultiple "type"
 errMultiple :: String -> [Ident] -> Message
 errMultiple _    []     = internalError $
   currentModuleName ++ ".errMultiple: empty list"
-errMultiple what (i:is) = posMessage i $
+errMultiple what (i:is) = spanInfoMessage i $
   text "Multiple exports of" <+> text what <+> text (escName i) <+> text "at:"
   $+$ nest 2 (vcat (map showPos (i:is)))
   where showPos = text . showLine . getPosition
@@ -475,7 +475,7 @@ errOutsideTypeLabel :: QualIdent -> QualIdent -> Message
 errOutsideTypeLabel = errOutsideTypeExport "Label"
 
 errOutsideTypeExport :: String -> QualIdent -> QualIdent -> Message
-errOutsideTypeExport what q tc = posMessage q
+errOutsideTypeExport what q tc = spanInfoMessage q
   $   text what <+> text (escQualName q)
          <+> text "outside type export in export list"
   $+$ text "Use `" <> text (qualName tc) <+> parens (text (qualName q))
@@ -496,5 +496,5 @@ errUndefinedTypeOrClass :: QualIdent -> Message
 errUndefinedTypeOrClass = errUndefined "type or class"
 
 errUndefined :: String -> QualIdent -> Message
-errUndefined what tc = posMessage tc $ hsep $ map text
+errUndefined what tc = spanInfoMessage tc $ hsep $ map text
   ["Undefined", what, escQualName tc, "in export list"]
