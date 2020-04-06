@@ -2,10 +2,13 @@
 
 The Curry frontend parses source files (`.curry`), emits errors and
 warnings, performs various checks and transformations and 
-generates FlatCurry (`.fcy`, `.fint`) or AbstractCurry (`.acy`, `.uacy`) amonst other formats.
+generates FlatCurry (`.fcy`, `.fint`) or AbstractCurry (`.acy`, `.uacy`)
+amonst other formats.
 
-The project originated from a modified version of the
-Münster-Curry-Compiler (MCC) for use as a frontend in PAKCS.
+The project originated from a modified version of the Münster-Curry-Compiler
+(MCC) for use with [PAKCS](https://git.ps.informatik.uni-kiel.de/curry/pakcs),
+but can also be used with a variety of other backends, most notably including
+[KiCS2](https://git.ps.informatik.uni-kiel.de/curry/kics2).
 
 ## Requirements
 
