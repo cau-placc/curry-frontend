@@ -35,76 +35,36 @@ For a detailed overview of the available options, you can use:
 ### Available Formats
 
 ```
---flat  : Generate a FlatCurry and FlatInterface file
---xml   : Generate a FlatXML file
---acy   : Generate a (type-inferred) AbstractCurry file
---uacy  : Generate an untyped AbstractCurry file
+--flat  : Generate a FlatCurry (.fcy) and FlatInterface (.fint) file
+--xml   : Generate a FlatXML (_flat.xml) file
+--acy   : Generate a (type-inferred) AbstractCurry (.acy) file
+--uacy  : Generate an untyped AbstractCurry (.uacy) file
 ```
 
-#### Generation of FlatCurry and FlatXML files
+The generation of an untyped AbstractCurry program is performed without
+type checking (i.e. programs with type checks will compile). All functions
+will either have the type signature specified in the source or, if not
+available, the dummy type `prelude.untyped`.
 
-Die Übersetzung eines Curry-Programms 'file.curry', sowie sämtlicher
-importierter Module nach FlatCurry bzw. FlatInterface, bewirkt folgendes
-Kommando:
-
-	cymake --flat <filename>
-
-Hierdurch werden die Dateien mit den entsprechenden Endungen ".fcy" und
-".fint" generiert. Der Dateiname <filename> kann hierbei mit oder ohne 
-Endung ".curry" bzw. ".lcurry" angegeben werden.
-
-Die analogen Übersetzungen in die FlatXML-Darstellung bewirkt folgendes
-Kommando:
-
-	cymake --xml <file name>
-
-Die hierdurch generierte Flat-XML-Datei hat die Endung '_flat.xml'.
-
-#### Generation of AbstractCurry files
-
-Die Übersetzung eines Curry-Programms 'file.curry' nach (typgeprüftem)
-AbstractCurry bewirkt folgendes Kommando:
-
-	cymake --acy <filename>
-
-Hierdurch wird die entsprechende Datei (mit der Endung ".acy") generiert.
-Der Dateiname <filename> kann hierbei mit oder ohne Endung ".curry" bzw.
-".lcurry" angegeben werden.
-
-Ungetypte, bzw. typsignierte AbstractCurry-Programme werden mit folgendem
-Kommando generiert:
-
-	cymake --uacy <filename>
-
-Die hierdurch generierte Datei besitzt die Endung ".uacy".
-
-Die Generierung des ungetypten AbstractCurry-Programms findet ohne
-Typüberprüfung statt (d.h. auch Programme mit Typfehlern werden übersetzt).
-Alle Funktionen besitzen entweder die im Quellprogramm angegebenen Typsignatur,
-oder, sofern diese nicht vorhanden ist, den Dummy-Typ "prelude.untyped".
-
-In beiden Fällen werden für die Übersetzung FlatCurry-Dateien 
-für alle importierten Module erzeugt. Dies ist notwendig, da die 
-entsprechenden Interfaces für die Typinferenz (nur im Fall der getypten 
-AbstractCurry-Generierung) und die statisch-semantische Analyse benötigt 
-werden.
+FlatCurry files will always be generated for the imported modules,
+since the interfaces are required for static-semantic analysis and type
+inference (only for typed AbstractCurry).
 
 ## Remarks
 
-- Um die PAKCS-Bibliotheken (insbesondere die Prelude) für Übersetzungen 
-  nutzen zu können muß die Umgebungsvariable 'PAKCS_LIB' auf die
-  entsprechenden Pfade verweisen, z.B. mittels
+- To use the PAKCS libraries (especially for the `Prelude`), the environment
+  variable `PAKCS_LIB` has to point to the correct paths, e.g. using
+  
+  > export PAKCS_LIB=[pakcs path]/pacs/lib:[pakcs path]/pacs/lib/meta:...
 
-	export PAKCS_LIB=<pakcs path>/pacs/lib:<pakcs path>/pacs/lib/meta:...
+  where `[pakcs path]` is the directory containing the PAKCS distribution.
 
-  wobei <pakcs path> das Verzeichnis ist, das die PAKCS-Distribution
-  enthält.
-
-- Im Gegensatz zu PAKCS erlaubt das Frontend die Verwendung anonymer
-  Variablen (dargestellt durch dem Unterstrich '_') in Typdeklarationen,
-  z.B.
-
-	data T _ = C
+- In contrast to PAKCS, the frontend allow use of anonymous variables
+  (denoted by an underscore `_`) in type declarations, e.g.
+  
+  ```curry
+  data T _ = c
+  ```
 
 ## Known Issues
 
