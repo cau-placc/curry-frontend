@@ -1,51 +1,47 @@
 # Curry Frontend
+
 The Curry frontend parses source files (`.curry`), emits errors and
 warnings, performs various checks and transformations and 
-generates FlatCurry (`.fcy`, `.fint`) or AbstractCurry (`.acy`, `.uacy`).
+generates FlatCurry (`.fcy`, `.fint`) or AbstractCurry (`.acy`, `.uacy`) amonst other formats.
 
 The project originated from a modified version of the
 Münster-Curry-Compiler (MCC) for use as a frontend in PAKCS.
 
-## 1 Installation
+## Requirements
 
-### 1.1 Installation der Binary-Distribution
+* `cabal-install`
+* A recent version of the `curry-base` package, installed locally
 
-Die Binary-Distribution befindet sich in einem tar-Archiv und wird
-durch folgendes Kommando entpackt:
+## Building
 
-	tar zxvf <Distribution>.tar.gz
+To build the project, run
 
-Danach steht der Compiler im Verzeichnis 'mcc' zur Verfügung.
+> cabal v1-build
 
-### 1.2 Installation der Source-Distribution
+## Running
 
-Nach dem Entpacken des tar-Archivs mittels
+To run the project, you can use
 
-	tar zxvf <Distribution>.tar.gz
+> cabal v1-run
 
-kann der Compiler durch Aufruf von 'make' im Verzeichnis 'mcc' installiert
-werden. Bei Recompilierung (z.B. nach Änderungen in der Quelldateien)
-wird empfohlen vor einer erneuten Installation 'make clean' auszuführen.
+Alternatively, you can launch the built executable manually from `dist/build/curry-frontend`.
 
-Nach erfolgreicher Installation befindet sich in beiden Fällen im Verzeichnis 
-'mcc/bin/' folgende ausführbare Datei:
+## Usage
 
-	cymake		- der Curry-Programm-Builder
+For a detailed overview of the available options, you can use:
 
-Dieses Tool übersetzt Curry-Programme unter Berücksichtigung der Import-
-abhängigkeiten.
+> curry-frontend --help
 
-## 2 Kommandoübersicht
+### Available Formats
 
-In der folgenden Tabelle sind die Optionen zur Generierung der jeweiligen
-Darstellungen für das Kommando 'cymake' aufgelistet:
+```
+--flat  : Generate a FlatCurry and FlatInterface file
+--xml   : Generate a FlatXML file
+--acy   : Generate a (type-inferred) AbstractCurry file
+--uacy  : Generate an untyped AbstractCurry file
+```
 
-	--flat		: Erzeugt FlatCurry- und FlatInterface-Datei
-	--xml		: Erzeugt FlatXML-Datei
-	--acy		: Erzeugt (typinferierte) AbstractCurry-Datei
-	--uacy		: Erzeugt ungetypte AbstractCurry-Datei
-
-## 3 Erzeugung von FlatCurry- und FlatXML-Programmen
+#### Generation of FlatCurry and FlatXML files
 
 Die Übersetzung eines Curry-Programms 'file.curry', sowie sämtlicher
 importierter Module nach FlatCurry bzw. FlatInterface, bewirkt folgendes
@@ -64,7 +60,7 @@ Kommando:
 
 Die hierdurch generierte Flat-XML-Datei hat die Endung '_flat.xml'.
 
-## 4 Erzeugung von AbstractCurry-Programmen
+#### Generation of AbstractCurry files
 
 Die Übersetzung eines Curry-Programms 'file.curry' nach (typgeprüftem)
 AbstractCurry bewirkt folgendes Kommando:
@@ -93,7 +89,7 @@ entsprechenden Interfaces für die Typinferenz (nur im Fall der getypten
 AbstractCurry-Generierung) und die statisch-semantische Analyse benötigt 
 werden.
 
-## 5 Anmerkungen
+## Remarks
 
 - Um die PAKCS-Bibliotheken (insbesondere die Prelude) für Übersetzungen 
   nutzen zu können muß die Umgebungsvariable 'PAKCS_LIB' auf die
@@ -110,7 +106,7 @@ werden.
 
 	data T _ = C
 
-## Bekannte Probleme
+## Known Issues
 
 - Lambda-, do-, if-, case-, oder let-Ausdrücke, die in Argumenten von
   Funktionsaufrufen verwendet werden, müssen immer geklammert werden.
