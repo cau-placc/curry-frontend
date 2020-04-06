@@ -1,14 +1,10 @@
-# Münster-Curry-Compiler
-Distribution zur Anwendung als Frontend in PAKCS
+# Curry Frontend
+The Curry frontend parses source files (`.curry`), emits errors and
+warnings, performs various checks and transformations and 
+generates FlatCurry (`.fcy`, `.fint`) or AbstractCurry (`.acy`, `.uacy`).
 
-Letztes Update: 27.10.05
-
-Diese Distribution enthält die modifizierte Version des 
-Münster-Curry-Compilers (MCC) für die Verwendung als Frontend in PAKCS. Dieses 
-System ist u.a. in der Lage aus Curry-Programmen (entwickelt nach 
-PAKCS-Standard) Flat-Darstellungen (FlatCurry ".fcy", FlatInterface ".fint" 
-und FlatXML "_flat.xml"), sowie Abstract-Darstellungen (AbstractCurry ".acy" 
-und untyped AbstractCurry ".uacy") zu generieren.
+The project originated from a modified version of the
+Münster-Curry-Compiler (MCC) for use as a frontend in PAKCS.
 
 ## 1 Installation
 
