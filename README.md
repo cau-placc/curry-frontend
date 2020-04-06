@@ -2,7 +2,7 @@
 
 The Curry frontend parses source files (`.curry`), emits errors and
 warnings, performs various checks and transformations and 
-generates FlatCurry (`.fcy`, `.fint`) or AbstractCurry (`.acy`, `.uacy`)
+generates FlatCurry (`.fcy`, `.fint`) or AbstractCurry (`.acy`, `.uacy`),
 amonst other formats.
 
 The project originated from a modified version of the Münster-Curry-Compiler
@@ -17,23 +17,19 @@ but can also be used with a variety of other backends, most notably including
 
 ## Building
 
-To build the project, run
-
-> cabal v1-build
+To build the project, run `cabal v1-build`.
 
 ## Running
 
-To run the project, you can use
-
-> cabal v1-run
+To run the project, use `cabal v1-run`.
 
 Alternatively, you can launch the built executable manually from `dist/build/curry-frontend`.
 
 ## Usage
 
-For a detailed overview of the available options, you can use:
+For a detailed overview of the available options, you can use the following command:
 
-> curry-frontend --help
+`curry-frontend --help`
 
 ### Available Formats
 
@@ -58,7 +54,7 @@ inference (only for typed AbstractCurry).
 - To use the PAKCS libraries (especially for the `Prelude`), the environment
   variable `PAKCS_LIB` has to point to the correct paths, e.g. using
   
-  > export PAKCS_LIB=[pakcs path]/pacs/lib:[pakcs path]/pacs/lib/meta:...
+  `export PAKCS_LIB=[pakcs path]/pacs/lib:[pakcs path]/pacs/lib/meta:...`
 
   where `[pakcs path]` is the directory containing the PAKCS distribution.
 
