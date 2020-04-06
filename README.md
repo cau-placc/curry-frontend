@@ -68,32 +68,4 @@ inference (only for typed AbstractCurry).
 
 ## Known Issues
 
-- Lambda-, do-, if-, case-, oder let-Ausdrücke, die in Argumenten von
-  Funktionsaufrufen verwendet werden, müssen immer geklammert werden.
-
-- 'let'-Anweisungen dürfen nicht folgendes Layout besitzen:
-
-           let x = <expr>
-               in ...
-
-- Die Regeln einer Funktionsdeklaration müssen immer zusammenstehen, d.h.
-  nicht durch andere Deklarationen unterbrochen werden.
-
-- Es ist bislang nicht möglich, den Konstruktor für leere Listen [], sowie 
-  den Unit-Konstruktor () zu qualifizieren (z.B. führt 'prelude.[]' zu 
-  einem Fehler). Der Listenkonstruktor (:), sowie Tupel-Konstruktoren
-  dagegen sind qualifizierbar.
-
-- FlatXML-Übersetzungen können derzeit mittels der Funktionen aus dem
-  PAKCS-Modul "FlatXML" noch nicht eingelesen werden, da es Unstimmigkeiten
-  zwischen dem generierten und den erforderlichen Formaten gibt.
-
-- Bei der Erzeugung von typgeprüftem AbstractCurry können die im Quelltext
-  verwendeten Bezeichner für Typvariablen nicht ins AbstractCurry-Programm
-  übernommen werden. Stattdessen generiert der Übersetzer neue
-  Bezeichner.
-
-- Bei der Erzeugung von ungetyptem AbstractCurry werden Typsynonyme in
-  Typsignaturen von Funktionen nicht dereferenziert.
-
-- Das Frontend gibt derzeit noch keinerlei Warnungen aus.
+[See GitLab](https://git.ps.informatik.uni-kiel.de/curry/curry-frontend/-/issues)
