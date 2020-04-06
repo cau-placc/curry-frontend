@@ -1,9 +1,7 @@
-===============================================================================
-==
-==  Münster-Curry-Compiler
-==  Distribution zur Anwendung als Frontend in PAKCS
-==
-==  Letztes Update: 27.10.05
+# Münster-Curry-Compiler
+Distribution zur Anwendung als Frontend in PAKCS
+
+Letztes Update: 27.10.05
 
 Diese Distribution enthält die modifizierte Version des 
 Münster-Curry-Compilers (MCC) für die Verwendung als Frontend in PAKCS. Dieses 
@@ -12,12 +10,9 @@ PAKCS-Standard) Flat-Darstellungen (FlatCurry ".fcy", FlatInterface ".fint"
 und FlatXML "_flat.xml"), sowie Abstract-Darstellungen (AbstractCurry ".acy" 
 und untyped AbstractCurry ".uacy") zu generieren.
 
+## 1 Installation
 
-
-1. Installation
----------------
-
-1.1 Installation der Binary-Distribution
+### 1.1 Installation der Binary-Distribution
 
 Die Binary-Distribution befindet sich in einem tar-Archiv und wird
 durch folgendes Kommando entpackt:
@@ -26,8 +21,7 @@ durch folgendes Kommando entpackt:
 
 Danach steht der Compiler im Verzeichnis 'mcc' zur Verfügung.
 
-
-1.2 Installation der Source-Distribution
+### 1.2 Installation der Source-Distribution
 
 Nach dem Entpacken des tar-Archivs mittels
 
@@ -37,8 +31,6 @@ kann der Compiler durch Aufruf von 'make' im Verzeichnis 'mcc' installiert
 werden. Bei Recompilierung (z.B. nach Änderungen in der Quelldateien)
 wird empfohlen vor einer erneuten Installation 'make clean' auszuführen.
 
-
-
 Nach erfolgreicher Installation befindet sich in beiden Fällen im Verzeichnis 
 'mcc/bin/' folgende ausführbare Datei:
 
@@ -47,10 +39,7 @@ Nach erfolgreicher Installation befindet sich in beiden Fällen im Verzeichnis
 Dieses Tool übersetzt Curry-Programme unter Berücksichtigung der Import-
 abhängigkeiten.
 
-
-
-2. Kommandoübersicht
---------------------
+## 2 Kommandoübersicht
 
 In der folgenden Tabelle sind die Optionen zur Generierung der jeweiligen
 Darstellungen für das Kommando 'cymake' aufgelistet:
@@ -60,10 +49,7 @@ Darstellungen für das Kommando 'cymake' aufgelistet:
 	--acy		: Erzeugt (typinferierte) AbstractCurry-Datei
 	--uacy		: Erzeugt ungetypte AbstractCurry-Datei
 
-
-
-3. Erzeugung von FlatCurry- und FlatXML-Programmen
---------------------------------------------------
+## 3 Erzeugung von FlatCurry- und FlatXML-Programmen
 
 Die Übersetzung eines Curry-Programms 'file.curry', sowie sämtlicher
 importierter Module nach FlatCurry bzw. FlatInterface, bewirkt folgendes
@@ -82,10 +68,7 @@ Kommando:
 
 Die hierdurch generierte Flat-XML-Datei hat die Endung '_flat.xml'.
 
-
-
-4. Erzeugung von AbstractCurry-Programmen
------------------------------------------
+## 4 Erzeugung von AbstractCurry-Programmen
 
 Die Übersetzung eines Curry-Programms 'file.curry' nach (typgeprüftem)
 AbstractCurry bewirkt folgendes Kommando:
@@ -114,10 +97,7 @@ entsprechenden Interfaces für die Typinferenz (nur im Fall der getypten
 AbstractCurry-Generierung) und die statisch-semantische Analyse benötigt 
 werden.
 
-
-
-5. Anmerkungen
---------------
+## 5 Anmerkungen
 
 - Um die PAKCS-Bibliotheken (insbesondere die Prelude) für Übersetzungen 
   nutzen zu können muß die Umgebungsvariable 'PAKCS_LIB' auf die
@@ -134,10 +114,7 @@ werden.
 
 	data T _ = C
 
-
-
-Bekannte Probleme
-------------------
+## Bekannte Probleme
 
 - Lambda-, do-, if-, case-, oder let-Ausdrücke, die in Argumenten von
   Funktionsaufrufen verwendet werden, müssen immer geklammert werden.
@@ -168,5 +145,3 @@ Bekannte Probleme
   Typsignaturen von Funktionen nicht dereferenziert.
 
 - Das Frontend gibt derzeit noch keinerlei Warnungen aus.
-
-
