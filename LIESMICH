@@ -1,12 +1,12 @@
 ===============================================================================
 ==
-==  Münster-Curry-Compiler
+==  MÃ¼nster-Curry-Compiler
 ==  Distribution zur Anwendung als Frontend in PAKCS
 ==
 ==  Letztes Update: 27.10.05
 
-Diese Distribution enthält die modifizierte Version des 
-Münster-Curry-Compilers (MCC) für die Verwendung als Frontend in PAKCS. Dieses 
+Diese Distribution enthÃ¤lt die modifizierte Version des 
+MÃ¼nster-Curry-Compilers (MCC) fÃ¼r die Verwendung als Frontend in PAKCS. Dieses 
 System ist u.a. in der Lage aus Curry-Programmen (entwickelt nach 
 PAKCS-Standard) Flat-Darstellungen (FlatCurry ".fcy", FlatInterface ".fint" 
 und FlatXML "_flat.xml"), sowie Abstract-Darstellungen (AbstractCurry ".acy" 
@@ -24,7 +24,7 @@ durch folgendes Kommando entpackt:
 
 	tar zxvf <Distribution>.tar.gz
 
-Danach steht der Compiler im Verzeichnis 'mcc' zur Verfügung.
+Danach steht der Compiler im Verzeichnis 'mcc' zur VerfÃ¼gung.
 
 
 1.2 Installation der Source-Distribution
@@ -34,26 +34,26 @@ Nach dem Entpacken des tar-Archivs mittels
 	tar zxvf <Distribution>.tar.gz
 
 kann der Compiler durch Aufruf von 'make' im Verzeichnis 'mcc' installiert
-werden. Bei Recompilierung (z.B. nach Änderungen in der Quelldateien)
-wird empfohlen vor einer erneuten Installation 'make clean' auszuführen.
+werden. Bei Recompilierung (z.B. nach Ã„nderungen in der Quelldateien)
+wird empfohlen vor einer erneuten Installation 'make clean' auszufÃ¼hren.
 
 
 
-Nach erfolgreicher Installation befindet sich in beiden Fällen im Verzeichnis 
-'mcc/bin/' folgende ausführbare Datei:
+Nach erfolgreicher Installation befindet sich in beiden FÃ¤llen im Verzeichnis 
+'mcc/bin/' folgende ausfÃ¼hrbare Datei:
 
 	cymake		- der Curry-Programm-Builder
 
-Dieses Tool übersetzt Curry-Programme unter Berücksichtigung der Import-
-abhängigkeiten.
+Dieses Tool Ã¼bersetzt Curry-Programme unter BerÃ¼cksichtigung der Import-
+abhÃ¤ngigkeiten.
 
 
 
-2. Kommandoübersicht
+2. KommandoÃ¼bersicht
 --------------------
 
 In der folgenden Tabelle sind die Optionen zur Generierung der jeweiligen
-Darstellungen für das Kommando 'cymake' aufgelistet:
+Darstellungen fÃ¼r das Kommando 'cymake' aufgelistet:
 
 	--flat		: Erzeugt FlatCurry- und FlatInterface-Datei
 	--xml		: Erzeugt FlatXML-Datei
@@ -65,7 +65,7 @@ Darstellungen für das Kommando 'cymake' aufgelistet:
 3. Erzeugung von FlatCurry- und FlatXML-Programmen
 --------------------------------------------------
 
-Die Übersetzung eines Curry-Programms 'file.curry', sowie sämtlicher
+Die Ãœbersetzung eines Curry-Programms 'file.curry', sowie sÃ¤mtlicher
 importierter Module nach FlatCurry bzw. FlatInterface, bewirkt folgendes
 Kommando:
 
@@ -75,7 +75,7 @@ Hierdurch werden die Dateien mit den entsprechenden Endungen ".fcy" und
 ".fint" generiert. Der Dateiname <filename> kann hierbei mit oder ohne 
 Endung ".curry" bzw. ".lcurry" angegeben werden.
 
-Die analogen Übersetzungen in die FlatXML-Darstellung bewirkt folgendes
+Die analogen Ãœbersetzungen in die FlatXML-Darstellung bewirkt folgendes
 Kommando:
 
 	cymake --xml <file name>
@@ -87,7 +87,7 @@ Die hierdurch generierte Flat-XML-Datei hat die Endung '_flat.xml'.
 4. Erzeugung von AbstractCurry-Programmen
 -----------------------------------------
 
-Die Übersetzung eines Curry-Programms 'file.curry' nach (typgeprüftem)
+Die Ãœbersetzung eines Curry-Programms 'file.curry' nach (typgeprÃ¼ftem)
 AbstractCurry bewirkt folgendes Kommando:
 
 	cymake --acy <filename>
@@ -104,14 +104,14 @@ Kommando generiert:
 Die hierdurch generierte Datei besitzt die Endung ".uacy".
 
 Die Generierung des ungetypten AbstractCurry-Programms findet ohne
-Typüberprüfung statt (d.h. auch Programme mit Typfehlern werden übersetzt).
+TypÃ¼berprÃ¼fung statt (d.h. auch Programme mit Typfehlern werden Ã¼bersetzt).
 Alle Funktionen besitzen entweder die im Quellprogramm angegebenen Typsignatur,
 oder, sofern diese nicht vorhanden ist, den Dummy-Typ "prelude.untyped".
 
-In beiden Fällen werden für die Übersetzung FlatCurry-Dateien 
-für alle importierten Module erzeugt. Dies ist notwendig, da die 
-entsprechenden Interfaces für die Typinferenz (nur im Fall der getypten 
-AbstractCurry-Generierung) und die statisch-semantische Analyse benötigt 
+In beiden FÃ¤llen werden fÃ¼r die Ãœbersetzung FlatCurry-Dateien 
+fÃ¼r alle importierten Module erzeugt. Dies ist notwendig, da die 
+entsprechenden Interfaces fÃ¼r die Typinferenz (nur im Fall der getypten 
+AbstractCurry-Generierung) und die statisch-semantische Analyse benÃ¶tigt 
 werden.
 
 
@@ -119,14 +119,14 @@ werden.
 5. Anmerkungen
 --------------
 
-- Um die PAKCS-Bibliotheken (insbesondere die Prelude) für Übersetzungen 
-  nutzen zu können muß die Umgebungsvariable 'PAKCS_LIB' auf die
+- Um die PAKCS-Bibliotheken (insbesondere die Prelude) fÃ¼r Ãœbersetzungen 
+  nutzen zu kÃ¶nnen muÃŸ die Umgebungsvariable 'PAKCS_LIB' auf die
   entsprechenden Pfade verweisen, z.B. mittels
 
 	export PAKCS_LIB=<pakcs path>/pacs/lib:<pakcs path>/pacs/lib/meta:...
 
   wobei <pakcs path> das Verzeichnis ist, das die PAKCS-Distribution
-  enthält.
+  enthÃ¤lt.
 
 - Im Gegensatz zu PAKCS erlaubt das Frontend die Verwendung anonymer
   Variablen (dargestellt durch dem Unterstrich '_') in Typdeklarationen,
@@ -139,29 +139,29 @@ werden.
 Bekannte Probleme
 ------------------
 
-- Lambda-, do-, if-, case-, oder let-Ausdrücke, die in Argumenten von
-  Funktionsaufrufen verwendet werden, müssen immer geklammert werden.
+- Lambda-, do-, if-, case-, oder let-AusdrÃ¼cke, die in Argumenten von
+  Funktionsaufrufen verwendet werden, mÃ¼ssen immer geklammert werden.
 
-- 'let'-Anweisungen dürfen nicht folgendes Layout besitzen:
+- 'let'-Anweisungen dÃ¼rfen nicht folgendes Layout besitzen:
 
            let x = <expr>
                in ...
 
-- Die Regeln einer Funktionsdeklaration müssen immer zusammenstehen, d.h.
+- Die Regeln einer Funktionsdeklaration mÃ¼ssen immer zusammenstehen, d.h.
   nicht durch andere Deklarationen unterbrochen werden.
 
-- Es ist bislang nicht möglich, den Konstruktor für leere Listen [], sowie 
-  den Unit-Konstruktor () zu qualifizieren (z.B. führt 'prelude.[]' zu 
+- Es ist bislang nicht mÃ¶glich, den Konstruktor fÃ¼r leere Listen [], sowie 
+  den Unit-Konstruktor () zu qualifizieren (z.B. fÃ¼hrt 'prelude.[]' zu 
   einem Fehler). Der Listenkonstruktor (:), sowie Tupel-Konstruktoren
   dagegen sind qualifizierbar.
 
-- FlatXML-Übersetzungen können derzeit mittels der Funktionen aus dem
+- FlatXML-Ãœbersetzungen kÃ¶nnen derzeit mittels der Funktionen aus dem
   PAKCS-Modul "FlatXML" noch nicht eingelesen werden, da es Unstimmigkeiten
   zwischen dem generierten und den erforderlichen Formaten gibt.
 
-- Bei der Erzeugung von typgeprüftem AbstractCurry können die im Quelltext
-  verwendeten Bezeichner für Typvariablen nicht ins AbstractCurry-Programm
-  übernommen werden. Stattdessen generiert der Übersetzer neue
+- Bei der Erzeugung von typgeprÃ¼ftem AbstractCurry kÃ¶nnen die im Quelltext
+  verwendeten Bezeichner fÃ¼r Typvariablen nicht ins AbstractCurry-Programm
+  Ã¼bernommen werden. Stattdessen generiert der Ãœbersetzer neue
   Bezeichner.
 
 - Bei der Erzeugung von ungetyptem AbstractCurry werden Typsynonyme in
