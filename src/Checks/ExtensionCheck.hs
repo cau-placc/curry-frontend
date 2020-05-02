@@ -15,11 +15,11 @@ module Checks.ExtensionCheck (extensionCheck) where
 
 import qualified Control.Monad.State as S (State, execState, modify)
 
-import Curry.Base.Position
+import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
 
-import Base.Messages (Message, posMessage)
+import Base.Messages (Message, spanInfoMessage)
 
 import CompilerOpts
 
@@ -67,6 +67,6 @@ checkExtension (UnknownExtension p e) = report $ errUnknownExtension p e
 -- Error messages
 -- ---------------------------------------------------------------------------
 
-errUnknownExtension :: Position -> String -> Message
-errUnknownExtension p e = posMessage p $
+errUnknownExtension :: SpanInfo -> String -> Message
+errUnknownExtension p e = spanInfoMessage p $
   text "Unknown language extension:" <+> text e
