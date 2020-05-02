@@ -26,7 +26,6 @@ import qualified Data.Map            as Map
 import qualified Data.Set.Extra      as Set
 
 import Curry.Base.Ident
-import Curry.Base.Position
 import Curry.Base.Pretty
 import Curry.Base.SpanInfo
 import Curry.Syntax hiding (impls)
@@ -141,7 +140,7 @@ hasDerivedInstances _                          = False
 -- derived classes with respect to the super class hierarchy so that subclass
 -- instances are added to the instance environment after their super classes.
 
-data DeriveInfo = DeriveInfo Position QualIdent Type [Type] [QualIdent]
+data DeriveInfo = DeriveInfo SpanInfo QualIdent Type [Type] [QualIdent]
 
 declDeriveInfo :: TCEnv -> ClassEnv -> Decl a -> INCM DeriveInfo
 declDeriveInfo tcEnv clsEnv (DataDecl p tc tvs cs clss) =
@@ -177,8 +176,7 @@ mkDeriveInfo tcEnv clsEnv spi tc tvs tys clss = do
       oclss = map (flip (getOrigName m) tcEnv) clss
       TypeContext ps ty = expandConstrType m tcEnv clsEnv otc tvs tys
       (tys', ty') = arrowUnapply ty
-  return $ DeriveInfo p otc (TypeContext ps ty') tys' $ sortClasses clsEnv oclss
-  where p = spanInfo2Pos spi
+  return $ DeriveInfo spi otc (TypeContext ps ty') tys' $ sortClasses clsEnv oclss
 
 mkDeriveDataInfo :: TCEnv -> ClassEnv -> SpanInfo -> Ident -> [Ident]
                  -> [TypeExpr] -> INCM DeriveInfo
@@ -187,8 +185,7 @@ mkDeriveDataInfo tcEnv clsEnv spi tc tvs tys = do
   let otc = qualifyWith m tc
       TypeContext ps ty = expandConstrType m tcEnv clsEnv otc tvs tys
       (tys', ty') = arrowUnapply ty
-  return $ DeriveInfo p otc (TypeContext ps ty') tys' [qDataId]
-  where p = spanInfo2Pos spi
+  return $ DeriveInfo spi otc (TypeContext ps ty') tys' [qDataId]
 
 sortClasses :: ClassEnv -> [QualIdent] -> [QualIdent]
 sortClasses clsEnv clss = map fst $ sortBy compareDepth $ map adjoinDepth clss
@@ -209,8 +206,8 @@ bindDerivedInstances clsEnv dis = unless (any hasDataFunType dis) $ do
       clss == [qDataId] && any isFunType tys
 
 enterInitialPredSet :: ClassEnv -> DeriveInfo -> INCM ()
-enterInitialPredSet clsEnv (DeriveInfo _ tc pty _ clss) =
-  mapM_ (bindDerivedInstance clsEnv tc tc pty) clss
+enterInitialPredSet clsEnv (DeriveInfo spi tc pty _ clss) =
+  mapM_ (bindDerivedInstance clsEnv spi tc pty) clss
 
 -- Note: The methods and arities entered into the instance environment have
 -- to match methods and arities of the later generated instance declarations.
@@ -235,8 +232,8 @@ bindDerivedInstance clsEnv p tc pty cls = do
                 internalError "InstanceCheck.bindDerivedInstance.impls"
 
 inferPredSets :: ClassEnv -> DeriveInfo -> INCM [((InstIdent, PredSet), Bool)]
-inferPredSets clsEnv (DeriveInfo _ tc pty tys clss) =
-  mapM (inferPredSet clsEnv tc tc pty tys) clss
+inferPredSets clsEnv (DeriveInfo spi tc pty tys clss) =
+  mapM (inferPredSet clsEnv spi tc pty tys) clss
 
 inferPredSet :: HasSpanInfo s => ClassEnv -> s -> QualIdent -> Type -> [Type]
              -> QualIdent -> INCM ((InstIdent, PredSet), Bool)
