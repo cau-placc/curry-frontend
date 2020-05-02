@@ -33,7 +33,7 @@ import Curry.Syntax hiding (impls)
 import Curry.Syntax.Pretty
 
 import Base.CurryTypes
-import Base.Messages (Message, posMessage, message, internalError)
+import Base.Messages (Message, spanInfoMessage, message, internalError)
 import Base.SCC (scc)
 import Base.TypeExpansion
 import Base.Types
@@ -209,13 +209,13 @@ bindDerivedInstances clsEnv dis = unless (any hasDataFunType dis) $ do
       clss == [qDataId] && any isFunType tys
 
 enterInitialPredSet :: ClassEnv -> DeriveInfo -> INCM ()
-enterInitialPredSet clsEnv (DeriveInfo p tc pty _ clss) =
-  mapM_ (bindDerivedInstance clsEnv p tc pty) clss
+enterInitialPredSet clsEnv (DeriveInfo _ tc pty _ clss) =
+  mapM_ (bindDerivedInstance clsEnv tc tc pty) clss
 
 -- Note: The methods and arities entered into the instance environment have
 -- to match methods and arities of the later generated instance declarations.
 
-bindDerivedInstance :: ClassEnv -> Position -> QualIdent -> Type -> QualIdent
+bindDerivedInstance :: HasSpanInfo s => ClassEnv -> s -> QualIdent -> Type -> QualIdent
                     -> INCM ()
 bindDerivedInstance clsEnv p tc pty cls = do
   m <- getModuleIdent
@@ -235,10 +235,10 @@ bindDerivedInstance clsEnv p tc pty cls = do
                 internalError "InstanceCheck.bindDerivedInstance.impls"
 
 inferPredSets :: ClassEnv -> DeriveInfo -> INCM [((InstIdent, PredSet), Bool)]
-inferPredSets clsEnv (DeriveInfo p tc pty tys clss) =
-  mapM (inferPredSet clsEnv p tc pty tys) clss
+inferPredSets clsEnv (DeriveInfo _ tc pty tys clss) =
+  mapM (inferPredSet clsEnv tc tc pty tys) clss
 
-inferPredSet :: ClassEnv -> Position -> QualIdent -> Type -> [Type]
+inferPredSet :: HasSpanInfo s => ClassEnv -> s -> QualIdent -> Type -> [Type]
              -> QualIdent -> INCM ((InstIdent, PredSet), Bool)
 inferPredSet clsEnv p tc (TypeContext ps inst) tys cls = do
   m <- getModuleIdent
@@ -275,7 +275,7 @@ updatePredSet (i, ps) enter = do
         return True
     Nothing -> internalError "InstanceCheck.updatePredSet"
 
-reportUndecidable :: Position -> String -> Doc -> Pred -> INCM ()
+reportUndecidable :: HasSpanInfo s => s -> String -> Doc -> Pred -> INCM ()
 reportUndecidable p what doc predicate@(Pred _ ty) = do
   m <- getModuleIdent
   case ty of
@@ -293,7 +293,7 @@ reportUndecidable p what doc predicate@(Pred _ ty) = do
 -- satisfied by cx.
 
 checkInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
-checkInstance tcEnv clsEnv (InstanceDecl spi _ cx cls inst _) = do
+checkInstance tcEnv clsEnv (InstanceDecl _ _ cx cls inst _) = do
   m <- getModuleIdent
   let TypeContext ps ty = expandPolyType m tcEnv clsEnv $
                             ContextType NoSpanInfo cx inst
@@ -301,10 +301,9 @@ checkInstance tcEnv clsEnv (InstanceDecl spi _ cx cls inst _) = do
       ps' = Set.fromList [ Pred scls ty | scls <- superClasses ocls clsEnv ]
       doc = ppPred m $ Pred cls ty
       what = "instance declaration"
-  (ps'', _) <- reducePredSet False p what doc clsEnv ps'
-  Set.mapM_ (report . errMissingInstance m p what doc) $
+  (ps'', _) <- reducePredSet False inst what doc clsEnv ps'
+  Set.mapM_ (report . errMissingInstance m inst what doc) $
     ps'' `Set.difference` maxPredSet clsEnv ps
-  where p = spanInfo2Pos spi
 checkInstance _ _ _ = ok
 
 -- All types specified in the optional default declaration of a module
@@ -313,18 +312,18 @@ checkInstance _ _ _ = ok
 -- must be empty.
 
 checkDefault :: TCEnv -> ClassEnv -> Decl a -> INCM ()
-checkDefault tcEnv clsEnv (DefaultDecl p tys) =
-  mapM_ (checkDefaultType (spanInfo2Pos p) tcEnv clsEnv) tys
+checkDefault tcEnv clsEnv (DefaultDecl _ tys) =
+  mapM_ (checkDefaultType tcEnv clsEnv) tys
 checkDefault _ _ _ = ok
 
-checkDefaultType :: Position -> TCEnv -> ClassEnv -> TypeExpr -> INCM ()
-checkDefaultType p tcEnv clsEnv ty = do
+checkDefaultType :: TCEnv -> ClassEnv -> TypeExpr -> INCM ()
+checkDefaultType tcEnv clsEnv ty = do
   m <- getModuleIdent
   let TypeContext _ ty' = expandPolyType m tcEnv clsEnv $
                             ContextType NoSpanInfo [] ty
-  (ps, _) <- reducePredSet False p what empty clsEnv
+  (ps, _) <- reducePredSet False ty what empty clsEnv
     (Set.singleton $ Pred qNumId ty')
-  Set.mapM_ (report . errMissingInstance m p what empty) ps
+  Set.mapM_ (report . errMissingInstance m ty what empty) ps
   where what = "default declaration"
 
 -- The function 'reducePredSet' simplifies a predicate set of the form
@@ -335,7 +334,7 @@ checkDefaultType p tcEnv clsEnv ty = do
 -- that are implied by others within the same set.
 -- When the flag is set, all missing Data preds are ignored
 
-reducePredSet :: Bool -> Position -> String -> Doc -> ClassEnv -> PredSet
+reducePredSet :: HasSpanInfo s => Bool -> s -> String -> Doc -> ClassEnv -> PredSet
               -> INCM (PredSet, PredSet)
 reducePredSet b p what doc clsEnv ps = do
   m <- getModuleIdent
@@ -412,9 +411,9 @@ errMultipleInstances tcEnv iss = message $
     ppInstSource (InstSource i m) = ppInstIdent (unqualInstIdent tcEnv i) <+>
       parens (text "defined in" <+> ppMIdent m)
 
-errMissingInstance :: ModuleIdent -> Position -> String -> Doc -> Pred
+errMissingInstance :: HasSpanInfo s => ModuleIdent -> s -> String -> Doc -> Pred
                    -> Message
-errMissingInstance m p what doc predicate = posMessage p $ vcat
+errMissingInstance m p what doc predicate = spanInfoMessage (getSpanInfo p) $ vcat
   [ text "Missing instance for" <+> ppPred m predicate
   , text "in" <+> text what <+> doc
   ]
