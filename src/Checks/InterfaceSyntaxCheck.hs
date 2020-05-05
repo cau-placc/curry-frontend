@@ -29,7 +29,7 @@ import           Data.List                (nub, partition)
 import           Data.Maybe               (isNothing)
 
 import Base.Expr
-import Base.Messages (Message, posMessage, spanInfoMessage, internalError)
+import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.TopEnv
 import Base.Utils    (findMultiples, findDouble)
 
@@ -37,7 +37,6 @@ import Env.TypeConstructor
 import Env.Type
 
 import Curry.Base.Ident
-import Curry.Base.Position
 import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
@@ -125,7 +124,7 @@ checkIDecl (IInstanceDecl p cx qcls inst is m) = do
   cxty <- checkType $ ContextType NoSpanInfo cx inst
   let ContextType _ cx' inst' = cxty
   checkSimpleContext cx'
-  checkInstanceType p inst'
+  checkInstanceType inst'
   mapM_ (report . errMultipleImplementation . head) $ findMultiples $ map fst is
   return $ IInstanceDecl p cx' qcls inst' is m
 
@@ -179,21 +178,21 @@ checkSimpleConstraint c@(Constraint _ _ ty) =
 checkIMethodDecl :: Ident -> IMethodDecl -> ISC IMethodDecl
 checkIMethodDecl tv (IMethodDecl p f a qty) = do
   qty' <- checkType qty
-  unless (tv `elem` fv qty') $ report $ errAmbiguousType p tv
+  unless (tv `elem` fv qty') $ report $ errAmbiguousType f tv
   let cxvs = case qty' of
                ContextType _ cx _ -> fv cx
                _                  -> []
-  when (tv `elem` cxvs) $ report $ errConstrainedClassVariable p tv
+  when (tv `elem` cxvs) $ report $ errConstrainedClassVariable f tv
   return $ IMethodDecl p f a qty'
 
-checkInstanceType :: Position -> InstanceType -> ISC ()
-checkInstanceType p inst = do
+checkInstanceType :: InstanceType -> ISC ()
+checkInstanceType inst = do
   tEnv <- getTypeEnv
   unless (isSimpleType inst &&
     not (isTypeSyn (typeConstr inst) tEnv) &&
     null (filter isAnonId $ typeVars inst) &&
     isNothing (findDouble $ fv inst)) $
-      report $ errIllegalInstanceType p inst
+      report $ errIllegalInstanceType inst inst
 
 checkClosedContext :: [Ident] -> Context -> ISC Context
 checkClosedContext tvs cx = do
@@ -310,12 +309,12 @@ errMultipleImplementation :: Ident -> Message
 errMultipleImplementation f = spanInfoMessage f $ hsep $ map text
   ["Arity information for method", idName f, "occurs more than once"]
 
-errAmbiguousType :: Position -> Ident -> Message
-errAmbiguousType p ident = posMessage p $ hsep $ map text
+errAmbiguousType :: HasSpanInfo s => s -> Ident -> Message
+errAmbiguousType p ident = spanInfoMessage p $ hsep $ map text
   [ "Method type does not mention class variable", idName ident ]
 
-errConstrainedClassVariable :: Position -> Ident -> Message
-errConstrainedClassVariable p ident = posMessage p $ hsep $ map text
+errConstrainedClassVariable :: HasSpanInfo s => s -> Ident -> Message
+errConstrainedClassVariable p ident = spanInfoMessage p $ hsep $ map text
   [ "Method context must not constrain class variable", idName ident ]
 
 errNonLinear :: Ident -> String -> Message
@@ -335,7 +334,7 @@ errBadTypeSynonym tc = spanInfoMessage tc $ text "Synonym type"
                     <+> text (qualName tc) <+> text "in interface"
 
 errNoElement :: String -> String -> QualIdent -> Ident -> Message
-errNoElement what for tc x = spanInfoMessage tc $ hsep $ map text
+errNoElement what for tc x = spanInfoMessage x $ hsep $ map text
   [ "Hidden", what, escName x, "is not defined for", for, qualName tc ]
 
 errIllegalSimpleConstraint :: Constraint -> Message
@@ -345,8 +344,8 @@ errIllegalSimpleConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
   , text "the form C u, where C is a type class and u is a type variable."
   ]
 
-errIllegalInstanceType :: Position -> InstanceType -> Message
-errIllegalInstanceType p inst = posMessage p $ vcat
+errIllegalInstanceType :: HasSpanInfo s => s -> InstanceType -> Message
+errIllegalInstanceType p inst = spanInfoMessage p $ vcat
   [ text "Illegal instance type" <+> ppInstanceType inst
   , text "The instance type must be of the form (T u_1 ... u_n),"
   , text "where T is not a type synonym and u_1, ..., u_n are"
