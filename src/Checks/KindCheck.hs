@@ -598,13 +598,13 @@ kcValueType tcEnv what doc = kcType tcEnv what doc KindStar
 
 kcType :: TCEnv -> String -> Doc -> Kind -> TypeExpr -> KCM ()
 kcType tcEnv what doc k ty = do
-  k' <- kcTypeExpr tcEnv ty "type expression" doc' 0 ty
+  k' <- kcTypeExpr tcEnv "type expression" doc' 0 ty
   unify ty what (doc $-$ text "Type:" <+> doc') k k'
   where
     doc' = pPrintPrec 0 ty
 
-kcTypeExpr :: HasSpanInfo p => TCEnv -> p -> String -> Doc -> Int -> TypeExpr -> KCM Kind
-kcTypeExpr tcEnv p _ _ n (ConstructorType _ tc) = do
+kcTypeExpr :: TCEnv -> String -> Doc -> Int -> TypeExpr -> KCM Kind
+kcTypeExpr tcEnv _ _ n (ConstructorType p tc) = do
   m <- getModuleIdent
   case qualLookupTypeInfo tc tcEnv of
     [AliasType _ _ n' _] -> case n >= n' of
@@ -613,30 +613,30 @@ kcTypeExpr tcEnv p _ _ n (ConstructorType _ tc) = do
         report $ errPartialAlias p tc n' n
         freshKindVar
     _ -> return $ tcKind m tc tcEnv
-kcTypeExpr tcEnv p what doc n (ApplyType _ ty1 ty2) = do
-  (alpha, beta) <- kcTypeExpr tcEnv p what doc (n + 1) ty1 >>=
+kcTypeExpr tcEnv what doc n (ApplyType p ty1 ty2) = do
+  (alpha, beta) <- kcTypeExpr tcEnv what doc (n + 1) ty1 >>=
     kcArrow p what (doc $-$ text "Type:" <+> pPrintPrec 0 ty1)
-  kcTypeExpr tcEnv p what doc 0 ty2 >>=
+  kcTypeExpr tcEnv what doc 0 ty2 >>=
     unify p what (doc $-$ text "Type:" <+> pPrintPrec 0 ty2) alpha
   return beta
-kcTypeExpr tcEnv _ _ _ _ (VariableType _ tv) = return (varKind tv tcEnv)
-kcTypeExpr tcEnv p what doc _ (TupleType _ tys) = do
+kcTypeExpr tcEnv _ _ _      (VariableType _ tv) = return (varKind tv tcEnv)
+kcTypeExpr tcEnv what doc _ (TupleType _ tys) = do
   mapM_ (kcValueType tcEnv what doc) tys
   return KindStar
-kcTypeExpr tcEnv p what doc _ (ListType _ ty) = do
+kcTypeExpr tcEnv what doc _ (ListType _ ty) = do
   kcValueType tcEnv what doc ty
   return KindStar
-kcTypeExpr tcEnv p what doc _ (ArrowType _ ty1 ty2) = do
+kcTypeExpr tcEnv what doc _ (ArrowType _ ty1 ty2) = do
   kcValueType tcEnv what doc ty1
   kcValueType tcEnv what doc ty2
   return KindStar
-kcTypeExpr tcEnv p what doc n (ParenType _ ty) = kcTypeExpr tcEnv p what doc n ty
-kcTypeExpr tcEnv p what doc n (ContextType _ cx ty) = do
+kcTypeExpr tcEnv what doc n (ParenType _ ty) = kcTypeExpr tcEnv what doc n ty
+kcTypeExpr tcEnv what doc n (ContextType _ cx ty) = do
   kcContext tcEnv cx
-  kcTypeExpr tcEnv p what doc n ty
-kcTypeExpr tcEnv p what doc n (ForallType _ vs ty) = do
+  kcTypeExpr tcEnv what doc n ty
+kcTypeExpr tcEnv what doc n (ForallType _ vs ty) = do
   tcEnv' <- foldM bindFreshKind tcEnv vs
-  kcTypeExpr tcEnv' p what doc n ty
+  kcTypeExpr tcEnv' what doc n ty
 
 kcArrow :: HasSpanInfo p => p -> String -> Doc -> Kind -> KCM (Kind, Kind)
 kcArrow p what doc k = do
