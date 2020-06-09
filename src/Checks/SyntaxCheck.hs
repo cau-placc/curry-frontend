@@ -51,7 +51,6 @@ import           Curry.Base.Pretty
 import           Curry.Base.Span
 import           Curry.Base.SpanInfo
 import           Curry.Syntax
-import           Curry.Syntax.Pretty (pPrintPrec)
 
 import           Base.Expr
 import           Base.Messages       (Message, internalError,

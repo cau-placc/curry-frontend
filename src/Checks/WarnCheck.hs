@@ -42,8 +42,7 @@ import Curry.Base.Position
 import Curry.Base.Pretty
 import Curry.Base.SpanInfo
 import Curry.Syntax
-import Curry.Syntax.Utils  (typeVariables)
-import Curry.Syntax.Pretty (pPrint, pPrintPrec, ppIdent)
+import Curry.Syntax.Pretty (ppIdent)
 
 import Base.CurryTypes (ppPredType, toPredSet, fromPred)
 import Base.Messages   (Message, spanInfoMessage, internalError)

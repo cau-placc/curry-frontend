@@ -71,7 +71,6 @@ import           Curry.Base.Pretty
 import           Curry.Base.SpanInfo
 import           Curry.Syntax
 import           Curry.Syntax.Pretty
-import           Curry.Syntax.Utils  (flatLhs)
 
 import           Base.CurryTypes
 import           Base.Expr
