@@ -22,7 +22,7 @@ import Prelude hiding ((<>))
 #endif
 
 import           Control.Monad
-  (filterM, foldM_, guard, liftM, liftM2, when, unless)
+  (filterM, foldM_, guard, liftM, liftM2, when, unless, void)
 import           Control.Monad.State.Strict    (State, execState, gets, modify)
 import qualified Data.IntSet         as IntSet
   (IntSet, empty, insert, notMember, singleton, union, unions)
@@ -600,8 +600,8 @@ checkCaseAlts spi ct alts = do
     Rigid -> do
       unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
         warnMissingPattern p "a case alternative" nonExhaustive
-      unless (null overlapped) $ warnFor WarnOverlapping $ report $
-        warnUnreachablePattern (spanInfo2Pos $ (spis !!) $ fst $ head overlapped) $ map snd overlapped
+      unless (null overlapped) $ void $ mapM (warnFor WarnOverlapping . report) $
+        map (\(i, pat) -> warnUnreachablePattern (spanInfo2Pos $ spis !! i) pat) overlapped
   where p = spanInfo2Pos spi
         alt2Guards :: Alt () -> [CondExpr ()]
         alt2Guards (Alt _ _ (GuardedRhs _ _ conds _)) = conds
@@ -989,16 +989,12 @@ warnMissingPattern p loc pats = posMessage p
 -- |Warning message for unreachable patterns.
 -- To shorten the output only the first 'maxPattern' are printed,
 -- additional pattern are abbreviated by dots.
-warnUnreachablePattern :: Position  -> [[Pattern a]] -> Message
+warnUnreachablePattern :: Position  -> [Pattern a] -> Message
 warnUnreachablePattern p pats = posMessage p
   $   text "Pattern matches are potentially unreachable"
   $+$ text "In a case alternative:"
-  $+$ nest 2 (vcat (ppExPats pats) <+> text "->" <+> text "...")
+  $+$ nest 2 (ppPat pats <+> text "->" <+> text "...")
   where
-  ppExPats ps
-    | length ps > maxPattern = ppPats ++ [text "..."]
-    | otherwise              = ppPats
-    where ppPats = map ppPat (take maxPattern ps)
   ppPat ps = hsep (map (pPrintPrec 2) ps)
 
 -- |Maximum number of missing patterns to be shown.
