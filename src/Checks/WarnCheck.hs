@@ -42,8 +42,7 @@ import Curry.Base.Position
 import Curry.Base.Pretty
 import Curry.Base.SpanInfo
 import Curry.Syntax
-import Curry.Syntax.Utils  (typeVariables)
-import Curry.Syntax.Pretty (pPrint, pPrintPrec, ppIdent)
+import Curry.Syntax.Pretty (ppIdent)
 
 import Base.CurryTypes (ppPredType, toPredSet, fromPred)
 import Base.Messages   (Message, posMessage, internalError)
@@ -56,7 +55,7 @@ import Base.Types
 import Base.Utils (findMultiples)
 import Env.ModuleAlias
 import Env.Class (ClassEnv, classMethods, hasDefaultImpl)
-import Env.TypeConstructor ( TCEnv, TypeInfo (..), lookupTypeInfo
+import Env.TypeConstructor ( TCEnv, TypeInfo (..)
                            , qualLookupTypeInfo, getOrigName )
 import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 
