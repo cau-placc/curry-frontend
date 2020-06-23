@@ -859,7 +859,7 @@ getTyCons :: QualIdent -> WCM [DataConstr]
 getTyCons tc = do
   tc'   <- unAlias tc
   tcEnv <- gets tyConsEnv
-  return $ case lookupTypeInfo (unqualify tc) tcEnv of
+  return $ case qualLookupTypeInfo tc tcEnv of
     [DataType     _ _ cs] -> cs
     [RenamingType _ _ nc] -> [nc]
     _ -> case qualLookupTypeInfo tc' tcEnv of
