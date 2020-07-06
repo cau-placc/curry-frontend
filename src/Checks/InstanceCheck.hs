@@ -19,7 +19,7 @@
 -}
 module Checks.InstanceCheck (instanceCheck) where
 
-import           Control.Monad.Extra        (concatMapM, whileM, unless)
+import           Control.Monad.Extra        (concatMapM, whileM)
 import qualified Control.Monad.State as S   (State, execState, gets, modify)
 import           Data.List                  (nub, partition, sortBy)
 import qualified Data.Map            as Map
@@ -52,7 +52,7 @@ instanceCheck m tcEnv clsEnv inEnv ds =
     iss -> (inEnv, map (errMultipleInstances tcEnv) iss)
   where
     local = map (flip InstSource m) $ concatMap (genInstIdents m tcEnv) ds
-    imported = map (uncurry InstSource . fmap fst3) $ Map.toList inEnv
+    imported = map (uncurry InstSource) $ map (fmap fst3) $ Map.toList inEnv
     state = INCState m inEnv []
 
 -- In order to provide better error messages, we use the following data type
@@ -95,8 +95,6 @@ ok = return ()
 checkDecls :: TCEnv -> ClassEnv -> [Decl a] -> INCM ()
 checkDecls tcEnv clsEnv ds = do
   mapM_ (bindInstance tcEnv clsEnv) ids
-  mapM (declDeriveDataInfo tcEnv clsEnv) (filter isDataDecl tds) >>=
-    mapM_ (bindDerivedInstances clsEnv) . groupDeriveInfos
   mapM (declDeriveInfo tcEnv clsEnv) (filter hasDerivedInstances tds) >>=
     mapM_ (bindDerivedInstances clsEnv) . groupDeriveInfos
   mapM_ (checkInstance tcEnv clsEnv) ids
@@ -104,18 +102,15 @@ checkDecls tcEnv clsEnv ds = do
   where (tds, ods) = partition isTypeDecl ds
         ids = filter isInstanceDecl ods
         dds = filter isDefaultDecl ods
-        isDataDecl (DataDecl    _ _ _ _ _) = True
-        isDataDecl (NewtypeDecl _ _ _ _ _) = True
-        isDataDecl _                       = False
 
 -- First, the compiler adds all explicit instance declarations to the
 -- instance environment.
 
 bindInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
-bindInstance tcEnv clsEnv (InstanceDecl _ _ cx qcls inst ds) = do
+bindInstance tcEnv clsEnv (InstanceDecl _ cx qcls inst ds) = do
   m <- getModuleIdent
-  let TypeContext ps _ = expandPolyType m tcEnv clsEnv $
-                           ContextType NoSpanInfo cx inst
+  let PredType ps _ = expandPolyType m tcEnv clsEnv $
+                        QualTypeExpr NoSpanInfo cx inst
   modifyInstEnv $
     bindInstInfo (genInstIdent m tcEnv qcls inst) (m, ps, impls [] ds)
   where impls is [] = is
@@ -141,53 +136,30 @@ hasDerivedInstances _                          = False
 -- derived classes with respect to the super class hierarchy so that subclass
 -- instances are added to the instance environment after their super classes.
 
-data DeriveInfo = DeriveInfo Position QualIdent Type [Type] [QualIdent]
+data DeriveInfo = DeriveInfo Position QualIdent PredType [Type] [QualIdent]
 
 declDeriveInfo :: TCEnv -> ClassEnv -> Decl a -> INCM DeriveInfo
 declDeriveInfo tcEnv clsEnv (DataDecl p tc tvs cs clss) =
-  mkDeriveInfo tcEnv clsEnv p tc tvs (concat tyss) clss
-  where tyss = map constrDeclTypes cs
-        constrDeclTypes (ConstrDecl     _ _ tys) = tys
-        constrDeclTypes (ConOpDecl  _ ty1 _ ty2) = [ty1, ty2]
-        constrDeclTypes (RecordDecl      _ _ fs) = tys
+  mkDeriveInfo tcEnv clsEnv p tc tvs (concat cxs) (concat tyss) clss
+  where (cxs, tyss) = unzip (map constrDeclTypes cs)
+        constrDeclTypes (ConstrDecl     _ _ cx _ tys) = (cx, tys)
+        constrDeclTypes (ConOpDecl  _ _ cx ty1 _ ty2) = (cx, [ty1, ty2])
+        constrDeclTypes (RecordDecl      _ _ cx _ fs) = (cx, tys)
           where tys = [ty | FieldDecl _ ls ty <- fs, _ <- ls]
 declDeriveInfo tcEnv clsEnv (NewtypeDecl p tc tvs nc clss) =
-  mkDeriveInfo tcEnv clsEnv p tc tvs [nconstrType nc] clss
+  mkDeriveInfo tcEnv clsEnv p tc tvs [] [nconstrType nc] clss
 declDeriveInfo _ _ _ =
   internalError "InstanceCheck.declDeriveInfo: no data or newtype declaration"
 
-declDeriveDataInfo :: TCEnv -> ClassEnv -> Decl a -> INCM DeriveInfo
-declDeriveDataInfo tcEnv clsEnv (DataDecl p tc tvs cs _) =
-  mkDeriveDataInfo tcEnv clsEnv p tc tvs (concat tyss)
-  where tyss = map constrDeclTypes cs
-        constrDeclTypes (ConstrDecl     _ _ tys) = tys
-        constrDeclTypes (ConOpDecl  _ ty1 _ ty2) = [ty1, ty2]
-        constrDeclTypes (RecordDecl      _ _ fs) = tys
-          where tys = [ty | FieldDecl _ ls ty <- fs, _ <- ls]
-declDeriveDataInfo tcEnv clsEnv (NewtypeDecl p tc tvs nc _) =
-  mkDeriveDataInfo tcEnv clsEnv p tc tvs [nconstrType nc]
-declDeriveDataInfo _ _ _ = internalError
-  "InstanceCheck.declDeriveDataInfo: no data or newtype declaration"
-
-mkDeriveInfo :: TCEnv -> ClassEnv -> SpanInfo -> Ident -> [Ident]
-             -> [TypeExpr] -> [QualIdent] -> INCM DeriveInfo
-mkDeriveInfo tcEnv clsEnv spi tc tvs tys clss = do
+mkDeriveInfo :: TCEnv -> ClassEnv -> SpanInfo -> Ident -> [Ident] -> Context
+           -> [TypeExpr] -> [QualIdent] -> INCM DeriveInfo
+mkDeriveInfo tcEnv clsEnv spi tc tvs cx tys clss = do
   m <- getModuleIdent
   let otc = qualifyWith m tc
       oclss = map (flip (getOrigName m) tcEnv) clss
-      TypeContext ps ty = expandConstrType m tcEnv clsEnv otc tvs tys
+      PredType ps ty = expandConstrType m tcEnv clsEnv otc tvs cx tys
       (tys', ty') = arrowUnapply ty
-  return $ DeriveInfo p otc (TypeContext ps ty') tys' $ sortClasses clsEnv oclss
-  where p = spanInfo2Pos spi
-
-mkDeriveDataInfo :: TCEnv -> ClassEnv -> SpanInfo -> Ident -> [Ident]
-                 -> [TypeExpr] -> INCM DeriveInfo
-mkDeriveDataInfo tcEnv clsEnv spi tc tvs tys = do
-  m <- getModuleIdent
-  let otc = qualifyWith m tc
-      TypeContext ps ty = expandConstrType m tcEnv clsEnv otc tvs tys
-      (tys', ty') = arrowUnapply ty
-  return $ DeriveInfo p otc (TypeContext ps ty') tys' [qDataId]
+  return $ DeriveInfo p otc (PredType ps ty') tys' $ sortClasses clsEnv oclss
   where p = spanInfo2Pos spi
 
 sortClasses :: ClassEnv -> [QualIdent] -> [QualIdent]
@@ -196,79 +168,65 @@ sortClasses clsEnv clss = map fst $ sortBy compareDepth $ map adjoinDepth clss
         adjoinDepth cls = (cls, length $ allSuperClasses cls clsEnv)
 
 groupDeriveInfos :: [DeriveInfo] -> [[DeriveInfo]]
-groupDeriveInfos = scc bound free
+groupDeriveInfos ds = scc bound free ds
   where bound (DeriveInfo _ tc _ _ _) = [tc]
         free (DeriveInfo _ _ _ tys _) = concatMap typeConstrs tys
 
 bindDerivedInstances :: ClassEnv -> [DeriveInfo] -> INCM ()
-bindDerivedInstances clsEnv dis = unless (any hasDataFunType dis) $ do
+bindDerivedInstances clsEnv dis = do
   mapM_ (enterInitialPredSet clsEnv) dis
   whileM $ concatMapM (inferPredSets clsEnv) dis >>= updatePredSets
-  where
-    hasDataFunType (DeriveInfo _ _ _ tys clss) =
-      clss == [qDataId] && any isFunType tys
 
 enterInitialPredSet :: ClassEnv -> DeriveInfo -> INCM ()
 enterInitialPredSet clsEnv (DeriveInfo p tc pty _ clss) =
-  mapM_ (bindDerivedInstance clsEnv p tc pty) clss
+  mapM_ (bindDerivedInstance clsEnv p tc pty []) clss
 
 -- Note: The methods and arities entered into the instance environment have
 -- to match methods and arities of the later generated instance declarations.
 
-bindDerivedInstance :: ClassEnv -> Position -> QualIdent -> Type -> QualIdent
-                    -> INCM ()
-bindDerivedInstance clsEnv p tc pty cls = do
+bindDerivedInstance :: ClassEnv -> Position -> QualIdent -> PredType -> [Type]
+                    -> QualIdent -> INCM ()
+bindDerivedInstance clsEnv p tc pty tys cls = do
   m <- getModuleIdent
-  ((i, ps), _) <- inferPredSet clsEnv p tc pty [] cls
-  modifyInstEnv (bindInstInfo i (m, ps, impls))
+  (i, ps) <- inferPredSet clsEnv p tc pty tys cls
+  modifyInstEnv $ bindInstInfo i (m, ps, impls)
   where impls | cls == qEqId      = [(eqOpId, 2)]
               | cls == qOrdId     = [(leqOpId, 2)]
               | cls == qEnumId    = [ (succId, 1), (predId, 1), (toEnumId, 1)
                                     , (fromEnumId, 1), (enumFromId, 1)
                                     , (enumFromThenId, 2)
                                     ]
-              | cls == qBoundedId = [(maxBoundId, 0), (minBoundId, 0)]
+              | cls == qBoundedId = [(maxBoundId, 1), (minBoundId, 1)]
               | cls == qReadId    = [(readsPrecId, 2)]
               | cls == qShowId    = [(showsPrecId, 2)]
-              | cls == qDataId    = [(dataEqId, 2), (aValueId, 0)]
               | otherwise         =
                 internalError "InstanceCheck.bindDerivedInstance.impls"
 
-inferPredSets :: ClassEnv -> DeriveInfo -> INCM [((InstIdent, PredSet), Bool)]
+inferPredSets :: ClassEnv -> DeriveInfo -> INCM [(InstIdent, PredSet)]
 inferPredSets clsEnv (DeriveInfo p tc pty tys clss) =
   mapM (inferPredSet clsEnv p tc pty tys) clss
 
-inferPredSet :: ClassEnv -> Position -> QualIdent -> Type -> [Type]
-             -> QualIdent -> INCM ((InstIdent, PredSet), Bool)
-inferPredSet clsEnv p tc (TypeContext ps inst) tys cls = do
+inferPredSet :: ClassEnv -> Position -> QualIdent -> PredType -> [Type]
+             -> QualIdent -> INCM (InstIdent, PredSet)
+inferPredSet clsEnv p tc (PredType ps inst) tys cls = do
   m <- getModuleIdent
   let doc = ppPred m $ Pred cls inst
       sclss = superClasses cls clsEnv
       ps'   = Set.fromList [Pred cls ty | ty <- tys]
       ps''  = Set.fromList [Pred scls inst | scls <- sclss]
       ps''' = ps `Set.union` ps' `Set.union` ps''
-  (ps4, novarps) <-
-    reducePredSet (cls == qDataId) p "derived instance" doc clsEnv ps'''
-  let ps5 = filter noPolyPred $ Set.toList ps4
-  if any (isDataPred m) (Set.toList novarps ++ ps5) && cls == qDataId
-    then return    (((cls, tc), ps4), False)
-    else mapM_ (reportUndecidable p "derived instance" doc) ps5
-         >> return (((cls, tc), ps4), True)
-  where
-    noPolyPred (Pred _ (TypeVariable _)) = False
-    noPolyPred (Pred _ _               ) = True
-    isDataPred _ (Pred qid _) = qid == qDataId
-inferPredSet _ _ _ _ _ _ = internalError "InstanceCheck.inferPredSet"
+  ps'''' <- reducePredSet p "derived instance" doc clsEnv ps'''
+  mapM_ (reportUndecidable p "derived instance" doc) $ Set.toList ps''''
+  return ((cls, tc), ps'''')
 
-updatePredSets :: [((InstIdent, PredSet), Bool)] -> INCM Bool
-updatePredSets = fmap or . mapM (uncurry updatePredSet)
+updatePredSets :: [(InstIdent, PredSet)] -> INCM Bool
+updatePredSets = (=<<) (return . or) . mapM (uncurry updatePredSet)
 
-updatePredSet :: (InstIdent, PredSet) -> Bool -> INCM Bool
-updatePredSet (i, ps) enter = do
+updatePredSet :: InstIdent -> PredSet -> INCM Bool
+updatePredSet i ps = do
   inEnv <- getInstEnv
   case lookupInstInfo i inEnv of
     Just (m, ps', is)
-      | not enter -> modifyInstEnv (removeInstInfo i) >> return False
       | ps == ps' -> return False
       | otherwise -> do
         modifyInstEnv $ bindInstInfo i (m, ps, is)
@@ -293,17 +251,17 @@ reportUndecidable p what doc predicate@(Pred _ ty) = do
 -- satisfied by cx.
 
 checkInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
-checkInstance tcEnv clsEnv (InstanceDecl spi _ cx cls inst _) = do
+checkInstance tcEnv clsEnv (InstanceDecl spi cx cls inst _) = do
   m <- getModuleIdent
-  let TypeContext ps ty = expandPolyType m tcEnv clsEnv $
-                            ContextType NoSpanInfo cx inst
+  let PredType ps ty = expandPolyType m tcEnv clsEnv $
+                         QualTypeExpr NoSpanInfo cx inst
       ocls = getOrigName m cls tcEnv
       ps' = Set.fromList [ Pred scls ty | scls <- superClasses ocls clsEnv ]
       doc = ppPred m $ Pred cls ty
       what = "instance declaration"
-  (ps'', _) <- reducePredSet False p what doc clsEnv ps'
+  ps'' <- reducePredSet p what doc clsEnv ps'
   Set.mapM_ (report . errMissingInstance m p what doc) $
-    ps'' `Set.difference` maxPredSet clsEnv ps
+    ps'' `Set.difference` (maxPredSet clsEnv ps)
   where p = spanInfo2Pos spi
 checkInstance _ _ _ = ok
 
@@ -320,10 +278,9 @@ checkDefault _ _ _ = ok
 checkDefaultType :: Position -> TCEnv -> ClassEnv -> TypeExpr -> INCM ()
 checkDefaultType p tcEnv clsEnv ty = do
   m <- getModuleIdent
-  let TypeContext _ ty' = expandPolyType m tcEnv clsEnv $
-                            ContextType NoSpanInfo [] ty
-  (ps, _) <- reducePredSet False p what empty clsEnv
-    (Set.singleton $ Pred qNumId ty')
+  let PredType _ ty' = expandPolyType m tcEnv clsEnv $
+                         QualTypeExpr NoSpanInfo [] ty
+  ps <- reducePredSet p what empty clsEnv (Set.singleton $ Pred qNumId ty')
   Set.mapM_ (report . errMissingInstance m p what empty) ps
   where what = "default declaration"
 
@@ -333,20 +290,16 @@ checkDefaultType p tcEnv clsEnv ty = do
 -- a type variable. An error is reported if the predicate set cannot
 -- be transformed into this form. In addition, we remove all predicates
 -- that are implied by others within the same set.
--- When the flag is set, all missing Data preds are ignored
 
-reducePredSet :: Bool -> Position -> String -> Doc -> ClassEnv -> PredSet
-              -> INCM (PredSet, PredSet)
-reducePredSet b p what doc clsEnv ps = do
+reducePredSet :: Position -> String -> Doc -> ClassEnv -> PredSet
+              -> INCM PredSet
+reducePredSet p what doc clsEnv ps = do
   m <- getModuleIdent
   inEnv <- getInstEnv
   let (ps1, ps2) = partitionPredSet $ minPredSet clsEnv $ reducePreds inEnv ps
-      ps2' = if b then Set.filter (isNotDataPred m) ps2 else ps2
-  Set.mapM_ (reportMissing m) ps2' >> return (ps1, ps2)
+  Set.mapM_ (report . errMissingInstance m p what doc) ps2
+  return ps1
   where
-    isNotDataPred _ (Pred qid _) = qid /= qDataId
-    reportMissing m pr@(Pred _ _) =
-      report $ errMissingInstance m p what doc pr
     reducePreds inEnv = Set.concatMap $ reducePred inEnv
     reducePred inEnv predicate = maybe (Set.singleton predicate)
                                        (reducePreds inEnv)
@@ -370,7 +323,7 @@ genInstIdents m tcEnv (DataDecl    _ tc _ _ qclss) =
 genInstIdents m tcEnv (NewtypeDecl _ tc _ _ qclss) =
   map (flip (genInstIdent m tcEnv) $ ConstructorType NoSpanInfo $ qualify tc)
       qclss
-genInstIdents m tcEnv (InstanceDecl _ _ _ qcls ty _) =
+genInstIdents m tcEnv (InstanceDecl _ _ qcls ty _) =
   [genInstIdent m tcEnv qcls ty]
 genInstIdents _ _     _                            = []
 
@@ -390,15 +343,6 @@ unqualInstIdent :: TCEnv -> InstIdent -> InstIdent
 unqualInstIdent tcEnv (qcls, tc) = (unqual qcls, unqual tc)
   where
     unqual = head . flip reverseLookupByOrigName tcEnv
-
-isFunType :: Type -> Bool
-isFunType (TypeArrow         _ _) = True
-isFunType (TypeApply       t1 t2) = isFunType t1 || isFunType t2
-isFunType (TypeForall      _  ty) = isFunType ty
-isFunType (TypeContext      _ ty) = isFunType ty
-isFunType (TypeConstructor     _) = False
-isFunType (TypeVariable        _) = False
-isFunType (TypeConstrained tys _) = any isFunType tys
 
 -- ---------------------------------------------------------------------------
 -- Error messages

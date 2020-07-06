@@ -10,7 +10,7 @@
 
    TODO
 -}
-{-# OPTIONS_GHC -Wno-orphans #-}
+
 module Base.PrettyKinds where
 
 import Curry.Base.Pretty

@@ -1,68 +1,66 @@
-{-|
-Module      : Checks.SyntaxCheck
-Description : Checks the syntax of a Curry module
-Copyright   : (c) 1999–2004 Wolfgang Lux, Martin Engelke, Björn Peemöller
-                  2015 Jan Tikovsky
-                  2016 Finn Teegen
-                  2019 Jan-Hendrik Matthes
-License     : BSD-3-Clause
+{- |
+    Module      :  $Header$
+    Description :  Syntax checks
+    Copyright   :  (c) 1999 - 2004 Wolfgang Lux
+                                   Martin Engelke
+                                   Björn Peemöller
+                       2015        Jan Tikovsky
+                       2016        Finn Teegen
+    License     :  BSD-3-clause
 
-Maintainer  : fte@informatik.uni-kiel.de
-Stability   : experimental
-Portability : portable
+    Maintainer  :  bjp@informatik.uni-kiel.de
+    Stability   :  experimental
+    Portability :  portable
 
-After the type declarations have been checked, the compiler performs a syntax
-check on the remaining declarations. This check disambiguates nullary data
-constructors and variables which -- in contrast to Haskell -- is not possible
-on purely syntactic criteria. In addition, this pass checks for undefined as
-well as ambiguous variables and constructors. In order to allow lifting of
-local definitions in later phases, all local variables are renamed by adding a
-key identifying their scope. Therefore, all variables defined in the same scope
-share the same key so that multiple definitions can be recognized. Finally, all
-(adjacent) equations of a function are merged into a single definition.
+   After the type declarations have been checked, the compiler performs
+   a syntax check on the remaining declarations. This check disambiguates
+   nullary data constructors and variables which -- in contrast to Haskell --
+   is not possible on purely syntactic criteria. In addition, this pass checks
+   for undefined as well as ambiguous variables and constructors. In order to
+   allow lifting of local definitions in later phases, all local variables are
+   renamed by adding a key identifying their scope. Therefore, all variables
+   defined in the same scope share the same key so that multiple definitions
+   can be recognized. Finally, all (adjacent) equations of a function are
+   merged into a single definition.
 -}
-
 {-# LANGUAGE CPP #-}
-
 module Checks.SyntaxCheck (syntaxCheck) where
 
 #if __GLASGOW_HASKELL__ >= 804
-import           Prelude             hiding ((<>))
+import Prelude hiding ((<>))
 #endif
 
 #if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative ((<$>), (<*>))
+import           Control.Applicative        ((<$>), (<*>))
 #endif
 
-import           Control.Monad       (unless, when)
-import qualified Control.Monad.State as S (State, gets, modify, runState,
-                                           withState)
-import           Data.Function       (on)
-import           Data.List           (insertBy, intersect, nub, nubBy)
-import qualified Data.Map            as Map (Map, empty, findWithDefault,
-                                             fromList, insertWith, keys)
-import           Data.Maybe          (isJust, isNothing)
-import qualified Data.Set            as Set (Set, empty, insert, member,
-                                             singleton, toList, union)
+import Control.Monad                      (unless, when)
+import qualified Control.Monad.State as S ( State, runState, gets, modify
+                                          , withState )
+import           Data.Function            (on)
+import           Data.List                (insertBy, intersect, nub, nubBy)
+import qualified Data.Map  as Map         ( Map, empty, findWithDefault
+                                          , fromList, insertWith, keys )
+import           Data.Maybe               (isJust, isNothing)
+import qualified Data.Set as Set          ( Set, empty, insert, member
+                                          , singleton, toList, union)
 
-import           Curry.Base.Ident
-import           Curry.Base.Position
-import           Curry.Base.Pretty
-import           Curry.Base.Span
-import           Curry.Base.SpanInfo
-import           Curry.Syntax
-import           Curry.Syntax.Pretty (pPrintPrec)
+import Curry.Base.Ident
+import Curry.Base.Position
+import Curry.Base.Pretty
+import Curry.Base.Span
+import Curry.Base.SpanInfo
+import Curry.Syntax
+import Curry.Syntax.Pretty (ppPattern)
 
-import           Base.Expr
-import           Base.Messages       (Message, internalError, posMessage)
-import           Base.NestEnv
-import           Base.SCC            (scc)
-import           Base.Utils          (findDouble, findMultiples, (++!))
+import Base.Expr
+import Base.Messages (Message, posMessage, internalError)
+import Base.NestEnv
+import Base.SCC      (scc)
+import Base.Utils    ((++!), findDouble, findMultiples)
 
-import           Env.TypeConstructor (TCEnv, clsMethods, getOrigName)
-import           Env.Value           (ValueEnv, ValueInfo (..),
-                                      qualLookupValueUnique)
-
+import Env.TypeConstructor (TCEnv, clsMethods)
+import Env.Value           (ValueEnv, ValueInfo (..))
 
 -- The syntax checking proceeds as follows. First, the compiler extracts
 -- information about all imported values and data constructors from the
@@ -79,7 +77,7 @@ import           Env.Value           (ValueEnv, ValueInfo (..),
 
 syntaxCheck :: [KnownExtension] -> TCEnv -> ValueEnv -> Module ()
             -> ((Module (), [KnownExtension]), [Message])
-syntaxCheck exts tcEnv vEnv mdl@(Module _ _ _ m _ _ ds) =
+syntaxCheck exts tcEnv vEnv mdl@(Module _ _ m _ _ ds) =
   case findMultiples cons of
     []  -> case findMultiples (ls ++ fs ++ cons ++ cs) of
              []  -> runSC (checkModule mdl) state
@@ -92,9 +90,9 @@ syntaxCheck exts tcEnv vEnv mdl@(Module _ _ _ m _ _ ds) =
     cons  = concatMap constrs tds
     ls    = nub $ concatMap recLabels tds
     fs    = nub $ concatMap vars vds
-    cs    = concatMap (concatMap methods) [ds' | ClassDecl _ _ _ _ _ ds' <- cds]
+    cs    = concatMap (concatMap methods) [ds' | ClassDecl _ _ _ _ ds' <- cds]
     rEnv  = globalEnv $ fmap renameInfo vEnv
-    state = initState exts m tcEnv rEnv vEnv
+    state = initState exts m tcEnv rEnv
 
 -- A global state transformer is used for generating fresh integer keys with
 -- which the variables are renamed.
@@ -111,7 +109,6 @@ data SCState = SCState
   , moduleIdent      :: ModuleIdent      -- ^ 'ModuleIdent' of the current module
   , tyConsEnv        :: TCEnv
   , renameEnv        :: RenameEnv        -- ^ Information store
-  , valueEnv         :: ValueEnv         -- ^ To check instance method visibility
   , scopeId          :: Integer          -- ^ Identifier for the current scope
   , nextId           :: Integer          -- ^ Next fresh identifier
   , funcDeps         :: FuncDeps         -- ^ Stores data about functions dependencies
@@ -120,10 +117,9 @@ data SCState = SCState
   }
 
 -- |Initial syntax check state
-initState :: [KnownExtension] -> ModuleIdent -> TCEnv -> RenameEnv -> ValueEnv
-          -> SCState
-initState exts m tcEnv rEnv vEnv =
-  SCState exts m tcEnv rEnv vEnv globalScopeId 1 noFuncDeps False []
+initState :: [KnownExtension] -> ModuleIdent -> TCEnv -> RenameEnv -> SCState
+initState exts m tcEnv rEnv =
+  SCState exts m tcEnv rEnv globalScopeId 1 noFuncDeps False []
 
 -- |Identifier for global (top-level) declarations
 globalScopeId :: Integer
@@ -157,10 +153,6 @@ getTyConsEnv = S.gets tyConsEnv
 -- |Retrieve the 'RenameEnv'
 getRenameEnv :: SCM RenameEnv
 getRenameEnv = S.gets renameEnv
-
--- |Retrieve the 'ValueEnv'
-getValueEnv :: SCM ValueEnv
-getValueEnv = S.gets valueEnv
 
 -- |Modify the 'RenameEnv'
 modifyRenameEnv :: (RenameEnv -> RenameEnv) -> SCM ()
@@ -341,13 +333,13 @@ bindTypeDecl (NewtypeDecl _ _ _ nc _) = bindNewConstr nc
 bindTypeDecl _                        = ok
 
 bindConstr :: ConstrDecl -> SCM ()
-bindConstr (ConstrDecl _ c tys) = do
+bindConstr (ConstrDecl _ _ _ c tys) = do
   m <- getModuleIdent
   modifyRenameEnv $ bindGlobal False m c (Constr (qualifyWith m c) $ length tys)
-bindConstr (ConOpDecl _ _ op _) = do
+bindConstr (ConOpDecl _ _ _ _ op _) = do
   m <- getModuleIdent
   modifyRenameEnv $ bindGlobal False m op (Constr (qualifyWith m op) 2)
-bindConstr (RecordDecl _ c fs)  = do
+bindConstr (RecordDecl _ _ _ c fs)  = do
   m <- getModuleIdent
   modifyRenameEnv $ bindGlobal False m c (Constr (qualifyWith m c) (length labels))
     where labels = [l | FieldDecl _ ls _ <- fs, l <- ls]
@@ -369,7 +361,7 @@ bindRecordLabels cs =
 bindRecordLabel :: (Ident, [Ident]) -> SCM ()
 bindRecordLabel (l, cs) = do
   m   <- getModuleIdent
-  new <- null . lookupVar l <$> getRenameEnv
+  new <- (null . lookupVar l) <$> getRenameEnv
   unless new $ report $ errDuplicateDefinition l
   modifyRenameEnv $ bindGlobal False m l $
     RecordLabel (qualifyWith m l) (map (qualifyWith m) cs)
@@ -383,10 +375,8 @@ bindFuncDecl _   _ (FunctionDecl _ _ _ []) _
 bindFuncDecl tcc m (FunctionDecl _ _ f (eq:_)) env
   = let arty = length $ snd $ getFlatLhs eq
     in  bindGlobal tcc m f (GlobalVar (qualifyWith m f) arty) env
-bindFuncDecl tcc m (TypeSig spi fs (ContextType _ _ ty)) env
-  = bindFuncDecl tcc m (TypeSig spi fs ty) env
-bindFuncDecl tcc m (TypeSig _ fs ty) env
-  = foldr (bindTS . qualifyWith m) env fs
+bindFuncDecl tcc m (TypeSig _ fs (QualTypeExpr _ _ ty)) env
+  = foldr bindTS env $ map (qualifyWith m) fs
   where
     bindTS qf env'
       | null $ qualLookupVar qf env'
@@ -398,8 +388,8 @@ bindFuncDecl _   _ _ env = env
 
 -- |Bind type class information, i.e. class methods
 bindClassDecl :: Decl a -> SCM ()
-bindClassDecl (ClassDecl _ _ _ _ _ ds) = mapM_ bindClassMethod ds
-bindClassDecl _                        = ok
+bindClassDecl (ClassDecl _ _ _ _ ds) = mapM_ bindClassMethod ds
+bindClassDecl _ = ok
 
 bindClassMethod :: Decl a -> SCM ()
 bindClassMethod ts@(TypeSig _ _ _) = do
@@ -416,7 +406,8 @@ bindVarDecl (FunctionDecl    _ _ f eqs) env
   | otherwise = let arty = length $ snd $ getFlatLhs $ head eqs
                 in  bindLocal (unRenameIdent f) (LocalVar f arty) env
 bindVarDecl (PatternDecl         _ t _) env = foldr bindVar env (bv t)
-bindVarDecl (FreeDecl             _ vs) env = foldr (bindVar . varIdent) env vs
+bindVarDecl (FreeDecl             _ vs) env =
+  foldr bindVar env (map varIdent vs)
 bindVarDecl _                           env = env
 
 bindVar :: Ident -> RenameEnv -> RenameEnv
@@ -456,7 +447,7 @@ qualLookupListCons v env
 -- declaration are allowed to be declared).
 
 checkModule :: Module () -> SCM (Module (), [KnownExtension])
-checkModule (Module spi li ps m es is ds) = do
+checkModule (Module spi ps m es is ds) = do
   mapM_ bindTypeDecl tds
   mapM_ bindClassDecl cds
   ds' <- checkTopDecls ds
@@ -465,7 +456,7 @@ checkModule (Module spi li ps m es is ds) = do
   let ds'' = updateClassAndInstanceDecls cds' ids' ds'
   checkFuncPatDeps
   exts <- getExtensions
-  return (Module spi li ps m es is ds'', exts)
+  return (Module spi ps m es is ds'', exts)
   where tds = filter isTypeDecl ds
         cds = filter isClassDecl ds
         ids = filter isInstanceDecl ds
@@ -477,7 +468,7 @@ checkFuncPatDeps = do
   fps  <- getFuncPats
   deps <- getGlobalDeps
   let levels   = scc (:[])
-                     (\k -> Set.toList (Map.findWithDefault Set.empty k deps))
+                     (\k -> Set.toList (Map.findWithDefault (Set.empty) k deps))
                      (Map.keys deps)
       levelMap = Map.fromList [ (f, l) | (fs, l) <- zip levels [1 ..], f <- fs ]
       level f  = Map.findWithDefault (0 :: Int) f levelMap
@@ -494,47 +485,20 @@ checkTopDecls ds = do
   checkDeclGroup (bindFuncDecl tcc m) ds
 
 checkClassDecl :: Decl () -> SCM (Decl ())
-checkClassDecl (ClassDecl p li cx cls tv ds) = do
+checkClassDecl (ClassDecl p cx cls tv ds) = do
   checkMethods (qualify cls) (concatMap methods ds) ds
-  ClassDecl p li cx cls tv <$> checkTopDecls ds
+  ClassDecl p cx cls tv <$> checkTopDecls ds
 checkClassDecl _ =
   internalError "SyntaxCheck.checkClassDecl: no class declaration"
 
 checkInstanceDecl :: Decl () -> SCM (Decl ())
-checkInstanceDecl (InstanceDecl p li cx qcls ty ds) = do
+checkInstanceDecl (InstanceDecl p cx qcls ty ds) = do
   m <- getModuleIdent
-  vEnv <- getValueEnv
   tcEnv <- getTyConsEnv
-  let clsMthds = clsMethods m qcls tcEnv
-  let orig = getOrigName m qcls tcEnv
-  let mthds =
-        if isLocalIdent m orig
-          then clsMthds
-          else filter (isFromCls orig m vEnv) clsMthds
-  checkMethods qcls mthds ds
-  mapM_ checkAmbiguousMethod ds
-  InstanceDecl p li cx qcls ty <$> checkTopDecls ds
-  where
-    isFromCls orig m vEnv f = case qualLookupValueUnique m (qualify f) vEnv of
-      [Value _ (Just cls) _ _]
-        | cls == orig -> True
-      _               -> False
-
+  checkMethods qcls (clsMethods m qcls tcEnv) ds
+  InstanceDecl p cx qcls ty <$> checkTopDecls ds
 checkInstanceDecl _ =
   internalError "SyntaxCheck.checkInstanceDecl: no instance declaration"
-
-checkAmbiguousMethod :: Decl a -> SCM ()
-checkAmbiguousMethod (FunctionDecl _ _ f _) = do
-  m <- getModuleIdent
-  rename <- getRenameEnv
-  case lookupVar f rename of
-    rs1@(_:_:_) -> case qualLookupVar (qualifyWith m f) rename of
-      []          -> report $ errAmbiguousIdent rs1 (qualify f)
-      rs2@(_:_:_) -> report $ errAmbiguousIdent rs2 (qualify f)
-      _           -> return ()
-    _           -> return ()
-checkAmbiguousMethod _ =
-  internalError "SyntaxCheck.checkAmbiguousMethod: no function declaration"
 
 checkMethods :: QualIdent -> [Ident] -> [Decl a] -> SCM ()
 checkMethods qcls ms ds =
@@ -543,9 +507,9 @@ checkMethods qcls ms ds =
 
 updateClassAndInstanceDecls :: [Decl a] -> [Decl a] -> [Decl a] -> [Decl a]
 updateClassAndInstanceDecls [] [] ds = ds
-updateClassAndInstanceDecls (c:cs) is (ClassDecl _ _ _ _ _ _:ds) =
+updateClassAndInstanceDecls (c:cs) is (ClassDecl _ _ _ _ _:ds) =
   c : updateClassAndInstanceDecls cs is ds
-updateClassAndInstanceDecls cs (i:is) (InstanceDecl _ _ _ _ _ _:ds) =
+updateClassAndInstanceDecls cs (i:is) (InstanceDecl _ _ _ _ _:ds) =
   i : updateClassAndInstanceDecls cs is ds
 updateClassAndInstanceDecls cs is (d:ds) =
   d : updateClassAndInstanceDecls cs is ds
@@ -714,7 +678,7 @@ checkDeclRhs _   (PatternDecl    p t rhs) =
 checkDeclRhs _   d                        = return d
 
 checkDeclLabels :: ConstrDecl -> SCM ConstrDecl
-checkDeclLabels rd@(RecordDecl _ _ fs) = do
+checkDeclLabels rd@(RecordDecl _ _ _ _ fs) = do
   onJust (report . errDuplicateLabel "declaration")
          (findDouble $ map qualify labels)
   return rd
@@ -783,7 +747,7 @@ checkPattern _ (LiteralPattern        spi a l) =
 checkPattern _ (NegativePattern       spi a l) =
   return $ NegativePattern spi a l
 checkPattern p (VariablePattern       spi a v)
-  | isAnonId v = VariablePattern spi a . renameIdent v <$> newId
+  | isAnonId v = (VariablePattern spi a . renameIdent v) <$> newId
   | otherwise  = checkConstructorPattern p spi (qualify v) []
 checkPattern p (ConstructorPattern spi _ c ts) =
   checkConstructorPattern p spi c ts
@@ -803,9 +767,9 @@ checkPattern p (LazyPattern             spi t) = do
   t' <- checkPattern p t
   banFPTerm "lazy pattern" p t'
   return (LazyPattern spi t')
-checkPattern _ (FunctionPattern     _ _ _ _) = internalError
+checkPattern _ (FunctionPattern     _ _ _ _) = internalError $
   "SyntaxCheck.checkPattern: function pattern not defined"
-checkPattern _ (InfixFuncPattern  _ _ _ _ _) = internalError
+checkPattern _ (InfixFuncPattern  _ _ _ _ _) = internalError $
   "SyntaxCheck.checkPattern: infix function pattern not defined"
 
 checkConstructorPattern :: SpanInfo -> SpanInfo -> QualIdent -> [Pattern ()]
@@ -839,11 +803,16 @@ checkConstructorPattern p spi c ts = do
     | null ts && not (isQualified c)
     = return $ VariablePattern spi () $ renameIdent (unqualify c) k -- (varIdent r) k
     | otherwise = do
+      let n = arity r
       checkFuncPatsExtension (spanInfo2Pos p)
       checkFuncPatCall r c
       ts' <- mapM (checkPattern p) ts
       mapM_ (checkFPTerm p) ts'
-      return $ FunctionPattern spi () (qualVarIdent r) ts'
+      return $ if n' > n
+                 then let (ts1, ts2) = splitAt n ts'
+                      in  genFuncPattAppl
+                          (FunctionPattern spi () (qualVarIdent r) ts1) ts2
+                 else FunctionPattern spi () (qualVarIdent r) ts'
 
 checkInfixPattern :: SpanInfo -> SpanInfo -> Pattern () -> QualIdent -> Pattern ()
                   -> SCM (Pattern ())
@@ -902,14 +871,10 @@ checkFuncPatCall r f = case r of
 
 -- Note: process decls first
 checkRhs :: Rhs () -> SCM (Rhs ())
-checkRhs (SimpleRhs spi li e ds) = inNestedScope $
-  flip (SimpleRhs spi li) <$>
-    checkDeclGroup bindVarDecl ds <*>
-    checkExpr spi e
-checkRhs (GuardedRhs spi li es ds) = inNestedScope $
-  flip (GuardedRhs spi li) <$>
-    checkDeclGroup bindVarDecl ds <*>
-    mapM checkCondExpr es
+checkRhs (SimpleRhs spi e ds) = inNestedScope $
+  flip (SimpleRhs spi) <$> checkDeclGroup bindVarDecl ds <*> checkExpr spi e
+checkRhs (GuardedRhs spi es ds) = inNestedScope $
+  flip (GuardedRhs spi) <$> checkDeclGroup bindVarDecl ds <*> mapM checkCondExpr es
 
 checkCondExpr :: CondExpr () -> SCM (CondExpr ())
 checkCondExpr (CondExpr spi g e) =  CondExpr spi <$> checkExpr spi g <*> checkExpr spi e
@@ -944,14 +909,14 @@ checkExpr p (LeftSection        spi e op) =
 checkExpr p (RightSection       spi op e) =
   RightSection spi <$> checkOp op <*> checkExpr p e
 checkExpr p (Lambda             spi ts e) = inNestedScope $ checkLambda p spi ts e
-checkExpr p (Let             spi li ds e) = inNestedScope $
-  Let spi li <$> checkDeclGroup bindVarDecl ds <*> checkExpr p e
-checkExpr p (Do             spi li sts e) = withLocalEnv $
-  Do spi li <$> mapM (checkStatement "do sequence" p) sts <*> checkExpr p e
+checkExpr p (Let                spi ds e) = inNestedScope $
+  Let spi <$> checkDeclGroup bindVarDecl ds <*> checkExpr p e
+checkExpr p (Do                spi sts e) = withLocalEnv $
+  Do spi <$> mapM (checkStatement "do sequence" p) sts <*> checkExpr p e
 checkExpr p (IfThenElse     spi e1 e2 e3) =
   IfThenElse spi <$> checkExpr p e1 <*> checkExpr p e2 <*> checkExpr p e3
-checkExpr p (Case       spi li ct e alts) =
-  Case spi li ct <$> checkExpr p e <*> mapM checkAlt alts
+checkExpr p (Case          spi ct e alts) =
+  Case spi ct <$> checkExpr p e <*> mapM checkAlt alts
 
 checkLambda :: SpanInfo -> SpanInfo -> [Pattern ()] -> Expression ()
             -> SCM (Expression ())
@@ -972,7 +937,7 @@ checkVariable spi a v
     -- anonymous free variable
   | isAnonId (unqualify v) = do
     checkAnonFreeVarsExtension $ getPosition v
-    (\n -> Variable spi a $ updQualIdent id (`renameIdent` n) v) <$> newId
+    (\n -> Variable spi a $ updQualIdent id (flip renameIdent n) v) <$> newId
     -- return $ Variable v
     -- normal variable
   | otherwise             = do
@@ -982,9 +947,7 @@ checkVariable spi a v
                             return $ Variable spi a v
       [Constr    _ _]   -> return $ Constructor spi a v
       [GlobalVar f _]   -> addGlobalDep f >> return (Variable spi a v)
-      [LocalVar v' _]   -> return $ Variable spi a
-                                  $ qualify
-                                  $ spanInfoLike v' (qidIdent v)
+      [LocalVar v' _]   -> return $ Variable spi a $ qualify v' @> v
       [RecordLabel _ _] -> return $ Variable spi a v
       rs -> do
         m <- getModuleIdent
@@ -993,9 +956,7 @@ checkVariable spi a v
                                 return $ Variable spi a v
           [Constr    _ _]   -> return $ Constructor spi a v
           [GlobalVar f _]   -> addGlobalDep f >> return (Variable spi a v)
-          [LocalVar v' _]   -> return $ Variable spi a
-                                      $ qualify
-                                      $ spanInfoLike v' (qidIdent v)
+          [LocalVar v' _]   -> return $ Variable spi a $ qualify v' @> v
           [RecordLabel _ _] -> return $ Variable spi a v
           rs'               -> do report $ errAmbiguousIdent rs' v
                                   return $ Variable spi a v
@@ -1034,11 +995,11 @@ checkRecordUpdExpr p spi e fs = do
 -- * Because statements are processed list-wise, inNestedEnv can not be
 --   used as this nesting must be visible to following statements.
 checkStatement :: String -> SpanInfo -> Statement () -> SCM (Statement ())
-checkStatement _ p (StmtExpr spi     e) = StmtExpr spi <$> checkExpr p e
-checkStatement s p (StmtBind spi   t e) =
+checkStatement _ p (StmtExpr spi   e) = StmtExpr spi <$> checkExpr p e
+checkStatement s p (StmtBind spi t e) =
   flip (StmtBind spi) <$> checkExpr p e <*> (incNesting >> bindPattern s p t)
-checkStatement _ _ (StmtDecl spi li ds) =
-  StmtDecl spi li <$> (incNesting >> checkDeclGroup bindVarDecl ds)
+checkStatement _ _ (StmtDecl spi  ds) =
+  StmtDecl spi <$> (incNesting >> checkDeclGroup bindVarDecl ds)
 
 bindPattern :: String -> SpanInfo -> Pattern () -> SCM (Pattern ())
 bindPattern s p t = do
@@ -1120,7 +1081,7 @@ checkFieldLabel l = do
     [RecordLabel _ cs] -> processLabel cs
     rs                 -> case qualLookupVar (qualQualify m l) env of
       [RecordLabel _ cs] -> processLabel cs
-      rs'                -> if null rs && null rs'
+      rs'                -> if (null rs && null rs')
                                then do report $ errUndefinedLabel l
                                        return []
                                else do report $
@@ -1140,10 +1101,9 @@ checkLabels _ (Just c) ls css = do
                            [l | (l, cs) <- zip ls css, c' `notElem` cs]
     _             -> internalError $
                        "Checks.SyntaxCheck.checkLabels: " ++ show c
-checkLabels p Nothing ls css
-  | not (null (foldr1 intersect css)) ||
-    any null css = ok
-  | otherwise    = report $ errNoCommonCons (spanInfo2Pos p) ls
+checkLabels p Nothing ls css =
+  when (null (foldr1 intersect css))
+    $ report $ errNoCommonCons (spanInfo2Pos p) ls
 
 checkField :: (a -> SCM a) -> Field a -> SCM (Field a)
 checkField check (Field p l x) = Field p l <$> check x
@@ -1174,7 +1134,7 @@ recLabels _                        = []
 -- it is necessary to sort the list of declarations.
 
 sortFuncDecls :: [Decl a] -> [Decl a]
-sortFuncDecls = sortFD Set.empty []
+sortFuncDecls decls = sortFD Set.empty [] decls
  where
  sortFD _   res []              = reverse res
  sortFD env res (decl : decls') = case decl of
@@ -1231,6 +1191,23 @@ qualVarIdent (GlobalVar v _) = v
 qualVarIdent (LocalVar  v _) = qualify v
 qualVarIdent _ = internalError "SyntaxCheck.qualVarIdent: no variable"
 
+arity :: RenameInfo -> Int
+arity (Constr      _ n) = n
+arity (GlobalVar   _ n) = n
+arity (LocalVar    _ n) = n
+arity (RecordLabel _ _) = 1
+
+-- Unlike expressions, constructor terms have no possibility to represent
+-- over-applications in functional patterns. Therefore it is necessary to
+-- transform them to nested function patterns using the prelude function
+-- apply. E.g., the function pattern (id id 10) is transformed to
+-- (apply (id id) 10).
+
+genFuncPattAppl :: Pattern () -> [Pattern ()] -> Pattern ()
+genFuncPattAppl term []     = term
+genFuncPattAppl term (t:ts)
+   = FunctionPattern NoSpanInfo () qApplyId [genFuncPattAppl term ts, t] -- TODO FIXME major problem
+
 checkFPTerm :: SpanInfo -> Pattern a -> SCM ()
 checkFPTerm _ (LiteralPattern        _ _ _) = ok
 checkFPTerm _ (NegativePattern       _ _ _) = ok
@@ -1285,12 +1262,12 @@ opAnnotation (InfixConstr a _) = a
 errUnsupportedFPTerm :: String -> Position -> Pattern a -> Message
 errUnsupportedFPTerm s p pat = posMessage p $ text s
   <+> text "patterns are not supported inside a functional pattern."
-  $+$ pPrintPrec 0 pat
+  $+$ ppPattern 0 pat
 
 errUnsupportedFuncPattern :: String -> Position -> Pattern a -> Message
 errUnsupportedFuncPattern s p pat = posMessage p $
   text "Functional patterns are not supported inside a" <+> text s <> dot
-  $+$ pPrintPrec 0 pat
+  $+$ ppPattern 0 pat
 
 errFuncPatNotGlobal :: QualIdent -> Message
 errFuncPatNotGlobal f = posMessage f $ hsep $ map text

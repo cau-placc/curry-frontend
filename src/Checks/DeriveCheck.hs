@@ -24,7 +24,7 @@ import Base.Messages (Message, posMessage)
 import Env.TypeConstructor
 
 deriveCheck :: TCEnv -> Module a -> [Message]
-deriveCheck tcEnv (Module _ _ _ m _ _ ds) = concatMap (checkDecl m tcEnv) ds
+deriveCheck tcEnv (Module _ _ m _ _ ds) = concatMap (checkDecl m tcEnv) ds
 
 -- No instances can be derived for abstract data types as well as for
 -- existential data types.
@@ -33,6 +33,7 @@ checkDecl :: ModuleIdent -> TCEnv -> Decl a -> [Message]
 checkDecl m tcEnv (DataDecl   _ tc _ cs clss)
   | null clss                       = []
   | null cs                         = [errNoAbstractDerive tc]
+  | any (not . null . existVars) cs = [errNoExistentialDerive tc]
   | otherwise                       = concatMap (checkDerivable m tcEnv cs) clss
 checkDecl m tcEnv (NewtypeDecl _ _ _ nc clss) =
   concatMap (checkDerivable m tcEnv [toConstrDecl nc]) clss
@@ -43,7 +44,6 @@ checkDerivable m tcEnv cs cls
   | ocls == qEnumId && not (isEnum cs)       = [errNotEnum cls]
   | ocls == qBoundedId && not (isBounded cs) = [errNotBounded cls]
   | ocls `notElem` derivableClasses          = [errNotDerivable ocls]
-  | ocls == qDataId                          = [errNoDataDerive ocls]
   | otherwise                                = []
   where ocls = getOrigName m cls tcEnv
 
@@ -54,7 +54,7 @@ derivableClasses = [qEqId, qOrdId, qEnumId, qBoundedId, qReadId, qShowId]
 -- where all data constructors are constants.
 
 isEnum :: [ConstrDecl] -> Bool
-isEnum = all ((0 ==) . constrArity)
+isEnum cs = all ((0 ==) . constrArity) cs
 
 -- Instances of 'Bounded' can be derived only for enumerations and for single
 -- constructor types.
@@ -67,14 +67,19 @@ isBounded cs = length cs == 1 || isEnum cs
 -- ---------------------------------------------------------------------------
 
 toConstrDecl :: NewConstrDecl -> ConstrDecl
-toConstrDecl (NewConstrDecl p c      ty) = ConstrDecl p c [ty]
+toConstrDecl (NewConstrDecl p c      ty) = ConstrDecl p [] [] c [ty]
 toConstrDecl (NewRecordDecl p c (l, ty)) =
-  RecordDecl p c [FieldDecl p [l] ty]
+  RecordDecl p [] [] c [FieldDecl p [l] ty]
 
 constrArity :: ConstrDecl -> Int
-constrArity (ConstrDecl  _ _ tys) = length tys
-constrArity (ConOpDecl   _ _ _ _) = 2
-constrArity c@(RecordDecl  _ _ _) = length $ recordLabels c
+constrArity (ConstrDecl  _ _ _ _ tys) = length tys
+constrArity (ConOpDecl   _ _ _ _ _ _) = 2
+constrArity c@(RecordDecl  _ _ _ _ _) = length $ recordLabels c
+
+existVars :: ConstrDecl -> [Ident]
+existVars (ConstrDecl _ evs _ _ _  ) = evs
+existVars (ConOpDecl  _ evs _ _ _ _) = evs
+existVars (RecordDecl _ evs _ _ _  ) = evs
 
 -- ---------------------------------------------------------------------------
 -- Error messages
@@ -85,15 +90,13 @@ errNoAbstractDerive p = posMessage p $
   text "Instances can only be derived for data types with" <+>
   text "at least one constructor"
 
+errNoExistentialDerive :: HasPosition a => a -> Message
+errNoExistentialDerive p = posMessage p $
+  text "Instances cannot be derived for existential data types"
+
 errNotDerivable :: QualIdent -> Message
 errNotDerivable cls = posMessage cls $ hsep $ map text
   ["Instances of type class", escQualName cls, "cannot be derived"]
-
-errNoDataDerive :: QualIdent -> Message
-errNoDataDerive qcls = posMessage qcls $ hsep $ map text
-  [ "Instances of type class"
-  , escQualName qcls
-  , "are automatically derived if possible"]
 
 errNotEnum :: HasPosition a => a -> Message
 errNotEnum p = posMessage p $

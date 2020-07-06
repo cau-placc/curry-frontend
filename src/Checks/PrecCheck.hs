@@ -94,7 +94,7 @@ bindPrecs ds0 = case findMultiples opFixDecls of
   opss -> mapM_ (report . errMultiplePrecedence) opss
   where
     (fixDs, nonFixDs) = partition isInfixDecl ds0
-    innerDs           = [ d | ClassDecl _ _ _ _ _ ds <- ds0, d <- ds ]
+    innerDs           = [ d | ClassDecl _ _ _ _ ds <- ds0, d <- ds ]
     opFixDecls        = [ op | InfixDecl _ _ _ ops <- fixDs, op <- ops ]
     -- Unrenaming is necessary for inner class declarations, because operators
     -- within class declarations have been renamed during syntax checking.
@@ -136,10 +136,10 @@ checkDecl (FunctionDecl p a f           eqs) =
   FunctionDecl p a f <$> mapM checkEquation eqs
 checkDecl (PatternDecl  p t             rhs) =
   PatternDecl p <$> checkPattern t <*> checkRhs rhs
-checkDecl (ClassDecl p li cx cls    tv   ds) =
-  ClassDecl p li cx cls tv <$> mapM checkDecl ds
-checkDecl (InstanceDecl p li cx qcls   inst ds) =
-  InstanceDecl p li cx qcls inst <$> mapM checkDecl ds
+checkDecl (ClassDecl    p cx cls    tv   ds) =
+  ClassDecl p cx cls tv <$> mapM checkDecl ds
+checkDecl (InstanceDecl p cx qcls   inst ds) =
+  InstanceDecl p cx qcls inst <$> mapM checkDecl ds
 checkDecl d                                  = return d
 
 checkEquation :: Equation a -> PCM (Equation a)
@@ -188,10 +188,10 @@ checkPattern (RecordPattern       spi a c fs) =
   RecordPattern spi a c <$> mapM (checkField checkPattern) fs
 
 checkRhs :: Rhs a -> PCM (Rhs a)
-checkRhs (SimpleRhs spi li e ds) = withLocalPrecEnv $
-  flip (SimpleRhs spi li) <$> checkDecls ds <*> checkExpr e
-checkRhs (GuardedRhs spi li es ds) = withLocalPrecEnv $
-  flip (GuardedRhs spi li) <$> checkDecls ds <*> mapM checkCondExpr es
+checkRhs (SimpleRhs  spi e  ds) = withLocalPrecEnv $
+  flip (SimpleRhs spi) <$> checkDecls ds <*> checkExpr e
+checkRhs (GuardedRhs spi es ds) = withLocalPrecEnv $
+  flip (GuardedRhs spi) <$> checkDecls ds <*> mapM checkCondExpr es
 
 checkCondExpr :: CondExpr a -> PCM (CondExpr a)
 checkCondExpr (CondExpr p g e) = CondExpr p <$> checkExpr g <*> checkExpr e
@@ -227,22 +227,19 @@ checkExpr (LeftSection      spi e op) = checkExpr e >>= checkLSection spi op
 checkExpr (RightSection     spi op e) = checkExpr e >>= checkRSection spi op
 checkExpr (Lambda           spi ts e) =
   Lambda spi <$> mapM checkPattern ts <*> checkExpr e
-checkExpr (Let           spi li ds e) = withLocalPrecEnv $
-  Let spi li <$> checkDecls ds <*> checkExpr e
-checkExpr (Do           spi li sts e) = withLocalPrecEnv $
-  Do spi li <$>  mapM checkStmt sts <*> checkExpr e
+checkExpr (Let              spi ds e) = withLocalPrecEnv $
+  Let spi <$> checkDecls ds <*> checkExpr e
+checkExpr (Do              spi sts e) = withLocalPrecEnv $
+  Do spi <$>  mapM checkStmt sts <*> checkExpr e
 checkExpr (IfThenElse   spi e1 e2 e3) =
   IfThenElse spi <$> checkExpr e1 <*> checkExpr e2 <*> checkExpr e3
-checkExpr (Case     spi li ct e alts) =
-  Case spi li ct <$> checkExpr e <*> mapM checkAlt alts
+checkExpr (Case        spi ct e alts) =
+  Case spi ct <$> checkExpr e <*> mapM checkAlt alts
 
 checkStmt :: Statement a -> PCM (Statement a)
-checkStmt (StmtExpr spi     e) =
-  StmtExpr spi    <$> checkExpr e
-checkStmt (StmtDecl spi li ds) =
-  StmtDecl spi li <$> checkDecls ds
-checkStmt (StmtBind spi   t e) =
-  StmtBind spi    <$> checkPattern t <*> checkExpr e
+checkStmt (StmtExpr spi   e) = StmtExpr spi <$> checkExpr e
+checkStmt (StmtDecl spi  ds) = StmtDecl spi <$> checkDecls ds
+checkStmt (StmtBind spi t e) = StmtBind spi <$> checkPattern t <*> checkExpr e
 
 checkAlt :: Alt a -> PCM (Alt a)
 checkAlt (Alt p t rhs) = Alt p <$> checkPattern t <*> checkRhs rhs

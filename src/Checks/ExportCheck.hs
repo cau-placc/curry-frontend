@@ -50,10 +50,10 @@ import Curry.Syntax
 
 import Base.Messages       (Message, internalError, posMessage)
 import Base.TopEnv         (allEntities, origName, localBindings, moduleImports)
-import Base.Types          ( Type (..), unapplyType, arrowBase, rootOfType
+import Base.Types          ( Type (..), unapplyType, arrowBase, PredType (..)
                            , DataConstr (..), constrIdent, recLabels
                            , ClassMethod, methodName
-                           , rawType, rawPredType )
+                           , TypeScheme (..), ExistTypeScheme (..) )
 import Base.Utils          (findMultiples)
 
 import Env.ModuleAlias     (AliasEnv)
@@ -166,9 +166,9 @@ checkThing' f tcExport = do
   where
   justTcOr errFun = maybe (report $ errFun f) (const ok) tcExport
 
-  getTc (DataConstructor  _ _ _ pty) = getTc' $ rawType pty
-  getTc (NewtypeConstructor _ _ pty) = getTc' $ rawType pty
-  getTc (Label _ _ (TypeForall _ (TypeArrow tc' _))) =
+  getTc (DataConstructor  _ _ _ (ForAllExist _ _ (PredType _ ty))) = getTc' ty
+  getTc (NewtypeConstructor _ _ (ForAllExist _ _ (PredType _ ty))) = getTc' ty
+  getTc (Label _ _ (ForAll _ (PredType _ (TypeArrow tc' _)))) =
     let (TypeConstructor tc, _) = unapplyType False tc' in tc
   getTc err = internalError $ currentModuleName ++ ".checkThing'.getTc: " ++ show err
 
@@ -208,8 +208,8 @@ checkTypeAll tc = do
 
 checkModule :: ModuleIdent -> ECM ()
 checkModule em = do
-  isLocal   <- (==)       em <$> getModuleIdent
-  isForeign <- Set.member em <$> getImportedModules
+  isLocal   <- (em ==)         <$> getModuleIdent
+  isForeign <- (Set.member em) <$> getImportedModules
   unless (isLocal || isForeign) $ report $ errModuleNotImported em
 
 -- Check whether two entities of the same kind (type or constructor/function)
@@ -242,7 +242,7 @@ checkNonUniqueness es = map errMultipleType (findMultiples types )
 expand :: ModuleIdent -> AliasEnv -> TCEnv -> ValueEnv -> Maybe ExportSpec
        -> [Export]
 expand m aEnv tcEnv tyEnv spec
-  = fst $ runECM (joinExports . canonExports tcEnv <$> expandSpec spec)
+  = fst $ runECM ((joinExports . canonExports tcEnv) <$> expandSpec spec)
                  m aEnv tcEnv tyEnv
 
 -- While checking all export specifications, the compiler expands
@@ -314,8 +314,8 @@ expandTypeAll tc = do
 
 expandModule :: ModuleIdent -> ECM [Export]
 expandModule em = do
-  isLocal   <- (==)       em <$> getModuleIdent
-  isForeign <- Set.member em <$> getImportedModules
+  isLocal   <- (em ==)         <$> getModuleIdent
+  isForeign <- (Set.member em) <$> getImportedModules
   locals    <- if isLocal   then expandLocalModule       else return []
   foreigns  <- if isForeign then expandImportedModule em else return []
   return $ locals ++ foreigns
@@ -325,31 +325,25 @@ expandLocalModule = do
   tcEnv <- getTyConsEnv
   tyEnv <- getValueEnv
   return $
-       [ exportType t
-         | (_, t)              <- localBindings tcEnv ]
-    ++ [ exportLabel l' ty
-         | (l, Label l' _ ty)  <- localBindings tyEnv, hasGlobalScope l ]
+       [ exportType t | (_, t) <- localBindings tcEnv ]
     ++ [ Export NoSpanInfo f'
          | (f, Value f' _ _ _) <- localBindings tyEnv, hasGlobalScope f ]
+    ++ [ Export NoSpanInfo l'
+         | (l, Label l' _ _)   <- localBindings tyEnv, hasGlobalScope l ]
 
 -- |Expand a module export
 expandImportedModule :: ModuleIdent -> ECM [Export]
 expandImportedModule m = do
   tcEnv <- getTyConsEnv
   tyEnv <- getValueEnv
-  return $ [exportType t        | (_, t)             <- moduleImports m tcEnv]
-        ++ [exportLabel l ty    | (_, Label l _ ty)  <- moduleImports m tyEnv]
+  return $ [exportType t |       (_, t) <- moduleImports m tcEnv]
         ++ [Export NoSpanInfo f | (_, Value f _ _ _) <- moduleImports m tyEnv]
+        ++ [Export NoSpanInfo l | (_, Label l _ _)   <- moduleImports m tyEnv]
 
 exportType :: TypeInfo -> Export
 exportType t = ExportTypeWith NoSpanInfo tc xs
   where tc = origName t
         xs = elements t
-
-exportLabel :: QualIdent -> Type -> Export
-exportLabel qid ty = case rawPredType ty of
-  TypeArrow a _ -> ExportTypeWith NoSpanInfo (rootOfType a) [qidIdent qid]
-  _             -> internalError $ "ExportCheck.exportLabel: " ++ show (qid, ty)
 
 -- -----------------------------------------------------------------------------
 -- Canonicalization and joining of exports
@@ -381,7 +375,7 @@ canonLabels tcEnv es = foldr bindLabels Map.empty (allEntities tcEnv)
   tcs = [tc | ExportTypeWith _ tc _ <- es]
   bindLabels t ls
     | tc' `elem` tcs = foldr (bindLabel tc') ls (elements t)
-    | otherwise      = ls
+    | otherwise     = ls
       where
         tc'            = origName t
         bindLabel tc x =
@@ -424,7 +418,7 @@ elements (TypeVar            _) =
 
 -- get visible constructor and label identifiers for given constructor
 visibleElems :: [DataConstr] -> [Ident]
-visibleElems cs = map constrIdent cs ++ nub (concatMap recLabels cs)
+visibleElems cs = map constrIdent cs ++ (nub (concatMap recLabels cs))
 
 -- get class method names
 visibleMethods :: [ClassMethod] -> [Ident]
@@ -469,10 +463,10 @@ errNonDataTypeOrTypeClass tc = posMessage tc $ hsep $ map text
   [escQualName tc, "is not a data type or type class"]
 
 errOutsideTypeConstructor :: QualIdent -> QualIdent -> Message
-errOutsideTypeConstructor = errOutsideTypeExport "Data constructor"
+errOutsideTypeConstructor c tc = errOutsideTypeExport "Data constructor" c tc
 
 errOutsideTypeLabel :: QualIdent -> QualIdent -> Message
-errOutsideTypeLabel = errOutsideTypeExport "Label"
+errOutsideTypeLabel l tc = errOutsideTypeExport "Label" l tc
 
 errOutsideTypeExport :: String -> QualIdent -> QualIdent -> Message
 errOutsideTypeExport what q tc = posMessage q

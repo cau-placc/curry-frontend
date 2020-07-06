@@ -30,7 +30,7 @@ import qualified Data.Set            as Set (Set, empty, insert, member)
 
 import           Curry.Base.Ident
 import           Curry.Base.SpanInfo
-import           Curry.FlatCurry.Typed.Goodies (typeName, allVarsInTypeExpr)
+import           Curry.FlatCurry.Typed.Goodies (typeName)
 import           Curry.FlatCurry.Typed.Type
 import qualified Curry.Syntax as CS
 
@@ -42,7 +42,6 @@ import Base.TypeExpansion
 import Base.Types
 
 import CompilerEnv
-import Env.Class           (initClassEnv)
 import Env.OpPrec          (mkPrec)
 import Env.TypeConstructor (TCEnv)
 import Env.Value           (ValueEnv, ValueInfo (..), qualLookupValue)
@@ -119,7 +118,7 @@ data FlatEnv = FlatEnv
 
 -- Runs a 'FlatState' action and returns the result
 run :: CompilerEnv -> CS.Module Type -> FlatState a -> a
-run env (CS.Module _ _ _ mid es is ds) act = S.evalState act env0
+run env (CS.Module _ _ mid es is ds) act = S.evalState act env0
   where
   es'  = case es of Just (CS.Exporting _ e) -> e
                     _                       -> []
@@ -241,9 +240,7 @@ trTypeSynonym (CS.TypeDecl _ t tvs ty) = do
   t'   <- trQualIdent qid
   vis  <- getTypeVisibility qid
   tEnv <- S.gets tcEnv
-  ty'  <- trType (transType tEnv $
-                  expandType m tEnv initClassEnv $
-                  toType tvs ty)
+  ty'  <- trType (transType $ expandType m tEnv $ toType tvs ty)
   return [TypeSyn t' vis [0 .. length tvs - 1] ty']
 trTypeSynonym _                        = return []
 
@@ -264,11 +261,6 @@ trTypeDecl (IL.DataDecl      qid a cs) = do
   vis <- getTypeVisibility qid
   cs' <- mapM trConstrDecl cs
   return [Type q' vis [0 .. a - 1] cs']
-trTypeDecl (IL.NewtypeDecl   qid a nc) = do
-  q'  <- trQualIdent qid
-  vis <- getTypeVisibility qid
-  nc' <- trNewConstrDecl nc
-  return [TypeNew q' vis [0 .. a - 1] nc']
 trTypeDecl (IL.ExternalDataDecl qid a) = do
   q'  <- trQualIdent qid
   vis <- getTypeVisibility qid
@@ -282,24 +274,12 @@ trConstrDecl (IL.ConstrDecl qid tys) = flip Cons (length tys)
   <*> getVisibility qid
   <*> mapM trType tys
 
--- Translate a constructor declaration for newtypes
-trNewConstrDecl :: IL.NewConstrDecl -> FlatState NewConsDecl
-trNewConstrDecl (IL.NewConstrDecl qid ty) = NewCons
-  <$> trQualIdent qid
-  <*> getVisibility qid
-  <*> trType ty
-
 -- Translate a type expression
 trType :: IL.Type -> FlatState TypeExpr
 trType (IL.TypeConstructor t tys) = TCons <$> trQualIdent t <*> mapM trType tys
 trType (IL.TypeVariable      idx) = return $ TVar $ abs idx
 trType (IL.TypeArrow     ty1 ty2) = FuncType <$> trType ty1 <*> trType ty2
-trType (IL.TypeForall    idxs ty) = ForallType (map trVar idxs) <$> trType ty
-  where
-    trVar (i, k) = (abs i, trKind k)
-    trKind IL.KindStar          = KStar
-    trKind (IL.KindVariable  _) = KStar
-    trKind (IL.KindArrow k1 k2) = KArrow (trKind k1) (trKind k2)
+trType (IL.TypeForall    idxs ty) = ForallType (map abs idxs) <$> trType ty
 
 -- Convert a fixity
 cvFixity :: CS.Infix -> Fixity
@@ -313,19 +293,21 @@ cvFixity CS.Infix  = InfixOp
 
 -- Translate a function declaration
 trTFuncDecl :: IL.Decl -> FlatState [TFuncDecl]
-trTFuncDecl (IL.FunctionDecl f vs ty e) = do
+trTFuncDecl (IL.FunctionDecl f vs _ e) = do
   f'  <- trQualIdent f
   a   <- getArity f
   vis <- getVisibility f
   ty' <- trType ty
   r'  <- trTRule vs e
   return [TFunc f' a vis ty' r']
-trTFuncDecl (IL.ExternalDecl      f ty) = do
+  where ty = foldr IL.TypeArrow (IL.typeOf e) $ map fst vs
+trTFuncDecl (IL.ExternalDecl     f ty) = do
   f'   <- trQualIdent f
   a    <- getArity f
   vis  <- getVisibility f
   ty'  <- trType ty
-  return [TFunc f' a vis ty' (TExternal ty' (qualName f))]
+  r'   <- trTExternal ty f
+  return [TFunc f' a vis ty' r']
 trTFuncDecl _                           = return []
 
 -- Translate a function rule.
@@ -334,6 +316,9 @@ trTRule :: [(IL.Type, Ident)] -> IL.Expression
         -> FlatState TRule
 trTRule vs e = withFreshEnv $ TRule <$> mapM (uncurry newVar) vs
                                     <*> trTExpr e
+
+trTExternal :: IL.Type -> QualIdent -> FlatState TRule
+trTExternal ty f = flip TExternal (qualName f) <$> trType ty
 
 -- Translate an expression
 trTExpr :: IL.Expression -> FlatState TExpr
@@ -360,8 +345,8 @@ trTExpr (IL.Letrec   bs e) = inNestedEnv $ do
   let (vs, es) = unzip [ ((IL.typeOf b, v), b) | IL.Binding v b <- bs]
   TLet <$> (zip <$> mapM (uncurry newVar) vs <*> mapM trTExpr es)
        <*> trTExpr e
-trTExpr (IL.Typed e ty) = TTyped <$> trTExpr e <*> ty'
-  where ty' = trType $ ty
+trTExpr (IL.Typed e _) = TTyped <$> trTExpr e <*> ty'
+  where ty' = trType $ IL.typeOf e
 
 -- Translate a literal
 trLiteral :: IL.Literal -> FlatState Literal
@@ -422,25 +407,12 @@ genCall call ty f es = do
 genTComb :: IL.Type -> QName -> [IL.Expression] -> CombType -> FlatState TExpr
 genTComb ty qid es ct = do
   ty' <- trType ty
-  let ty'' = snd $ defunc ty' (length es)
+  let ty'' = defunc ty' (length es)
   TComb ty'' ct qid <$> mapM trTExpr es
   where
-    -- The types are in weak prenex normal form.
-    -- So for a ForallType we just need to call defunc on the inner type.
-    -- If a type variable occurs in one of the removed parts of the type,
-    -- We have to remove it from the Variables bound by forall, as that variable
-    -- is not polymorphic anymore.
-    defunc ty'                 0 =
-      ([], ty')
-    defunc (ForallType vs ty1) n =
-      let (tys, ty') = defunc ty1 n
-          tvs = nub $ concatMap allVarsInTypeExpr tys
-      in ([], ForallType (filter ((`elem` tvs) . fst) vs) ty')
-    defunc (FuncType  ty1 ty2) n =
-      let (tys, ty') = defunc ty2 (n - 1)
-      in (ty1:tys, ty')
-    defunc _                _ =
-      internalError $ "GenTypeAnnotatedFlatCurry.genAComb.defunc: " ++ show ty
+  defunc t               0 = t
+  defunc (FuncType _ t2) n = defunc t2 (n - 1)
+  defunc _               _ = internalError "GenTypedFlatCurry.genTComb.defunc"
 
 genApply :: TExpr -> [IL.Expression] -> FlatState TExpr
 genApply e es = do
@@ -462,9 +434,6 @@ type NormState a = S.State (Int, Map.Map Int Int) a
 class Normalize a where
   normalize :: a -> NormState a
 
-instance Normalize a => Normalize [a] where
-  normalize = mapM normalize
-
 instance Normalize Int where
   normalize i = do
     (n, m) <- S.get
@@ -476,37 +445,36 @@ instance Normalize Int where
 
 instance Normalize TypeExpr where
   normalize (TVar           i) = TVar <$> normalize i
-  normalize (TCons      q tys) = TCons q <$> normalize tys
+  normalize (TCons      q tys) = TCons q <$> mapM normalize tys
   normalize (FuncType ty1 ty2) = FuncType <$> normalize ty1 <*> normalize ty2
-  normalize (ForallType is ty) = ForallType <$> mapM normalizeTypeVar is
-                                            <*> normalize ty
-    where normalizeTypeVar (tv, k) = (,) <$> normalize tv <*> pure k
+  normalize (ForallType is ty) =
+    ForallType <$> mapM normalize is <*> normalize ty
+
+instance Normalize b => Normalize (a, b) where
+  normalize (x, y) = (,) x <$> normalize y
 
 instance Normalize TFuncDecl where
   normalize (TFunc f a v ty r) = TFunc f a v <$> normalize ty <*> normalize r
 
 instance Normalize TRule where
-  normalize (TRule        vs e) = TRule <$> mapM normalizeVar vs
+  normalize (TRule        vs e) = TRule <$> mapM normalize vs
                                         <*> normalize e
   normalize (TExternal ty    s) = flip TExternal s <$> normalize ty
-
-normalizeVar :: (VarIndex, TypeExpr) -> NormState (VarIndex, TypeExpr)
-normalizeVar (v, ty) = (,) <$> pure v <*> normalize ty
 
 instance Normalize TExpr where
   normalize (TVarE  ty       v) = flip TVarE  v <$> normalize ty
   normalize (TLit   ty       l) = flip TLit  l  <$> normalize ty
   normalize (TComb  ty ct f es) = flip TComb ct <$> normalize ty
                                                 <*> pure f
-                                                <*> normalize es
+                                                <*> mapM normalize es
   normalize (TLet        ds e) = TLet <$> mapM normalizeBinding ds
                                       <*> normalize e
-    where normalizeBinding (v, b) = (,) <$> normalizeVar v <*> normalize b
+    where normalizeBinding (v, b) = (,) <$> normalize v <*> normalize b
   normalize (TOr          a b) = TOr <$> normalize a
                                      <*> normalize b
   normalize (TCase    ct e bs) = TCase ct <$> normalize e
-                                          <*> normalize bs
-  normalize (TFree       vs e) = TFree <$> mapM normalizeVar vs
+                                          <*> mapM normalize bs
+  normalize (TFree       vs e) = TFree <$> mapM normalize vs
                                        <*> normalize e
   normalize (TTyped     e ty') = TTyped <$> normalize e
                                         <*> normalize ty'
@@ -517,7 +485,7 @@ instance Normalize TBranchExpr where
 instance Normalize TPattern where
   normalize (TPattern  ty c vs) = TPattern <$> normalize ty
                                            <*> pure c
-                                           <*> mapM normalizeVar vs
+                                           <*> mapM normalize vs
   normalize (TLPattern ty    l) = flip TLPattern l <$> normalize ty
 
 -- -----------------------------------------------------------------------------

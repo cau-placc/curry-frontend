@@ -26,32 +26,27 @@ import           Control.Monad
 import           Control.Monad.State.Strict    (State, execState, gets, modify)
 import qualified Data.IntSet         as IntSet
   (IntSet, empty, insert, notMember, singleton, union, unions)
-import qualified Data.Map            as Map    (empty, insert, lookup, (!))
+import qualified Data.Map            as Map    (empty, insert, lookup)
 import           Data.Maybe
   (catMaybes, fromMaybe, listToMaybe)
 import           Data.List
   ((\\), intersect, intersectBy, nub, sort, unionBy)
 import           Data.Char
   (isLower, isUpper, toLower, toUpper, isAlpha)
-import qualified Data.Set.Extra as Set
-import           Data.Tuple.Extra
-  (snd3)
 
 import Curry.Base.Ident
 import Curry.Base.Position
 import Curry.Base.Pretty
 import Curry.Base.SpanInfo
 import Curry.Syntax
-import Curry.Syntax.Utils  (typeVariables)
-import Curry.Syntax.Pretty (pPrint, pPrintPrec, ppIdent)
+import Curry.Syntax.Pretty (ppDecl, ppPattern, ppExpr, ppIdent)
 
-import Base.CurryTypes (ppPredType, toPredSet, fromPred)
+import Base.CurryTypes (ppTypeScheme)
 import Base.Messages   (Message, posMessage, internalError)
 import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                        , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv
                        , qualModifyNestEnv)
 
-import Base.Expr  (Expr (fv))
 import Base.Types
 import Base.Utils (findMultiples)
 import Env.ModuleAlias
@@ -65,13 +60,12 @@ import CompilerOpts
 -- Find potentially incorrect code in a Curry program and generate warnings
 -- for the following issues:
 --   - multiply imported modules, multiply imported/hidden values
---   - unreferenced (type) variables
---   - shadowing (type) variables
+--   - unreferenced variables
+--   - shadowing variables
 --   - idle case alternatives
 --   - overlapping case alternatives
 --   - non-adjacent function rules
 --   - wrong case mode
---   - redundant context
 warnCheck :: WarnOpts -> CaseMode -> AliasEnv -> ValueEnv -> TCEnv -> ClassEnv
           -> Module a -> [Message]
 warnCheck wOpts cOpts aEnv valEnv tcEnv clsEnv mdl
@@ -82,8 +76,7 @@ warnCheck wOpts cOpts aEnv valEnv tcEnv clsEnv mdl
       checkMissingTypeSignatures ds
       checkModuleAlias is
       checkCaseMode  ds
-      checkRedContext ds
-  where Module _ _ _ mid es is ds = fmap (const ()) mdl
+  where Module _ _ mid es is ds = fmap (const ()) mdl
 
 type ScopeEnv = NestEnv IdInfo
 
@@ -146,33 +139,11 @@ runOn s f = sort $ warnings $ execState f s
 checkExports :: Maybe ExportSpec -> WCM () -- TODO checks
 checkExports Nothing                      = ok
 checkExports (Just (Exporting _ exports)) = do
-  m <- getModuleIdent
-  if any (isCurrentModuleExport m) exports
-    then ok
-    else mapM_ (visitExport m ) exports >> reportUnusedGlobalVars
+  mapM_ visitExport exports
+  reportUnusedGlobalVars
     where
-      isCurrentModuleExport m (ExportModule _ m') = m == m'
-      isCurrentModuleExport _ _                   = False
-
-      visitExport _ (Export         _ qid    ) =
-        visitQId qid
-      visitExport m (ExportTypeWith _ qid ids) = do
-        visitQId qid
-        mapM_ (visitQId . qualifyWith m) ids
-      visitExport m (ExportTypeAll  _ qid    ) = do
-        tcEnv <- gets tyConsEnv
-        case qualLookupTypeInfo (qualQualify m qid) tcEnv of
-          [DataType     _ _ cns] -> mapM_ (visitCons m) cns
-          [RenamingType _ _ cn ] -> visitCons m cn
-          [TypeClass    _ _ mts] -> mapM_ (visitMethod m) mts
-          _                      -> ok
-      visitExport _ _              = ok
-
-      visitMethod m (ClassMethod f _ _) = visitQId (qualifyWith m f)
-
-      visitCons m (DataConstr   c    _) = visitQId (qualifyWith m c)
-      visitCons m (RecordConstr c fs _) = visitQId (qualifyWith m c) >>
-                                          mapM_ (visitQId . qualifyWith m) fs
+      visitExport (Export _ qid) = visitQId qid
+      visitExport _              = ok
 
 -- ---------------------------------------------------------------------------
 -- checkImports
@@ -278,42 +249,48 @@ warnDisjoinedFunctionRules ident pos = posMessage ident $ hsep (map text
   <+> parens (text "first occurrence at" <+> text (showLine pos))
 
 checkDecl :: Decl () -> WCM ()
-checkDecl (DataDecl          _ _ vs cs _) = inNestedScope $ do
+checkDecl (DataDecl        _ _ vs cs _) = inNestedScope $ do
   mapM_ insertTypeVar   vs
   mapM_ checkConstrDecl cs
   reportUnusedTypeVars  vs
-checkDecl (NewtypeDecl       _ _ vs nc _) = inNestedScope $ do
+checkDecl (NewtypeDecl     _ _ vs nc _) = inNestedScope $ do
   mapM_ insertTypeVar   vs
   checkNewConstrDecl nc
   reportUnusedTypeVars vs
-checkDecl (TypeDecl            _ _ vs ty) = inNestedScope $ do
+checkDecl (TypeDecl          _ _ vs ty) = inNestedScope $ do
   mapM_ insertTypeVar  vs
   checkTypeExpr ty
   reportUnusedTypeVars vs
-checkDecl (FunctionDecl        p _ f eqs) = checkFunctionDecl p f eqs
-checkDecl (PatternDecl           _ p rhs) = checkPattern p >> checkRhs rhs
-checkDecl (DefaultDecl             _ tys) = mapM_ checkTypeExpr tys
-checkDecl (ClassDecl        _ _ _ _ _ ds) = mapM_ checkDecl ds
-checkDecl (InstanceDecl p _ cx cls ty ds) = do
+checkDecl (FunctionDecl      p _ f eqs) = checkFunctionDecl p f eqs
+checkDecl (PatternDecl         _ p rhs) = checkPattern p >> checkRhs rhs
+checkDecl (DefaultDecl           _ tys) = mapM_ checkTypeExpr tys
+checkDecl (ClassDecl        _ _ _ _ ds) = mapM_ checkDecl ds
+checkDecl (InstanceDecl p cx cls ty ds) = do
   checkOrphanInstance p cx cls ty
   checkMissingMethodImplementations p cls ds
   mapM_ checkDecl ds
-checkDecl (TypeSig                _ _ ty) = do
-  let tvs = map (setPosition $ getPosition ty) (nub (fv ty))
-  checkTypeExpr (ForallType NoSpanInfo tvs ty)
 checkDecl _                             = ok
 
 --TODO: shadowing und context etc.
 checkConstrDecl :: ConstrDecl -> WCM ()
-checkConstrDecl (ConstrDecl     _ c tys) = inNestedScope $ do
+checkConstrDecl (ConstrDecl     _ vs _ c tys) = inNestedScope $ do
+  mapM_ checkTypeShadowing vs
+  mapM_ insertTypeVar vs
   visitId c
   mapM_ checkTypeExpr tys
-checkConstrDecl (ConOpDecl _ ty1 op ty2) = inNestedScope $ do
+  reportUnusedTypeVars vs
+checkConstrDecl (ConOpDecl _ vs _ ty1 op ty2) = inNestedScope $ do
+  mapM_ checkTypeShadowing vs
+  mapM_ insertTypeVar vs
   visitId op
   mapM_ checkTypeExpr [ty1, ty2]
-checkConstrDecl (RecordDecl      _ c fs) = inNestedScope $ do
+  reportUnusedTypeVars vs
+checkConstrDecl (RecordDecl      _ vs _ c fs) = inNestedScope $ do
+  mapM_ checkTypeShadowing vs
+  mapM_ insertTypeVar vs
   visitId c
   mapM_ checkTypeExpr tys
+  reportUnusedTypeVars vs
   where
     tys = [ty | FieldDecl _ _ ty <- fs]
 
@@ -333,12 +310,9 @@ checkTypeExpr (TupleType           _ tys) = mapM_ checkTypeExpr tys
 checkTypeExpr (ListType             _ ty) = checkTypeExpr ty
 checkTypeExpr (ArrowType       _ ty1 ty2) = mapM_ checkTypeExpr [ty1, ty2]
 checkTypeExpr (ParenType            _ ty) = checkTypeExpr ty
-checkTypeExpr (ContextType        _ _ ty) = checkTypeExpr ty
-checkTypeExpr (ForallType        _ vs ty) = inNestedScope $ do
-  mapM_ checkTypeShadowing vs
+checkTypeExpr (ForallType        _ vs ty) = do
   mapM_ insertTypeVar vs
   checkTypeExpr ty
-  reportUnusedTypeVars vs
 
 -- Checks locally declared identifiers (i.e. functions and logic variables)
 -- for shadowing
@@ -357,16 +331,12 @@ checkFunctionDecl p f eqs = inNestedScope $ do
 checkFunctionPatternMatch :: SpanInfo -> Ident -> [Equation ()] -> WCM ()
 checkFunctionPatternMatch spi f eqs = do
   let pats = map (\(Equation _ lhs _) -> snd (flatLhs lhs)) eqs
-  let guards = map eq2Guards eqs
-  (nonExhaustive, overlapped, nondet) <- checkPatternMatching pats guards
+  (nonExhaustive, overlapped, nondet) <- checkPatternMatching pats
   unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
     warnMissingPattern p ("an equation for " ++ escName f) nonExhaustive
   when (nondet || not (null overlapped)) $ warnFor WarnOverlapping $ report $
     warnNondetOverlapping p ("Function " ++ escName f)
   where p = spanInfo2Pos spi
-        eq2Guards :: Equation () -> [CondExpr ()]
-        eq2Guards (Equation _ _ (GuardedRhs _ _ conds _)) = conds
-        eq2Guards _ = []
 
 -- Check an equation for warnings.
 -- This is done in a seperate scope as the left-hand-side may introduce
@@ -407,11 +377,11 @@ checkPattern _                            = ok
 -- Because local declarations may introduce new variables, we need
 -- another scope nesting.
 checkRhs :: Rhs () -> WCM ()
-checkRhs (SimpleRhs _ _ e ds) = inNestedScope $ do
+checkRhs (SimpleRhs _ e ds) = inNestedScope $ do
   checkLocalDeclGroup ds
   checkExpr e
   reportUnusedVars
-checkRhs (GuardedRhs _ _ ce ds) = inNestedScope $ do
+checkRhs (GuardedRhs _ ce ds) = inNestedScope $ do
   checkLocalDeclGroup ds
   mapM_ checkCondExpr ce
   reportUnusedVars
@@ -422,10 +392,7 @@ checkCondExpr (CondExpr _ c e) = checkExpr c >> checkExpr e
 checkExpr :: Expression () -> WCM ()
 checkExpr (Variable            _ _ v) = visitQId v
 checkExpr (Paren                 _ e) = checkExpr e
-checkExpr (Typed              _ e ty) = do
-  checkExpr e
-  let tvs = map (setPosition $ getPosition ty) (nub (fv ty))
-  checkTypeExpr (ForallType NoSpanInfo tvs ty)
+checkExpr (Typed               _ e _) = checkExpr e
 checkExpr (Record           _ _ _ fs) = mapM_ (checkField checkExpr) fs
 checkExpr (RecordUpdate       _ e fs) = do
   checkExpr e
@@ -449,16 +416,16 @@ checkExpr (Lambda             _ ps e) = inNestedScope $ do
   mapM_ (insertPattern False) ps
   checkExpr e
   reportUnusedVars
-checkExpr (Let              _ _ ds e) = inNestedScope $ do
+checkExpr (Let                _ ds e) = inNestedScope $ do
   checkLocalDeclGroup ds
   checkExpr e
   reportUnusedVars
-checkExpr (Do              _ _ sts e) = checkStatements sts e
+checkExpr (Do                _ sts e) = checkStatements sts e
 checkExpr (IfThenElse     _ e1 e2 e3) = mapM_ checkExpr [e1, e2, e3]
-checkExpr (Case      spi _ ct e alts) = do
+checkExpr (Case          _ ct e alts) = do
   checkExpr e
   mapM_ checkAlt alts
-  checkCaseAlts spi ct alts
+  checkCaseAlts ct alts
 checkExpr _                       = ok
 
 checkStatements :: [Statement ()] -> Expression () -> WCM ()
@@ -468,9 +435,9 @@ checkStatements (s:ss) e = inNestedScope $ do
   reportUnusedVars
 
 checkStatement :: Statement () -> WCM ()
-checkStatement (StmtExpr    _ e) = checkExpr e
-checkStatement (StmtDecl _ _ ds) = checkLocalDeclGroup ds
-checkStatement (StmtBind _  p e) = do
+checkStatement (StmtExpr   _ e) = checkExpr e
+checkStatement (StmtDecl  _ ds) = checkLocalDeclGroup ds
+checkStatement (StmtBind _ p e) = do
   checkPattern p >> insertPattern False p
   checkExpr e
 
@@ -494,8 +461,7 @@ checkOrphanInstance p cx cls ty = warnFor WarnOrphanInstances $ do
   let ocls = getOrigName m cls tcEnv
       otc  = getOrigName m tc  tcEnv
   unless (isLocalIdent m ocls || isLocalIdent m otc) $ report $
-    warnOrphanInstance (spanInfo2Pos p) $ pPrint $
-    InstanceDecl p WhitespaceLayout cx cls ty []
+    warnOrphanInstance (spanInfo2Pos p) $ ppDecl $ InstanceDecl p cx cls ty []
   where tc = typeConstr ty
 
 warnOrphanInstance :: Position -> Doc -> Message
@@ -536,7 +502,7 @@ checkMissingTypeSignatures ds = warnFor WarnMissingSignatures $ do
     tyScs <- mapM getTyScheme untypedFs
     mapM_ report $ zipWith (warnMissingTypeSignature mid) untypedFs tyScs
 
-getTyScheme :: Ident -> WCM Type
+getTyScheme :: Ident -> WCM TypeScheme
 getTyScheme q = do
   m     <- getModuleIdent
   tyEnv <- gets valueEnv
@@ -544,11 +510,10 @@ getTyScheme q = do
     [Value  _ _ _ tys] -> tys
     _ -> internalError $ "Checks.WarnCheck.getTyScheme: " ++ show q
 
-warnMissingTypeSignature :: ModuleIdent -> Ident -> Type -> Message
-warnMissingTypeSignature mid i pty = posMessage i $ fsep
+warnMissingTypeSignature :: ModuleIdent -> Ident -> TypeScheme -> Message
+warnMissingTypeSignature mid i tys = posMessage i $ fsep
   [ text "Top-level binding with no type signature:"
-  , nest 2 $ text (showIdent i) <+> text "::"
-                                <+> ppPredType mid (rawPredType pty)
+  , nest 2 $ text (showIdent i) <+> text "::" <+> ppTypeScheme mid tys
   ]
 
 -- -----------------------------------------------------------------------------
@@ -584,13 +549,11 @@ warnAliasNameClash mids = posMessage (head mids) $ text
 -- Check for overlapping/unreachable and non-exhaustive case alternatives
 -- -----------------------------------------------------------------------------
 
-checkCaseAlts :: SpanInfo -> CaseType -> [Alt ()] -> WCM ()
-checkCaseAlts _ _ []      = ok
-checkCaseAlts spi ct alts = do
-  let spis = map (\(Alt s _ _) -> s) alts
+checkCaseAlts :: CaseType -> [Alt ()] -> WCM ()
+checkCaseAlts _  []                   = ok
+checkCaseAlts ct alts@(Alt spi _ _ : _) = do
   let pats = map (\(Alt _ pat _) -> [pat]) alts
-  let guards = map alt2Guards alts
-  (nonExhaustive, overlapped, nondet) <- checkPatternMatching pats guards
+  (nonExhaustive, overlapped, nondet) <- checkPatternMatching pats
   case ct of
     Flex -> do
       unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
@@ -601,11 +564,8 @@ checkCaseAlts spi ct alts = do
       unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
         warnMissingPattern p "a case alternative" nonExhaustive
       unless (null overlapped) $ warnFor WarnOverlapping $ report $
-        warnUnreachablePattern (spanInfo2Pos $ (spis !!) $ fst $ head overlapped) $ map snd overlapped
+        warnUnreachablePattern p overlapped
   where p = spanInfo2Pos spi
-        alt2Guards :: Alt () -> [CondExpr ()]
-        alt2Guards (Alt _ _ (GuardedRhs _ _ conds _)) = conds
-        alt2Guards _ = []
 
 -- -----------------------------------------------------------------------------
 -- Check for non-exhaustive and overlapping patterns.
@@ -623,19 +583,19 @@ checkCaseAlts spi ct alts = do
 -- matching in function declarations and (f)case expressions.
 -- -----------------------------------------------------------------------------
 
-checkPatternMatching :: [[Pattern ()]] -> [[CondExpr ()]]
-                     -> WCM ([ExhaustivePats], [OverlappingPats], Bool)
-checkPatternMatching pats guards = do
+checkPatternMatching :: [[Pattern ()]]
+                     -> WCM ([ExhaustivePats], [[Pattern ()]], Bool)
+checkPatternMatching pats = do
   -- 1. We simplify the patterns by removing syntactic sugar temporarily
   --    for a simpler implementation.
   simplePats <- mapM (mapM simplifyPat) pats
   -- 2. We compute missing and used pattern matching alternatives
-  (missing, used, nondet) <- processEqs (zip3 [0..] simplePats guards)
+  (missing, used, nondet) <- processEqs (zip [1..] simplePats)
   -- 3. If any, we report the missing patterns, whereby we re-add the syntactic
   --    sugar removed in step (1) for a more precise output.
   nonExhaustive <- mapM tidyExhaustivePats missing
-  let overlap = [(i, eqn) | (i, eqn) <- zip [0..] pats, i `IntSet.notMember` used]
-  return (nonExhaustive, overlap, nondet)
+  let overlap = [ eqn | (i, eqn) <- zip [1..] pats, i `IntSet.notMember` used]
+  return (nonExhaustive , overlap, nondet)
 
 -- |Simplify a 'Pattern' until it only consists of
 --   * Variables
@@ -698,38 +658,23 @@ simplifyListPattern =
 -- number of possible patterns. Missing literals are therefore converted
 -- into the form @ ... x ... with x `notElem` [l1, ..., ln]@.
 type EqnPats = [Pattern ()]
-type EqnGuards = [CondExpr ()]
 type EqnNo   = Int
-type EqnInfo = (EqnNo, EqnPats, EqnGuards)
+type EqnInfo = (EqnNo, EqnPats)
 
 type ExhaustivePats = (EqnPats, [(Ident, [Literal])])
-type OverlappingPats = (EqnNo, EqnPats)
 type EqnSet  = IntSet.IntSet
 
 -- |Compute the missing pattern by inspecting the first patterns and
 -- categorize them as literal, constructor or variable patterns.
 processEqs :: [EqnInfo] -> WCM ([ExhaustivePats], EqnSet, Bool)
 processEqs []              = return ([], IntSet.empty, False)
-processEqs eqs@((n, ps, gs):eqs')
-  | null ps                = if guardsExhaustive then return ([], IntSet.singleton n, length eqs > 1)
-                                                 else do -- Current expression is guarded, thus potentially
-                                                         -- non-exhaustive. Therefore process remaining expressions.
-                                                         (missing', used', _) <- processEqs eqs'
-                                                         return (missing', IntSet.insert n used', length eqs > 1)
-  | any isLitPat firstPats = processLits eqs
-  | any isConPat firstPats = processCons eqs
-  | all isVarPat firstPats = processVars eqs
-  | otherwise              = internalError "Checks.WarnCheck.processEqs"
+processEqs eqs@((n, ps):_)
+  | null ps                    = return ([], IntSet.singleton n, length eqs > 1)
+  | any isLitPat firstPats     = processLits eqs
+  | any isConPat firstPats     = processCons eqs
+  | all isVarPat firstPats     = processVars eqs
+  | otherwise                  = internalError "Checks.WarnCheck.processEqs"
   where firstPats = map firstPat eqs
-        guardsExhaustive = null gs || any guardAlwaysTrue gs
-        guardAlwaysTrue :: CondExpr () -> Bool
-        guardAlwaysTrue (CondExpr _ e _) = case e of
-          Constructor _ _ q -> qidAlwaysTrue q
-          Variable    _ _ q -> qidAlwaysTrue q
-          _ -> False
-        qidAlwaysTrue :: QualIdent -> Bool
-        qidAlwaysTrue q = elem (idName $ qidIdent q) ["True", "success", "otherwise"]
-        
 
 -- |Literal patterns are checked by extracting the matched literals
 --  and constructing a pattern for any missing case.
@@ -752,7 +697,7 @@ processLits qs@(q:_) = do
   defaults   = [ shiftPat q' | q' <- qs, isVarPat (firstPat q') ]
   -- Pattern for all non-matched literals
   defaultPat = ( VariablePattern NoSpanInfo () newVar :
-                   replicate (length (snd3 q) - 1) wildPat
+                   replicate (length (snd q) - 1) wildPat
                , [(newVar, usedLits)]
                )
   newVar     = mkIdent "x"
@@ -799,7 +744,7 @@ processCons qs@(q:_) = do
   -- default alternatives (variable pattern)
   defaults     = [ shiftPat q' | q' <- qs, isVarPat (firstPat q') ]
   -- Pattern for a non-matched constructors
-  defaultPat c = (mkPattern c : replicate (length (snd3 q) - 1) wildPat, [])
+  defaultPat c = (mkPattern c : replicate (length (snd q) - 1) wildPat, [])
   mkPattern  c = ConstructorPattern NoSpanInfo ()
                   (qualifyLike (fst $ head used_cons) (constrIdent c))
                   (replicate (length $ constrTypes c) wildPat)
@@ -819,17 +764,17 @@ processUsedCons cons qs = do
 
   makeCon c a ps = let (args, rest) = splitAt a ps
                    in ConstructorPattern NoSpanInfo () c args : rest
-  
-  removeFirstCon c a (n, p:ps, gs)
-    | isVarPat p = (n, replicate a wildPat ++ ps, gs)
-    | isCon c  p = (n, patArgs p           ++ ps, gs)
+
+  removeFirstCon c a (n, p:ps)
+    | isVarPat p = (n, replicate a wildPat ++ ps)
+    | isCon c  p = (n, patArgs p           ++ ps)
   removeFirstCon _ _ _ = internalError "Checks.WarnCheck.removeFirstCon"
 
 -- |Variable patterns are exhaustive, so they are checked by simply
 -- checking the following patterns.
 processVars :: [EqnInfo] -> WCM ([ExhaustivePats], EqnSet, Bool)
 processVars []               = error "WarnCheck.processVars"
-processVars eqs@((n, _, _) : _) = do
+processVars eqs@((n, _) : _) = do
   let ovlp = length eqs > 1
   (missing, used, nd) <- processEqs (map shiftPat eqs)
   return ( map (\(xs, ys) -> (wildPat : xs, ys)) missing
@@ -848,8 +793,8 @@ getConTy q = do
   tyEnv <- gets valueEnv
   tcEnv <- gets tyConsEnv
   case qualLookupValue q tyEnv of
-    [DataConstructor  _ _ _ tySc] -> return $ rawType tySc
-    [NewtypeConstructor _ _ tySc] -> return $ rawType tySc
+    [DataConstructor  _ _ _ (ForAllExist _ _ (PredType _ ty))] -> return ty
+    [NewtypeConstructor _ _ (ForAllExist _ _ (PredType _ ty))] -> return ty
     _ -> case qualLookupTypeInfo q tcEnv of
       [AliasType _ _ _ ty] -> return ty
       _ -> internalError $ "Checks.WarnCheck.getConTy: " ++ show q
@@ -906,13 +851,13 @@ tidyPat p = internalError $ "Checks.WarnCheck.tidyPat: " ++ show p
 
 -- |Get the first pattern of a list.
 firstPat :: EqnInfo -> Pattern ()
-firstPat (_, [],    _) = internalError "Checks.WarnCheck.firstPat: empty list"
-firstPat (_, (p:_), _) = p
+firstPat (_, []   ) = internalError "Checks.WarnCheck.firstPat: empty list"
+firstPat (_, (p:_)) = p
 
 -- |Drop the first pattern of a list.
 shiftPat :: EqnInfo -> EqnInfo
-shiftPat (_, [],     _ ) = internalError "Checks.WarnCheck.shiftPat: empty list"
-shiftPat (n, (_:ps), gs) = (n, ps, gs)
+shiftPat (_, []    ) = internalError "Checks.WarnCheck.shiftPat: empty list"
+shiftPat (n, (_:ps)) = (n, ps)
 
 -- |Wildcard pattern.
 wildPat :: Pattern ()
@@ -982,9 +927,9 @@ warnMissingPattern p loc pats = posMessage p
   ppExPat (ps, cs)
     | null cs   = ppPats
     | otherwise = ppPats <+> text "with" <+> hsep (map ppCons cs)
-    where ppPats = hsep (map (pPrintPrec 2) ps)
+    where ppPats = hsep (map (ppPattern 2) ps)
   ppCons (i, lits) = ppIdent i <+> text "`notElem`"
-            <+> pPrintPrec 0 (List NoSpanInfo () (map (Literal NoSpanInfo ()) lits))
+            <+> ppExpr 0 (List NoSpanInfo () (map (Literal NoSpanInfo ()) lits))
 
 -- |Warning message for unreachable patterns.
 -- To shorten the output only the first 'maxPattern' are printed,
@@ -999,7 +944,7 @@ warnUnreachablePattern p pats = posMessage p
     | length ps > maxPattern = ppPats ++ [text "..."]
     | otherwise              = ppPats
     where ppPats = map ppPat (take maxPattern ps)
-  ppPat ps = hsep (map (pPrintPrec 2) ps)
+  ppPat ps = hsep (map (ppPattern 2) ps)
 
 -- |Maximum number of missing patterns to be shown.
 maxPattern :: Int
@@ -1041,26 +986,26 @@ reportUnusedTypeVars vs = warnFor WarnUnusedBindings $ do
 -- sides.
 
 insertDecl :: Decl a -> WCM ()
-insertDecl (DataDecl      _ d _ cs _) = do
+insertDecl (DataDecl     _ d _ cs _) = do
   insertTypeConsId d
   mapM_ insertConstrDecl cs
-insertDecl (ExternalDataDecl   _ d _) = insertTypeConsId d
-insertDecl (NewtypeDecl   _ d _ nc _) = do
+insertDecl (ExternalDataDecl  _ d _) = insertTypeConsId d
+insertDecl (NewtypeDecl  _ d _ nc _) = do
   insertTypeConsId d
   insertNewConstrDecl nc
-insertDecl (TypeDecl        _ t _ ty) = do
+insertDecl (TypeDecl       _ t _ ty) = do
   insertTypeConsId t
   insertTypeExpr ty
-insertDecl (FunctionDecl     _ _ f _) = do
+insertDecl (FunctionDecl    _ _ f _) = do
   cons <- isConsId f
   unless cons $ insertVar f
-insertDecl (ExternalDecl        _ vs) = mapM_ (insertVar . varIdent) vs
-insertDecl (PatternDecl        _ p _) = insertPattern False p
-insertDecl (FreeDecl            _ vs) = mapM_ (insertVar . varIdent) vs
-insertDecl (ClassDecl _ _ _ cls _ ds) = do
+insertDecl (ExternalDecl       _ vs) = mapM_ (insertVar . varIdent) vs
+insertDecl (PatternDecl       _ p _) = insertPattern False p
+insertDecl (FreeDecl           _ vs) = mapM_ (insertVar . varIdent) vs
+insertDecl (ClassDecl _ _ cls _  ds) = do
   insertTypeConsId cls
   mapM_ insertVar $ concatMap methods ds
-insertDecl _                          = ok
+insertDecl _                         = ok
 
 insertTypeExpr :: TypeExpr -> WCM ()
 insertTypeExpr (VariableType       _ _) = ok
@@ -1070,13 +1015,12 @@ insertTypeExpr (TupleType        _ tys) = mapM_ insertTypeExpr tys
 insertTypeExpr (ListType          _ ty) = insertTypeExpr ty
 insertTypeExpr (ArrowType    _ ty1 ty2) = mapM_ insertTypeExpr [ty1,ty2]
 insertTypeExpr (ParenType         _ ty) = insertTypeExpr ty
-insertTypeExpr (ContextType     _ _ ty) = insertTypeExpr ty
 insertTypeExpr (ForallType      _ _ ty) = insertTypeExpr ty
 
 insertConstrDecl :: ConstrDecl -> WCM ()
-insertConstrDecl (ConstrDecl _    c _) = insertConsId c
-insertConstrDecl (ConOpDecl  _ _ op _) = insertConsId op
-insertConstrDecl (RecordDecl _    c _) = insertConsId c
+insertConstrDecl (ConstrDecl _ _ _    c _) = insertConsId c
+insertConstrDecl (ConOpDecl  _ _ _ _ op _) = insertConsId op
+insertConstrDecl (RecordDecl _ _ _    c _) = insertConsId c
 
 insertNewConstrDecl :: NewConstrDecl -> WCM ()
 insertNewConstrDecl (NewConstrDecl _ c _) = insertConsId c
@@ -1282,7 +1226,7 @@ checkCaseModeDecl (TypeDecl _ tc vs ty) = do
   checkCaseModeTypeExpr ty
 checkCaseModeDecl (TypeSig _ fs qty) = do
   mapM_ (checkCaseModeID isFuncName) fs
-  checkCaseModeTypeExpr qty
+  checkCaseModeQualTypeExpr qty
 checkCaseModeDecl (FunctionDecl _ _ f eqs) = do
   checkCaseModeID isFuncName f
   mapM_ checkCaseModeEquation eqs
@@ -1294,26 +1238,32 @@ checkCaseModeDecl (PatternDecl _ t rhs) = do
 checkCaseModeDecl (FreeDecl  _ vs) =
   mapM_ (checkCaseModeID isVarName . varIdent) vs
 checkCaseModeDecl (DefaultDecl _ tys) = mapM_ checkTypeExpr tys
-checkCaseModeDecl (ClassDecl _ _ cx cls tv ds) = do
+checkCaseModeDecl (ClassDecl _ cx cls tv ds) = do
   checkCaseModeContext cx
   checkCaseModeID isClassDeclName cls
   checkCaseModeID isVarName tv
   mapM_ checkCaseModeDecl ds
-checkCaseModeDecl (InstanceDecl _ _ cx _ inst ds) = do
+checkCaseModeDecl (InstanceDecl _ cx _ inst ds) = do
   checkCaseModeContext cx
   checkCaseModeTypeExpr inst
   mapM_ checkCaseModeDecl ds
 checkCaseModeDecl _ = ok
 
 checkCaseModeConstr :: ConstrDecl -> WCM ()
-checkCaseModeConstr (ConstrDecl _ c tys) = do
+checkCaseModeConstr (ConstrDecl _ evs cx c tys) = do
+  mapM_ (checkCaseModeID isVarName) evs
+  checkCaseModeContext cx
   checkCaseModeID isConstrName c
   mapM_ checkCaseModeTypeExpr tys
-checkCaseModeConstr (ConOpDecl  _ ty1 c ty2) = do
+checkCaseModeConstr (ConOpDecl  _ evs cx ty1 c ty2) = do
+  mapM_ (checkCaseModeID isVarName) evs
+  checkCaseModeContext cx
   checkCaseModeTypeExpr ty1
   checkCaseModeID isConstrName c
   checkCaseModeTypeExpr ty2
-checkCaseModeConstr (RecordDecl _ c fs) = do
+checkCaseModeConstr (RecordDecl _ evs cx c fs) = do
+  mapM_ (checkCaseModeID isVarName) evs
+  checkCaseModeContext cx
   checkCaseModeID isConstrName c
   mapM_ checkCaseModeFieldDecl fs
 
@@ -1348,13 +1298,15 @@ checkCaseModeTypeExpr (ArrowType _ ty1 ty2) = do
   checkCaseModeTypeExpr ty1
   checkCaseModeTypeExpr ty2
 checkCaseModeTypeExpr (ParenType _ ty) = checkCaseModeTypeExpr ty
-checkCaseModeTypeExpr (ContextType _ cx ty) = do
-  checkCaseModeContext cx
-  checkCaseModeTypeExpr ty
 checkCaseModeTypeExpr (ForallType _ tvs ty) = do
   mapM_ (checkCaseModeID isVarName) tvs
   checkCaseModeTypeExpr ty
 checkCaseModeTypeExpr _ = ok
+
+checkCaseModeQualTypeExpr :: QualTypeExpr -> WCM ()
+checkCaseModeQualTypeExpr (QualTypeExpr _ cx ty) = do
+  checkCaseModeContext cx
+  checkCaseModeTypeExpr ty
 
 checkCaseModeEquation :: Equation a -> WCM ()
 checkCaseModeEquation (Equation _ lhs rhs) = do
@@ -1374,10 +1326,10 @@ checkCaseModeLhs (ApLhs _ lhs ts) = do
   mapM_ checkCaseModePattern ts
 
 checkCaseModeRhs :: Rhs a -> WCM ()
-checkCaseModeRhs (SimpleRhs _ _ e ds) = do
+checkCaseModeRhs (SimpleRhs _ e ds) = do
   checkCaseModeExpr e
   mapM_ checkCaseModeDecl ds
-checkCaseModeRhs (GuardedRhs _ _ es ds) = do
+checkCaseModeRhs (GuardedRhs _ es ds) = do
   mapM_ checkCaseModeCondExpr es
   mapM_ checkCaseModeDecl ds
 
@@ -1412,7 +1364,7 @@ checkCaseModeExpr :: Expression a -> WCM ()
 checkCaseModeExpr (Paren _ e) = checkCaseModeExpr e
 checkCaseModeExpr (Typed _ e qty) = do
   checkCaseModeExpr e
-  checkCaseModeTypeExpr qty
+  checkCaseModeQualTypeExpr qty
 checkCaseModeExpr (Record _ _ _ fs) = mapM_ checkCaseModeFieldExpr fs
 checkCaseModeExpr (RecordUpdate _ e fs) = do
   checkCaseModeExpr e
@@ -1445,25 +1397,25 @@ checkCaseModeExpr (RightSection _ _ e) = checkCaseModeExpr e
 checkCaseModeExpr (Lambda _ ts e) = do
   mapM_ checkCaseModePattern ts
   checkCaseModeExpr e
-checkCaseModeExpr (Let _ _ ds e) = do
+checkCaseModeExpr (Let _ ds e) = do
   mapM_ checkCaseModeDecl ds
   checkCaseModeExpr e
-checkCaseModeExpr (Do _ _ stms e) = do
+checkCaseModeExpr (Do _ stms e) = do
   mapM_ checkCaseModeStatement stms
   checkCaseModeExpr e
 checkCaseModeExpr (IfThenElse _ e1 e2 e3) = do
   checkCaseModeExpr e1
   checkCaseModeExpr e2
   checkCaseModeExpr e3
-checkCaseModeExpr (Case _ _ _ e as) = do
+checkCaseModeExpr (Case _ _ e as) = do
   mapM_ checkCaseModeAlt as
   checkCaseModeExpr e
 checkCaseModeExpr _ = ok
 
 checkCaseModeStatement :: Statement a -> WCM ()
-checkCaseModeStatement (StmtExpr _    e) = checkCaseModeExpr e
-checkCaseModeStatement (StmtDecl _ _ ds) = mapM_ checkCaseModeDecl ds
-checkCaseModeStatement (StmtBind _  t e) = do
+checkCaseModeStatement (StmtExpr _ e) = checkCaseModeExpr e
+checkCaseModeStatement (StmtDecl _ ds) = mapM_ checkCaseModeDecl ds
+checkCaseModeStatement (StmtBind _ t e) = do
   checkCaseModePattern t
   checkCaseModeExpr e
 
@@ -1506,174 +1458,8 @@ isDataDeclName CaseModeHaskell (x:_) | isAlpha x = isUpper x
 isDataDeclName _               _     = True
 
 -- ---------------------------------------------------------------------------
--- Warn for redundant context
--- ---------------------------------------------------------------------------
-
---traverse the AST for QualTypeExpr/Context and check for redundancy
-checkRedContext :: [Decl a] -> WCM ()
-checkRedContext = warnFor WarnRedundantContext . mapM_ checkRedContextDecl
-
-getRedPredSet :: ModuleIdent -> ClassEnv -> TCEnv -> PredSet -> PredSet
-getRedPredSet m cenv tcEnv ps =
-  Set.map (pm Map.!) $ Set.difference qps $ minPredSet cenv qps --or fromJust $ Map.lookup
-  where (qps, pm) = Set.foldr qualifyAndAddPred (Set.empty, Map.empty) ps
-        qualifyAndAddPred p@(Pred qid ty) (ps', pm') =
-          let qp = Pred (getOrigName m qid tcEnv) ty
-          in (Set.insert qp ps', Map.insert qp p pm')
-
-getPredFromContext :: Context -> ([Ident], PredSet)
-getPredFromContext cx =
-  let vs = concatMap (\(Constraint _ _ ty) -> typeVariables ty) cx
-  in (vs, toPredSet vs cx)
-
-getPredFromType :: TypeExpr -> ([Ident], PredSet)
-getPredFromType (ContextType _ cx ty) =
-  let (vs1, ps1) = getPredFromContext cx
-      (vs2, ps2) = getPredFromType ty
-  in (vs1 ++ vs2, Set.union ps1 ps2)
-getPredFromType (ApplyType _ ty1 ty2) =
-  let (vs1, ps1) = getPredFromType ty1
-      (vs2, ps2) = getPredFromType ty2
-  in (vs1 ++ vs2, Set.union ps1 ps2)
-getPredFromType (ArrowType _ ty1 ty2) =
-  let (vs1, ps1) = getPredFromType ty1
-      (vs2, ps2) = getPredFromType ty2
-  in (vs1 ++ vs2, Set.union ps1 ps2)
-getPredFromType (TupleType _ tys) =
-  let (vss, pss) = unzip $ map getPredFromType tys
-  in (concat vss, Set.unions pss)
-getPredFromType (ListType  _ ty) = getPredFromType ty
-getPredFromType (ParenType _ ty) = getPredFromType ty
-getPredFromType (ForallType _ _ ty) = getPredFromType ty
-getPredFromType _ = ([], Set.empty)
-
-checkRedContext' :: (Pred -> Message) -> PredSet -> WCM ()
-checkRedContext' f ps = do
-  m     <- gets moduleId
-  cenv  <- gets classEnv
-  tcEnv <- gets tyConsEnv
-  mapM_ (report . f) (getRedPredSet m cenv tcEnv ps)
-
-checkRedContextDecl :: Decl a -> WCM ()
-checkRedContextDecl (TypeSig _ ids ty) =
-  checkRedContext' (warnRedContext (warnRedFuncString ids) vs) ps
-  where (vs, ps) = getPredFromType ty
-checkRedContextDecl (FunctionDecl _ _ _ eqs) = mapM_ checkRedContextEq eqs
-checkRedContextDecl (PatternDecl _ _ rhs) = checkRedContextRhs rhs
-checkRedContextDecl (ClassDecl _ _ cx i _ ds) = do
-  checkRedContext'
-    (warnRedContext (text ("class declaration " ++ escName i)) vs)
-    ps
-  mapM_ checkRedContextDecl ds
-  where (vs, ps) = getPredFromContext cx
-checkRedContextDecl (InstanceDecl _ _ cx qid _ ds) = do
-  checkRedContext'
-    (warnRedContext (text ("instance declaration " ++ escQualName qid)) vs)
-    ps
-  mapM_ checkRedContextDecl ds
-  where (vs, ps) = getPredFromContext cx
-checkRedContextDecl (TypeDecl _ idt _ ty) =
-  checkRedContext'
-    (warnRedContext (text ("type declaration " ++ escName idt)) vs)
-    ps
-  where (vs, ps) = getPredFromType ty
-checkRedContextDecl _ = return ()
-
-checkRedContextEq :: Equation a -> WCM ()
-checkRedContextEq (Equation _ _ rhs) = checkRedContextRhs rhs
-
-checkRedContextRhs :: Rhs a -> WCM ()
-checkRedContextRhs (SimpleRhs  _ _ e  ds) = do
-  checkRedContextExpr e
-  mapM_ checkRedContextDecl ds
-checkRedContextRhs (GuardedRhs _ _ cs ds) = do
-  mapM_ checkRedContextCond cs
-  mapM_ checkRedContextDecl ds
-
-checkRedContextCond :: CondExpr a -> WCM ()
-checkRedContextCond (CondExpr _ e1 e2) = do
-  checkRedContextExpr e1
-  checkRedContextExpr e2
-
-checkRedContextExpr :: Expression a -> WCM ()
-checkRedContextExpr (Paren _ e) = checkRedContextExpr e
-checkRedContextExpr (Typed _ e ty) = do
-  checkRedContextExpr e
-  checkRedContext' (warnRedContext (text "type signature") vs) ps
-  where (vs, ps) = getPredFromType ty
-checkRedContextExpr (Record _ _ _ fs) = mapM_ checkRedContextFieldExpr fs
-checkRedContextExpr (RecordUpdate _ e fs) = do
-  checkRedContextExpr e
-  mapM_ checkRedContextFieldExpr fs
-checkRedContextExpr (Tuple  _ es) = mapM_ checkRedContextExpr es
-checkRedContextExpr (List _ _ es) = mapM_ checkRedContextExpr es
-checkRedContextExpr (ListCompr _ e sts) = do
-  checkRedContextExpr e
-  mapM_ checkRedContextStmt sts
-checkRedContextExpr (EnumFrom _ e) = checkRedContextExpr e
-checkRedContextExpr (EnumFromThen _ e1 e2) = do
-  checkRedContextExpr e1
-  checkRedContextExpr e2
-checkRedContextExpr (EnumFromTo _ e1 e2) = do
-  checkRedContextExpr e1
-  checkRedContextExpr e2
-checkRedContextExpr (EnumFromThenTo _ e1 e2 e3) = do
-  checkRedContextExpr e1
-  checkRedContextExpr e2
-  checkRedContextExpr e3
-checkRedContextExpr (UnaryMinus _ e) = checkRedContextExpr e
-checkRedContextExpr (Apply _ e1 e2) = do
-  checkRedContextExpr e1
-  checkRedContextExpr e2
-checkRedContextExpr (InfixApply _ e1 _ e2) = do
-  checkRedContextExpr e1
-  checkRedContextExpr e2
-checkRedContextExpr (LeftSection  _ e _) = checkRedContextExpr e
-checkRedContextExpr (RightSection _ _ e) = checkRedContextExpr e
-checkRedContextExpr (Lambda _ _ e) = checkRedContextExpr e
-checkRedContextExpr (Let _ _ ds e) = do
-  mapM_ checkRedContextDecl ds
-  checkRedContextExpr e
-checkRedContextExpr (IfThenElse _ e1 e2 e3) = do
-  checkRedContextExpr e1
-  checkRedContextExpr e2
-  checkRedContextExpr e3
-checkRedContextExpr (Case _ _ _ e as) = do
-  checkRedContextExpr e
-  mapM_ checkRedContextAlt as
-checkRedContextExpr _ = return ()
-
-checkRedContextStmt :: Statement a -> WCM ()
-checkRedContextStmt (StmtExpr   _  e) = checkRedContextExpr e
-checkRedContextStmt (StmtDecl _ _ ds) = mapM_ checkRedContextDecl ds
-checkRedContextStmt (StmtBind _ _  e) = checkRedContextExpr e
-
-checkRedContextAlt :: Alt a -> WCM ()
-checkRedContextAlt (Alt _ _ rhs) = checkRedContextRhs rhs
-
-checkRedContextFieldExpr :: Field (Expression a) -> WCM ()
-checkRedContextFieldExpr (Field _ _ e) = checkRedContextExpr e
-
--- ---------------------------------------------------------------------------
 -- Warnings messages
 -- ---------------------------------------------------------------------------
-
-warnRedFuncString :: [Ident] -> Doc
-warnRedFuncString is = text "type signature for function" <>
-                       text (if length is == 1 then [] else "s") <+>
-                       csep (map (text . escName) is)
-
--- Doc description -> TypeVars -> Pred -> Warning
-warnRedContext :: Doc -> [Ident] -> Pred -> Message
-warnRedContext d vs p@(Pred qid _) = posMessage qid $
-  text "Redundant context in" <+> d <> colon <+>
-  quotes (pPrint $ fromPred vs p) -- idents use ` ' as quotes not ' '
-
--- seperate a list by ', '
-csep :: [Doc] -> Doc
-csep []     = empty
-csep [x]    = x
-csep (x:xs) = x <> comma <+> csep xs
 
 warnCaseMode :: Ident -> CaseMode -> Message
 warnCaseMode i@(Ident _ name _ ) c = posMessage i $

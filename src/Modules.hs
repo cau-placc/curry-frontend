@@ -55,7 +55,7 @@ import Env.Interface
 import qualified Curry.AbstractCurry as AC
 import qualified Curry.FlatCurry     as FC
 import qualified Curry.Syntax        as CS
-import qualified IL
+import qualified IL                  as IL
 
 import Checks
 import CompilerEnv
@@ -93,10 +93,11 @@ compileModule opts m fn = do
   writeParsed   opts mdl
   let qmdl = qual mdl
   writeHtml     opts qmdl
-  writeAST      opts (fst  mdl, fmap (const ()) (snd  mdl))
-  writeShortAST opts (fst qmdl, fmap (const ()) (snd qmdl))
+  let umdl = (fst qmdl, fmap (const ()) (snd qmdl))
+  writeAST      opts umdl
+  writeShortAST opts umdl
   mdl' <- expandExports opts mdl
-  qmdl' <- dumpWith opts CS.showModule pPrint DumpQualified $ qual mdl'
+  qmdl' <- dumpWith opts CS.showModule CS.ppModule DumpQualified $ qual mdl'
   writeAbstractCurry opts qmdl'
   -- generate interface file
   let intf = uncurry exportInterface qmdl'
@@ -108,7 +109,7 @@ compileModule opts m fn = do
   withFlat = any (`elem` optTargetTypes opts) [TypedFlatCurry, FlatCurry]
 
 loadAndCheckModule :: Options -> ModuleIdent -> FilePath
-                   -> CYIO (CompEnv (CS.Module Type))
+                   -> CYIO (CompEnv (CS.Module PredType))
 loadAndCheckModule opts m fn = do
   ce <- loadModule opts m fn >>= checkModule opts
   warnMessages $ uncurry (warnCheck opts) ce
@@ -126,12 +127,11 @@ loadModule opts m fn = do
   -- load the imported interfaces into an InterfaceEnv
   let paths = map (addCurrySubdir (optUseSubdir opts))
                   ("." : optImportPaths opts)
-  let withPrel = importPrelude opts mdl
-  iEnv   <- loadInterfaces paths withPrel
+  iEnv   <- loadInterfaces paths mdl
   checkInterfaces opts iEnv
-  is     <- importSyntaxCheck iEnv withPrel
+  is     <- importSyntaxCheck iEnv mdl
   -- add information of imported modules
-  cEnv   <- importModules withPrel iEnv is
+  cEnv   <- importModules mdl iEnv is
   return (cEnv { filePath = fn, tokens = toks }, mdl)
 
 parseModule :: Options -> ModuleIdent -> FilePath
@@ -150,7 +150,7 @@ parseModule opts m fn = do
       -- they will be issued a second time during parsing.
       spanToks <- liftCYM $ silent $ CS.lexSource fn condC
       ast      <- liftCYM $ CS.parseModule fn condC
-      checked  <- checkModuleHeader m fn ast
+      checked  <- checkModuleHeader opts m fn ast
       return (spanToks, checked)
 
 preprocess :: PrepOpts -> FilePath -> String -> CYIO String
@@ -179,33 +179,33 @@ withTempFile act = do
   removeFile fn
   return res
 
-checkModuleHeader :: Monad m => ModuleIdent -> FilePath
+checkModuleHeader :: Monad m => Options -> ModuleIdent -> FilePath
                   -> CS.Module () -> CYT m (CS.Module ())
-checkModuleHeader m fn = checkModuleId m
-                       . CS.patchModuleId fn
+checkModuleHeader opts m fn = checkModuleId m
+                            . importPrelude opts
+                            . CS.patchModuleId fn
 
 -- |Check whether the 'ModuleIdent' and the 'FilePath' fit together
 checkModuleId :: Monad m => ModuleIdent -> CS.Module () -> CYT m (CS.Module ())
-checkModuleId mid m@(CS.Module _ _ _ mid' _ _ _)
+checkModuleId mid m@(CS.Module _ _ mid' _ _ _)
   | mid == mid' = ok m
   | otherwise   = failMessages [errModuleFileMismatch mid']
 
--- An implicit import of the prelude is temporariliy added to the declarations
--- of every module, except for the prelude itself, or when the import is
--- disabled by a compiler option. If no explicit import for the prelude is
--- present, the prelude is imported unqualified,
--- otherwise a qualified import is added.
+-- An implicit import of the prelude is added to the declarations of
+-- every module, except for the prelude itself, or when the import is disabled
+-- by a compiler option. If no explicit import for the prelude is present,
+-- the prelude is imported unqualified, otherwise a qualified import is added.
 
 importPrelude :: Options -> CS.Module () -> CS.Module ()
-importPrelude opts m@(CS.Module spi li ps mid es is ds)
+importPrelude opts m@(CS.Module spi ps mid es is ds)
     -- the Prelude itself
-  | mid == preludeMIdent         = m
+  | mid == preludeMIdent          = m
     -- disabled by compiler option
-  | noImpPrelude                 = m
+  | noImpPrelude                  = m
     -- already imported
-  | preludeMIdent `elem` imports = m
+  | preludeMIdent `elem` imported = m
     -- let's add it!
-  | otherwise                    = CS.Module spi li ps mid es (preludeImp:is) ds
+  | otherwise                     = CS.Module spi ps mid es (preludeImp : is) ds
   where
   noImpPrelude = NoImplicitPrelude `elem` optExtensions opts
                  || m `CS.hasLanguageExtension` NoImplicitPrelude
@@ -213,7 +213,7 @@ importPrelude opts m@(CS.Module spi li ps mid es is ds)
                   False   -- qualified?
                   Nothing -- no alias
                   Nothing -- no selection of types, functions, etc.
-  imports      = [imp | (CS.ImportDecl _ imp _ _ _) <- is]
+  imported     = [imp | (CS.ImportDecl _ imp _ _ _) <- is]
 
 checkInterfaces :: Monad m => Options -> InterfaceEnv -> CYT m ()
 checkInterfaces opts iEnv = mapM_ checkInterface (Map.elems iEnv)
@@ -223,7 +223,7 @@ checkInterfaces opts iEnv = mapM_ checkInterface (Map.elems iEnv)
     interfaceCheck opts (env, intf)
 
 importSyntaxCheck :: Monad m => InterfaceEnv -> CS.Module a -> CYT m [CS.ImportDecl]
-importSyntaxCheck iEnv (CS.Module _ _ _ _ _ imps _) = mapM checkImportDecl imps
+importSyntaxCheck iEnv (CS.Module _ _ _ _ imps _) = mapM checkImportDecl imps
   where
   checkImportDecl (CS.ImportDecl p m q asM is) = case Map.lookup m iEnv of
     Just intf -> CS.ImportDecl p m q asM `liftM` importCheck intf is
@@ -236,14 +236,13 @@ importSyntaxCheck iEnv (CS.Module _ _ _ _ _ imps _) = mapM checkImportDecl imps
 
 -- TODO: The order of the checks should be improved!
 checkModule :: Options -> CompEnv (CS.Module ())
-            -> CYIO (CompEnv (CS.Module Type))
+            -> CYIO (CompEnv (CS.Module PredType))
 checkModule opts mdl = do
   _   <- dumpCS DumpParsed mdl
   exc <- extensionCheck  opts mdl >>= dumpCS DumpExtensionChecked
   tsc <- typeSyntaxCheck opts exc >>= dumpCS DumpTypeSyntaxChecked
   kc  <- kindCheck       opts tsc >>= dumpCS DumpKindChecked
-  ipc <- impredCheck     opts kc  >>= dumpCS DumpImpredChecked
-  sc  <- syntaxCheck     opts ipc >>= dumpCS DumpSyntaxChecked
+  sc  <- syntaxCheck     opts kc  >>= dumpCS DumpSyntaxChecked
   pc  <- precCheck       opts sc  >>= dumpCS DumpPrecChecked
   dc  <- deriveCheck     opts pc  >>= dumpCS DumpDeriveChecked
   inc <- instanceCheck   opts dc  >>= dumpCS DumpInstanceChecked
@@ -253,31 +252,28 @@ checkModule opts mdl = do
   where
   dumpCS :: (MonadIO m, Show a) => DumpLevel -> CompEnv (CS.Module a)
          -> m (CompEnv (CS.Module a))
-  dumpCS = dumpWith opts CS.showModule pPrint
+  dumpCS = dumpWith opts CS.showModule CS.ppModule
 
 -- ---------------------------------------------------------------------------
 -- Translating a module
 -- ---------------------------------------------------------------------------
 
-transModule :: Options -> CompEnv (CS.Module Type)
+transModule :: Options -> CompEnv (CS.Module PredType)
             -> CYIO (CompEnv IL.Module, CompEnv (CS.Module Type))
 transModule opts mdl = do
-  derived    <- dumpCS DumpDerived       $ derive               mdl
-  desugared  <- dumpCS DumpDesugared     $ desugar              derived
-  dicts      <- dumpCS DumpDictionaries  $ insertDicts          desugared
-  newtypes   <- dumpCS DumpNewtypes      $ removeNewtypes remNT dicts
-  simplified <- dumpCS DumpSimplified    $ simplify             newtypes
-  lifted     <- dumpCS DumpLifted        $ lift                 simplified
-  il         <- dumpIL DumpTranslated    $ ilTrans        remIm lifted
-  ilCaseComp <- dumpIL DumpCaseCompleted $ completeCase         il
+  derived    <- dumpCS DumpDerived       $ derive         mdl
+  desugared  <- dumpCS DumpDesugared     $ desugar        derived
+  dicts      <- dumpCS DumpDictionaries  $ insertDicts    desugared
+  newtypes   <- dumpCS DumpNewtypes      $ removeNewtypes dicts
+  simplified <- dumpCS DumpSimplified    $ simplify       newtypes
+  lifted     <- dumpCS DumpLifted        $ lift           simplified
+  il         <- dumpIL DumpTranslated    $ ilTrans        lifted
+  ilCaseComp <- dumpIL DumpCaseCompleted $ completeCase   il
   return (ilCaseComp, newtypes)
   where
-  optOpts = optOptimizations opts
-  remIm = optRemoveUnusedImports optOpts
-  remNT = optDesugarNewtypes     optOpts
   dumpCS :: Show a => DumpLevel -> CompEnv (CS.Module a)
          -> CYIO (CompEnv (CS.Module a))
-  dumpCS = dumpWith opts CS.showModule pPrint
+  dumpCS = dumpWith opts CS.showModule CS.ppModule
   dumpIL = dumpWith opts IL.showModule IL.ppModule
 
 -- ---------------------------------------------------------------------------
@@ -334,7 +330,7 @@ writeInterface opts env intf@(CS.Interface m _ _)
   interfaceFile   = interfName (filePath env)
   outputInterface = liftIO $ writeModule
                     (addCurrySubdirModule (optUseSubdir opts) m interfaceFile)
-                    (show $ pPrint intf)
+                    (show $ CS.ppInterface intf)
 
 matchInterface :: FilePath -> CS.Interface -> IO Bool
 matchInterface ifn i = do
@@ -346,11 +342,11 @@ matchInterface ifn i = do
 
 writeFlat :: Options -> CompilerEnv -> CS.Module Type -> IL.Module -> CYIO ()
 writeFlat opts env mdl il = do
-  (_, tfc) <- dumpWith opts show (pPrint . genFlatCurry) DumpTypedFlatCurry (env, tfcyProg)
+  (_, tfc) <- dumpWith opts show (FC.ppProg . genFlatCurry) DumpTypedFlatCurry (env, tfcyProg)
   when tfcyTarget  $ liftIO $ FC.writeFlatCurry (useSubDir tfcyName) tafcyProg
   when tafcyTarget $ liftIO $ FC.writeFlatCurry (useSubDir tafcyName) tfc
   when fcyTarget $ do
-    (_, fc) <- dumpWith opts show pPrint DumpFlatCurry (env, fcyProg)
+    (_, fc) <- dumpWith opts show FC.ppProg DumpFlatCurry (env, fcyProg)
     liftIO $ FC.writeFlatCurry (useSubDir fcyName) fc
   writeFlatIntf opts env fcyProg
   where
@@ -373,7 +369,7 @@ writeFlatIntf opts env prog
       mfint <- liftIO $ FC.readFlatInterface targetFile
       let oldInterface = fromMaybe emptyIntf mfint
       when (mfint == mfint) $ return () -- necessary to close file -- TODO
-      unless (oldInterface `eqInterface` fint) outputInterface
+      unless (oldInterface `eqInterface` fint) $ outputInterface
   where
   targetFile      = flatIntName (filePath env)
   emptyIntf       = FC.Prog "" [] [] [] []
@@ -381,7 +377,7 @@ writeFlatIntf opts env prog
   useSubDir       = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
   outputInterface = liftIO $ FC.writeFlatCurry (useSubDir targetFile) fint
 
-writeAbstractCurry :: Options -> CompEnv (CS.Module Type) -> CYIO ()
+writeAbstractCurry :: Options -> CompEnv (CS.Module PredType) -> CYIO ()
 writeAbstractCurry opts (env, mdl) = do
   when acyTarget  $ liftIO
                   $ AC.writeCurry (useSubDir $ acyName (filePath env))

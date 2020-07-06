@@ -43,9 +43,8 @@
 
 module IL.Type
   ( -- * Data types
-    Module (..), Decl (..), ConstrDecl (..), NewConstrDecl (..), Type (..)
-  , Kind (..), Literal (..), ConstrTerm (..), Expression (..), Eval (..)
-  , Alt (..), Binding (..)
+    Module (..), Decl (..), ConstrDecl (..), Type (..), Literal (..)
+  , ConstrTerm (..), Expression (..), Eval (..), Alt (..), Binding (..)
   ) where
 
 import Curry.Base.Ident
@@ -57,13 +56,9 @@ data Module = Module ModuleIdent [ModuleIdent] [Decl]
 
 data Decl
   = DataDecl         QualIdent Int [ConstrDecl]
-  | NewtypeDecl      QualIdent Int NewConstrDecl
   | ExternalDataDecl QualIdent Int
   | FunctionDecl     QualIdent [(Type, Ident)] Type Expression
   | ExternalDecl     QualIdent Type
-    deriving (Eq, Show)
-
-data NewConstrDecl = NewConstrDecl QualIdent Type
     deriving (Eq, Show)
 
 data ConstrDecl = ConstrDecl QualIdent [Type]
@@ -73,14 +68,8 @@ data Type
   = TypeConstructor QualIdent [Type]
   | TypeVariable    Int
   | TypeArrow       Type Type
-  | TypeForall      [(Int, Kind)] Type
+  | TypeForall      [Int] Type
     deriving (Eq, Show)
-
-data Kind
-  = KindStar
-  | KindVariable Int
-  | KindArrow Kind Kind
-    deriving (Eq, Ord, Show)
 
 data Literal
   = Char  Char

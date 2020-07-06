@@ -40,12 +40,14 @@ class Typeable a where
   typeOf :: a -> Type
 
 instance Typeable Type where
-  typeOf (TypeContext _ ty) = ty
-  typeOf ty = ty
+  typeOf = id
+
+instance Typeable PredType where
+  typeOf = unpredType
 
 instance Typeable a => Typeable (Rhs a) where
-  typeOf (SimpleRhs  _ _ e _ ) = typeOf e
-  typeOf (GuardedRhs _ _ es _) = head [typeOf e | CondExpr _ _ e <- es]
+  typeOf (SimpleRhs  _ e _ ) = typeOf e
+  typeOf (GuardedRhs _ es _) = head [typeOf e | CondExpr _ _ e <- es]
 
 instance Typeable a => Typeable (Pattern a) where
   typeOf (LiteralPattern _ a _) = typeOf a
@@ -78,28 +80,23 @@ instance Typeable a => Typeable (Expression a) where
   typeOf (EnumFromTo _ e _) = listType (typeOf e)
   typeOf (EnumFromThenTo _ e _ _) = listType (typeOf e)
   typeOf (UnaryMinus _ e) = typeOf e
-  typeOf (Apply _ e _) = case instType (typeOf e) of
+  typeOf (Apply _ e _) = case typeOf e of
     TypeArrow _ ty -> ty
-    _              -> internalError "Base.Typing.typeOf: application"
-  typeOf (InfixApply _ _ op _) = case instType (typeOf (infixOp op)) of
+    _ -> internalError "Base.Typing.typeOf: application"
+  typeOf (InfixApply _ _ op _) = case typeOf (infixOp op) of
     TypeArrow _ (TypeArrow _ ty) -> ty
     _ -> internalError "Base.Typing.typeOf: infix application"
-  typeOf (LeftSection _ _ op) = case instType (typeOf (infixOp op)) of
+  typeOf (LeftSection _ _ op) = case typeOf (infixOp op) of
     TypeArrow _ ty -> ty
-    _              -> internalError "Base.Typing.typeOf: left section"
-  typeOf (RightSection _ op _) = case instType (typeOf (infixOp op)) of
+    _ -> internalError "Base.Typing.typeOf: left section"
+  typeOf (RightSection _ op _) = case typeOf (infixOp op) of
     TypeArrow ty1 (TypeArrow _ ty2) -> TypeArrow ty1 ty2
     _ -> internalError "Base.Typing.typeOf: right section"
   typeOf (Lambda _ ts e) = foldr (TypeArrow . typeOf) (typeOf e) ts
-  typeOf (Let _ _ _ e) = typeOf e
-  typeOf (Do _ _ _ e) = typeOf e
+  typeOf (Let _ _ e) = typeOf e
+  typeOf (Do _ _ e) = typeOf e
   typeOf (IfThenElse _ _ e _) = typeOf e
-  typeOf (Case _ _ _ _ as) = typeOf $ head as
-
-instType :: Type -> Type
-instType (TypeForall _ ty)  = instType ty
-instType (TypeContext _ ty) = instType ty
-instType ty                 = ty
+  typeOf (Case _ _ _ as) = typeOf $ head as
 
 instance Typeable a => Typeable (Alt a) where
   typeOf (Alt _ _ rhs) = typeOf rhs
@@ -130,6 +127,8 @@ matchType' (TypeConstructor tc1) (TypeConstructor tc2)
   | tc1 == tc2 = Just id
 matchType' (TypeConstrained _ tv1) (TypeConstrained _ tv2)
   | tv1 == tv2 = Just id
+matchType' (TypeSkolem k1) (TypeSkolem k2)
+  | k1 == k2 = Just id
 matchType' (TypeApply ty11 ty12) (TypeApply ty21 ty22) =
   fmap (. matchType ty12 ty22) (matchType' ty11 ty21)
 matchType' (TypeArrow ty11 ty12) (TypeArrow ty21 ty22) =
@@ -143,9 +142,6 @@ matchType' (TypeArrow ty11 ty12) (TypeApply ty21 ty22) =
 matchType' (TypeForall _ ty1) (TypeForall _ ty2) = matchType' ty1 ty2
 matchType' (TypeForall _ ty1) ty2 = matchType' ty1 ty2
 matchType' ty1 (TypeForall _ ty2) = matchType' ty1 ty2
-matchType' (TypeContext _ ty1) (TypeContext _ ty2) = matchType' ty1 ty2
-matchType' (TypeContext _ ty1) ty2 = matchType' ty1 ty2
-matchType' ty1 (TypeContext _ ty2) = matchType' ty1 ty2
 matchType' _ _ = Nothing
 
 -- The functions 'bindDecls', 'bindDecl', 'bindPatterns' and 'bindPattern'

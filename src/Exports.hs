@@ -31,7 +31,7 @@ import Curry.Base.Ident
 import Curry.Syntax
 
 import Base.CurryKinds (fromKind')
-import Base.CurryTypes (fromQualType, fromQualPredType)
+import Base.CurryTypes (fromQualType, fromQualPredSet, fromQualPredType)
 import Base.Messages
 import Base.Types
 
@@ -63,10 +63,10 @@ import Base.Kinds
 -- exported function.
 
 exportInterface :: CompilerEnv -> Module a -> Interface
-exportInterface env (Module _ _ _ m (Just (Exporting _ es)) _ _) =
+exportInterface env (Module _ _ m (Just (Exporting _ es)) _ _) =
   exportInterface' m es (opPrecEnv env) (tyConsEnv env) (valueEnv env)
     (classEnv env) (instEnv env)
-exportInterface _   (Module _ _ _ _ Nothing                 _ _) =
+exportInterface _   (Module _ _ _ Nothing                 _ _) =
   internalError "Exports.exportInterface: no export specification"
 
 exportInterface' :: ModuleIdent -> [Export] -> OpPrecEnv -> TCEnv -> ValueEnv
@@ -126,7 +126,7 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
       where tc'' = qualUnqualify m tc'
             k'   = fromKind' k n
             tvs' = take n tvs
-            ty'  = fromQualType m tvs ty
+            ty'  = fromQualType m tvs' ty
     [TypeClass qcls k ms] -> IClassDecl NoPos cx qcls' k' tv ms' hs : ds
       where qcls' = qualUnqualify m qcls
             cx    = [ Constraint NoSpanInfo (qualUnqualify m scls)
@@ -147,22 +147,28 @@ iTypeDecl f m tvs tc k x hs = f NoPos (qualUnqualify m tc) k' (take n tvs) x hs
         k' = fromKind' k n
 
 constrDecl :: ModuleIdent -> Int -> [Ident] -> DataConstr -> ConstrDecl
-constrDecl m _ tvs (DataConstr c [ty1, ty2])
-  | isInfixOp c = ConOpDecl NoSpanInfo ty1' c ty2'
-  where [ty1', ty2'] = map (fromQualType m tvs) [ty1, ty2]
-constrDecl m _ tvs (DataConstr c tys) =
-  ConstrDecl NoSpanInfo c tys'
-  where tys' = map (fromQualType m tvs) tys
-constrDecl m _ tvs (RecordConstr c ls tys) =
-  RecordDecl NoSpanInfo c fs
+constrDecl m n tvs (DataConstr c n' ps [ty1, ty2])
+  | isInfixOp c = ConOpDecl NoSpanInfo evs cx ty1' c ty2'
+  where evs          = take n' $ drop n tvs
+        cx           = fromQualPredSet m tvs ps
+        [ty1', ty2'] = map (fromQualType m tvs) [ty1, ty2]
+constrDecl m n tvs (DataConstr c n' ps tys) =
+  ConstrDecl NoSpanInfo evs cx c tys'
+  where evs  = take n' $ drop n tvs
+        cx   = fromQualPredSet m tvs ps
+        tys' = map (fromQualType m tvs) tys
+constrDecl m n tvs (RecordConstr c n' ps ls tys) =
+  RecordDecl NoSpanInfo evs cx c fs
   where
+    evs  = take n' $ drop n tvs
+    cx   = fromQualPredSet m tvs ps
     tys' = map (fromQualType m tvs) tys
     fs   = zipWith (FieldDecl NoSpanInfo . return) ls tys'
 
 newConstrDecl :: ModuleIdent -> [Ident] -> DataConstr -> NewConstrDecl
-newConstrDecl m tvs (DataConstr c tys)
+newConstrDecl m tvs (DataConstr c _ _ tys)
   = NewConstrDecl NoSpanInfo c (fromQualType m tvs (head tys))
-newConstrDecl m tvs (RecordConstr c ls tys)
+newConstrDecl m tvs (RecordConstr c _ _ ls tys)
   = NewRecordDecl NoSpanInfo c (head ls, fromQualType m tvs (head tys))
 
 -- When exporting a class method, we have to remove the implicit class context.
@@ -171,16 +177,14 @@ newConstrDecl m tvs (RecordConstr c ls tys)
 -- is assigned the index 0 and no other constraints on it are allowed.
 
 methodDecl :: ModuleIdent -> [Ident] -> ClassMethod -> IMethodDecl
-methodDecl m tvs (ClassMethod f a (TypeContext ps ty)) = IMethodDecl NoPos f a $
-  fromQualPredType m tvs $ TypeContext (Set.deleteMin ps) ty
-methodDecl _ _ _ = internalError "Exports.methodDecl"
+methodDecl m tvs (ClassMethod f a (PredType ps ty)) = IMethodDecl NoPos f a $
+  fromQualPredType m tvs $ PredType (Set.deleteMin ps) ty
 
 valueDecl :: ModuleIdent -> ValueEnv -> [Ident] -> Export -> [IDecl] -> [IDecl]
 valueDecl m vEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
-  [Value _ cm a tySc] -> let pty = rawPredType tySc in
+  [Value _ cm a (ForAll _ pty)] ->
     IFunctionDecl NoPos (qualUnqualify m f)
-      (fmap (const (head tvs)) cm) a (fromQualPredType m tvs pty) : ds
-  [Label _ _ _ ] -> ds -- Record labels are collected somewhere else.
+      (if cm then Just (head tvs) else Nothing) a (fromQualPredType m tvs pty) : ds
   _ -> internalError $ "Exports.valueDecl: " ++ show f
 valueDecl _ _ _ (ExportTypeWith _ _ _) ds = ds
 valueDecl _ _ _ _ _ = internalError "Exports.valueDecl: no pattern match"
@@ -195,9 +199,9 @@ instDecl m tcEnv tvs ident@(cls, tc) info@(m', _, _) ds
 iInstDecl :: ModuleIdent -> TCEnv -> [Ident] -> InstIdent -> InstInfo -> IDecl
 iInstDecl m tcEnv tvs (cls, tc) (m', ps, is) =
   IInstanceDecl NoPos cx (qualUnqualify m cls) ty is mm
-  where pty = TypeContext ps $ applyType (TypeConstructor tc) $
+  where pty = PredType ps $ applyType (TypeConstructor tc) $
                 map TypeVariable [0 .. n-1]
-        ContextType _ cx ty = fromQualPredType m tvs pty
+        QualTypeExpr _ cx ty = fromQualPredType m tvs pty
         n = kindArity (tcKind m tc tcEnv) - kindArity (clsKind m cls tcEnv)
         mm = if m == m' then Nothing else Just m'
 
@@ -246,9 +250,9 @@ instance HasModule IDecl where
     modules cx . modules cls . modules ty . modules mm
 
 instance HasModule ConstrDecl where
-  modules (ConstrDecl    _ _ tys) = modules tys
-  modules (ConOpDecl _ ty1 _ ty2) = modules ty1 . modules ty2
-  modules (RecordDecl     _ _ fs) = modules fs
+  modules (ConstrDecl    _ _ cx _ tys) = modules cx . modules tys
+  modules (ConOpDecl _ _ cx ty1 _ ty2) = modules cx . modules ty1 . modules ty2
+  modules (RecordDecl     _ _ cx _ fs) = modules cx . modules fs
 
 instance HasModule FieldDecl where
   modules (FieldDecl _ _ ty) = modules ty
@@ -271,8 +275,10 @@ instance HasModule TypeExpr where
   modules (ListType        _ ty) = modules ty
   modules (ArrowType  _ ty1 ty2) = modules ty1 . modules ty2
   modules (ParenType       _ ty) = modules ty
-  modules (ContextType  _ cx ty) = modules cx . modules ty
   modules (ForallType    _ _ ty) = modules ty
+
+instance HasModule QualTypeExpr where
+  modules (QualTypeExpr _ cx ty) = modules cx . modules ty
 
 instance HasModule QualIdent where
   modules = modules . qidModule
@@ -392,10 +398,10 @@ instance HasType IDecl where
     usedTypes cx . (cls :) . usedTypes ty
 
 instance HasType ConstrDecl where
-  usedTypes (ConstrDecl    _ _ tys) = usedTypes tys
-  usedTypes (ConOpDecl _ ty1 _ ty2) =
-    usedTypes ty1 . usedTypes ty2
-  usedTypes (RecordDecl     _ _ fs) = usedTypes fs
+  usedTypes (ConstrDecl    _ _ cx _ tys) = usedTypes cx . usedTypes tys
+  usedTypes (ConOpDecl _ _ cx ty1 _ ty2) =
+    usedTypes cx . usedTypes ty1 . usedTypes ty2
+  usedTypes (RecordDecl     _ _ cx _ fs) = usedTypes cx . usedTypes fs
 
 instance HasType FieldDecl where
   usedTypes (FieldDecl _ _ ty) = usedTypes ty
@@ -418,5 +424,7 @@ instance HasType TypeExpr where
   usedTypes (ListType        _ ty) = usedTypes ty
   usedTypes (ArrowType  _ ty1 ty2) = usedTypes ty1 . usedTypes ty2
   usedTypes (ParenType       _ ty) = usedTypes ty
-  usedTypes (ContextType  _ cx ty) = usedTypes cx . usedTypes ty
   usedTypes (ForallType    _ _ ty) = usedTypes ty
+
+instance HasType QualTypeExpr where
+  usedTypes (QualTypeExpr _ cx ty) = usedTypes cx . usedTypes ty

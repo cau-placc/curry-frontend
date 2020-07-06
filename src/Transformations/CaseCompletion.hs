@@ -50,7 +50,6 @@ import Base.Types                           ( boolType, charType, floatType
                                             )
 import Base.Subst
 
-import Env.TypeConstructor
 import Env.Interface                        (InterfaceEnv, lookupInterface)
 
 import Transformations.CurryToIL            (transType)
@@ -60,9 +59,9 @@ import IL
 
 -- Completes case expressions by adding branches for missing constructors.
 -- The interface environment 'iEnv' is needed to compute these constructors.
-completeCase :: InterfaceEnv -> TCEnv -> Module -> Module
-completeCase iEnv tcEnv mdl@(Module mid is ds) = Module mid is ds'
- where ds'= S.evalState (mapM ccDecl ds) (CCState mdl iEnv 0 tcEnv )
+completeCase :: InterfaceEnv -> Module -> Module
+completeCase iEnv mdl@(Module mid is ds) = Module mid is ds'
+ where ds'= S.evalState (mapM ccDecl ds) (CCState mdl iEnv 0)
 
 -- -----------------------------------------------------------------------------
 -- Internally used state monad
@@ -72,16 +71,12 @@ data CCState = CCState
   { modul        :: Module
   , interfaceEnv :: InterfaceEnv
   , nextId       :: Int
-  , tyconEnv     :: TCEnv
   }
 
 type CCM a = S.State CCState a
 
 getModule :: CCM Module
 getModule = S.gets modul
-
-getTCEnv :: CCM TCEnv
-getTCEnv = S.gets tyconEnv
 
 getInterfaceEnv :: CCM InterfaceEnv
 getInterfaceEnv = S.gets interfaceEnv
@@ -102,7 +97,6 @@ ccDecl dd@(DataDecl        _ _ _) = return dd
 ccDecl edd@(ExternalDataDecl _ _) = return edd
 ccDecl (FunctionDecl qid vs ty e) = FunctionDecl qid vs ty <$> ccExpr e
 ccDecl ed@(ExternalDecl      _ _) = return ed
-ccDecl nd@(NewtypeDecl     _ _ _) = return nd
 
 ccExpr :: Expression -> CCM Expression
 ccExpr l@(Literal       _ _) = return l
@@ -171,9 +165,8 @@ completeConsAlts :: Eval -> Expression -> [Alt] -> CCM Expression
 completeConsAlts ea ce alts = do
   mdl       <- getModule
   menv      <- getInterfaceEnv
-  tcEnv     <- getTCEnv
   -- complementary constructor patterns
-  complPats <- mapM genPat $ getComplConstrs mdl menv tcEnv
+  complPats <- mapM genPat $ getComplConstrs mdl menv
                [ c | (Alt (ConstructorPattern _ c _) _) <- consAlts ]
   v <- freshIdent
   w <- freshIdent
@@ -331,12 +324,7 @@ eqExpr e1 e2 = Apply (Apply (Function eqTy eq 2) e1) e2
                                   Int   _ -> intType
                                   Float _ -> floatType
                  _ -> internalError "CaseCompletion.eqExpr: no literal"
-        ty'  = case e2 of
-                 Literal _ l -> case l of
-                                  Char  _ -> charType'
-                                  Int   _ -> intType'
-                                  Float _ -> floatType'
-                 _ -> internalError "CaseCompletion.eqExpr: no literal"
+        ty'  = transType ty
         eqTy = TypeArrow ty' (TypeArrow ty' boolType')
 
 truePatt :: ConstrTerm
@@ -346,16 +334,7 @@ falsePatt :: ConstrTerm
 falsePatt = ConstructorPattern boolType' qFalseId []
 
 boolType' :: Type
-boolType' = IL.TypeConstructor qBoolId []
-
-charType' :: Type
-charType' = IL.TypeConstructor qCharId []
-
-intType' :: Type
-intType' = IL.TypeConstructor qIntId []
-
-floatType' :: Type
-floatType' = IL.TypeConstructor qFloatId []
+boolType' = transType boolType
 
 -- ---------------------------------------------------------------------------
 -- The following functions compute the missing constructors for generating
@@ -366,20 +345,17 @@ floatType' = IL.TypeConstructor qFloatId []
 -- This functions uses the module environment 'menv', which contains all
 -- imported constructors, except for the built-in list constructors.
 -- TODO: Check if the list constructors are in the menv.
-getComplConstrs :: Module -> InterfaceEnv -> TCEnv
-                -> [QualIdent] -> [(QualIdent, [Type])]
-getComplConstrs _                 _    _     []
+getComplConstrs :: Module -> InterfaceEnv -> [QualIdent] -> [(QualIdent, [Type])]
+getComplConstrs _                 _    []
   = internalError "CaseCompletion.getComplConstrs: empty constructor list"
-getComplConstrs (Module mid _ ds) menv tcEnv cs@(c:_)
+getComplConstrs (Module mid _ ds) menv cs@(c:_)
   -- built-in lists
   | c `elem` [qNilId, qConsId] = complementary cs
-    [ (qNilId, [])
-    , (qConsId, [TypeVariable 0, transType tcEnv (listType boolType)])
-    ]
+    [(qNilId, []), (qConsId, [TypeVariable 0, transType (listType boolType)])]
   -- current module
   | mid' == mid                = getCCFromDecls cs ds
   -- imported module
-  | otherwise                  = maybe [] (getCCFromIDecls mid' cs tcEnv)
+  | otherwise                  = maybe [] (getCCFromIDecls mid' cs)
                                           (lookupInterface mid' menv)
   where mid' = fromMaybe mid (qidModule c)
 
@@ -403,9 +379,9 @@ getCCFromDecls cs ds = complementary cs cinfos
   constrInfo (ConstrDecl cid tys) = (cid, tys)
 
 -- Find complementary constructors within the module environment
-getCCFromIDecls :: ModuleIdent -> [QualIdent] -> TCEnv-> CS.Interface
+getCCFromIDecls :: ModuleIdent -> [QualIdent] -> CS.Interface
                 -> [(QualIdent, [Type])]
-getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds) = complementary cs cinfos
+getCCFromIDecls mid cs (CS.Interface _ _ ds) = complementary cs cinfos
   where
   cinfos = map (uncurry constrInfo)
          $ maybe [] extractConstrDecls (find (`declares` head cs) ds)
@@ -415,9 +391,9 @@ getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds) = complementary cs cinfos
     CS.INewtypeDecl _ _ _ _ nc  _ -> isNewConstrDecl qid nc
     _                             -> False
 
-  declaresConstr (CS.ConstrDecl   _ cid _) qid = unqualify qid == cid
-  declaresConstr (CS.ConOpDecl _ _ oid _) qid = unqualify qid == oid
-  declaresConstr (CS.RecordDecl  _ cid _) qid = unqualify qid == cid
+  declaresConstr (CS.ConstrDecl  _ _ _ cid _) qid = unqualify qid == cid
+  declaresConstr (CS.ConOpDecl _ _ _ _ oid _) qid = unqualify qid == oid
+  declaresConstr (CS.RecordDecl  _ _ _ cid _) qid = unqualify qid == cid
 
   isNewConstrDecl qid (CS.NewConstrDecl _ cid _) = unqualify qid == cid
   isNewConstrDecl qid (CS.NewRecordDecl _ cid _) = unqualify qid == cid
@@ -425,16 +401,16 @@ getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds) = complementary cs cinfos
   extractConstrDecls (CS.IDataDecl _ _ _ vs cs' _) = zip (repeat vs) cs'
   extractConstrDecls _                             = []
 
-  constrInfo vs (CS.ConstrDecl _ cid tys)     =
+  constrInfo vs (CS.ConstrDecl _ _ _ cid tys)     =
     (qualifyWith mid cid, map (transType' vs) tys)
-  constrInfo vs (CS.ConOpDecl  _ ty1 oid ty2) =
+  constrInfo vs (CS.ConOpDecl  _ _ _ ty1 oid ty2) =
     (qualifyWith mid oid, map (transType' vs) [ty1, ty2])
-  constrInfo vs (CS.RecordDecl _ cid  fs)     =
+  constrInfo vs (CS.RecordDecl _ _ _ cid  fs)     =
     ( qualifyWith mid cid
     , [transType' vs ty | CS.FieldDecl _ ls ty <- fs, _ <- ls]
     )
 
-  transType' vs = transType tcEnv . toType vs
+  transType' vs = transType . toType vs
 
 -- Compute complementary constructors
 complementary :: [QualIdent] -> [(QualIdent, [Type])] -> [(QualIdent, [Type])]
@@ -454,11 +430,10 @@ instance SubstType a => SubstType [a] where
 
 instance SubstType Type where
   subst sigma (TypeConstructor q tys) = TypeConstructor q $ subst sigma tys
-  subst sigma (TypeVariable tv)       = substVar' TypeVariable subst sigma tv
-  subst sigma (TypeArrow ty1 ty2)
-    = TypeArrow (subst sigma ty1) (subst sigma ty2)
-  subst sigma (TypeForall tvs ty)
-    = TypeForall tvs (subst (foldr (unbindSubst . fst) sigma tvs) ty)
+  subst sigma (TypeVariable       tv) = substVar' TypeVariable subst sigma tv
+  subst sigma (TypeArrow     ty1 ty2) = TypeArrow (subst sigma ty1) (subst sigma ty2)
+  subst _     (TypeForall        _ _) =
+    internalError "Transformations.CaseCompletion.SubstType.Type.subst"
 
 matchType :: Type -> Type -> TypeSubst -> TypeSubst
 matchType ty1 ty2 = fromMaybe noMatch (matchType' ty1 ty2)

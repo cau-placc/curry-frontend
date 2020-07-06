@@ -82,8 +82,8 @@ findCurry opts s = do
 makeCurry :: Options -> [(ModuleIdent, Source)] ->  CYIO ()
 makeCurry opts srcs = mapM_ process' (zip [1 ..] srcs)
   where
-  total  = length srcs
-  tgtDir = addCurrySubdirModule (optUseSubdir opts)
+  total    = length srcs
+  tgtDir m = addCurrySubdirModule (optUseSubdir opts) m
 
   process' :: (Int, (ModuleIdent, Source)) -> CYIO ()
   process' (n, (m, Source fn ps is)) = do
@@ -101,9 +101,9 @@ makeCurry opts srcs = mapM_ process' (zip [1 ..] srcs)
 
 adjustOptions :: Bool -> Options -> Options
 adjustOptions final opts
-  | final      = opts { optForce         = optForce opts || isDump }
-  | otherwise  = opts { optForce         = False
-                      , optDebugOpts     = defaultDebugOpts
+  | final      = opts { optForce = optForce opts || isDump }
+  | otherwise  = opts { optForce       = False
+                      , optDebugOpts   = defaultDebugOpts
                       }
   where
   isDump = not $ null $ dbDumpLevels $ optDebugOpts opts
@@ -142,11 +142,11 @@ quotedWords :: String -> [String]
 quotedWords str = case dropWhile isSpace str of
   []        -> []
   s@('\'' : cs) -> case break (== '\'') cs of
-    (_     , []    ) -> def s
-    (quoted, _:rest) -> quoted : quotedWords rest
+    (_     , []      ) -> def s
+    (quoted, (_:rest)) -> quoted : quotedWords rest
   s@('"'  : cs) -> case break (== '"') cs of
-    (_     , []    ) -> def s
-    (quoted, _:rest) -> quoted : quotedWords rest
+    (_     , []      ) -> def s
+    (quoted, (_:rest)) -> quoted : quotedWords rest
   s         -> def s
   where
   def s = let (w, rest) = break isSpace s in  w : quotedWords rest

@@ -26,8 +26,6 @@ import Transformations.Newtypes       as NT (removeNewtypes)
 import Transformations.Qual           as Q  (qual)
 import Transformations.Simplify       as S  (simplify)
 
-import Env.TypeConstructor
-
 import CompilerEnv
 import Imports (qualifyEnv)
 import qualified IL
@@ -38,19 +36,19 @@ qual (env, mdl) = (qualifyEnv env, mdl')
   where mdl' = Q.qual (moduleIdent env) (tyConsEnv env) (valueEnv env) mdl
 
 -- |Automatically derive instances.
-derive :: CompEnv (Module Type) -> CompEnv (Module Type)
+derive :: CompEnv (Module PredType) -> CompEnv (Module PredType)
 derive (env, mdl) = (env, mdl')
   where mdl' = DV.derive (tyConsEnv env) (valueEnv env) (instEnv env)
                          (opPrecEnv env) mdl
 
 -- |Remove any syntactic sugar, changes the value environment.
-desugar :: CompEnv (Module Type) -> CompEnv (Module Type)
+desugar :: CompEnv (Module PredType) -> CompEnv (Module PredType)
 desugar (env, mdl) = (env { valueEnv = tyEnv' }, mdl')
   where (mdl', tyEnv') = DS.desugar (extensions env) (valueEnv env)
                                     (tyConsEnv env) mdl
 
 -- |Insert dictionaries, changes the type constructor and value environments.
-insertDicts :: CompEnv (Module Type) -> CompEnv (Module Type)
+insertDicts :: CompEnv (Module PredType) -> CompEnv (Module Type)
 insertDicts (env, mdl) = (env { interfaceEnv = intfEnv'
                               , tyConsEnv = tcEnv'
                               , valueEnv = vEnv'
@@ -60,9 +58,9 @@ insertDicts (env, mdl) = (env { interfaceEnv = intfEnv'
                          (classEnv env) (instEnv env) (opPrecEnv env) mdl
 
 -- |Remove newtype constructors.
-removeNewtypes :: Bool -> CompEnv (Module Type) -> CompEnv (Module Type)
-removeNewtypes remNT (env, mdl) = (env, mdl')
-  where mdl' = NT.removeNewtypes remNT (valueEnv env) mdl
+removeNewtypes :: CompEnv (Module Type) -> CompEnv (Module Type)
+removeNewtypes (env, mdl) = (env, mdl')
+  where mdl' = NT.removeNewtypes (valueEnv env) mdl
 
 -- |Simplify the source code, changes the value environment.
 simplify :: CompEnv (Module Type) -> CompEnv (Module Type)
@@ -75,14 +73,14 @@ lift (env, mdl) = (env { valueEnv = tyEnv' }, mdl')
   where (mdl', tyEnv') = L.lift (valueEnv env) mdl
 
 -- |Translate into the intermediate language
-ilTrans :: Bool -> CompEnv (Module Type) -> CompEnv IL.Module
-ilTrans remIm (env, mdl) = (env, il)
-  where il = IL.ilTrans remIm (valueEnv env) (tyConsEnv env) mdl
+ilTrans :: CompEnv (Module Type) -> CompEnv IL.Module
+ilTrans (env, mdl) = (env, il)
+  where il = IL.ilTrans (valueEnv env) mdl
 
-transType :: TCEnv -> Type -> IL.Type
+-- |Translate a type into its representation in the intermediate language
+transType :: Type -> IL.Type
 transType = IL.transType
 
 -- |Add missing case branches
 completeCase :: CompEnv IL.Module -> CompEnv IL.Module
-completeCase (env, mdl) =
-  (env, CC.completeCase (interfaceEnv env) (tyConsEnv env) mdl)
+completeCase (env, mdl) = (env, CC.completeCase (interfaceEnv env) mdl)

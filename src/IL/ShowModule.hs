@@ -39,12 +39,6 @@ showsDecl (DataDecl qident arity constrdecls)
   . shows arity . space
   . showsList showsConstrDecl constrdecls
   . showsString ")"
-showsDecl (NewtypeDecl qident arity newconstrdecl)
-  = showsString "(NewtypeDecl "
-  . showsQualIdent qident . space
-  . shows arity . space
-  . showsNewConstrDecl newconstrdecl
-  . showsString ")"
 showsDecl (ExternalDataDecl qident arity)
   = showsString "(ExternalDataDecl "
   . showsQualIdent qident . space
@@ -68,13 +62,6 @@ showsConstrDecl (ConstrDecl qident tys)
   = showsString "(ConstrDecl "
   . showsQualIdent qident . space
   . showsList showsType tys
-  . showsString ")"
-
-showsNewConstrDecl :: NewConstrDecl -> ShowS
-showsNewConstrDecl (NewConstrDecl qident ty)
-  = showsString "(NewConstrDecl "
-  . showsQualIdent qident . space
-  . showsType ty
   . showsString ")"
 
 showsType :: Type -> ShowS
