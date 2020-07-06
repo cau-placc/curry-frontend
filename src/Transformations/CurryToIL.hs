@@ -48,9 +48,12 @@ import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 
 import qualified IL as IL
 
-ilTrans :: ValueEnv -> Module Type -> IL.Module
-ilTrans vEnv (Module _ _ m _ _ ds) = IL.Module m (imports m ds') ds'
+ilTrans :: Bool -> ValueEnv -> Module Type -> IL.Module
+ilTrans remIm vEnv (Module _ _ m _ im ds) = IL.Module m im' ds'
   where ds' = R.runReader (concatMapM trDecl ds) (TransEnv m vEnv)
+        im' = if remIm then imports m ds' else map moduleImport im
+        moduleImport (ImportDecl _ mdl _ _ _) = mdl
+
 
 -- -----------------------------------------------------------------------------
 -- Computation of necessary imports
@@ -65,6 +68,8 @@ imports m = Set.toList . Set.delete m . foldr mdlsDecl Set.empty
 mdlsDecl :: IL.Decl -> Set.Set ModuleIdent -> Set.Set ModuleIdent
 mdlsDecl (IL.DataDecl       _ _ cs) ms = foldr mdlsConstrsDecl ms cs
   where mdlsConstrsDecl (IL.ConstrDecl _ tys) ms' = foldr mdlsType ms' tys
+mdlsDecl (IL.NewtypeDecl    _ _ nc) ms = mdlsNewConstrDecl nc
+  where mdlsNewConstrDecl (IL.NewConstrDecl _ ty) = mdlsType ty ms
 mdlsDecl (IL.ExternalDataDecl  _ _) ms = ms
 mdlsDecl (IL.FunctionDecl _ _ ty e) ms = mdlsType ty (mdlsExpr e ms)
 mdlsDecl (IL.ExternalDecl     _ ty) ms = mdlsType ty ms
@@ -144,6 +149,7 @@ constrType c = do
 
 trDecl :: Decl Type -> TransM [IL.Decl]
 trDecl (DataDecl     _ tc tvs cs _) = (:[]) <$> trData tc tvs cs
+trDecl (NewtypeDecl  _ tc tvs nc _) = (:[]) <$> trNewtype tc tvs nc
 trDecl (ExternalDataDecl  _ tc tvs) = (:[]) <$> trExternalData tc tvs
 trDecl (FunctionDecl    _ ty f eqs) = (:[]) <$> trFunction f ty eqs
 trDecl (ExternalDecl          _ vs) = mapM trExternal vs
@@ -154,6 +160,11 @@ trData tc tvs cs = do
   tc' <- trQualify tc
   IL.DataDecl tc' (length tvs) <$> mapM trConstrDecl cs
 
+trNewtype :: Ident -> [Ident] -> NewConstrDecl -> TransM IL.Decl
+trNewtype tc tvs nc = do
+  tc' <- trQualify tc
+  IL.NewtypeDecl tc' (length tvs) <$> trNewConstrDecl nc
+
 trConstrDecl :: ConstrDecl -> TransM IL.ConstrDecl
 trConstrDecl d = do
   c' <- trQualify (constr d)
@@ -163,6 +174,17 @@ trConstrDecl d = do
   constr (ConstrDecl    _ _ _ c _) = c
   constr (ConOpDecl  _ _ _ _ op _) = op
   constr (RecordDecl    _ _ _ c _) = c
+
+trNewConstrDecl :: NewConstrDecl -> TransM IL.NewConstrDecl
+trNewConstrDecl d = do
+  c' <- trQualify (constr d)
+  ty' <- arrowArgs <$> constrType c'
+  case ty' of
+    [ty] -> return $ IL.NewConstrDecl c' (transType ty)
+    _    -> internalError "CurryToIL.trNewConstrDecl: invalid constructor type"
+  where
+  constr (NewConstrDecl    _ c _) = c
+  constr (NewRecordDecl    _ c _) = c
 
 trExternalData :: Ident -> [Ident] -> TransM IL.Decl
 trExternalData tc tvs = flip IL.ExternalDataDecl (length tvs) <$> trQualify tc

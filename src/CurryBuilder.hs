@@ -34,7 +34,8 @@ import Curry.Syntax ( ModulePragma (..), Extension (KnownExtension)
 import Base.Messages
 
 import CompilerOpts ( Options (..), CppOpts (..), DebugOpts (..)
-                    , TargetType (..), defaultDebugOpts, updateOpts )
+                    , TargetType (..), defaultDebugOpts, updateOpts
+                    , optRemoveUnusedImports )
 import CurryDeps    (Source (..), flatDeps)
 import Modules      (compileModule)
 
@@ -101,9 +102,9 @@ makeCurry opts srcs = mapM_ process' (zip [1 ..] srcs)
 
 adjustOptions :: Bool -> Options -> Options
 adjustOptions final opts
-  | final      = opts { optForce = optForce opts || isDump }
-  | otherwise  = opts { optForce       = False
-                      , optDebugOpts   = defaultDebugOpts
+  | final      = opts { optForce         = optForce opts || isDump }
+  | otherwise  = opts { optForce         = False
+                      , optDebugOpts     = defaultDebugOpts
                       }
   where
   isDump = not $ null $ dbDumpLevels $ optDebugOpts opts

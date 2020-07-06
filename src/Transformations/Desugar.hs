@@ -839,18 +839,56 @@ dsStmt (StmtExpr   _ e1) e' =
   return $ apply (prelBind_ (typeOf e1) (typeOf e')) [e1, e']
 dsStmt (StmtBind _ t e1) e' = do
   v <- freshVar "_#var" t
+  failable <- checkFailableBind t
   let func = Lambda NoSpanInfo [uncurry (VariablePattern NoSpanInfo) v] $
-               Case NoSpanInfo Rigid (uncurry mkVar v)
-                 [ caseAlt NoSpanInfo t e'
-                 , caseAlt NoSpanInfo (uncurry (VariablePattern NoSpanInfo) v)
-                     (failedPatternMatch $ typeOf e')
-                 ]
+               Case NoSpanInfo Rigid (uncurry mkVar v) $
+                 caseAlt NoSpanInfo t e' :
+                   if failable
+                     then [caseAlt NoSpanInfo
+                                   (uncurry (VariablePattern NoSpanInfo) v)
+                                   (failedPatternMatch $ typeOf e')]
+                     else []
   return $ apply (prelBind (typeOf e1) (typeOf t) (typeOf e')) [e1, func]
   where failedPatternMatch ty =
           apply (prelFail ty)
             [Literal NoSpanInfo predStringType $ String "Pattern match failed!"]
 dsStmt (StmtDecl   _ ds) e' = return $ Let NoSpanInfo ds e'
 
+checkFailableBind :: Pattern a -> DsM Bool
+checkFailableBind (ConstructorPattern _ _ idt ps   ) = do
+  tcEnv <- getTyConsEnv
+  case qualLookupTypeInfo idt tcEnv of
+    [RenamingType _ _ _ ] -> or <$> mapM checkFailableBind ps -- or [] == False
+    [DataType     _ _ cs]
+      | length cs == 1    -> or <$> mapM checkFailableBind ps
+      | otherwise         -> return True
+    _                     -> return True
+checkFailableBind (InfixPattern       _ _ p1 idt p2) = do
+  tcEnv <- getTyConsEnv
+  case qualLookupTypeInfo idt tcEnv of
+    [RenamingType _ _ _ ] -> (||) <$> checkFailableBind p1
+                                  <*> checkFailableBind p2
+    [DataType     _ _ cs]
+      | length cs == 1    -> (||) <$> checkFailableBind p1
+                                  <*> checkFailableBind p2
+      | otherwise         -> return True
+    _                     -> return True
+checkFailableBind (RecordPattern      _ _ idt fs   ) = do
+  tcEnv <- getTyConsEnv
+  case qualLookupTypeInfo idt tcEnv of
+    [RenamingType _ _ _ ] -> or <$> mapM (checkFailableBind . fieldContent) fs
+    [DataType     _ _ cs]
+      | length cs == 1    -> or <$> mapM (checkFailableBind . fieldContent) fs
+      | otherwise         -> return True
+    _                     -> return True
+  where fieldContent (Field _ _ c) = c
+checkFailableBind (TuplePattern       _       ps   ) =
+  or <$> mapM checkFailableBind ps
+checkFailableBind (AsPattern          _   _   p    ) = checkFailableBind p
+checkFailableBind (ParenPattern       _       p    ) = checkFailableBind p
+checkFailableBind (LazyPattern        _       _    ) = return False
+checkFailableBind (VariablePattern    _ _ _        ) = return False
+checkFailableBind _                                  = return True
 -- -----------------------------------------------------------------------------
 -- Desugaring of List Comprehensions
 -- -----------------------------------------------------------------------------

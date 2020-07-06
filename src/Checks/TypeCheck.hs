@@ -1287,13 +1287,51 @@ tcStmt _ ps mTy (StmtDecl spi ds) = do
   (ps', ds') <- tcDecls ds
   return ((ps `Set.union` ps', mTy), StmtDecl spi ds')
 tcStmt p ps mTy st@(StmtBind spi t e) = do
-  (ps', ty) <- maybe freshMonadType (return . (,) emptyPredSet) mTy
+  failable <- checkFailableBind t
+  let freshMType = if failable then freshMonadFailType else freshMonadType
+  (ps', ty) <- maybe freshMType (return . (,) emptyPredSet) mTy
   alpha <- freshTypeVar
   (ps'', e') <-
     tcArg p "statement" (ppStmt st) (ps `Set.union` ps') (applyType ty [alpha]) e
   bindLambdaVars t
   (ps''', t') <- tcPatternArg p "statement" (ppStmt st) ps'' alpha t
   return ((ps''', Just ty), StmtBind spi t' e')
+
+checkFailableBind :: Pattern a -> TCM Bool
+checkFailableBind (ConstructorPattern _ _ idt ps   ) = do
+  tcEnv <- getTyConsEnv
+  case qualLookupTypeInfo idt tcEnv of
+    [RenamingType _ _ _ ] -> or <$> mapM checkFailableBind ps -- or [] == False
+    [DataType     _ _ cs]
+      | length cs == 1    -> or <$> mapM checkFailableBind ps
+      | otherwise         -> return True
+    _                     -> return True
+checkFailableBind (InfixPattern       _ _ p1 idt p2) = do
+  tcEnv <- getTyConsEnv
+  case qualLookupTypeInfo idt tcEnv of
+    [RenamingType _ _ _ ] -> (||) <$> checkFailableBind p1
+                                  <*> checkFailableBind p2
+    [DataType     _ _ cs]
+      | length cs == 1    -> (||) <$> checkFailableBind p1
+                                  <*> checkFailableBind p2
+      | otherwise         -> return True
+    _                     -> return True
+checkFailableBind (RecordPattern      _ _ idt fs   ) = do
+  tcEnv <- getTyConsEnv
+  case qualLookupTypeInfo idt tcEnv of
+    [RenamingType _ _ _ ] -> or <$> mapM (checkFailableBind . fieldContent) fs
+    [DataType     _ _ cs]
+      | length cs == 1    -> or <$> mapM (checkFailableBind . fieldContent) fs
+      | otherwise         -> return True
+    _                     -> return True
+  where fieldContent (Field _ _ c) = c
+checkFailableBind (TuplePattern       _       ps   ) =
+  or <$> mapM checkFailableBind ps
+checkFailableBind (AsPattern          _   _   p    ) = checkFailableBind p
+checkFailableBind (ParenPattern       _       p    ) = checkFailableBind p
+checkFailableBind (LazyPattern        _       _    ) = return False
+checkFailableBind (VariablePattern    _ _ _        ) = return False
+checkFailableBind _                                  = return True
 
 tcInfixOp :: InfixOp a -> TCM (PredSet, Type, InfixOp PredType)
 tcInfixOp (InfixOp _ op) = do
@@ -1589,6 +1627,9 @@ freshFractionalType = freshPredType [qFractionalId]
 
 freshMonadType :: TCM (PredSet, Type)
 freshMonadType = freshPredType [qMonadId]
+
+freshMonadFailType :: TCM (PredSet, Type)
+freshMonadFailType = freshPredType [qMonadFailId]
 
 freshConstrained :: [Type] -> TCM Type
 freshConstrained = freshVar . TypeConstrained

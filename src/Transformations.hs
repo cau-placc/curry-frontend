@@ -58,9 +58,9 @@ insertDicts (env, mdl) = (env { interfaceEnv = intfEnv'
                          (classEnv env) (instEnv env) (opPrecEnv env) mdl
 
 -- |Remove newtype constructors.
-removeNewtypes :: CompEnv (Module Type) -> CompEnv (Module Type)
-removeNewtypes (env, mdl) = (env, mdl')
-  where mdl' = NT.removeNewtypes (valueEnv env) mdl
+removeNewtypes :: Bool -> CompEnv (Module Type) -> CompEnv (Module Type)
+removeNewtypes remNT (env, mdl) = (env, mdl')
+  where mdl' = NT.removeNewtypes remNT (valueEnv env) mdl
 
 -- |Simplify the source code, changes the value environment.
 simplify :: CompEnv (Module Type) -> CompEnv (Module Type)
@@ -73,9 +73,9 @@ lift (env, mdl) = (env { valueEnv = tyEnv' }, mdl')
   where (mdl', tyEnv') = L.lift (valueEnv env) mdl
 
 -- |Translate into the intermediate language
-ilTrans :: CompEnv (Module Type) -> CompEnv IL.Module
-ilTrans (env, mdl) = (env, il)
-  where il = IL.ilTrans (valueEnv env) mdl
+ilTrans :: Bool -> CompEnv (Module Type) -> CompEnv IL.Module
+ilTrans remIm (env, mdl) = (env, il)
+  where il = IL.ilTrans remIm (valueEnv env) mdl
 
 -- |Translate a type into its representation in the intermediate language
 transType :: Type -> IL.Type

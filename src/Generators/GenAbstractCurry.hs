@@ -392,7 +392,7 @@ qNegateId :: QualIdent
 qNegateId = qualifyWith preludeMIdent (mkIdent "negate")
 
 qIfThenElseId :: QualIdent
-qIfThenElseId = qualifyWith preludeMIdent (mkIdent "if_then_else")
+qIfThenElseId = qualifyWith preludeMIdent (mkIdent "ifThenElse")
 
 prelUntyped :: QualIdent
 prelUntyped = qualifyWith preludeMIdent $ mkIdent "untyped"
