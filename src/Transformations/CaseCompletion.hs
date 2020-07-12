@@ -392,9 +392,9 @@ getCCFromIDecls mid cs (CS.Interface _ _ ds) = complementary cs cinfos
     CS.INewtypeDecl _ _ _ _ nc  _ -> isNewConstrDecl qid nc
     _                             -> False
 
-  declaresConstr (CS.ConstrDecl  _ _ _ cid _) qid = unqualify qid == cid
-  declaresConstr (CS.ConOpDecl _ _ _ _ oid _) qid = unqualify qid == oid
-  declaresConstr (CS.RecordDecl  _ _ _ cid _) qid = unqualify qid == cid
+  declaresConstr (CS.ConstrDecl   _ cid _) qid = unqualify qid == cid
+  declaresConstr (CS.ConOpDecl _ _ oid _) qid = unqualify qid == oid
+  declaresConstr (CS.RecordDecl  _ cid _) qid = unqualify qid == cid
 
   isNewConstrDecl qid (CS.NewConstrDecl _ cid _) = unqualify qid == cid
   isNewConstrDecl qid (CS.NewRecordDecl _ cid _) = unqualify qid == cid
@@ -402,11 +402,11 @@ getCCFromIDecls mid cs (CS.Interface _ _ ds) = complementary cs cinfos
   extractConstrDecls (CS.IDataDecl _ _ _ vs cs' _) = zip (repeat vs) cs'
   extractConstrDecls _                             = []
 
-  constrInfo vs (CS.ConstrDecl _ _ _ cid tys)     =
+  constrInfo vs (CS.ConstrDecl _ cid tys)     =
     (qualifyWith mid cid, map (transType' vs) tys)
-  constrInfo vs (CS.ConOpDecl  _ _ _ ty1 oid ty2) =
+  constrInfo vs (CS.ConOpDecl  _ ty1 oid ty2) =
     (qualifyWith mid oid, map (transType' vs) [ty1, ty2])
-  constrInfo vs (CS.RecordDecl _ _ _ cid  fs)     =
+  constrInfo vs (CS.RecordDecl _ cid  fs)     =
     ( qualifyWith mid cid
     , [transType' vs ty | CS.FieldDecl _ ls ty <- fs, _ <- ls]
     )

@@ -86,12 +86,12 @@ qDecl (InstanceDecl p cx qcls ty ds) = InstanceDecl p <$>
   qContext cx <*> qClass qcls <*> qTypeExpr ty <*> mapM qDecl ds
 
 qConstrDecl :: Qual ConstrDecl
-qConstrDecl (ConstrDecl p vs cx      n tys) =
-  flip (ConstrDecl p vs) n <$> qContext cx <*> mapM qTypeExpr tys
-qConstrDecl (ConOpDecl  p vs cx ty1 op ty2) =
-  ConOpDecl p vs <$> qContext cx <*> qTypeExpr ty1 <*> pure op <*> qTypeExpr ty2
-qConstrDecl (RecordDecl p vs cx       c fs) =
-  flip (RecordDecl p vs) c <$> qContext cx <*> mapM qFieldDecl fs
+qConstrDecl (ConstrDecl p      n tys) =
+  ConstrDecl p n <$> mapM qTypeExpr tys
+qConstrDecl (ConOpDecl  p ty1 op ty2) =
+  ConOpDecl p <$> qTypeExpr ty1 <*> pure op <*> qTypeExpr ty2
+qConstrDecl (RecordDecl p       c fs) =
+  RecordDecl p c <$> mapM qFieldDecl fs
 
 qNewConstrDecl :: Qual NewConstrDecl
 qNewConstrDecl (NewConstrDecl p n ty)

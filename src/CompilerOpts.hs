@@ -315,8 +315,6 @@ extensions =
     , "enable anonymous free variables"              )
   , ( CPP                      , "CPP"
     , "run C preprocessor"                           )
-  , ( ExistentialQuantification, "ExistentialQuantification"
-    , "enable existentially quantified types"        )
   , ( FunctionalPatterns       , "FunctionalPatterns"
     , "enable functional patterns"                   )
   , ( NegativeLiterals         , "NegativeLiterals"

@@ -373,14 +373,10 @@ createClassDictDecl cls tv ds = do
 
 createClassDictConstrDecl :: QualIdent -> Ident -> [Decl a] -> DTM ConstrDecl
 createClassDictConstrDecl cls tv ds = do
-  clsEnv <- getClassEnv
-  let sclss = superClasses cls clsEnv
-      cx    = [Constraint NoSpanInfo scls (VariableType NoSpanInfo tv)
-              | scls <- sclss]
-      tvs  = tv : filter (unRenameIdent tv /=) identSupply
+  let tvs  = tv : filter (unRenameIdent tv /=) identSupply
       mtys = map (fromType tvs . generalizeMethodType . transformMethodPredType)
                  [toMethodType cls tv qty | TypeSig _ fs qty <- ds, _ <- fs]
-  return $ ConstrDecl NoSpanInfo [] cx (dictConstrId cls) mtys
+  return $ ConstrDecl NoSpanInfo (dictConstrId cls) mtys
 
 classDictConstrPredType :: ValueEnv -> ClassEnv -> QualIdent -> PredType
 classDictConstrPredType vEnv clsEnv cls = PredType ps $ foldr TypeArrow ty mtys
@@ -561,7 +557,7 @@ bindDictType :: ModuleIdent -> ClassEnv -> TypeInfo -> TCEnv -> TCEnv
 bindDictType m clsEnv (TypeClass cls k ms) = bindEntity m tc ti
   where ti    = DataType tc (KindArrow k KindStar) [c]
         tc    = qDictTypeId cls
-        c     = DataConstr (dictConstrId cls) 0 ps tys
+        c     = DataConstr (dictConstrId cls) (map dictType (Set.toAscList ps) ++ tys)
         sclss = superClasses cls clsEnv
         ps    = Set.fromList [Pred scls (TypeVariable 0) | scls <- sclss]
         tys   = map (generalizeMethodType . transformMethodPredType . methodType) ms
@@ -591,7 +587,7 @@ bindClassDict m clsEnv cls vEnv = bindEntity m c dc vEnv
         dc = DataConstructor c a (replicate a anonId) tySc
         a  = Set.size ps + arrowArity ty
         pty@(PredType ps ty) = classDictConstrPredType vEnv clsEnv cls
-        tySc = ForAllExist 1 0 pty
+        tySc = ForAll 1 pty
 
 bindDefaultMethods :: ModuleIdent -> QualIdent -> [(Ident, Int)] -> ValueEnv
                    -> ValueEnv
@@ -675,10 +671,9 @@ dictTransTypeInfo (TypeVar _) =
   internalError "Dictionary.dictTransTypeInfo: type variable"
 
 dictTransDataConstr :: DataConstr -> DataConstr
-dictTransDataConstr (DataConstr c n ps tys) =
-  DataConstr c n emptyPredSet $ map dictType (Set.toAscList ps) ++ tys
-dictTransDataConstr (RecordConstr c n ps _ tys) =
-  dictTransDataConstr $ DataConstr c n ps tys
+dictTransDataConstr (DataConstr c tys) = DataConstr c tys
+dictTransDataConstr (RecordConstr c _ tys) =
+  dictTransDataConstr $ DataConstr c tys
 
 -- For the same reason as in 'bindClassEntities' it is safe to use 'fromMaybe 0'
 -- in 'dictTransClassMethod'. Note that type classes are removed anyway in the
@@ -693,13 +688,13 @@ dictTransValues :: ValueEnv -> ValueEnv
 dictTransValues = fmap dictTransValueInfo
 
 dictTransValueInfo :: ValueInfo -> ValueInfo
-dictTransValueInfo (DataConstructor c a ls (ForAllExist n n' pty)) =
-  DataConstructor c a' ls' $ ForAllExist n n' $ predType ty
+dictTransValueInfo (DataConstructor c a ls (ForAll n pty)) =
+  DataConstructor c a' ls' $ ForAll n $ predType ty
   where a'  = arrowArity ty
         ls' = replicate (a' - a) anonId ++ ls
         ty  = transformPredType pty
-dictTransValueInfo (NewtypeConstructor c l (ForAllExist n n' pty)) =
-  NewtypeConstructor c l (ForAllExist n n' (predType (unpredType pty)))
+dictTransValueInfo (NewtypeConstructor c l (ForAll n pty)) =
+  NewtypeConstructor c l (ForAll n (predType (unpredType pty)))
 dictTransValueInfo (Value f cm a (ForAll n pty)) =
   Value f False a' $ ForAll n $ predType ty
   where a' = a + if cm then 1 else arrowArity ty - arrowArity (unpredType pty)
@@ -798,12 +793,11 @@ instance DictTrans Decl where
     internalError $ "Dictionary.dictTrans: " ++ show d
 
 dictTransConstrDecl :: [Ident] -> ConstrDecl -> DataConstr -> ConstrDecl
-dictTransConstrDecl tvs (ConstrDecl p evs _ c tes) dc =
-  ConstrDecl p evs [] c $ map (fromType $ tvs ++ evs ++ bvs) tys
-  where DataConstr _ _ _ tys = dictTransDataConstr dc
-        bvs = nub $ bv tes
-dictTransConstrDecl tvs (ConOpDecl p evs cx ty1 op ty2) dc =
-  dictTransConstrDecl tvs (ConstrDecl p evs cx op [ty1, ty2]) dc
+dictTransConstrDecl tvs (ConstrDecl p c tes) dc =
+  ConstrDecl p c $ map (fromType $ tvs ++ bvs) (constrTypes dc)
+  where bvs = nub $ bv tes
+dictTransConstrDecl tvs (ConOpDecl p ty1 op ty2) dc =
+  dictTransConstrDecl tvs (ConstrDecl p op [ty1, ty2]) dc
 dictTransConstrDecl _ d _ = internalError $ "Dictionary.dictTrans: " ++ show d
 
 instance DictTrans Equation where
@@ -1160,18 +1154,8 @@ dictTransIDecl m vEnv clsEnv (IInstanceDecl _ _ cls ty _ mm) =
         ms   = classMethods qcls clsEnv
 
 dictTransIConstrDecl :: ModuleIdent -> [Ident] -> ConstrDecl -> ConstrDecl
-dictTransIConstrDecl m tvs (ConstrDecl     p evs cx c tys) =
-  ConstrDecl p evs [] c $ transformIContext m (tvs ++ evs) cx ++ tys
-dictTransIConstrDecl m tvs (ConOpDecl p evs cx ty1 op ty2) =
-  dictTransIConstrDecl m tvs (ConstrDecl p evs cx op [ty1, ty2])
-dictTransIConstrDecl m tvs (RecordDecl      p evs cx c fs) =
-  RecordDecl p evs [] c $
-    map toFieldDecl (transformIContext m (tvs ++ evs) cx) ++ fs
-  where toFieldDecl = FieldDecl NoSpanInfo [anonId]
-
-transformIContext :: ModuleIdent -> [Ident] -> Context -> [TypeExpr]
-transformIContext m tvs cx =
-   map (fromQualType m tvs . dictType) (Set.toAscList $ toQualPredSet m tvs cx)
+dictTransIConstrDecl _ _ (ConOpDecl p ty1 op ty2) = ConstrDecl p op [ty1, ty2]
+dictTransIConstrDecl _ _ cd                       = cd
 
 iFunctionDeclFromValue :: ModuleIdent -> ValueEnv -> QualIdent -> IDecl
 iFunctionDeclFromValue m vEnv f = case qualLookupValue f vEnv of
@@ -1183,10 +1167,9 @@ iFunctionDeclFromValue m vEnv f = case qualLookupValue f vEnv of
 iConstrDeclFromDataConstructor :: ModuleIdent -> ValueEnv -> QualIdent
                                -> ConstrDecl
 iConstrDeclFromDataConstructor m vEnv c = case qualLookupValue c vEnv of
-  [DataConstructor _ _ _ (ForAllExist n n' pty)] ->
-    ConstrDecl NoSpanInfo evs [] (unqualify c) tys
-    where evs = take n' $ drop n identSupply
-          tys = map (fromQualType m identSupply) $ arrowArgs $ unpredType pty
+  [DataConstructor _ _ _ (ForAll _ pty)] ->
+    ConstrDecl NoSpanInfo (unqualify c) tys
+    where tys = map (fromQualType m identSupply) $ arrowArgs $ unpredType pty
   _ -> internalError $ "Dictionary.iConstrDeclFromDataConstructor: " ++ show c
 
 -- -----------------------------------------------------------------------------
@@ -1322,8 +1305,8 @@ varType m v vEnv = case qualLookupValue (qualify v) vEnv of
 
 conType :: QualIdent -> ValueEnv -> TypeScheme
 conType c vEnv = case qualLookupValue c vEnv of
-  [DataConstructor  _ _ _ (ForAllExist n _ pty)] -> ForAll n pty
-  [NewtypeConstructor _ _ (ForAllExist n _ pty)] -> ForAll n pty
+  [DataConstructor  _ _ _ (ForAll n pty)] -> ForAll n pty
+  [NewtypeConstructor _ _ (ForAll n pty)] -> ForAll n pty
   _ -> internalError $ "Dictionary.conType: " ++ show c
 
 funType :: QualIdent -> ValueEnv -> TypeScheme
@@ -1334,8 +1317,8 @@ funType f vEnv = case qualLookupValue f vEnv of
 
 opType :: QualIdent -> ValueEnv -> TypeScheme
 opType op vEnv = case qualLookupValue op vEnv of
-  [DataConstructor  _ _ _ (ForAllExist n _ pty)] -> ForAll n pty
-  [NewtypeConstructor _ _ (ForAllExist n _ pty)] -> ForAll n pty
+  [DataConstructor  _ _ _ (ForAll n pty)] -> ForAll n pty
+  [NewtypeConstructor _ _ (ForAll n pty)] -> ForAll n pty
   [Value _ _ _                             tySc] -> tySc
   [Label _ _                               tySc] -> tySc
   _ -> internalError $ "Dictionary.opType " ++ show op

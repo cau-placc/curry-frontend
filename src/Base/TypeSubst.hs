@@ -55,7 +55,6 @@ subst' sigma (TypeArrow      ty1 ty2) =
 subst' sigma (TypeConstrained tys tv) = case substVar sigma tv of
   TypeVariable tv' -> foldl TypeApply (TypeConstrained tys tv')
   ty               -> foldl TypeApply ty
-subst' _     ts@(TypeSkolem        _) = foldl TypeApply ts
 subst' sigma (TypeForall      tvs ty) =
   applyType (TypeForall tvs (subst sigma ty))
 
@@ -68,10 +67,6 @@ instance SubstType PredType where
 instance SubstType TypeScheme where
   subst sigma (ForAll n ty) =
     ForAll n (subst (foldr unbindSubst sigma [0 .. n-1]) ty)
-
-instance SubstType ExistTypeScheme where
-  subst sigma (ForAllExist n n' ty) =
-    ForAllExist n n' (subst (foldr unbindSubst sigma [0 .. n + n' - 1]) ty)
 
 instance SubstType ValueInfo where
   subst _     dc@(DataConstructor  _ _ _ _) = dc
@@ -107,7 +102,6 @@ expandAliasType' tys tv@(TypeVariable      n)
 expandAliasType' _   tc@(TypeConstrained _ _) = applyType tc
 expandAliasType' tys (TypeArrow      ty1 ty2) =
   applyType (TypeArrow (expandAliasType tys ty1) (expandAliasType tys ty2))
-expandAliasType' _   ts@(TypeSkolem        _) = applyType ts
 expandAliasType' tys (TypeForall      tvs ty) =
   applyType (TypeForall tvs (expandAliasType tys ty))
 

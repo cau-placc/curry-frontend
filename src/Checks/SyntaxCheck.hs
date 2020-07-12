@@ -333,13 +333,13 @@ bindTypeDecl (NewtypeDecl _ _ _ nc _) = bindNewConstr nc
 bindTypeDecl _                        = ok
 
 bindConstr :: ConstrDecl -> SCM ()
-bindConstr (ConstrDecl _ _ _ c tys) = do
+bindConstr (ConstrDecl _ c tys) = do
   m <- getModuleIdent
   modifyRenameEnv $ bindGlobal False m c (Constr (qualifyWith m c) $ length tys)
-bindConstr (ConOpDecl _ _ _ _ op _) = do
+bindConstr (ConOpDecl _ _ op _) = do
   m <- getModuleIdent
   modifyRenameEnv $ bindGlobal False m op (Constr (qualifyWith m op) 2)
-bindConstr (RecordDecl _ _ _ c fs)  = do
+bindConstr (RecordDecl _ c fs)  = do
   m <- getModuleIdent
   modifyRenameEnv $ bindGlobal False m c (Constr (qualifyWith m c) (length labels))
     where labels = [l | FieldDecl _ ls _ <- fs, l <- ls]
@@ -692,7 +692,7 @@ checkDeclRhs _   (PatternDecl    p t rhs) =
 checkDeclRhs _   d                        = return d
 
 checkDeclLabels :: ConstrDecl -> SCM ConstrDecl
-checkDeclLabels rd@(RecordDecl _ _ _ _ fs) = do
+checkDeclLabels rd@(RecordDecl _ _ fs) = do
   onJust (report . errDuplicateLabel "declaration")
          (findDouble $ map qualify labels)
   return rd

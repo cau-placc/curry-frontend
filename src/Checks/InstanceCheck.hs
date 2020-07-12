@@ -140,24 +140,24 @@ data DeriveInfo = DeriveInfo Position QualIdent PredType [Type] [QualIdent]
 
 declDeriveInfo :: TCEnv -> ClassEnv -> Decl a -> INCM DeriveInfo
 declDeriveInfo tcEnv clsEnv (DataDecl p tc tvs cs clss) =
-  mkDeriveInfo tcEnv clsEnv p tc tvs (concat cxs) (concat tyss) clss
-  where (cxs, tyss) = unzip (map constrDeclTypes cs)
-        constrDeclTypes (ConstrDecl     _ _ cx _ tys) = (cx, tys)
-        constrDeclTypes (ConOpDecl  _ _ cx ty1 _ ty2) = (cx, [ty1, ty2])
-        constrDeclTypes (RecordDecl      _ _ cx _ fs) = (cx, tys)
+  mkDeriveInfo tcEnv clsEnv p tc tvs (concat tyss) clss
+  where tyss = map constrDeclTypes cs
+        constrDeclTypes (ConstrDecl     _ _ tys) = tys
+        constrDeclTypes (ConOpDecl  _ ty1 _ ty2) = [ty1, ty2]
+        constrDeclTypes (RecordDecl      _ _ fs) = tys
           where tys = [ty | FieldDecl _ ls ty <- fs, _ <- ls]
 declDeriveInfo tcEnv clsEnv (NewtypeDecl p tc tvs nc clss) =
-  mkDeriveInfo tcEnv clsEnv p tc tvs [] [nconstrType nc] clss
+  mkDeriveInfo tcEnv clsEnv p tc tvs [nconstrType nc] clss
 declDeriveInfo _ _ _ =
   internalError "InstanceCheck.declDeriveInfo: no data or newtype declaration"
 
-mkDeriveInfo :: TCEnv -> ClassEnv -> SpanInfo -> Ident -> [Ident] -> Context
-           -> [TypeExpr] -> [QualIdent] -> INCM DeriveInfo
-mkDeriveInfo tcEnv clsEnv spi tc tvs cx tys clss = do
+mkDeriveInfo :: TCEnv -> ClassEnv -> SpanInfo -> Ident -> [Ident] -> [TypeExpr]
+             -> [QualIdent] -> INCM DeriveInfo
+mkDeriveInfo tcEnv clsEnv spi tc tvs tys clss = do
   m <- getModuleIdent
   let otc = qualifyWith m tc
       oclss = map (flip (getOrigName m) tcEnv) clss
-      PredType ps ty = expandConstrType m tcEnv clsEnv otc tvs cx tys
+      PredType ps ty = expandConstrType m tcEnv clsEnv otc tvs tys
       (tys', ty') = arrowUnapply ty
   return $ DeriveInfo p otc (PredType ps ty') tys' $ sortClasses clsEnv oclss
   where p = spanInfo2Pos spi

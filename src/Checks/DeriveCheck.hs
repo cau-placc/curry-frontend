@@ -33,7 +33,6 @@ checkDecl :: ModuleIdent -> TCEnv -> Decl a -> [Message]
 checkDecl m tcEnv (DataDecl   _ tc _ cs clss)
   | null clss                       = []
   | null cs                         = [errNoAbstractDerive tc]
-  | any (not . null . existVars) cs = [errNoExistentialDerive tc]
   | otherwise                       = concatMap (checkDerivable m tcEnv cs) clss
 checkDecl m tcEnv (NewtypeDecl _ _ _ nc clss) =
   concatMap (checkDerivable m tcEnv [toConstrDecl nc]) clss
@@ -67,19 +66,14 @@ isBounded cs = length cs == 1 || isEnum cs
 -- ---------------------------------------------------------------------------
 
 toConstrDecl :: NewConstrDecl -> ConstrDecl
-toConstrDecl (NewConstrDecl p c      ty) = ConstrDecl p [] [] c [ty]
+toConstrDecl (NewConstrDecl p c      ty) = ConstrDecl p c [ty]
 toConstrDecl (NewRecordDecl p c (l, ty)) =
-  RecordDecl p [] [] c [FieldDecl p [l] ty]
+  RecordDecl p c [FieldDecl p [l] ty]
 
 constrArity :: ConstrDecl -> Int
-constrArity (ConstrDecl  _ _ _ _ tys) = length tys
-constrArity (ConOpDecl   _ _ _ _ _ _) = 2
-constrArity c@(RecordDecl  _ _ _ _ _) = length $ recordLabels c
-
-existVars :: ConstrDecl -> [Ident]
-existVars (ConstrDecl _ evs _ _ _  ) = evs
-existVars (ConOpDecl  _ evs _ _ _ _) = evs
-existVars (RecordDecl _ evs _ _ _  ) = evs
+constrArity (ConstrDecl  _ _ tys) = length tys
+constrArity (ConOpDecl   _ _ _ _) = 2
+constrArity c@(RecordDecl  _ _ _) = length $ recordLabels c
 
 -- ---------------------------------------------------------------------------
 -- Error messages
@@ -89,10 +83,6 @@ errNoAbstractDerive :: HasPosition a => a -> Message
 errNoAbstractDerive p = posMessage p $
   text "Instances can only be derived for data types with" <+>
   text "at least one constructor"
-
-errNoExistentialDerive :: HasPosition a => a -> Message
-errNoExistentialDerive p = posMessage p $
-  text "Instances cannot be derived for existential data types"
 
 errNotDerivable :: QualIdent -> Message
 errNotDerivable cls = posMessage cls $ hsep $ map text
