@@ -145,6 +145,10 @@ passInfos = map mkPassTest
   , "ACVisibility"
   , "AnonymVar"
   , "CaseComplete"
+  -- MARK
+  -- , "ChurchEncoding"
+  -- , "ClassMethods"
+  , "DataPass"
   , "DefaultPrecedence"
   , "Dequeue"
   , "ExplicitLayout"
@@ -201,13 +205,10 @@ failInfos = map (uncurry mkFailTest)
       , "applyFunTest2 = applyFun funA 'a' 'b'"
       ]
     )
-  , ("ClassHiddenFail",
-      [ "`methodB' is not a (visible) method of class `A'" ]
-    )
-  , ("DataFail",
+  [ ("DataFail",
       [ "Missing instance for Prelude.Data Test1"
-      , "Missing instance for Prelude.Data (Test2"
-      , "Missing instance for Prelude.Data (Test2"
+      , "Missing instance for Prelude.Data (Test2 _3)"
+      , "Missing instance for Prelude.Data (Test2 _5)"
       , "Missing instance for Prelude.Data Test1"
       ]
     )

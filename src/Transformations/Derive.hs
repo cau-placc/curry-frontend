@@ -16,6 +16,7 @@ module Transformations.Derive (derive) where
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative      ((<$>))
 #endif
+import Control.Monad               (replicateM)
 import qualified Control.Monad.State as S (State, evalState, gets, modify)
 import           Data.List         (intercalate, intersperse)
 import           Data.Maybe        (fromJust, isJust)
@@ -50,9 +51,8 @@ type DVM = S.State DVState
 
 derive :: TCEnv -> ValueEnv -> InstEnv -> OpPrecEnv -> Module PredType
        -> Module PredType
-derive tcEnv vEnv inEnv pEnv (Module spi li ps m es is ds) =
-  Module spi li ps m es is $
-  ds ++ concat (S.evalState (mapM deriveInstances tds) initState)
+derive tcEnv vEnv inEnv pEnv (Module spi li ps m es is ds) = Module spi li ps m es is $
+  ds ++ concat (S.evalState (deriveAllInstances tds) initState)
   where tds = filter isTypeDecl ds
         initState = DVState m tcEnv vEnv inEnv pEnv 1
 
@@ -80,6 +80,35 @@ getNextId = do
 -- TODO: Comment (here and below)
 
 type ConstrInfo = (Int, QualIdent, Maybe [Ident], [Type])
+
+deriveAllInstances :: [Decl PredType] -> DVM [[Decl PredType]]
+deriveAllInstances ds = do
+  derived <- mapM deriveInstances ds
+  inst <- getInstEnv
+  mid <- getModuleIdent
+  let dds = filter (hasDataInstance inst mid) ds
+  datains <- mapM deriveDataInstance dds
+  return (datains:derived)
+
+-- If we ever entered a data instance for this datatype into the instance
+-- environment, we can safely derive a data instance
+hasDataInstance :: InstEnv -> ModuleIdent -> Decl PredType -> Bool
+hasDataInstance inst mid (DataDecl    _ tc _ _ _) =
+  maybe False (\(mid', _, _) -> mid == mid') $
+    lookupInstInfo (qDataId, qualifyWith mid tc) inst
+hasDataInstance inst mid (NewtypeDecl _ tc _ _ _) =
+  maybe False (\(mid', _, _) -> mid == mid') $
+    lookupInstInfo (qDataId, qualifyWith mid tc) inst
+hasDataInstance _       _   _                     =
+  False
+
+deriveDataInstance :: Decl PredType -> DVM (Decl PredType)
+deriveDataInstance (DataDecl    p tc tvs _ _) =
+  head <$> deriveInstances (DataDecl p tc tvs [] [qDataId])
+deriveDataInstance (NewtypeDecl p tc tvs _ _) =
+  deriveDataInstance $ DataDecl p tc tvs [] []
+deriveDataInstance _                          =
+  internalError "Derive.deriveDataInstance: No DataDel"
 
 -- An instance declaration is created for each type class of a deriving clause.
 -- Newtype declaration are simply treated as data declarations.
@@ -119,6 +148,7 @@ deriveMethods cls
   | cls == qBoundedId = deriveBoundedMethods
   | cls == qReadId    = deriveReadMethods
   | cls == qShowId    = deriveShowMethods
+  | cls == qDataId    = deriveDataMethods
   | otherwise         = internalError $ "Derive.deriveMethods: " ++ show cls
 
 -- Binary Operators:
@@ -160,6 +190,40 @@ eqOpExpr i1 es1 i2 es2
   | i1 == i2  = if null es1 then prelTrue
                             else foldl1 prelAnd $ zipWith prelEq es1 es2
   | otherwise = prelFalse
+
+-- Data:
+
+deriveDataMethods :: Type -> [ConstrInfo] -> PredSet -> DVM [Decl PredType]
+deriveDataMethods ty cis ps = sequence
+  [ deriveBinOp qDataId dataEqId dataEqOpExpr ty cis ps
+  , deriveAValue ty cis ps]
+
+dataEqOpExpr :: BinOpExpr
+dataEqOpExpr i1 es1 i2 es2
+  | i1 == i2  = if null es1 then prelTrue
+                            else foldl1 prelAnd $ zipWith prelDataEq es1 es2
+  | otherwise = prelFalse
+
+deriveAValue :: Type -> [ConstrInfo] -> PredSet -> DVM (Decl PredType)
+deriveAValue ty cis ps = do
+  pty <- getInstMethodType ps qDataId ty aValueId
+  return $ FunctionDecl NoSpanInfo pty aValueId $
+    if null cis
+      then [mkEquation NoSpanInfo aValueId [] $
+            preludeFailed $ instType ty]
+      else map (deriveAValueEquation ty) cis
+
+deriveAValueEquation :: Type -> ConstrInfo -> Equation PredType
+deriveAValueEquation ty (arity, cns, _, tys)
+  | arity >= 0 = mkEquation NoSpanInfo aValueId [] $ predType <$>
+                  foldl (Apply NoSpanInfo)
+                    (Constructor NoSpanInfo constrType cns)
+                    (map mkAValue tys')
+  | otherwise  = internalError "Derive.aValueEquation: negative arity"
+  where
+    constrType = foldr TypeArrow (instType ty) tys'
+    mkAValue argty = Variable NoSpanInfo (instType argty) qAValueId
+    tys' = map instType tys
 
 -- Ordering:
 
@@ -254,7 +318,7 @@ deriveEnumFromThen :: Type -> ConstrInfo -> ConstrInfo -> PredSet
                    -> DVM (Decl PredType)
 deriveEnumFromThen ty (_, c1, _, _) (_, c2, _, _) ps = do
   pty <- getInstMethodType ps qEnumId ty enumFromId
-  vs  <- mapM (freshArgument . instType) $ replicate 2 ty
+  vs  <- replicateM 2 ((freshArgument . instType) ty)
   let [v1, v2] = vs
   return $ funDecl NoSpanInfo pty enumFromThenId
     (map (uncurry (VariablePattern NoSpanInfo)) vs) $
@@ -263,7 +327,7 @@ deriveEnumFromThen ty (_, c1, _, _) (_, c2, _, _) ps = do
 enumFromThenExpr :: (PredType, Ident) -> (PredType, Ident) -> QualIdent
                  -> QualIdent -> Expression PredType
 enumFromThenExpr v1 v2 c1 c2 =
-  prelEnumFromThenTo (uncurry mkVar v1) (uncurry mkVar v2) $ boundedExpr
+  prelEnumFromThenTo (uncurry mkVar v1) (uncurry mkVar v2) boundedExpr
   where boundedExpr = IfThenElse NoSpanInfo
                                  (prelLeq
                                    (prelFromEnum $ uncurry mkVar v1)
@@ -300,7 +364,7 @@ deriveReadMethods ty cis ps = sequence [deriveReadsPrec ty cis ps]
 
 deriveReadsPrec :: Type -> [ConstrInfo] -> PredSet -> DVM (Decl PredType)
 deriveReadsPrec ty cis ps = do
-  pty <- getInstMethodType ps qReadId ty $ readsPrecId
+  pty <- getInstMethodType ps qReadId ty readsPrecId
   d <- freshArgument intType
   r <- freshArgument stringType
   let pats = map (uncurry (VariablePattern NoSpanInfo)) [d, r]
@@ -311,7 +375,7 @@ deriveReadsPrecExpr :: Type -> [ConstrInfo] -> Expression PredType
                     -> Expression PredType -> DVM (Expression PredType)
 deriveReadsPrecExpr ty cis d r = do
   es <- mapM (deriveReadsPrecReadParenExpr ty d) cis
-  return $ foldr1 prelAppend $ map (flip (Apply NoSpanInfo) r) $ es
+  return $ foldr1 prelAppend $ map (flip (Apply NoSpanInfo) r) es
 
 deriveReadsPrecReadParenExpr :: Type -> Expression PredType -> ConstrInfo
                              -> DVM (Expression PredType)
@@ -335,7 +399,7 @@ deriveReadsPrecLambdaExpr :: Type -> ConstrInfo -> Precedence
 deriveReadsPrecLambdaExpr ty (_, c, ls, tys) p = do
   r <- freshArgument stringType
   (stmts, vs, s) <- deriveReadsPrecStmts (unqualify c) (p + 1) r ls tys
-  let pty = predType $ foldr TypeArrow (instType ty) $ map instType tys
+  let pty = predType $ foldr (TypeArrow . instType) (instType ty) tys
       e = Tuple NoSpanInfo
                 [ apply (Constructor NoSpanInfo pty c) $ map (uncurry mkVar) vs
                 , uncurry mkVar s
@@ -402,7 +466,7 @@ deriveReadsPrecConstrStmts c r tys = do
 deriveReadsPrecLexStmt :: String -> (PredType, Ident)
                       -> DVM ((PredType, Ident), Statement PredType)
 deriveReadsPrecLexStmt str r = do
-  s <- freshArgument $ stringType
+  s <- freshArgument stringType
   let pat  = TuplePattern NoSpanInfo
                [ LiteralPattern NoSpanInfo predStringType $ String str
                , uncurry (VariablePattern NoSpanInfo) s
@@ -428,7 +492,7 @@ deriveShowMethods ty cis ps = sequence [deriveShowsPrec ty cis ps]
 
 deriveShowsPrec :: Type -> [ConstrInfo] -> PredSet -> DVM (Decl PredType)
 deriveShowsPrec ty cis ps = do
-  pty <- getInstMethodType ps qShowId ty $ showsPrecId
+  pty <- getInstMethodType ps qShowId ty showsPrecId
   eqs <- mapM (deriveShowsPrecEquation ty) cis
   return $ FunctionDecl NoSpanInfo pty showsPrecId eqs
 
@@ -542,7 +606,7 @@ instMethodType :: ValueEnv -> PredSet -> QualIdent -> Type -> Ident -> PredType
 instMethodType vEnv ps cls ty f = PredType (ps `Set.union` ps'') ty''
   where PredType ps' ty' = case qualLookupValue (qualifyLike cls f) vEnv of
           [Value _ _ _ (ForAll _ pty)] -> pty
-          _ -> internalError $ "Derive.instMethodType"
+          _ -> internalError "Derive.instMethodType"
         PredType ps'' ty'' = instanceType ty $ PredType (Set.deleteMin ps') ty'
 
 -- -----------------------------------------------------------------------------
@@ -575,6 +639,12 @@ prelAnd e1 e2 = foldl1 (Apply NoSpanInfo)
 prelEq :: Expression PredType -> Expression PredType -> Expression PredType
 prelEq e1 e2 = foldl1 (Apply NoSpanInfo)
   [Variable NoSpanInfo pty qEqOpId, e1, e2]
+  where ty = typeOf e1
+        pty = predType $ foldr1 TypeArrow [ty, ty, boolType]
+
+prelDataEq :: Expression PredType -> Expression PredType -> Expression PredType
+prelDataEq e1 e2 = foldl1 (Apply NoSpanInfo)
+  [Variable NoSpanInfo pty qDataEqId, e1, e2]
   where ty = typeOf e1
         pty = predType $ foldr1 TypeArrow [ty, ty, boolType]
 
@@ -627,7 +697,7 @@ prelShowParen e1 e2 = apply (Variable NoSpanInfo pty qShowParenId) [e1, e2]
                                           ]
 
 preludeLex :: Expression PredType -> Expression PredType
-preludeLex e = Apply NoSpanInfo (Variable NoSpanInfo pty qLexId) e
+preludeLex = Apply NoSpanInfo (Variable NoSpanInfo pty qLexId)
   where pty = predType $ TypeArrow stringType $
                 listType $ tupleType [stringType, stringType]
 

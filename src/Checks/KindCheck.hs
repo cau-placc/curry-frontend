@@ -341,7 +341,7 @@ bindKind m tcEnv' _      tcEnv (TypeDecl _ tc tvs ty) =
   bindTypeConstructor aliasType tc tvs Nothing ty' tcEnv
   where
     aliasType tc' k = AliasType tc' k $ length tvs
-    ty' = expandMonoType m tcEnv' clsEnv tvs ty
+    ty' = expandMonoType m tcEnv' tvs ty
 bindKind m tcEnv' clsEnv tcEnv (ClassDecl _ _ _ cls tv ds) =
   bindTypeClass cls (concatMap mkMethods ds) tcEnv
   where
@@ -444,7 +444,7 @@ kcDecl tcEnv (NewtypeDecl _ tc tvs nc _) = do
   kcNewConstrDecl tcEnv' nc
 kcDecl tcEnv t@(TypeDecl p tc tvs ty) = do
   (k, tcEnv') <- bindTypeVars tc tvs tcEnv
-  kcType tcEnv' p "type declaration" (ppDecl t) k ty
+  kcType tcEnv' p "type declaration" (pPrint t) k ty
 kcDecl tcEnv (TypeSig p _ qty) = kcTypeSig tcEnv p qty
 kcDecl tcEnv (FunctionDecl _ _ _ eqs) = mapM_ (kcEquation tcEnv) eqs
 kcDecl _     (ExternalDecl _ _) = ok
@@ -473,23 +473,23 @@ kcConstrDecl tcEnv d@(ConstrDecl p _ tys) = do
   mapM_ (kcValueType tcEnv p what doc) tys
     where
       what = "data constructor declaration"
-      doc = ppConstr d
+      doc = pPrint d
 kcConstrDecl tcEnv d@(ConOpDecl p ty1 _ ty2) = do
   kcValueType tcEnv p what doc ty1
   kcValueType tcEnv p what doc ty2
     where
       what = "data constructor declaration"
-      doc = ppConstr d
+      doc = pPrint d
 kcConstrDecl tcEnv (RecordDecl _ _ fs) = do
   mapM_ (kcFieldDecl tcEnv) fs
 
 kcFieldDecl :: TCEnv -> FieldDecl -> KCM ()
 kcFieldDecl tcEnv d@(FieldDecl p _ ty) =
-  kcValueType tcEnv p "field declaration" (ppFieldDecl d) ty
+  kcValueType tcEnv p "field declaration" (pPrint d) ty
 
 kcNewConstrDecl :: TCEnv -> NewConstrDecl -> KCM ()
 kcNewConstrDecl tcEnv d@(NewConstrDecl p _ ty) =
-  kcValueType tcEnv p "newtype constructor declaration" (ppNewConstr d) ty
+  kcValueType tcEnv p "newtype constructor declaration" (pPrint d) ty
 kcNewConstrDecl tcEnv (NewRecordDecl p _ (l, ty)) =
   kcFieldDecl tcEnv (FieldDecl p [l] ty)
 
@@ -578,7 +578,7 @@ kcConstraint tcEnv p sc@(Constraint _ qcls ty) = do
   m <- getModuleIdent
   kcType tcEnv p "class constraint" doc (clsKind m qcls tcEnv) ty
   where
-    doc = ppConstraint sc
+    doc = pPrint sc
 
 kcTypeSig :: HasPosition p => TCEnv -> p -> QualTypeExpr -> KCM ()
 kcTypeSig tcEnv p (QualTypeExpr _ cx ty) = do
@@ -587,7 +587,7 @@ kcTypeSig tcEnv p (QualTypeExpr _ cx ty) = do
   kcValueType tcEnv' p "type signature" doc ty
   where
     free = filter (null . flip lookupTypeInfo tcEnv) $ nub $ fv ty
-    doc = ppTypeExpr 0 ty
+    doc = pPrintPrec 0 ty
 
 kcValueType :: HasPosition p => TCEnv -> p -> String -> Doc -> TypeExpr -> KCM ()
 kcValueType tcEnv p what doc = kcType tcEnv p what doc KindStar
@@ -597,7 +597,7 @@ kcType tcEnv p what doc k ty = do
   k' <- kcTypeExpr tcEnv p "type expression" doc' 0 ty
   unify p what (doc $-$ text "Type:" <+> doc') k k'
   where
-    doc' = ppTypeExpr 0 ty
+    doc' = pPrintPrec 0 ty
 
 kcTypeExpr :: HasPosition p => TCEnv -> p -> String -> Doc -> Int -> TypeExpr -> KCM Kind
 kcTypeExpr tcEnv p _ _ n (ConstructorType _ tc) = do
@@ -611,9 +611,9 @@ kcTypeExpr tcEnv p _ _ n (ConstructorType _ tc) = do
     _ -> return $ tcKind m tc tcEnv
 kcTypeExpr tcEnv p what doc n (ApplyType _ ty1 ty2) = do
   (alpha, beta) <- kcTypeExpr tcEnv p what doc (n + 1) ty1 >>=
-    kcArrow p what (doc $-$ text "Type:" <+> ppTypeExpr 0 ty1)
+    kcArrow p what (doc $-$ text "Type:" <+> pPrintPrec 0 ty1)
   kcTypeExpr tcEnv p what doc 0 ty2 >>=
-    unify p what (doc $-$ text "Type:" <+> ppTypeExpr 0 ty2) alpha
+    unify p what (doc $-$ text "Type:" <+> pPrintPrec 0 ty2) alpha
   return beta
 kcTypeExpr tcEnv _ _ _ _ (VariableType _ tv) = return (varKind tv tcEnv)
 kcTypeExpr tcEnv p what doc _ (TupleType _ tys) = do

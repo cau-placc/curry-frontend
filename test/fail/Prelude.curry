@@ -11,7 +11,8 @@
 module Prelude
   (
     -- classes and overloaded functions
-    Eq(..)
+    Data(..)
+  , Eq(..)
   , elem, notElem, lookup
   , Ord(..)
   , Show(..), ShowS, print, shows, showChar, showString, showParen
@@ -44,6 +45,8 @@ module Prelude
   , PEVAL
   , Monad(..)
   , Functor(..)
+  , sequence, sequence_, mapM, mapM_, foldM, liftM, liftM2, forM, forM_
+  , unlessM, whenM
 #ifdef __PAKCS__
   , (=:<<=), letrec
 #endif
@@ -61,7 +64,7 @@ infixl 7 *, `div`, `mod`, `quot`, `rem`, /
 infixl 6 +, -
 -- infixr 5 :                          -- declared together with list
 infixr 5 ++
-infix  4 =:=, ==, /=, <, >, <=, >=, =:<=
+infix  4 =:=, ==, /=, <, >, <=, >=, =:<=, ===
 #ifdef __PAKCS__
 infix  4 =:<<=
 #endif
@@ -329,15 +332,18 @@ null (_:_)      = False
 (x:xs) ++ ys    = x : xs++ys
 
 --- Computes the length of a list.
---length          :: [_] -> Int
---length []       = 0
---length (_:xs)   = 1 + length xs
+length          :: [_] -> Int
+length []       = 0
+length (_:xs)   = 1 + length xs
 
+{-
+-- This version is more efficient but less usable for verification:
 length :: [_] -> Int
 length xs = len xs 0
   where
     len []     n = n
     len (_:ys) n = let np1 = n + 1 in len ys $!! np1
+-}
 
 --- List index (subscript) operator, head has index 0.
 (!!)            :: [a] -> Int -> a
@@ -506,8 +512,8 @@ words s    = let s1 = dropWhile isSpace s
 
 --- Concatenates a list of strings with a blank between two strings.
 unwords    :: [String] -> String
-unwords ws = if ws==[] then []
-                       else foldr1 (\w s -> w ++ ' ':s) ws
+unwords ws = if null ws then []
+                        else foldr1 (\w s -> w ++ ' ':s) ws
 
 --- Reverses the order of all elements in a list.
 reverse    :: [a] -> [a]
@@ -571,11 +577,13 @@ ord c = prim_ord $# c
 prim_ord :: Char -> Int
 prim_ord external
 
---- Converts a Unicode value into a character, fails iff the value is out of bounds
+--- Converts a Unicode value into a character.
+--- The conversion is total, i.e., for out-of-bound values, the smallest
+--- or largest character is generated.
 chr :: Int -> Char
-chr n | n >= 0 = prim_chr $# n
--- chr n | n < 0 || n > 1114111 = failed
---       | otherwise = prim_chr $# n
+chr n | n < 0       = prim_chr 0
+      | n > 1114111 = prim_chr 1114111
+      | otherwise   = prim_chr $# n
 
 prim_chr :: Int -> Char
 prim_chr external
@@ -788,7 +796,11 @@ prim_readFileContents external
 --- @param filename - The name of the file to be written.
 --- @param contents - The contents to be written to the file.
 writeFile         :: String -> String -> IO ()
+#ifdef __PAKCS__
 writeFile f s = (prim_writeFile $## f) s
+#else
+writeFile f s = (prim_writeFile $## f) $## s
+#endif
 
 prim_writeFile         :: String -> String -> IO ()
 prim_writeFile external
@@ -798,7 +810,11 @@ prim_writeFile external
 --- @param filename - The name of the file to be written.
 --- @param contents - The contents to be appended to the file.
 appendFile        :: String -> String -> IO ()
+#ifdef __PAKCS__
 appendFile f s = (prim_appendFile $## f) s
+#else
+appendFile f s = (prim_appendFile $## f) $## s
+#endif
 
 prim_appendFile         :: String -> String -> IO ()
 prim_appendFile external
@@ -965,7 +981,7 @@ anyOf :: [a] -> a
 anyOf = foldr1 (?)
 
 --- Evaluates to a fresh free variable.
-unknown :: _
+unknown :: Data a => a
 unknown = let x free in x
 
 ----------------------------------------------------------------
@@ -1069,6 +1085,9 @@ instance (Eq a, Eq b, Eq c, Eq d, Eq e, Eq f) => Eq (a, b, c, d, e, f) where
 instance (Eq a, Eq b, Eq c, Eq d, Eq e, Eq f, Eq g) => Eq (a, b, c, d, e, f, g) where
   (a, b, c, d, e, f, g) == (a', b', c', d', e', f', g') = a == a' && b == b' && c == c' && d == d' && e == e' && f == f' && g == g'
 
+instance (Eq a, Eq b, Eq c, Eq d, Eq e, Eq f, Eq g, Eq h) => Eq (a, b, c, d, e, f, g, h) where
+  (a, b, c, d, e, f, g, h) == (a', b', c', d', e', f', g', h') = a == a' && b == b' && c == c' && d == d' && e == e' && f == f' && g == g' && h == h'
+
 -- -------------------------------------------------------------------------
 -- Ord class and related instances and functions
 -- -------------------------------------------------------------------------
@@ -1139,6 +1158,33 @@ instance (Ord a, Ord b, Ord c, Ord d, Ord e) => Ord (a, b, c, d, e) where
      || (a == a' && b == b' && c == c' && d < d')
      || (a == a' && b == b' && c == c' && d == d' && e <= e')
 
+instance (Ord a, Ord b, Ord c, Ord d, Ord e, Ord f) => Ord (a, b, c, d, e, f) where
+  (a, b, c, d, e, f) <= (a', b', c', d', e', f') = a < a'
+     || (a == a' && b < b')
+     || (a == a' && b == b' && c < c')
+     || (a == a' && b == b' && c == c' && d < d')
+     || (a == a' && b == b' && c == c' && d == d' && e < e')
+     || (a == a' && b == b' && c == c' && d == d' && e == e' && f < f')
+
+instance (Ord a, Ord b, Ord c, Ord d, Ord e, Ord f, Ord g) => Ord (a, b, c, d, e, f, g) where
+  (a, b, c, d, e, f, g) <= (a', b', c', d', e', f', g') = a < a'
+     || (a == a' && b < b')
+     || (a == a' && b == b' && c < c')
+     || (a == a' && b == b' && c == c' && d < d')
+     || (a == a' && b == b' && c == c' && d == d' && e < e')
+     || (a == a' && b == b' && c == c' && d == d' && e == e' && f < f')
+     || (a == a' && b == b' && c == c' && d == d' && e == e' && f == f' && g <= g')
+
+instance (Ord a, Ord b, Ord c, Ord d, Ord e, Ord f, Ord g, Ord h) => Ord (a, b, c, d, e, f, g, h) where
+  (a, b, c, d, e, f, g, h) <= (a', b', c', d', e', f', g', h') = a < a'
+     || (a == a' && b < b')
+     || (a == a' && b == b' && c < c')
+     || (a == a' && b == b' && c == c' && d < d')
+     || (a == a' && b == b' && c == c' && d == d' && e < e')
+     || (a == a' && b == b' && c == c' && d == d' && e == e' && f < f')
+     || (a == a' && b == b' && c == c' && d == d' && e == e' && f == f' && g < g')
+     || (a == a' && b == b' && c == c' && d == d' && e == e' && f == f' && g == g' && h <= h')
+
 -- -------------------------------------------------------------------------
 -- Show class and related instances and functions
 -- -------------------------------------------------------------------------
@@ -1190,7 +1236,24 @@ instance (Show a, Show b, Show c, Show d) => Show (a, b, c, d) where
   showsPrec _ (a, b, c, d) = showTuple [shows a, shows b, shows c, shows d]
 
 instance (Show a, Show b, Show c, Show d, Show e) => Show (a, b, c, d, e) where
-  showsPrec _ (a, b, c, d, e) = showTuple [shows a, shows b, shows c, shows d, shows e]
+  showsPrec _ (a, b, c, d, e) =
+    showTuple [shows a, shows b, shows c, shows d, shows e]
+
+instance (Show a, Show b, Show c, Show d, Show e, Show f)
+      => Show (a, b, c, d, e, f) where
+  showsPrec _ (a, b, c, d, e, f) =
+    showTuple [shows a, shows b, shows c, shows d, shows e, shows f]
+
+instance (Show a, Show b, Show c, Show d, Show e, Show f, Show g)
+      => Show (a, b, c, d, e, f, g) where
+  showsPrec _ (a, b, c, d, e, f, g) =
+    showTuple [shows a, shows b, shows c, shows d, shows e, shows f, shows g]
+
+instance (Show a, Show b, Show c, Show d, Show e, Show f, Show g, Show h)
+      => Show (a, b, c, d, e, f, g, h) where
+  showsPrec _ (a, b, c, d, e, f, g, h) =
+    showTuple [shows a, shows b, shows c, shows d, shows e, shows f, shows g
+              ,shows h]
 
 instance Show a => Show [a] where
   showsPrec _ = showList
@@ -1368,12 +1431,11 @@ instance (Read a, Read b, Read c, Read d, Read e) => Read (a, b, c, d, e) where
 lex :: ReadS String
 lex xs = case xs of
     "" -> [("","")]
-    (c:cs)
-      | isSpace c -> lex $ dropWhile isSpace cs
     ('\'':s) ->
       [('\'' : ch ++ "'", t) | (ch, '\'' : t)  <- lexLitChar s, ch /= "'"]
     ('"':s) -> [('"' : str, t) | (str, t) <- lexString s]
     (c:cs)
+      | isSpace c -> lex $ dropWhile isSpace cs
       | isSingle c -> [([c], cs)]
       | isSym c -> [(c : sym, t) | (sym, t) <- [span isSym cs]]
       | isAlpha c -> [(c : nam, t) | (nam, t) <- [span isIdChar cs]]
@@ -1382,7 +1444,7 @@ lex xs = case xs of
       | otherwise -> []
   where
   isSingle c = c `elem` ",;()[]{}_`"
-  isSym c = c `elem` "!@#$%&⋆+./<=>?\\^|:-~"
+  isSym c = c `elem` "!@#$%&*+./<=>?\\^|:-~"
   isIdChar c = isAlphaNum c || c `elem` "_'"
   lexFracExp s = case s of
     ('.':c:cs)
@@ -1701,7 +1763,7 @@ instance Fractional Float where
   fromFloat x = x
 
 class (Num a, Ord a) => Real a where
-  -- toRational :: a -> Rational
+  -- toFloat :: a -> Float
 
 class Real a => Integral a where
   div  :: a -> a -> a
@@ -1804,3 +1866,128 @@ instance Monad [] where
   xs >>= f = [y | x <- xs, y <- f x]
   return x = [x]
   fail _ = []
+
+----------------------------------------------------------------------------
+-- Some useful monad operations which might be later generalized
+-- or moved into some other base module.
+
+--- Evaluates a sequence of monadic actions and collects all results in a list.
+sequence :: Monad m => [m a] -> m [a]
+sequence = foldr (\m n -> m >>= \x -> n >>= \xs -> return (x:xs)) (return [])
+
+--- Evaluates a sequence of monadic actions and ignores the results.
+sequence_ :: Monad m => [m _] -> m ()
+sequence_ = foldr (>>) (return ())
+
+--- Maps a monadic action function on a list of elements.
+--- The results of all monadic actions are collected in a list.
+mapM :: Monad m => (a -> m b) -> [a] -> m [b]
+mapM f = sequence . map f
+
+--- Maps a monadic action function on a list of elements.
+--- The results of all monadic actions are ignored.
+mapM_ :: Monad m => (a -> m _) -> [a] -> m ()
+mapM_ f = sequence_ . map f
+
+--- Folds a list of elements using a binary monadic action and a value
+--- for the empty list.
+foldM :: Monad m => (a -> b -> m a) -> a -> [b] -> m a
+foldM _ z []      =  return z
+foldM f z (x:xs)  =  f z x >>= \z' -> foldM f z' xs
+
+--- Apply a pure function to the result of a monadic action.
+liftM :: Monad m => (a -> b) -> m a -> m b
+liftM f m = m >>= return . f
+
+--- Apply a pure binary function to the result of two monadic actions.
+liftM2  :: (Monad m) => (a1 -> a2 -> r) -> m a1 -> m a2 -> m r
+liftM2 f m1 m2 = do x1 <- m1
+                    x2 <- m2
+                    return (f x1 x2)
+
+--- Like `mapM`, but with flipped arguments.
+---
+--- This can be useful if the definition of the function is longer
+--- than those of the list, like in
+---
+--- forM [1..10] $ \n -> do
+---   ...
+forM :: Monad m => [a] -> (a -> m b) -> m [b]
+forM xs f = mapM f xs
+
+--- Like `mapM_`, but with flipped arguments.
+---
+--- This can be useful if the definition of the function is longer
+--- than those of the list, like in
+---
+--- forM_ [1..10] $ \n -> do
+---   ...
+forM_ :: Monad m => [a] -> (a -> m b) -> m ()
+forM_ xs f = mapM_ f xs
+
+--- Performs a monadic action unless the condition is met.
+unlessM :: Monad m => Bool -> m () -> m ()
+unlessM p act = if p then return () else act
+
+--- Performs a monadic action when the condition is met.
+whenM :: Monad m => Bool -> m () -> m ()
+whenM p act = if p then act else return ()
+
+----------------------------------------------------------------------------
+
+class Data a where
+  (===)  :: a -> a -> Bool
+  aValue :: a
+
+instance Data Int where
+  (===) = (==)
+  aValue = a where a free
+
+instance Data Float where
+  (===) = (==)
+  aValue = a where a free
+
+instance Data Char where
+  (===) = (==)
+  aValue = a where a free
+
+instance Data a => Data [a] where
+  []     === []     = True
+  []     === (_:_)  = False
+  (_:_)  === []     = False
+  (x:xs) === (y:ys) = x === y && xs === ys
+
+  aValue = [] ? (aValue:aValue)
+
+instance (Data a, Data b) => Data (a, b) where
+  (a1, b1) === (a2, b2) = a1 === a2 && b1 === b2
+  aValue = (aValue, aValue)
+
+instance (Data a, Data b, Data c) => Data (a, b, c) where
+  (a1, b1, c1) === (a2, b2, c2) = a1 === a2 && b1 === b2 && c1 === c2
+  aValue = (aValue, aValue, aValue)
+
+instance (Data a, Data b, Data c, Data d) => Data (a, b, c, d) where
+  (a1, b1, c1, d1) === (a2, b2, c2, d2) =
+    a1 === a2 && b1 === b2 && c1 === c2 && d1 === d2
+  aValue = (aValue, aValue, aValue, aValue)
+
+instance (Data a, Data b, Data c, Data d, Data e) => Data (a, b, c, d, e) where
+  (a1, b1, c1, d1, e1) === (a2, b2, c2, d2, e2) =
+    a1 === a2 && b1 === b2 && c1 === c2 && d1 === d2 && e1 === e2
+  aValue = (aValue, aValue, aValue, aValue, aValue)
+
+instance (Data a, Data b, Data c, Data d, Data e, Data f) => Data (a, b, c, d, e, f) where
+  (a1, b1, c1, d1, e1, f1) === (a2, b2, c2, d2, e2, f2) =
+    a1 === a2 && b1 === b2 && c1 === c2 && d1 === d2 && e1 === e2 && f1 === f2
+  aValue = (aValue, aValue, aValue, aValue, aValue, aValue)
+
+instance (Data a, Data b, Data c, Data d, Data e, Data f, Data g) => Data (a, b, c, d, e, f, g) where
+  (a1, b1, c1, d1, e1, f1, g1) === (a2, b2, c2, d2, e2, f2, g2) =
+    a1 === a2 && b1 === b2 && c1 === c2 && d1 === d2 && e1 === e2 && f1 === f2 && g1 === g2
+  aValue = (aValue, aValue, aValue, aValue, aValue, aValue, aValue)
+
+instance (Data a, Data b, Data c, Data d, Data e, Data f, Data g, Data h) => Data (a, b, c, d, e, f, g, h) where
+  (a1, b1, c1, d1, e1, f1, g1, h1) === (a2, b2, c2, d2, e2, f2, g2, h2) =
+    a1 === a2 && b1 === b2 && c1 === c2 && d1 === d2 && e1 === e2 && f1 === f2 && g1 === g2 && h1 === h2
+  aValue = (aValue, aValue, aValue, aValue, aValue, aValue, aValue, aValue)

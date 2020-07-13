@@ -208,12 +208,12 @@ instance Rename (Decl a) where
   rename decl                              = return decl
 
 instance Rename ConstrDecl where
-  rename (ConstrDecl p c tys) = withLocalEnv $ do
-    ConstrDecl p <$> pure c <*> rename tys
-  rename (ConOpDecl p ty1 op ty2) = withLocalEnv $ do
+  rename (ConstrDecl p c tys)     = withLocalEnv $
+    ConstrDecl p c <$> rename tys
+  rename (ConOpDecl p ty1 op ty2) = withLocalEnv $
     ConOpDecl p <$> rename ty1 <*> pure op <*> rename ty2
-  rename (RecordDecl p c fs) = withLocalEnv $ do
-    RecordDecl p <$> pure c <*> rename fs
+  rename (RecordDecl p c fs)      = withLocalEnv $
+    RecordDecl p c <$> rename fs
 
 instance Rename FieldDecl where
   rename (FieldDecl p ls ty) = FieldDecl p ls <$> rename ty
@@ -312,9 +312,7 @@ bindVars :: [Ident] -> TSCM ()
 bindVars = mapM_ bindVar
 
 lookupVar :: Ident -> TSCM (Maybe Ident)
-lookupVar tv = do
-  env <- getRenameEnv
-  return $ Map.lookup tv env
+lookupVar tv = Map.lookup tv <$> getRenameEnv
 
 -- When type declarations are checked, the compiler will allow anonymous
 -- type variables on the left hand side of the declaration, but not on
@@ -332,19 +330,19 @@ checkDecl :: Decl a -> TSCM (Decl a)
 checkDecl (DataDecl p tc tvs cs clss)         = do
   checkTypeLhs tvs
   cs' <- mapM (checkConstrDecl tvs) cs
-  mapM_ checkClass clss
+  mapM_ (checkClass False) clss
   return $ DataDecl p tc tvs cs' clss
 checkDecl (NewtypeDecl p tc tvs nc clss)      = do
   checkTypeLhs tvs
   nc' <- checkNewConstrDecl tvs nc
-  mapM_ checkClass clss
+  mapM_ (checkClass False) clss
   return $ NewtypeDecl p tc tvs nc' clss
 checkDecl (TypeDecl p tc tvs ty)              = do
   checkTypeLhs tvs
   ty' <- checkClosedType tvs ty
   return $ TypeDecl p tc tvs ty'
-checkDecl (TypeSig p vs ty)                   =
-  TypeSig p vs <$> checkClosedTypeSig [] ty
+checkDecl (TypeSig p vs qty)                   =
+  TypeSig p vs <$> checkQualType qty
 checkDecl (FunctionDecl a p f eqs)            = FunctionDecl a p f <$>
   mapM checkEquation eqs
 checkDecl (PatternDecl p t rhs)               = PatternDecl p t <$> checkRhs rhs
@@ -428,7 +426,7 @@ checkTypeVars :: String -> [Ident] -> TSCM ()
 checkTypeVars _    []         = ok
 checkTypeVars what (tv : tvs) = do
   unless (isAnonId tv) $ do
-    isTypeConstrOrClass <- (not . null . lookupTypeKind tv) <$> getTypeEnv
+    isTypeConstrOrClass <- not . null . lookupTypeKind tv <$> getTypeEnv
     when isTypeConstrOrClass $ report $ errNoVariable tv what
     when (tv `elem` tvs) $ report $ errNonLinear tv what
   checkTypeVars what tvs
@@ -526,7 +524,7 @@ checkContext = mapM checkConstraint
 
 checkConstraint :: Constraint -> TSCM Constraint
 checkConstraint c@(Constraint spi qcls ty) = do
-  checkClass qcls
+  checkClass False qcls
   ty' <- checkType ty
   unless (isVariableType $ rootType ty') $ report $ errIllegalConstraint c
   return $ Constraint spi qcls ty'
@@ -534,16 +532,22 @@ checkConstraint c@(Constraint spi qcls ty) = do
     rootType (ApplyType _ ty' _) = ty'
     rootType ty'                 = ty'
 
-checkClass :: QualIdent -> TSCM ()
-checkClass qcls = do
+checkClass :: Bool -> QualIdent -> TSCM ()
+checkClass isInstDecl qcls = do
   m <- getModuleIdent
   tEnv <- getTypeEnv
   case qualLookupTypeKind qcls tEnv of
     [] -> report $ errUndefinedClass qcls
-    [Class _ _] -> ok
+    [Class c _]
+      | c == qDataId -> when (isInstDecl && m /= preludeMIdent) $ report $
+                          errIllegalDataInstance qcls
+      | otherwise    -> ok
     [_] -> report $ errUndefinedClass qcls
     tks -> case qualLookupTypeKind (qualQualify m qcls) tEnv of
-      [Class _ _] -> ok
+      [Class c _]
+        | c == qDataId -> when (isInstDecl && m /= preludeMIdent) $ report $
+                            errIllegalDataInstance qcls
+        | otherwise    -> ok
       [_] -> report $ errUndefinedClass qcls
       _ -> report $ errAmbiguousIdent qcls $ map origName tks
 
@@ -667,8 +671,8 @@ errNonLinear tv what = posMessage tv $ hsep $ map text
   [ "Type variable", idName tv, "occurs more than once in", what ]
 
 errNoVariable :: Ident -> String -> Message
-errNoVariable tv what = posMessage tv $ hsep $ map text $
-  [ "Type constructor or type class identifier", idName tv, "used in", what ]
+errNoVariable tv what = posMessage tv $ hsep $ map text
+  ["Type constructor or type class identifier", idName tv, "used in", what]
 
 errUnboundVariable :: Ident -> Message
 errUnboundVariable tv = posMessage tv $ hsep $ map text
@@ -694,4 +698,11 @@ errIllegalInstanceType p inst = posMessage p $ vcat
   , text "The instance type must be of the form (T u_1 ... u_n),"
   , text "where T is not a type synonym and u_1, ..., u_n are"
   , text "mutually distinct, non-anonymous type variables."
+  ]
+
+errIllegalDataInstance :: QualIdent -> Message
+errIllegalDataInstance qcls = posMessage qcls $ vcat
+  [ text "Illegal instance of" <+> ppQIdent qcls
+  , text "Instances of this class cannot be defined."
+  , text "Instead, they are automatically derived if possible."
   ]

@@ -334,14 +334,14 @@ errNoElement what for tc x = posMessage tc $ hsep $ map text
 
 errIllegalSimpleConstraint :: Constraint -> Message
 errIllegalSimpleConstraint c@(Constraint _ qcls _) = posMessage qcls $ vcat
-  [ text "Illegal class constraint" <+> ppConstraint c
+  [ text "Illegal class constraint" <+> pPrint c
   , text "Constraints in class and instance declarations must be of"
   , text "the form C u, where C is a type class and u is a type variable."
   ]
 
 errIllegalInstanceType :: Position -> InstanceType -> Message
 errIllegalInstanceType p inst = posMessage p $ vcat
-  [ text "Illegal instance type" <+> ppInstanceType inst
+  [ text "Illegal instance type" <+> pPrint inst
   , text "The instance type must be of the form (T u_1 ... u_n),"
   , text "where T is not a type synonym and u_1, ..., u_n are"
   , text "mutually distinct, non-anonymous type variables."
