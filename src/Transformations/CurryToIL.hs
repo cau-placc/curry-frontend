@@ -49,7 +49,7 @@ import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 import qualified IL as IL
 
 ilTrans :: Bool -> ValueEnv -> Module Type -> IL.Module
-ilTrans remIm vEnv (Module _ _ m _ im ds) = IL.Module m im' ds'
+ilTrans remIm vEnv (Module _ _ _ m _ im ds) = IL.Module m im' ds'
   where ds' = R.runReader (concatMapM trDecl ds) (TransEnv m vEnv)
         im' = if remIm then imports m ds' else map moduleImport im
         moduleImport (ImportDecl _ mdl _ _ _) = mdl
@@ -279,8 +279,8 @@ bindRenameEnv _ _                           _
   = internalError "CurryToIL.bindRenameEnv"
 
 trRhs :: [Ident] -> RenameEnv -> Rhs Type -> TransM IL.Expression
-trRhs vs env (SimpleRhs _ e _) = trExpr vs env e
-trRhs _  _   (GuardedRhs _ _  _) = internalError "CurryToIL.trRhs: GuardedRhs"
+trRhs vs env (SimpleRhs _ _ e _) = trExpr vs env e
+trRhs _  _   (GuardedRhs _ _ _ _) = internalError "CurryToIL.trRhs: GuardedRhs"
 
 -- Note that the case matching algorithm assumes that the matched
 -- expression is accessible through a variable. The translation of case
@@ -302,7 +302,7 @@ trExpr _  _   (Constructor _ ty c)
   = (IL.Constructor (transType ty) c . arrowArity) <$> constrType c
 trExpr vs env (Apply     _ e1 e2)
   = IL.Apply <$> trExpr vs env e1 <*> trExpr vs env e2
-trExpr vs env (Let        _ ds e) = do
+trExpr vs env (Let      _ _ ds e) = do
   e' <- trExpr vs env' e
   case ds of
     [FreeDecl _ vs']
@@ -316,7 +316,7 @@ trExpr vs env (Let        _ ds e) = do
   trBinding (PatternDecl _ (VariablePattern _ _ v) rhs)
     = IL.Binding v <$> trRhs vs env' rhs
   trBinding p = error $ "unexpected binding: " ++ show p
-trExpr (v:vs) env (Case _ ct e alts) = do
+trExpr (v:vs) env (Case _ _ ct e alts) = do
   -- the ident v is used for the case expression subject, as this could
   -- be referenced in the case alternatives by a variable pattern
   e' <- trExpr vs env e

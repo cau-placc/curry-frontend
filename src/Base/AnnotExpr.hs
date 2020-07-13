@@ -33,11 +33,11 @@ class QualAnnotExpr e where
 -- variables cannot be computed independently for each declaration.
 
 instance QualAnnotExpr Decl where
-  qafv m (FunctionDecl  _ _ _ eqs) = concatMap (qafv m) eqs
-  qafv m (PatternDecl     _ _ rhs) = qafv m rhs
-  qafv m (ClassDecl    _ _ _ _ ds) = concatMap (qafv m) ds
-  qafv m (InstanceDecl _ _ _ _ ds) = concatMap (qafv m) ds
-  qafv _ _                         = []
+  qafv m (FunctionDecl    _ _ _ eqs) = concatMap (qafv m) eqs
+  qafv m (PatternDecl       _ _ rhs) = qafv m rhs
+  qafv m (ClassDecl    _ _ _ _ _ ds) = concatMap (qafv m) ds
+  qafv m (InstanceDecl _ _ _ _ _ ds) = concatMap (qafv m) ds
+  qafv _ _                           = []
 
 instance QualAnnotExpr Equation where
   qafv m (Equation _ lhs rhs) = filterBv lhs $ qafv m lhs ++ qafv m rhs
@@ -46,8 +46,8 @@ instance QualAnnotExpr Lhs where
   qafv m = concatMap (qafv m) . snd . flatLhs
 
 instance QualAnnotExpr Rhs where
-  qafv m (SimpleRhs _ e ds) = filterBv ds $ qafv m e ++ concatMap (qafv m) ds
-  qafv m (GuardedRhs _ es ds) =
+  qafv m (SimpleRhs _ _ e ds) = filterBv ds $ qafv m e ++ concatMap (qafv m) ds
+  qafv m (GuardedRhs _ _ es ds) =
     filterBv ds $ concatMap (qafv m) es ++ concatMap (qafv m) ds
 
 instance QualAnnotExpr CondExpr where
@@ -75,11 +75,11 @@ instance QualAnnotExpr Expression where
   qafv m (LeftSection        _ e op) = qafv m op ++ qafv m e
   qafv m (RightSection       _ op e) = qafv m op ++ qafv m e
   qafv m (Lambda             _ ts e) = filterBv ts $ qafv m e
-  qafv m (Let                _ ds e) =
+  qafv m (Let              _ _ ds e) =
     filterBv ds $ concatMap (qafv m) ds ++ qafv m e
-  qafv m (Do                _ sts e) = foldr (qafvStmt m) (qafv m e) sts
+  qafv m (Do              _ _ sts e) = foldr (qafvStmt m) (qafv m e) sts
   qafv m (IfThenElse     _ e1 e2 e3) = qafv m e1 ++ qafv m e2 ++ qafv m e3
-  qafv m (Case           _ _ e alts) = qafv m e ++ concatMap (qafv m) alts
+  qafv m (Case         _ _ _ e alts) = qafv m e ++ concatMap (qafv m) alts
 
 qafvField :: QualAnnotExpr e => ModuleIdent -> Field (e Type) -> [(Type, Ident)]
 qafvField m (Field _ _ t) = qafv m t
@@ -88,9 +88,9 @@ qafvStmt :: ModuleIdent -> Statement Type -> [(Type, Ident)] -> [(Type, Ident)]
 qafvStmt m st fvs = qafv m st ++ filterBv st fvs
 
 instance QualAnnotExpr Statement where
-  qafv m (StmtExpr   _ e) = qafv m e
-  qafv m (StmtDecl  _ ds) = filterBv ds $ concatMap (qafv m) ds
-  qafv m (StmtBind _ _ e) = qafv m e
+  qafv m (StmtExpr   _  e) = qafv m e
+  qafv m (StmtDecl _ _ ds) = filterBv ds $ concatMap (qafv m) ds
+  qafv m (StmtBind _ _  e) = qafv m e
 
 instance QualAnnotExpr Alt where
   qafv m (Alt _ t rhs) = filterBv t $ qafv m rhs

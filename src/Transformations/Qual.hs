@@ -51,10 +51,10 @@ qual :: ModuleIdent -> TCEnv -> ValueEnv -> Module a -> Module a
 qual m tcEnv tyEnv mdl = R.runReader (qModule mdl) (QualEnv m tcEnv tyEnv)
 
 qModule :: Qual (Module a)
-qModule (Module spi ps m es is ds) = do
+qModule (Module spi li ps m es is ds) = do
   es' <- qExportSpec es
   ds' <- mapM qDecl  ds
-  return (Module spi ps m es' is ds')
+  return (Module spi li ps m es' is ds')
 
 qExportSpec :: Qual (Maybe ExportSpec)
 qExportSpec Nothing                 = return Nothing
@@ -67,22 +67,22 @@ qExport (ExportTypeAll     spi t) = ExportTypeAll spi <$> qConstr t
 qExport m@(ExportModule      _ _) = return m
 
 qDecl :: Qual (Decl a)
-qDecl i@(InfixDecl          _ _ _ _) = return i
-qDecl (DataDecl      p n vs cs clss) = DataDecl p n vs <$>
+qDecl i@(InfixDecl             _ _ _ _) = return i
+qDecl (DataDecl         p n vs cs clss) = DataDecl p n vs <$>
   mapM qConstrDecl cs <*> mapM qClass clss
-qDecl e@(ExternalDataDecl     _ _ _) = return e
-qDecl (NewtypeDecl   p n vs nc clss) = NewtypeDecl p n vs <$>
+qDecl e@(ExternalDataDecl        _ _ _) = return e
+qDecl (NewtypeDecl      p n vs nc clss) = NewtypeDecl p n vs <$>
   qNewConstrDecl nc <*> mapM qClass clss
-qDecl (TypeDecl           p n vs ty) = TypeDecl p n vs <$> qTypeExpr ty
-qDecl (TypeSig             p fs qty) = TypeSig p fs <$> qQualTypeExpr qty
-qDecl (FunctionDecl       a p f eqs) = FunctionDecl a p f <$> mapM qEquation eqs
-qDecl e@(ExternalDecl           _ _) = return e
-qDecl (PatternDecl          p t rhs) = PatternDecl p <$> qPattern t <*> qRhs rhs
-qDecl vs@(FreeDecl              _ _) = return vs
-qDecl (DefaultDecl            p tys) = DefaultDecl p <$> mapM qTypeExpr tys
-qDecl (ClassDecl     p cx cls tv ds) = ClassDecl p <$>
+qDecl (TypeDecl              p n vs ty) = TypeDecl p n vs <$> qTypeExpr ty
+qDecl (TypeSig                p fs qty) = TypeSig p fs <$> qQualTypeExpr qty
+qDecl (FunctionDecl          a p f eqs) = FunctionDecl a p f <$> mapM qEquation eqs
+qDecl e@(ExternalDecl              _ _) = return e
+qDecl (PatternDecl             p t rhs) = PatternDecl p <$> qPattern t <*> qRhs rhs
+qDecl vs@(FreeDecl                 _ _) = return vs
+qDecl (DefaultDecl               p tys) = DefaultDecl p <$> mapM qTypeExpr tys
+qDecl (ClassDecl     p li cx cls tv ds) = ClassDecl p li <$>
   qContext cx <*> pure cls <*> pure tv <*> mapM qDecl ds
-qDecl (InstanceDecl p cx qcls ty ds) = InstanceDecl p <$>
+qDecl (InstanceDecl p li cx qcls ty ds) = InstanceDecl p li <$>
   qContext cx <*> qClass qcls <*> qTypeExpr ty <*> mapM qDecl ds
 
 qConstrDecl :: Qual ConstrDecl
@@ -156,10 +156,10 @@ qPattern (InfixFuncPattern spi a t1 op t2) =
   InfixFuncPattern spi a <$> qPattern t1 <*> qIdent op <*> qPattern t2
 
 qRhs :: Qual (Rhs a)
-qRhs (SimpleRhs spi e ds) =
-  SimpleRhs  spi <$> qExpr e           <*> mapM qDecl ds
-qRhs (GuardedRhs spi es ds) =
-  GuardedRhs spi <$> mapM qCondExpr es <*> mapM qDecl ds
+qRhs (SimpleRhs spi li e ds) =
+  SimpleRhs  spi li <$> qExpr e           <*> mapM qDecl ds
+qRhs (GuardedRhs spi li es ds) =
+  GuardedRhs spi li <$> mapM qCondExpr es <*> mapM qDecl ds
 
 qCondExpr :: Qual (CondExpr a)
 qCondExpr (CondExpr p g e) = CondExpr p <$> qExpr g <*> qExpr e
@@ -199,16 +199,16 @@ qExpr (RightSection       spi op e) = RightSection spi <$> qInfixOp op
                                                        <*> qExpr e
 qExpr (Lambda             spi ts e) = Lambda       spi <$> mapM qPattern ts
                                                        <*> qExpr e
-qExpr (Let                spi ds e) = Let spi <$> mapM qDecl ds  <*> qExpr e
-qExpr (Do                spi sts e) = Do  spi <$> mapM qStmt sts <*> qExpr e
+qExpr (Let             spi li ds e) = Let spi li <$> mapM qDecl ds  <*> qExpr e
+qExpr (Do             spi li sts e) = Do  spi li <$> mapM qStmt sts <*> qExpr e
 qExpr (IfThenElse     spi e1 e2 e3) = IfThenElse spi <$> qExpr e1 <*> qExpr e2
                                                      <*> qExpr e3
-qExpr (Case            spi ct e as) = Case spi ct   <$> qExpr e <*> mapM qAlt as
+qExpr (Case         spi li ct e as) = Case spi li ct <$> qExpr e <*> mapM qAlt as
 
 qStmt :: Qual (Statement a)
-qStmt (StmtExpr spi   e) = StmtExpr spi <$> qExpr e
-qStmt (StmtBind spi t e) = StmtBind spi <$> qPattern t <*> qExpr e
-qStmt (StmtDecl spi  ds) = StmtDecl spi <$> mapM qDecl ds
+qStmt (StmtExpr spi     e) = StmtExpr spi    <$> qExpr e
+qStmt (StmtBind spi t   e) = StmtBind spi    <$> qPattern t <*> qExpr e
+qStmt (StmtDecl spi li ds) = StmtDecl spi li <$> mapM qDecl ds
 
 qAlt :: Qual (Alt a)
 qAlt (Alt p t rhs) = Alt p <$> qPattern t <*> qRhs rhs

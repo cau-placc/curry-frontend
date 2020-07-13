@@ -48,36 +48,36 @@ runSecure act = runCYIO act `E.catch` handler
 
 -- Execute a test by calling cymake
 runTest :: CO.Options -> String -> [String] -> IO Progress
-runTest opts test [] = passOrFail <$> runSecure (buildCurry opts' test)
- where
-  wOpts         = CO.optWarnOpts opts
-  wFlags        =   CO.WarnUnusedBindings
-                  : CO.WarnUnusedGlobalBindings
-                  : CO.wnWarnFlags wOpts
-  opts'         = opts { CO.optForce    = True
-                       , CO.optWarnOpts = wOpts { CO.wnWarnFlags = wFlags }
-                       }
-  passOrFail    = Finished . either fail pass
-  fail msgs
-    | null msgs = Pass
-    | otherwise = Fail $ "An unexpected failure occurred: " ++ showMessages msgs
-  pass _        = Pass
-runTest opts test errorMsgs = catchE <$> runSecure (buildCurry opts' test)
- where
-  wOpts         = CO.optWarnOpts opts
-  wFlags        =   CO.WarnUnusedBindings
-                  : CO.WarnUnusedGlobalBindings
-                  : CO.wnWarnFlags wOpts
-  opts'         = opts { CO.optForce    = True
-                       , CO.optWarnOpts = wOpts { CO.wnWarnFlags = wFlags }
-                       }
-  catchE        = Finished . either pass fail
-  pass msgs = let errorStr     = showMessages msgs
-                  leftOverMsgs = filter (not . flip isInfixOf errorStr) errorMsgs
-               in if null leftOverMsgs
-                 then Pass
-                 else Fail $ "Expected warnings/failures did not occur: " ++ unwords leftOverMsgs
-  fail          = pass . snd
+runTest opts test errorMsgs =
+  if null errorMsgs
+    then passOrFail <$> runSecure (buildCurry opts' test)
+    else catchE     <$> runSecure (buildCurry opts' test)
+  where
+    cppOpts       = CO.optCppOpts opts
+    cppDefs       = Map.insert "__PAKCS__" 300 (CO.cppDefinitions cppOpts)
+    wOpts         = CO.optWarnOpts opts
+    wFlags        =   CO.WarnUnusedBindings
+                    : CO.WarnUnusedGlobalBindings
+                    : CO.wnWarnFlags wOpts
+    opts'         = opts { CO.optForce    = True
+                         , CO.optWarnOpts = wOpts
+                            { CO.wnWarnFlags    = wFlags  }
+                         , CO.optCppOpts  = cppOpts
+                            { CO.cppDefinitions = cppDefs }
+                         }
+    passOrFail    = Finished . either fail (const Pass)
+    catchE        = Finished . either pass (pass . snd)
+    fail msgs
+      | null msgs = Pass
+      | otherwise = Fail $ "An unexpected failure occurred: " ++
+                           showMessages msgs
+    pass msgs
+      | null otherMsgs = Pass
+      | otherwise      = Fail $ "Expected warnings/failures did not occur: " ++
+                                unwords otherMsgs
+      where
+        errorStr  = showMessages msgs
+        otherMsgs = filter (not . flip isInfixOf errorStr) errorMsgs
 
 showMessages :: [Message] -> String
 showMessages = show . ppMessages ppError . sort
@@ -192,7 +192,36 @@ mkFailTest name errorMsgs = (name, [], [], Nothing, errorMsgs)
 -- test code and the expected error message(s) to the following list
 failInfos :: [TestInfo]
 failInfos = map (uncurry mkFailTest)
-  [ ("ErrorMultipleSignature", ["More than one type signature for `f'"])
+  [ ("AmbiguousTypeVariable",
+      [ "Ambiguous type variable"
+      , "inferred for equation"
+      , "applyFunTest = applyFun funA True False"
+      , "Ambiguous type variable"
+      , "inferred for equation"
+      , "applyFunTest2 = applyFun funA 'a' 'b'"
+      ]
+    )
+  , ("ClassHiddenFail",
+      [ "`methodB' is not a (visible) method of class `A'" ]
+    )
+  , ("DataFail",
+      [ "Missing instance for Prelude.Data Test1"
+      , "Missing instance for Prelude.Data (Test2"
+      , "Missing instance for Prelude.Data (Test2"
+      , "Missing instance for Prelude.Data Test1"
+      ]
+    )
+  , ("ErrorMultipleSignature", ["More than one type signature for `f'"])
+  , ("ErrorMultipleSignature", ["More than one type signature for `f'"])
+  , ("EscapingTypeVariable",
+      [ "Type error in application"
+      , "runBag"
+      , "  (do e <- newElem \"Hello, world!\""
+      , "      return e)"
+      , "Type error in application"
+      , "runBag (newElem \"Hello, world!\")"
+      ]
+    )
   , ("ExportCheck/AmbiguousName", ["Ambiguous name `not'"])
   , ("ExportCheck/AmbiguousType", ["Ambiguous type `Bool'"])
   , ("ExportCheck/ModuleNotImported", ["Module `Foo' not imported"])
@@ -243,6 +272,19 @@ failInfos = map (uncurry mkFailTest)
     )
   , ("TypeError1", ["Type error in explicitly typed expression"])
   , ("TypeError2", ["Missing instance for Prelude.Num Prelude.Bool"])
+  , ("TypeSigTooGeneral",
+      [ "Type signature too general"
+      , "Function: h"
+      , "Type signature too general"
+      , "Function: g'"
+      ]
+    )
+  , ("UnboundTypeVariable",
+      [ "Unbound type variable a"
+      , "Unbound type variable b"
+      , "Unbound type variable c"
+      ]
+    )
   ]
 
 --------------------------------------------------------------------------------

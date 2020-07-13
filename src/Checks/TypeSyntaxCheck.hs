@@ -57,7 +57,7 @@ import Env.Type
 
 typeSyntaxCheck :: [KnownExtension] -> TCEnv -> Module a
                 -> ((Module a, [KnownExtension]), [Message])
-typeSyntaxCheck exts tcEnv mdl@(Module _ _ m _ _ ds) =
+typeSyntaxCheck exts tcEnv mdl@(Module _ _ _ m _ _ ds) =
   case findMultiples $ map getIdent tcds of
     [] -> if length dfds <= 1
             then runTSCM (checkModule mdl) state
@@ -144,7 +144,7 @@ bindType m (NewtypeDecl _ tc _ nc _) = bindTypeKind m tc (Data qtc ids)
 bindType m (TypeDecl _ tc _ _) = bindTypeKind m tc (Alias qtc)
   where
     qtc = qualifyWith m tc
-bindType m (ClassDecl _ _ cls _ ds) = bindTypeKind m cls (Class qcls ms)
+bindType m (ClassDecl _ _ _ cls _ ds)  = bindTypeKind m cls (Class qcls ms)
   where
     qcls = qualifyWith m cls
     ms = concatMap methods ds
@@ -191,18 +191,21 @@ instance Rename (Decl a) where
   rename (TypeDecl p tc tvs ty) = withLocalEnv $ do
     bindVars tvs
     TypeDecl p tc <$> rename tvs <*> rename ty
-  rename (TypeSig p fs qty) = TypeSig p fs <$> renameTypeSig qty
-  rename (FunctionDecl p a f eqs) = FunctionDecl p a f <$> renameReset eqs
-  rename (ExternalDecl p fs) = return $ ExternalDecl p fs
-  rename (PatternDecl p ts rhs) = PatternDecl p ts <$> renameReset rhs
-  rename (FreeDecl p fvs) = return $ FreeDecl p fvs
-  rename (DefaultDecl p tys) = DefaultDecl p <$> mapM renameTypeSig tys
-  rename (ClassDecl p cx cls tv ds) = withLocalEnv $ do
+  rename (TypeSig p fs qty)                =
+    TypeSig p fs <$> renameTypeSig qty
+  rename (FunctionDecl p a f eqs)          =
+    FunctionDecl p a f <$> renameReset eqs
+  rename (PatternDecl p ts rhs)            =
+    PatternDecl p ts <$> renameReset rhs
+  rename (DefaultDecl p tys)               =
+    DefaultDecl p <$> mapM renameTypeSig tys
+  rename (ClassDecl p li cx cls tv ds)     = withLocalEnv $ do
     bindVar tv
-    ClassDecl p <$> rename cx <*> pure cls <*> rename tv <*> rename ds
-  rename (InstanceDecl p cx cls ty ds) = withLocalEnv $ do
+    ClassDecl p li <$> rename cx <*> pure cls <*> rename tv <*> rename ds
+  rename (InstanceDecl p li cx cls ty ds)  = withLocalEnv $ do
     bindVars (fv ty)
-    InstanceDecl p <$> rename cx <*> pure cls <*> rename ty <*> renameReset ds
+    flip (InstanceDecl p li) cls <$> rename cx <*> rename ty <*> renameReset ds
+  rename decl                              = return decl
 
 instance Rename ConstrDecl where
   rename (ConstrDecl p c tys) = withLocalEnv $ do
@@ -241,45 +244,53 @@ instance Rename (Equation a) where
   rename (Equation p lhs rhs) = Equation p lhs <$> rename rhs
 
 instance Rename (Rhs a) where
-  rename (SimpleRhs  spi e  ds) = SimpleRhs  spi <$> rename e  <*> rename ds
-  rename (GuardedRhs spi es ds) = GuardedRhs spi <$> rename es <*> rename ds
+  rename (SimpleRhs spi li e ds)   =
+    SimpleRhs spi li <$> rename e <*> rename ds
+  rename (GuardedRhs spi li es ds) =
+    GuardedRhs spi li <$> rename es <*> rename ds
 
 instance Rename (CondExpr a) where
   rename (CondExpr spi c e) = CondExpr spi <$> rename c <*> rename e
 
 instance Rename (Expression a) where
-  rename (Literal spi a l) = return $ Literal spi a l
-  rename (Variable spi a v) = return $ Variable spi a v
-  rename (Constructor spi a c) = return $ Constructor spi a c
-  rename (Paren spi e) = Paren spi <$> rename e
-  rename (Typed spi e qty) = Typed spi <$> rename e <*> renameTypeSig qty
-  rename (Record spi a c fs) = Record spi a c <$> rename fs
-  rename (RecordUpdate spi e fs) = RecordUpdate spi <$> rename e <*> rename fs
-  rename (Tuple spi es) = Tuple spi <$> rename es
-  rename (List spi a es) = List spi a <$> rename es
-  rename (ListCompr spi e stmts) = ListCompr spi <$> rename e <*> rename stmts
-  rename (EnumFrom spi e) = EnumFrom spi <$> rename e
-  rename (EnumFromThen spi e1 e2) = EnumFromThen spi <$> rename e1 <*> rename e2
-  rename (EnumFromTo spi e1 e2) = EnumFromTo spi <$> rename e1 <*> rename e2
-  rename (EnumFromThenTo spi e1 e2 e3) =
-    EnumFromThenTo spi <$> rename e1 <*> rename e2 <*> rename e3
-  rename (UnaryMinus spi e) = UnaryMinus spi <$> rename e
-  rename (Apply spi e1 e2) = Apply spi <$> rename e1 <*> rename e2
-  rename (InfixApply spi e1 op e2) =
-    flip (InfixApply spi) op <$> rename e1 <*> rename e2
-  rename (LeftSection spi e op) = flip (LeftSection spi) op <$> rename e
-  rename (RightSection spi op e) = RightSection spi op <$> rename e
-  rename (Lambda spi ts e) = Lambda spi ts <$> rename e
-  rename (Let spi ds e) = Let spi <$> rename ds <*> rename e
-  rename (Do spi stmts e) = Do spi <$> rename stmts <*> rename e
-  rename (IfThenElse spi c e1 e2) =
-    IfThenElse spi <$> rename c <*> rename e1 <*> rename e2
-  rename (Case spi ct e alts) = Case spi ct <$> rename e <*> rename alts
+  rename (Paren spi e)                 = Paren spi <$> rename e
+  rename (Typed spi e qty)             = Typed spi <$> rename e
+                                                   <*> renameTypeSig qty
+  rename (Record spi a c fs)           = Record spi a c <$> rename fs
+  rename (RecordUpdate spi e fs)       = RecordUpdate spi <$> rename e
+                                                          <*> rename fs
+  rename (Tuple spi es)                = Tuple spi <$> rename es
+  rename (List spi a es)               = List spi a <$> rename es
+  rename (ListCompr spi e stmts)       = ListCompr spi <$> rename e
+                                                       <*> rename stmts
+  rename (EnumFrom spi e)              = EnumFrom spi <$> rename e
+  rename (EnumFromThen spi e1 e2)      = EnumFromThen spi <$> rename e1
+                                                          <*> rename e2
+  rename (EnumFromTo spi e1 e2)        = EnumFromTo spi <$> rename e1
+                                                        <*> rename e2
+  rename (EnumFromThenTo spi e1 e2 e3) = EnumFromThenTo spi <$> rename e1
+                                                            <*> rename e2
+                                                            <*> rename e3
+  rename (UnaryMinus spi e)            = UnaryMinus spi <$> rename e
+  rename (Apply spi e1 e2)             = Apply spi <$> rename e1 <*> rename e2
+  rename (InfixApply spi e1 op e2)     = flip (InfixApply spi) op <$> rename e1
+                                                                  <*> rename e2
+  rename (LeftSection spi e op)        = flip (LeftSection spi) op <$> rename e
+  rename (RightSection spi op e)       = RightSection spi op <$> rename e
+  rename (Lambda spi ts e)             = Lambda spi ts <$> rename e
+  rename (Let spi li ds e)             = Let spi li <$> rename ds <*> rename e
+  rename (Do spi li stmts e)           = Do spi li <$> rename stmts <*> rename e
+  rename (IfThenElse spi c e1 e2)      = IfThenElse spi <$> rename c
+                                                        <*> rename e1
+                                                        <*> rename e2
+  rename (Case spi li ct e alts)       = Case spi li ct <$> rename e
+                                                        <*> rename alts
+  rename expr                          = return expr
 
 instance Rename (Statement a) where
-  rename (StmtExpr spi e) = StmtExpr spi <$> rename e
-  rename (StmtDecl spi ds) = StmtDecl spi <$> rename ds
-  rename (StmtBind spi t e) = StmtBind spi t <$> rename e
+  rename (StmtExpr spi e)     = StmtExpr spi    <$> rename e
+  rename (StmtDecl spi li ds) = StmtDecl spi li <$> rename ds
+  rename (StmtBind spi t e)   = StmtBind spi t  <$> rename e
 
 instance Rename (Alt a) where
   rename (Alt spi t rhs) = Alt spi t <$> rename rhs
@@ -289,7 +300,8 @@ instance Rename a => Rename (Field a) where
 
 instance Rename Ident where
   rename tv | isAnonId tv = renameIdent tv <$> newId
-            | otherwise   = fromMaybe tv <$> lookupVar tv
+            | otherwise   = setSpanInfo (getSpanInfo tv) .
+                            fromMaybe tv <$> lookupVar tv
 
 bindVar :: Ident -> TSCM ()
 bindVar tv = do
@@ -310,48 +322,48 @@ lookupVar tv = do
 -- traversed because they can contain local type signatures.
 
 checkModule :: Module a -> TSCM (Module a, [KnownExtension])
-checkModule (Module spi ps m es is ds) = do
+checkModule (Module spi li ps m es is ds) = do
   ds' <- mapM checkDecl ds
   ds'' <- rename ds'
   exts <- getExtensions
-  return (Module spi ps m es is ds'', exts)
+  return (Module spi li ps m es is ds'', exts)
 
 checkDecl :: Decl a -> TSCM (Decl a)
-checkDecl (DataDecl p tc tvs cs clss) = do
+checkDecl (DataDecl p tc tvs cs clss)         = do
   checkTypeLhs tvs
   cs' <- mapM (checkConstrDecl tvs) cs
   mapM_ checkClass clss
   return $ DataDecl p tc tvs cs' clss
-checkDecl (NewtypeDecl p tc tvs nc clss) = do
+checkDecl (NewtypeDecl p tc tvs nc clss)      = do
   checkTypeLhs tvs
   nc' <- checkNewConstrDecl tvs nc
   mapM_ checkClass clss
   return $ NewtypeDecl p tc tvs nc' clss
-checkDecl (TypeDecl p tc tvs ty) = do
+checkDecl (TypeDecl p tc tvs ty)              = do
   checkTypeLhs tvs
   ty' <- checkClosedType tvs ty
   return $ TypeDecl p tc tvs ty'
-checkDecl (TypeSig p vs qty) =
-  TypeSig p vs <$> checkQualType qty
-checkDecl (FunctionDecl a p f eqs) =
-  FunctionDecl a p f <$> mapM checkEquation eqs
-checkDecl (PatternDecl p t rhs) =
-  PatternDecl p t <$> checkRhs rhs
-checkDecl (DefaultDecl p tys) = DefaultDecl p <$> mapM checkType tys
-checkDecl (ClassDecl p cx cls clsvar ds) = do
+checkDecl (TypeSig p vs ty)                   =
+  TypeSig p vs <$> checkClosedTypeSig [] ty
+checkDecl (FunctionDecl a p f eqs)            = FunctionDecl a p f <$>
+  mapM checkEquation eqs
+checkDecl (PatternDecl p t rhs)               = PatternDecl p t <$> checkRhs rhs
+checkDecl (DefaultDecl p tys)                 = DefaultDecl p <$>
+  mapM (checkClosedType []) tys
+checkDecl (ClassDecl p li cx cls clsvar ds)   = do
   checkTypeVars "class declaration" [clsvar]
   cx' <- checkClosedContext [clsvar] cx
   checkSimpleContext cx'
   ds' <- mapM checkDecl ds
   mapM_ (checkClassMethod clsvar) ds'
-  return $ ClassDecl p cx' cls clsvar ds'
-checkDecl (InstanceDecl p cx qcls inst ds) = do
-  checkClass qcls
+  return $ ClassDecl p li cx' cls clsvar ds'
+checkDecl (InstanceDecl p li cx qcls inst ds) = do
+  checkClass True qcls
   QualTypeExpr _ cx' inst' <- checkQualType $ QualTypeExpr NoSpanInfo cx inst
   checkSimpleContext cx'
   checkInstanceType p inst'
-  InstanceDecl p cx' qcls inst' <$> mapM checkDecl ds
-checkDecl d = return d
+  InstanceDecl p li cx' qcls inst' <$> mapM checkDecl ds
+checkDecl d                                   = return d
 
 checkConstrDecl :: [Ident] -> ConstrDecl -> TSCM ConstrDecl
 checkConstrDecl tvs (ConstrDecl p c tys) = do
@@ -429,10 +441,10 @@ checkEquation :: Equation a -> TSCM (Equation a)
 checkEquation (Equation p lhs rhs) = Equation p lhs <$> checkRhs rhs
 
 checkRhs :: Rhs a -> TSCM (Rhs a)
-checkRhs (SimpleRhs  spi e  ds) = SimpleRhs  spi <$> checkExpr e
-                                                 <*> mapM checkDecl ds
-checkRhs (GuardedRhs spi es ds) = GuardedRhs spi <$> mapM checkCondExpr es
-                                                 <*> mapM checkDecl ds
+checkRhs (SimpleRhs spi li e ds)   =
+  SimpleRhs spi li <$> checkExpr e <*> mapM checkDecl ds
+checkRhs (GuardedRhs spi li es ds) =
+  GuardedRhs spi li <$> mapM checkCondExpr es <*> mapM checkDecl ds
 
 checkCondExpr :: CondExpr a -> TSCM (CondExpr a)
 checkCondExpr (CondExpr spi g e) = CondExpr spi <$> checkExpr g <*> checkExpr e
@@ -466,24 +478,25 @@ checkExpr (Apply             spi e1 e2) = Apply spi <$> checkExpr e1
 checkExpr (InfixApply     spi e1 op e2) = InfixApply spi <$> checkExpr e1
                                                          <*> return op
                                                          <*> checkExpr e2
-checkExpr (LeftSection        spi e op) =
-  flip (LeftSection spi) op <$> checkExpr e
-checkExpr (RightSection       spi op e) = RightSection spi op <$> checkExpr e
-checkExpr (Lambda             spi ts e) = Lambda spi ts <$> checkExpr e
-checkExpr (Let                spi ds e) = Let spi <$> mapM checkDecl ds
-                                                  <*> checkExpr e
-checkExpr (Do                spi sts e) = Do spi <$> mapM checkStmt sts
-                                                 <*> checkExpr e
-checkExpr (IfThenElse     spi e1 e2 e3) = IfThenElse spi <$> checkExpr e1
+checkExpr (LeftSection spi e op)        = flip (LeftSection spi) op <$>
+  checkExpr e
+checkExpr (RightSection spi op e)       = RightSection spi op <$> checkExpr e
+checkExpr (Lambda spi ts e)             = Lambda spi ts <$> checkExpr e
+checkExpr (Let spi li ds e)             = Let spi li <$> mapM checkDecl ds
+                                                     <*> checkExpr e
+checkExpr (Do spi li sts e)             = Do spi li <$> mapM checkStmt sts
+                                                    <*> checkExpr e
+checkExpr (IfThenElse spi e1 e2 e3)     = IfThenElse spi <$> checkExpr e1
                                                          <*> checkExpr e2
                                                          <*> checkExpr e3
-checkExpr (Case          spi ct e alts) = Case spi ct <$> checkExpr e
-                                                      <*> mapM checkAlt alts
+checkExpr (Case spi li ct e alts)       = Case spi li ct <$> checkExpr e
+                                                         <*> mapM checkAlt alts
+checkExpr expr                          = return expr
 
 checkStmt :: Statement a -> TSCM (Statement a)
-checkStmt (StmtExpr spi   e) = StmtExpr spi   <$> checkExpr e
-checkStmt (StmtBind spi t e) = StmtBind spi t <$> checkExpr e
-checkStmt (StmtDecl spi  ds) = StmtDecl spi   <$> mapM checkDecl ds
+checkStmt (StmtExpr spi e)     = StmtExpr spi    <$> checkExpr e
+checkStmt (StmtBind spi t e)   = StmtBind spi t  <$> checkExpr e
+checkStmt (StmtDecl spi li ds) = StmtDecl spi li <$> mapM checkDecl ds
 
 checkAlt :: Alt a -> TSCM (Alt a)
 checkAlt (Alt spi t rhs) = Alt spi t <$> checkRhs rhs
@@ -592,11 +605,11 @@ checkUsedExtension pos msg ext = do
 getIdent :: Decl a -> Ident
 getIdent (DataDecl     _ tc _ _ _) = tc
 getIdent (ExternalDataDecl _ tc _) = tc
-getIdent (NewtypeDecl  _ tc _ _ _) = tc
-getIdent (TypeDecl       _ tc _ _) = tc
-getIdent (ClassDecl   _ _ cls _ _) = cls
-getIdent _                         =
-  internalError "Checks.TypeSyntaxCheck.getIdent: no type or class declaration"
+getIdent (NewtypeDecl _ tc _ _ _)  = tc
+getIdent (TypeDecl _ tc _ _)       = tc
+getIdent (ClassDecl _ _ _ cls _ _) = cls
+getIdent _                         = internalError
+  "Checks.TypeSyntaxCheck.getIdent: no type or class declaration"
 
 isTypeSyn :: QualIdent -> TypeEnv -> Bool
 isTypeSyn tc tEnv = case qualLookupTypeKind tc tEnv of
@@ -663,14 +676,14 @@ errUnboundVariable tv = posMessage tv $ hsep $ map text
 
 errIllegalConstraint :: Constraint -> Message
 errIllegalConstraint c@(Constraint _ qcls _) = posMessage qcls $ vcat
-  [ text "Illegal class constraint" <+> ppConstraint c
+  [ text "Illegal class constraint" <+> pPrint c
   , text "Constraints must be of the form C u or C (u t1 ... tn),"
   , text "where C is a type class, u is a type variable and t1, ..., tn are types."
   ]
 
 errIllegalSimpleConstraint :: Constraint -> Message
 errIllegalSimpleConstraint c@(Constraint _ qcls _) = posMessage qcls $ vcat
-  [ text "Illegal class constraint" <+> ppConstraint c
+  [ text "Illegal class constraint" <+> pPrint c
   , text "Constraints in class and instance declarations must be of"
   , text "the form C u, where C is a type class and u is a type variable."
   ]

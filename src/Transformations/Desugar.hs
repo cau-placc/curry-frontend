@@ -96,8 +96,8 @@ import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 
 desugar :: [KnownExtension] -> ValueEnv -> TCEnv -> Module PredType
         -> (Module PredType, ValueEnv)
-desugar xs vEnv tcEnv (Module spi ps m es is ds)
-  = (Module spi ps m es is ds', valueEnv s')
+desugar xs vEnv tcEnv (Module spi li ps m es is ds)
+  = (Module spi li ps m es is ds', valueEnv s')
   where (ds', s') = S.runState (desugarModuleDecls ds)
                                (DesugarState m xs tcEnv vEnv 1)
 
@@ -166,11 +166,11 @@ desugarModuleDecls ds = do
 -- -----------------------------------------------------------------------------
 
 dsClassAndInstanceDecl :: Decl PredType -> DsM (Decl PredType)
-dsClassAndInstanceDecl (ClassDecl p cx cls tv ds) =
-  ClassDecl p cx cls tv . (tds ++) <$> dsDeclGroup vds
+dsClassAndInstanceDecl (ClassDecl p li cx cls tv ds) =
+  ClassDecl p li cx cls tv . (tds ++) <$> dsDeclGroup vds
   where (tds, vds) = partition isTypeSig ds
-dsClassAndInstanceDecl (InstanceDecl p cx cls ty ds) =
-  InstanceDecl p cx cls ty <$> dsDeclGroup ds
+dsClassAndInstanceDecl (InstanceDecl p li cx cls ty ds) =
+  InstanceDecl p li cx cls ty <$> dsDeclGroup ds
 dsClassAndInstanceDecl d = return d
 
 -- -----------------------------------------------------------------------------
@@ -306,9 +306,9 @@ dsRhs f rhs =   expandRhs (prelFailed (typeOf rhs)) f rhs
 
 expandRhs :: Expression PredType -> (Expression PredType -> Expression PredType)
           -> Rhs PredType -> DsM (Expression PredType)
-expandRhs _  f (SimpleRhs _ e ds) = return $ Let NoSpanInfo ds (f e)
-expandRhs e0 f (GuardedRhs _ es ds) = (Let NoSpanInfo ds . f)
-                                   <$> expandGuards e0 es
+expandRhs _  f (SimpleRhs _ _ e ds) = return $ mkLet ds (f e)
+expandRhs e0 f (GuardedRhs _ _ es ds) = mkLet ds . f
+                                     <$> expandGuards e0 es
 
 expandGuards :: Expression PredType -> [CondExpr PredType]
              -> DsM (Expression PredType)
@@ -325,8 +325,8 @@ boolGuards (CondExpr _ g _ : es) = not (null es) || typeOf g == boolType
 
 -- Add additional declarations to a right-hand side
 addDecls :: [Decl PredType] -> Rhs PredType -> Rhs PredType
-addDecls ds (SimpleRhs p e ds') = SimpleRhs p e (ds ++ ds')
-addDecls ds (GuardedRhs spi es ds') = GuardedRhs spi es (ds ++ ds')
+addDecls ds (SimpleRhs p li e ds') = SimpleRhs p li e (ds ++ ds')
+addDecls ds (GuardedRhs spi li es ds') = GuardedRhs spi li es (ds ++ ds')
 
 -- -----------------------------------------------------------------------------
 -- Desugaring of non-linear patterns
@@ -673,7 +673,7 @@ dsExpr p (Record   _ pty c fs) = do
   dsExpr p (applyConstr pty c tys es)
 dsExpr p (RecordUpdate _ e fs) = do
   alts  <- constructors tc >>= concatMapM updateAlt
-  dsExpr p $ Case NoSpanInfo Flex e (map (uncurry (caseAlt p)) alts)
+  dsExpr p $ mkCase Flex e (map (uncurry (caseAlt p)) alts)
   where ty = typeOf e
         pty = predType ty
         tc = rootOfType (arrowBase ty)
@@ -733,19 +733,19 @@ dsExpr p (RightSection _ op e) = do
   where TypeArrow ty1 (TypeArrow ty2 ty3) = typeOf (infixOp op)
 dsExpr p expr@(Lambda _ ts e) = do
   (pty, f) <- freshVar "_#lambda" expr
-  dsExpr p $ Let NoSpanInfo [funDecl p pty f ts e] $ mkVar pty f
-dsExpr p (Let _ ds e) = do
+  dsExpr p $ mkLet [funDecl p pty f ts e] $ mkVar pty f
+dsExpr p (Let _ _ ds e) = do
   ds' <- dsDeclGroup ds
   e'  <- dsExpr p e
-  return (if null ds' then e' else Let NoSpanInfo ds' e')
-dsExpr p (Do              _ sts e) = dsDo sts e >>= dsExpr p
+  return $ mkLet ds' e'
+dsExpr p (Do            _ _ sts e) = dsDo sts e >>= dsExpr p
 dsExpr p (IfThenElse _ e1 e2 e3) = do
   e1' <- dsExpr p e1
   e2' <- dsExpr p e2
   e3' <- dsExpr p e3
-  return $ Case NoSpanInfo Rigid e1'
+  return $ mkCase Rigid e1'
              [caseAlt p truePat e2', caseAlt p falsePat e3']
-dsExpr p (Case _ ct e alts) = dsCase p ct e alts
+dsExpr p (Case _ _ ct e alts) = dsCase p ct e alts
 
 -- We ignore the context in the type signature of a typed expression, since
 -- there should be no possibility to provide an non-empty context without
@@ -784,12 +784,12 @@ dsCase p ct e alts
     v  <- freshVar "_#case" e
     alts'  <- mapM dsAltLhs alts
     alts'' <- mapM (expandAlt v ct) (init (tails alts')) >>= mapM dsAltRhs
-    return (mkCase m v e' alts'')
+    return (mkMyCase m v e' alts'')
   where
-  mkCase m (pty, v) e' bs
-    | v `elem` qfv m bs = Let NoSpanInfo [varDecl p pty v e']
-                          (Case NoSpanInfo ct (mkVar pty v) bs)
-    | otherwise         = Case NoSpanInfo ct e' bs
+  mkMyCase m (pty, v) e' bs
+    | v `elem` qfv m bs = mkLet [varDecl p pty v e']
+                          (mkCase ct (mkVar pty v) bs)
+    | otherwise         = mkCase ct e' bs
 
 dsAltLhs :: Alt PredType -> DsM (Alt PredType)
 dsAltLhs (Alt p t rhs) = do
@@ -805,7 +805,7 @@ expandAlt _ _  []                   = error "Desugar.expandAlt: empty list"
 expandAlt v ct (Alt p t rhs : alts) = caseAlt p t <$> expandRhs e0 id rhs
   where
   e0 | ct == Flex || null compAlts = prelFailed (typeOf rhs)
-     | otherwise = Case NoSpanInfo ct (uncurry mkVar v) compAlts
+     | otherwise = mkCase ct (uncurry mkVar v) compAlts
   compAlts = filter (isCompatible t . altPattern) alts
   altPattern (Alt _ t1 _) = t1
 
@@ -840,8 +840,8 @@ dsStmt (StmtExpr   _ e1) e' =
 dsStmt (StmtBind _ t e1) e' = do
   v <- freshVar "_#var" t
   failable <- checkFailableBind t
-  let func = Lambda NoSpanInfo [uncurry (VariablePattern NoSpanInfo) v] $
-               Case NoSpanInfo Rigid (uncurry mkVar v) $
+  let func = mkLambda [uncurry (VariablePattern NoSpanInfo) v] $
+               mkCase Rigid (uncurry mkVar v) $
                  caseAlt NoSpanInfo t e' :
                    if failable
                      then [caseAlt NoSpanInfo
@@ -852,7 +852,7 @@ dsStmt (StmtBind _ t e1) e' = do
   where failedPatternMatch ty =
           apply (prelFail ty)
             [Literal NoSpanInfo predStringType $ String "Pattern match failed!"]
-dsStmt (StmtDecl   _ ds) e' = return $ Let NoSpanInfo ds e'
+dsStmt (StmtDecl   _ _ ds) e' = return $ mkLet ds e'
 
 checkFailableBind :: Pattern a -> DsM Bool
 checkFailableBind (ConstructorPattern _ _ idt ps   ) = do
@@ -929,7 +929,7 @@ dsQual :: SpanInfo -> Statement PredType -> Expression PredType
        -> DsM (Expression PredType)
 dsQual p (StmtExpr   _ b) e =
   dsExpr p (IfThenElse NoSpanInfo b e (List NoSpanInfo (predType $ typeOf e) []))
-dsQual p (StmtDecl  _ ds) e = dsExpr p (Let NoSpanInfo ds e)
+dsQual p (StmtDecl _ _ ds) e = dsExpr p (mkLet ds e)
 dsQual p (StmtBind _ t l) e
   | isVariablePattern t = dsExpr p (qualExpr t e l)
   | otherwise = do
@@ -939,13 +939,13 @@ dsQual p (StmtBind _ t l) e
       [foldFunct v l' e, List NoSpanInfo (predType $ typeOf e) [], l])
   where
   qualExpr v (ListCompr NoSpanInfo e1 []) l1
-    = apply (prelMap (typeOf v) (typeOf e1)) [Lambda NoSpanInfo [v] e1, l1]
+    = apply (prelMap (typeOf v) (typeOf e1)) [mkLambda [v] e1, l1]
   qualExpr v e1                  l1
     = apply (prelConcatMap (typeOf v) (elemType $ typeOf e1))
-      [Lambda NoSpanInfo [v] e1, l1]
+      [mkLambda [v] e1, l1]
   foldFunct v l1 e1
-    = Lambda NoSpanInfo (map (uncurry (VariablePattern NoSpanInfo)) [v, l1])
-       (Case NoSpanInfo Rigid (uncurry mkVar v)
+    = mkLambda (map (uncurry (VariablePattern NoSpanInfo)) [v, l1])
+       (mkCase Rigid (uncurry mkVar v)
           [ caseAlt p t (append e1 (uncurry mkVar l1))
           , caseAlt p (uncurry (VariablePattern NoSpanInfo) v)
                                     (uncurry mkVar l1)])

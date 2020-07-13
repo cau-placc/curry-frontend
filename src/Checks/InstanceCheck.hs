@@ -107,7 +107,7 @@ checkDecls tcEnv clsEnv ds = do
 -- instance environment.
 
 bindInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
-bindInstance tcEnv clsEnv (InstanceDecl _ cx qcls inst ds) = do
+bindInstance tcEnv clsEnv (InstanceDecl _ _ cx qcls inst ds) = do
   m <- getModuleIdent
   let PredType ps _ = expandPolyType m tcEnv clsEnv $
                         QualTypeExpr NoSpanInfo cx inst
@@ -251,7 +251,7 @@ reportUndecidable p what doc predicate@(Pred _ ty) = do
 -- satisfied by cx.
 
 checkInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
-checkInstance tcEnv clsEnv (InstanceDecl spi cx cls inst _) = do
+checkInstance tcEnv clsEnv (InstanceDecl spi _ cx cls inst _) = do
   m <- getModuleIdent
   let PredType ps ty = expandPolyType m tcEnv clsEnv $
                          QualTypeExpr NoSpanInfo cx inst
@@ -323,7 +323,7 @@ genInstIdents m tcEnv (DataDecl    _ tc _ _ qclss) =
 genInstIdents m tcEnv (NewtypeDecl _ tc _ _ qclss) =
   map (flip (genInstIdent m tcEnv) $ ConstructorType NoSpanInfo $ qualify tc)
       qclss
-genInstIdents m tcEnv (InstanceDecl _ _ qcls ty _) =
+genInstIdents m tcEnv (InstanceDecl _ _ _ qcls ty _) =
   [genInstIdent m tcEnv qcls ty]
 genInstIdents _ _     _                            = []
 

@@ -63,10 +63,10 @@ import Base.Kinds
 -- exported function.
 
 exportInterface :: CompilerEnv -> Module a -> Interface
-exportInterface env (Module _ _ m (Just (Exporting _ es)) _ _) =
+exportInterface env (Module _ _ _ m (Just (Exporting _ es)) _ _) =
   exportInterface' m es (opPrecEnv env) (tyConsEnv env) (valueEnv env)
     (classEnv env) (instEnv env)
-exportInterface _   (Module _ _ _ Nothing                 _ _) =
+exportInterface _   (Module _ _ _ _ Nothing                 _ _) =
   internalError "Exports.exportInterface: no export specification"
 
 exportInterface' :: ModuleIdent -> [Export] -> OpPrecEnv -> TCEnv -> ValueEnv
@@ -178,7 +178,8 @@ valueDecl :: ModuleIdent -> ValueEnv -> [Ident] -> Export -> [IDecl] -> [IDecl]
 valueDecl m vEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
   [Value _ cm a (ForAll _ pty)] ->
     IFunctionDecl NoPos (qualUnqualify m f)
-      (if cm then Just (head tvs) else Nothing) a (fromQualPredType m tvs pty) : ds
+      (fmap (const (head tvs)) cm) a (fromQualPredType m tvs pty) : ds
+  [Label _ _ _ ] -> ds -- Record labels are collected somewhere else.
   _ -> internalError $ "Exports.valueDecl: " ++ show f
 valueDecl _ _ _ (ExportTypeWith _ _ _) ds = ds
 valueDecl _ _ _ _ _ = internalError "Exports.valueDecl: no pattern match"

@@ -82,7 +82,7 @@ warnCheck wOpts cOpts aEnv valEnv tcEnv clsEnv mdl
       checkModuleAlias is
       checkCaseMode  ds
       checkRedContext ds
-  where Module _ _ mid es is ds = fmap (const ()) mdl
+  where Module _ _ _ mid es is ds = fmap (const ()) mdl
 
 type ScopeEnv = NestEnv IdInfo
 
@@ -255,23 +255,23 @@ warnDisjoinedFunctionRules ident pos = posMessage ident $ hsep (map text
   <+> parens (text "first occurrence at" <+> text (showLine pos))
 
 checkDecl :: Decl () -> WCM ()
-checkDecl (DataDecl        _ _ vs cs _) = inNestedScope $ do
+checkDecl (DataDecl          _ _ vs cs _) = inNestedScope $ do
   mapM_ insertTypeVar   vs
   mapM_ checkConstrDecl cs
   reportUnusedTypeVars  vs
-checkDecl (NewtypeDecl     _ _ vs nc _) = inNestedScope $ do
+checkDecl (NewtypeDecl       _ _ vs nc _) = inNestedScope $ do
   mapM_ insertTypeVar   vs
   checkNewConstrDecl nc
   reportUnusedTypeVars vs
-checkDecl (TypeDecl          _ _ vs ty) = inNestedScope $ do
+checkDecl (TypeDecl            _ _ vs ty) = inNestedScope $ do
   mapM_ insertTypeVar  vs
   checkTypeExpr ty
   reportUnusedTypeVars vs
-checkDecl (FunctionDecl      p _ f eqs) = checkFunctionDecl p f eqs
-checkDecl (PatternDecl         _ p rhs) = checkPattern p >> checkRhs rhs
-checkDecl (DefaultDecl           _ tys) = mapM_ checkTypeExpr tys
-checkDecl (ClassDecl        _ _ _ _ ds) = mapM_ checkDecl ds
-checkDecl (InstanceDecl p cx cls ty ds) = do
+checkDecl (FunctionDecl        p _ f eqs) = checkFunctionDecl p f eqs
+checkDecl (PatternDecl           _ p rhs) = checkPattern p >> checkRhs rhs
+checkDecl (DefaultDecl             _ tys) = mapM_ checkTypeExpr tys
+checkDecl (ClassDecl        _ _ _ _ _ ds) = mapM_ checkDecl ds
+checkDecl (InstanceDecl p _ cx cls ty ds) = do
   checkOrphanInstance p cx cls ty
   checkMissingMethodImplementations p cls ds
   mapM_ checkDecl ds
@@ -378,11 +378,11 @@ checkPattern _                            = ok
 -- Because local declarations may introduce new variables, we need
 -- another scope nesting.
 checkRhs :: Rhs () -> WCM ()
-checkRhs (SimpleRhs _ e ds) = inNestedScope $ do
+checkRhs (SimpleRhs _ _ e ds) = inNestedScope $ do
   checkLocalDeclGroup ds
   checkExpr e
   reportUnusedVars
-checkRhs (GuardedRhs _ ce ds) = inNestedScope $ do
+checkRhs (GuardedRhs _ _ ce ds) = inNestedScope $ do
   checkLocalDeclGroup ds
   mapM_ checkCondExpr ce
   reportUnusedVars
@@ -417,11 +417,11 @@ checkExpr (Lambda             _ ps e) = inNestedScope $ do
   mapM_ (insertPattern False) ps
   checkExpr e
   reportUnusedVars
-checkExpr (Let                _ ds e) = inNestedScope $ do
+checkExpr (Let              _ _ ds e) = inNestedScope $ do
   checkLocalDeclGroup ds
   checkExpr e
   reportUnusedVars
-checkExpr (Do                _ sts e) = checkStatements sts e
+checkExpr (Do              _ _ sts e) = checkStatements sts e
 checkExpr (IfThenElse     _ e1 e2 e3) = mapM_ checkExpr [e1, e2, e3]
 checkExpr (Case      spi _ ct e alts) = do
   checkExpr e
@@ -436,9 +436,9 @@ checkStatements (s:ss) e = inNestedScope $ do
   reportUnusedVars
 
 checkStatement :: Statement () -> WCM ()
-checkStatement (StmtExpr   _ e) = checkExpr e
-checkStatement (StmtDecl  _ ds) = checkLocalDeclGroup ds
-checkStatement (StmtBind _ p e) = do
+checkStatement (StmtExpr    _ e) = checkExpr e
+checkStatement (StmtDecl _ _ ds) = checkLocalDeclGroup ds
+checkStatement (StmtBind _  p e) = do
   checkPattern p >> insertPattern False p
   checkExpr e
 
@@ -462,7 +462,8 @@ checkOrphanInstance p cx cls ty = warnFor WarnOrphanInstances $ do
   let ocls = getOrigName m cls tcEnv
       otc  = getOrigName m tc  tcEnv
   unless (isLocalIdent m ocls || isLocalIdent m otc) $ report $
-    warnOrphanInstance (spanInfo2Pos p) $ ppDecl $ InstanceDecl p cx cls ty []
+    warnOrphanInstance (spanInfo2Pos p) $ pPrint $
+    InstanceDecl p WhitespaceLayout cx cls ty []
   where tc = typeConstr ty
 
 warnOrphanInstance :: Position -> Doc -> Message
@@ -1007,26 +1008,26 @@ reportUnusedTypeVars vs = warnFor WarnUnusedBindings $ do
 -- sides.
 
 insertDecl :: Decl a -> WCM ()
-insertDecl (DataDecl     _ d _ cs _) = do
+insertDecl (DataDecl      _ d _ cs _) = do
   insertTypeConsId d
   mapM_ insertConstrDecl cs
-insertDecl (ExternalDataDecl  _ d _) = insertTypeConsId d
-insertDecl (NewtypeDecl  _ d _ nc _) = do
+insertDecl (ExternalDataDecl   _ d _) = insertTypeConsId d
+insertDecl (NewtypeDecl   _ d _ nc _) = do
   insertTypeConsId d
   insertNewConstrDecl nc
-insertDecl (TypeDecl       _ t _ ty) = do
+insertDecl (TypeDecl        _ t _ ty) = do
   insertTypeConsId t
   insertTypeExpr ty
-insertDecl (FunctionDecl    _ _ f _) = do
+insertDecl (FunctionDecl     _ _ f _) = do
   cons <- isConsId f
   unless cons $ insertVar f
-insertDecl (ExternalDecl       _ vs) = mapM_ (insertVar . varIdent) vs
-insertDecl (PatternDecl       _ p _) = insertPattern False p
-insertDecl (FreeDecl           _ vs) = mapM_ (insertVar . varIdent) vs
-insertDecl (ClassDecl _ _ cls _  ds) = do
+insertDecl (ExternalDecl        _ vs) = mapM_ (insertVar . varIdent) vs
+insertDecl (PatternDecl        _ p _) = insertPattern False p
+insertDecl (FreeDecl            _ vs) = mapM_ (insertVar . varIdent) vs
+insertDecl (ClassDecl _ _ _ cls _ ds) = do
   insertTypeConsId cls
   mapM_ insertVar $ concatMap methods ds
-insertDecl _                         = ok
+insertDecl _                          = ok
 
 insertTypeExpr :: TypeExpr -> WCM ()
 insertTypeExpr (VariableType       _ _) = ok
@@ -1259,12 +1260,12 @@ checkCaseModeDecl (PatternDecl _ t rhs) = do
 checkCaseModeDecl (FreeDecl  _ vs) =
   mapM_ (checkCaseModeID isVarName . varIdent) vs
 checkCaseModeDecl (DefaultDecl _ tys) = mapM_ checkTypeExpr tys
-checkCaseModeDecl (ClassDecl _ cx cls tv ds) = do
+checkCaseModeDecl (ClassDecl _ _ cx cls tv ds) = do
   checkCaseModeContext cx
   checkCaseModeID isClassDeclName cls
   checkCaseModeID isVarName tv
   mapM_ checkCaseModeDecl ds
-checkCaseModeDecl (InstanceDecl _ cx _ inst ds) = do
+checkCaseModeDecl (InstanceDecl _ _ cx _ inst ds) = do
   checkCaseModeContext cx
   checkCaseModeTypeExpr inst
   mapM_ checkCaseModeDecl ds
@@ -1341,10 +1342,10 @@ checkCaseModeLhs (ApLhs _ lhs ts) = do
   mapM_ checkCaseModePattern ts
 
 checkCaseModeRhs :: Rhs a -> WCM ()
-checkCaseModeRhs (SimpleRhs _ e ds) = do
+checkCaseModeRhs (SimpleRhs _ _ e ds) = do
   checkCaseModeExpr e
   mapM_ checkCaseModeDecl ds
-checkCaseModeRhs (GuardedRhs _ es ds) = do
+checkCaseModeRhs (GuardedRhs _ _ es ds) = do
   mapM_ checkCaseModeCondExpr es
   mapM_ checkCaseModeDecl ds
 
@@ -1412,25 +1413,25 @@ checkCaseModeExpr (RightSection _ _ e) = checkCaseModeExpr e
 checkCaseModeExpr (Lambda _ ts e) = do
   mapM_ checkCaseModePattern ts
   checkCaseModeExpr e
-checkCaseModeExpr (Let _ ds e) = do
+checkCaseModeExpr (Let _ _ ds e) = do
   mapM_ checkCaseModeDecl ds
   checkCaseModeExpr e
-checkCaseModeExpr (Do _ stms e) = do
+checkCaseModeExpr (Do _ _ stms e) = do
   mapM_ checkCaseModeStatement stms
   checkCaseModeExpr e
 checkCaseModeExpr (IfThenElse _ e1 e2 e3) = do
   checkCaseModeExpr e1
   checkCaseModeExpr e2
   checkCaseModeExpr e3
-checkCaseModeExpr (Case _ _ e as) = do
+checkCaseModeExpr (Case _ _ _ e as) = do
   mapM_ checkCaseModeAlt as
   checkCaseModeExpr e
 checkCaseModeExpr _ = ok
 
 checkCaseModeStatement :: Statement a -> WCM ()
-checkCaseModeStatement (StmtExpr _ e) = checkCaseModeExpr e
-checkCaseModeStatement (StmtDecl _ ds) = mapM_ checkCaseModeDecl ds
-checkCaseModeStatement (StmtBind _ t e) = do
+checkCaseModeStatement (StmtExpr _    e) = checkCaseModeExpr e
+checkCaseModeStatement (StmtDecl _ _ ds) = mapM_ checkCaseModeDecl ds
+checkCaseModeStatement (StmtBind _  t e) = do
   checkCaseModePattern t
   checkCaseModeExpr e
 
@@ -1506,13 +1507,13 @@ checkRedContextDecl (TypeSig _ ids (QualTypeExpr _ cx _)) =
   where (vs, ps) = getPredFromContext cx
 checkRedContextDecl (FunctionDecl _ _ _ eqs) = mapM_ checkRedContextEq eqs
 checkRedContextDecl (PatternDecl _ _ rhs) = checkRedContextRhs rhs
-checkRedContextDecl (ClassDecl _ cx i _ ds) = do
+checkRedContextDecl (ClassDecl _ _ cx i _ ds) = do
   checkRedContext'
     (warnRedContext (text ("class declaration " ++ escName i)) vs)
     ps
   mapM_ checkRedContextDecl ds
   where (vs, ps) = getPredFromContext cx
-checkRedContextDecl (InstanceDecl _ cx qid _ ds) = do
+checkRedContextDecl (InstanceDecl _ _ cx qid _ ds) = do
   checkRedContext'
     (warnRedContext (text ("instance declaration " ++ escQualName qid)) vs)
     ps
@@ -1542,10 +1543,10 @@ checkRedContextEq :: Equation a -> WCM ()
 checkRedContextEq (Equation _ _ rhs) = checkRedContextRhs rhs
 
 checkRedContextRhs :: Rhs a -> WCM ()
-checkRedContextRhs (SimpleRhs   _ e ds) = do
+checkRedContextRhs (SimpleRhs  _ _ e  ds) = do
   checkRedContextExpr e
   mapM_ checkRedContextDecl ds
-checkRedContextRhs (GuardedRhs _ cs ds) = do
+checkRedContextRhs (GuardedRhs _ _ cs ds) = do
   mapM_ checkRedContextCond cs
   mapM_ checkRedContextDecl ds
 
@@ -1590,22 +1591,22 @@ checkRedContextExpr (InfixApply _ e1 _ e2) = do
 checkRedContextExpr (LeftSection  _ e _) = checkRedContextExpr e
 checkRedContextExpr (RightSection _ _ e) = checkRedContextExpr e
 checkRedContextExpr (Lambda _ _ e) = checkRedContextExpr e
-checkRedContextExpr (Let _ ds e) = do
+checkRedContextExpr (Let _ _ ds e) = do
   mapM_ checkRedContextDecl ds
   checkRedContextExpr e
 checkRedContextExpr (IfThenElse _ e1 e2 e3) = do
   checkRedContextExpr e1
   checkRedContextExpr e2
   checkRedContextExpr e3
-checkRedContextExpr (Case _ _ e as) = do
+checkRedContextExpr (Case _ _ _ e as) = do
   checkRedContextExpr e
   mapM_ checkRedContextAlt as
 checkRedContextExpr _ = return ()
 
 checkRedContextStmt :: Statement a -> WCM ()
-checkRedContextStmt (StmtExpr   _ e) = checkRedContextExpr e
-checkRedContextStmt (StmtDecl _  ds) = mapM_ checkRedContextDecl ds
-checkRedContextStmt (StmtBind _ _ e) = checkRedContextExpr e
+checkRedContextStmt (StmtExpr   _  e) = checkRedContextExpr e
+checkRedContextStmt (StmtDecl _ _ ds) = mapM_ checkRedContextDecl ds
+checkRedContextStmt (StmtBind _ _  e) = checkRedContextExpr e
 
 checkRedContextAlt :: Alt a -> WCM ()
 checkRedContextAlt (Alt _ _ rhs) = checkRedContextRhs rhs

@@ -28,16 +28,16 @@ import Base.CurryTypes
 import Base.Types
 
 instance Pretty Type where
-  pPrint = ppTypeExpr 0 . fromType identSupply
+  pPrint = pPrintPrec 0 . fromType identSupply
 
 instance Pretty Pred where
-  pPrint = ppConstraint . fromPred identSupply
+  pPrint = pPrint . fromPred identSupply
 
 instance Pretty a => Pretty (Set.Set a) where
   pPrint = parens . list . map pPrint . Set.toAscList
 
 instance Pretty PredType where
-  pPrint = ppQualTypeExpr . fromPredType identSupply
+  pPrint = pPrint . fromPredType identSupply
 
 instance Pretty DataConstr where
   pPrint (DataConstr i tys)      = pPrint i <+> hsep (map pPrint tys)

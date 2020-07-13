@@ -44,7 +44,7 @@ instance Newtypes a => Newtypes [a] where
   nt = mapM nt
 
 instance Show a => Newtypes (Module a) where
-  nt (Module spi ps m es is ds) = Module spi ps m es is <$> mapM nt ds
+  nt (Module spi li ps m es is ds) = Module spi li ps m es is <$> mapM nt ds
 
 instance Show a => Newtypes (Decl a) where
   nt d@(InfixDecl       _ _ _ _) = return d
@@ -68,8 +68,8 @@ instance Show a => Newtypes (Lhs a) where
     "Newtypes.Newtypes.nt: unexpected left-hand-side: " ++ show lhs
 
 instance Show a => Newtypes (Rhs a) where
-  nt (SimpleRhs p e []) = flip (SimpleRhs p) [] <$> nt e
-  nt rhs                = internalError $
+  nt (SimpleRhs p li e []) = flip (SimpleRhs p li) [] <$> nt e
+  nt rhs                   = internalError $
     "Newtypes.Newtypes.nt: unexpected right-hand-side: " ++ show rhs
 
 instance Show a => Newtypes (Pattern a) where
@@ -96,8 +96,8 @@ instance Show a => Newtypes (Expression a) where
       isNc <- isNewtypeConstr c
       if isNc then nt e2 else Apply spi <$> nt e1 <*> nt e2
     _ -> Apply spi <$> nt e1 <*> nt e2
-  nt (Case    spi ct e as) = Case spi ct <$> nt e <*> mapM nt as
-  nt (Let        spi ds e) = Let spi <$> nt ds <*> nt e
+  nt (Case spi li ct e as) = Case spi li ct <$> nt e <*> mapM nt as
+  nt (Let     spi li ds e) = Let spi li <$> nt ds <*> nt e
   nt (Typed     spi e qty) = flip (Typed spi) qty <$> nt e
   nt e                 = internalError $
     "Newtypes.Newtypes.nt: unexpected expression: " ++ show e

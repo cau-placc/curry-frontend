@@ -63,7 +63,7 @@ genAbstractCurry uacy env mdl
 -- ---------------------------------------------------------------------------
 
 trModule :: Module PredType -> GAC CurryProg
-trModule (Module _ _ mid _ is ds) =
+trModule (Module _ _ _ mid _ is ds) =
   CurryProg mid' is' <$> dflt' <*> cds' <*> ids' <*> ts' <*> fs' <*> os'
   where
   mid'  = moduleName mid
@@ -84,7 +84,7 @@ trDefaultDecl (DefaultDecl _ tys) = (\tys' -> [CDefaultDecl tys'])
 trDefaultDecl _                   = return []
 
 trClassDecl :: Decl PredType -> GAC [CClassDecl]
-trClassDecl (ClassDecl _ cx cls tv ds) =
+trClassDecl (ClassDecl _ _ cx cls tv ds) =
   (\cls' v' cx' tv' ds' -> [CClass cls' v' cx' tv' ds'])
     <$> trGlobalIdent cls <*> getTypeVisibility cls <*> trContext cx
     <*> getTVarIndex tv <*> concatMapM (trClassMethodDecl sigs fs) ds
@@ -111,7 +111,7 @@ trClassMethodDecl sigs _ (FunctionDecl _ _ f eqs) =
 trClassMethodDecl _ _ _ = return []
 
 trInstanceDecl :: Decl PredType -> GAC [CInstanceDecl]
-trInstanceDecl (InstanceDecl _ cx qcls ty ds) =
+trInstanceDecl (InstanceDecl _ _ cx qcls ty ds) =
   (\qcls' cx' ty' ds' -> [CInstance qcls' cx' ty' ds']) <$> trQual qcls
   <*> trContext cx <*> trTypeExpr ty <*> mapM (trInstanceMethodDecl qcls ty) ds
 trInstanceDecl _ = return []
@@ -230,10 +230,10 @@ trLhs :: Lhs a -> GAC [CPattern]
 trLhs = mapM trPat . snd . flatLhs
 
 trRhs :: Rhs PredType -> GAC CRhs
-trRhs (SimpleRhs _ e ds) = inNestedScope $ do
+trRhs (SimpleRhs _ _ e ds) = inNestedScope $ do
   mapM_ insertDeclLhs ds
   CSimpleRhs <$> trExpr e <*> concatMapM trLocalDecl ds
-trRhs (GuardedRhs _ gs ds) = inNestedScope $ do
+trRhs (GuardedRhs _ _ gs ds) = inNestedScope $ do
   mapM_ insertDeclLhs ds
   CGuardedRhs <$> mapM trCondExpr gs <*> concatMapM trLocalDecl ds
 
@@ -310,14 +310,14 @@ trExpr (RightSection       _ op e) =
   trExpr $ apply (Variable NoSpanInfo undefined qFlip) [infixOp op, e]
 trExpr (Lambda             _ ps e) = inNestedScope $
                                      CLambda <$> mapM trPat ps <*> trExpr e
-trExpr (Let                _ ds e) = inNestedScope $
+trExpr (Let              _ _ ds e) = inNestedScope $
                                      CLetDecl <$> trLocalDecls ds <*> trExpr e
-trExpr (Do                 _ ss e) = inNestedScope $
+trExpr (Do               _ _ ss e) = inNestedScope $
                                      (\ss' e' -> CDoExpr (ss' ++ [CSExpr e']))
                                      <$> mapM trStatement ss <*> trExpr e
 trExpr (IfThenElse     _ e1 e2 e3) =
   trExpr $ apply (Variable NoSpanInfo undefined qIfThenElseId) [e1, e2, e3]
-trExpr (Case            _ ct e bs) = CCase (cvCaseType ct)
+trExpr (Case          _ _ ct e bs) = CCase (cvCaseType ct)
                                      <$> trExpr e <*> mapM trAlt bs
 
 cvCaseType :: CaseType -> CCaseType
@@ -325,9 +325,9 @@ cvCaseType Flex  = CFlex
 cvCaseType Rigid = CRigid
 
 trStatement :: Statement PredType -> GAC CStatement
-trStatement (StmtExpr _   e) = CSExpr     <$> trExpr e
-trStatement (StmtDecl _  ds) = CSLet      <$> trLocalDecls ds
-trStatement (StmtBind _ p e) = flip CSPat <$> trExpr e <*> trPat p
+trStatement (StmtExpr _   e)  = CSExpr     <$> trExpr e
+trStatement (StmtDecl _ _ ds) = CSLet      <$> trLocalDecls ds
+trStatement (StmtBind _ p e)  = flip CSPat <$> trExpr e <*> trPat p
 
 trAlt :: Alt PredType -> GAC (CPattern, CRhs)
 trAlt (Alt _ p rhs) = inNestedScope $ (,) <$> trPat p <*> trRhs rhs
@@ -416,7 +416,7 @@ data AbstractEnv = AbstractEnv
 
 -- |Initialize the AbstractCurry generator environment
 abstractEnv :: Bool -> CompilerEnv -> Module a -> AbstractEnv
-abstractEnv uacy env (Module _ _ mid es _ ds) = AbstractEnv
+abstractEnv uacy env (Module _ _ _ mid es _ ds) = AbstractEnv
   { moduleId   = mid
   , typeEnv    = valueEnv env
   , tyExports  = foldr (buildTypeExports  mid) Set.empty es'

@@ -17,7 +17,7 @@
 -}
 module Imports (importInterfaces, importModules, qualifyEnv) where
 
-import           Data.List                  (nubBy)
+import           Data.List                  (nubBy, find)
 import qualified Data.Map            as Map
 import           Data.Maybe                 (catMaybes, fromMaybe, isJust)
 import qualified Data.Set            as Set
@@ -49,7 +49,7 @@ import CompilerEnv
 
 importModules :: Monad m => Module a -> InterfaceEnv -> [ImportDecl]
               -> CYT m CompilerEnv
-importModules mdl@(Module _ _ mid _ _ _) iEnv expImps
+importModules mdl@(Module _ _ _ mid _ _ _) iEnv expImps
   = ok $ foldl importModule initEnv expImps
   where
     initEnv = (initCompilerEnv mid)
@@ -164,7 +164,7 @@ importClasses m = flip $ foldr (bindClass m)
 bindClass :: ModuleIdent -> IDecl -> ClassEnv -> ClassEnv
 bindClass m (HidingClassDecl p cx cls k tv) =
   bindClass m (IClassDecl p cx cls k tv [] [])
-bindClass m (IClassDecl _ cx cls _ _ ds _) =
+bindClass m (IClassDecl _ cx cls _ _ ds _ ) =
   bindClassInfo (qualQualify m cls) (sclss, ms)
   where sclss = map (\(Constraint _ scls _) -> qualQualify m scls) cx
         ms = map (\d -> (imethod d, isJust $ imethodArity d)) ds
@@ -263,11 +263,18 @@ values m (INewtypeDecl _ tc _ tvs nc hs) =
   where tc' = qualQualify m tc
         ty' = constrType tc' tvs
 values m (IFunctionDecl _ f Nothing a qty) =
-  [Value (qualQualify m f) False a (typeScheme (toQualPredType m [] qty))]
+  [Value (qualQualify m f) Nothing a (typeScheme (toQualPredType m [] qty))]
 values m (IFunctionDecl _ f (Just tv) _ qty) =
-  [Value (qualQualify m f) True 0 (typeScheme (toQualPredType m [tv] qty))]
+  let mcls = case qty of
+        ContextType _ ctx _ -> fmap (\(Constraint _ qcls _) -> qcls) $
+                               find (\(Constraint _ _ ty) -> isVar ty) ctx
+        _                   -> Nothing
+  in [Value (qualQualify m f) mcls 0 (typeScheme (toQualPredType m [tv] qty))]
+  where
+    isVar (VariableType _ i) = i == tv
+    isVar _                  = False
 values m (IClassDecl _ _ qcls _ tv ds hs) =
-  map (classMethod m qcls' tv) (filter ((`notElem` hs) . imethod) ds)
+  map (classMethod m qcls' tv hs) ds
   where qcls' = qualQualify m qcls
 values _ _                        = []
 
@@ -313,10 +320,13 @@ constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)
 -- We always enter class methods with an arity of 0 into the value environment
 -- because there may be different implementations with different arities.
 
-classMethod :: ModuleIdent -> QualIdent -> Ident -> IMethodDecl -> ValueInfo
-classMethod m qcls tv (IMethodDecl _ f _ qty) =
-  Value (qualifyLike qcls f) True 0 $
+classMethod :: ModuleIdent -> QualIdent -> Ident -> [Ident] -> IMethodDecl
+            -> ValueInfo
+classMethod m qcls tv hs (IMethodDecl _ f _ qty) =
+  Value (qualifyLike qcls f) mcls 0 $
     typeScheme $ qualifyPredType m $ toMethodType qcls tv qty
+  where
+    mcls = if f `elem` hs then Nothing else Just qcls
 
 -- ---------------------------------------------------------------------------
 

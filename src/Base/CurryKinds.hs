@@ -20,7 +20,7 @@ module Base.CurryKinds
   ) where
 
 import Curry.Base.Pretty (Doc)
-import Curry.Syntax.Pretty (ppKindExpr)
+import Curry.Syntax.Pretty (pPrintPrec)
 import Curry.Syntax.Type (KindExpr (..))
 
 import Base.Kinds
@@ -42,4 +42,4 @@ fromKind' k n | k == simpleKind n = Nothing
               | otherwise         = Just (fromKind k)
 
 ppKind :: Kind -> Doc
-ppKind = ppKindExpr 0 . fromKind
+ppKind = pPrintPrec 0 . fromKind

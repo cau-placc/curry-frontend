@@ -257,7 +257,7 @@ cmpImportDecl = compare `on` getPosition
 -- -----------------------------------------------------------------------------
 
 idsModule :: Module a -> [Code]
-idsModule (Module _ _ mid es is ds) =
+idsModule (Module _ _ _ mid es is ds) =
   let hdrCodes = ModuleName mid : idsExportSpec es
       impCodes = concatMap idsImportDecl (sortBy cmpImportDecl is)
       dclCodes = concatMap idsDecl       (sortBy cmpDecl ds)
@@ -299,35 +299,35 @@ idsImport mid (ImportTypeAll     _ t) =
 -- Declarations
 
 idsDecl :: Decl a -> [Code]
-idsDecl (InfixDecl        _ _ _ ops) =
+idsDecl (InfixDecl         _ _ _ ops) =
   map (Function FuncInfix False . qualify) ops
-idsDecl (DataDecl   _ d vs cds clss) =
+idsDecl (DataDecl    _ d vs cds clss) =
   TypeCons TypeDeclare False (qualify d) :
     map (Identifier IdDeclare False . qualify) vs ++
       concatMap idsConstrDecl cds ++ map (TypeCons TypeRefer False) clss
-idsDecl (ExternalDataDecl    _ d vs) =
+idsDecl (ExternalDataDecl     _ d vs) =
   TypeCons TypeDeclare False (qualify d) :
     map (Identifier IdDeclare False . qualify) vs
-idsDecl (NewtypeDecl _ t vs nc clss) =
+idsDecl (NewtypeDecl  _ t vs nc clss) =
   TypeCons TypeDeclare False (qualify t) :
     map (Identifier IdDeclare False . qualify) vs ++ idsNewConstrDecl nc ++
       map (TypeCons TypeRefer False) clss
-idsDecl (TypeDecl         _ t vs ty) =
+idsDecl (TypeDecl          _ t vs ty) =
   TypeCons TypeDeclare False (qualify t) :
     map (Identifier IdDeclare False . qualify) vs ++ idsTypeExpr ty
-idsDecl (TypeSig           _ fs qty) =
+idsDecl (TypeSig            _ fs qty) =
   map (Function FuncTypeSig False . qualify) fs ++ idsQualTypeExpr qty
-idsDecl (FunctionDecl     _ _ _ eqs) = concatMap idsEquation eqs
-idsDecl (ExternalDecl          _ fs) =
+idsDecl (FunctionDecl      _ _ _ eqs) = concatMap idsEquation eqs
+idsDecl (ExternalDecl           _ fs) =
   map (Function FuncDeclare False . qualify . varIdent) fs
-idsDecl (PatternDecl        _ p rhs) = idsPat p ++ idsRhs rhs
-idsDecl (FreeDecl              _ vs) =
+idsDecl (PatternDecl         _ p rhs) = idsPat p ++ idsRhs rhs
+idsDecl (FreeDecl               _ vs) =
   map (Identifier IdDeclare False . qualify . varIdent) vs
-idsDecl (DefaultDecl          _ tys) = concatMap idsTypeExpr tys
-idsDecl (ClassDecl      _ cx c v ds) =
+idsDecl (DefaultDecl           _ tys) = concatMap idsTypeExpr tys
+idsDecl (ClassDecl     _ _ cx c v ds) =
   idsContext cx ++ TypeCons TypeDeclare False (qualify c) :
     Identifier IdDeclare False (qualify v) : concatMap idsClassDecl ds
-idsDecl (InstanceDecl  _ cx c ty ds) = idsContext cx ++
+idsDecl (InstanceDecl _ _ cx c ty ds) = idsContext cx ++
   TypeCons TypeRefer False c : idsTypeExpr ty ++ concatMap idsInstanceDecl ds
 
 idsConstrDecl :: ConstrDecl -> [Code]
@@ -393,8 +393,8 @@ idsLhs (OpLhs _ p1 op p2) =
 idsLhs (ApLhs   _ lhs ps) = idsLhs lhs ++ concatMap idsPat ps
 
 idsRhs :: Rhs a -> [Code]
-idsRhs (SimpleRhs  _ e  ds) = idsExpr e ++ concatMap idsDecl ds
-idsRhs (GuardedRhs _ ce ds) = concatMap idsCondExpr ce ++ concatMap idsDecl ds
+idsRhs (SimpleRhs  _ _ e  ds) = idsExpr e ++ concatMap idsDecl ds
+idsRhs (GuardedRhs _ _ ce ds) = concatMap idsCondExpr ce ++ concatMap idsDecl ds
 
 idsCondExpr :: CondExpr a -> [Code]
 idsCondExpr (CondExpr _ e1 e2) = idsExpr e1 ++ idsExpr e2
@@ -446,10 +446,10 @@ idsExpr (InfixApply      _ e1 op e2) = idsExpr e1 ++ idsInfix op ++ idsExpr e2
 idsExpr (LeftSection         _ e op) = idsExpr e ++ idsInfix op
 idsExpr (RightSection        _ op e) = idsInfix op ++ idsExpr e
 idsExpr (Lambda              _ ps e) = concatMap idsPat ps ++ idsExpr e
-idsExpr (Let                 _ ds e) = concatMap idsDecl ds ++ idsExpr e
-idsExpr (Do               _ stmts e) = concatMap idsStmt stmts ++ idsExpr e
+idsExpr (Let               _ _ ds e) = concatMap idsDecl ds ++ idsExpr e
+idsExpr (Do             _ _ stmts e) = concatMap idsStmt stmts ++ idsExpr e
 idsExpr (IfThenElse      _ e1 e2 e3) = concatMap idsExpr [e1, e2, e3]
-idsExpr (Case            _ _ e alts) = idsExpr e ++ concatMap idsAlt alts
+idsExpr (Case          _ _ _ e alts) = idsExpr e ++ concatMap idsAlt alts
 
 idsField :: (a -> [Code]) -> Field a -> [Code]
 idsField f (Field _ l x) = Function FuncCall False l : f x
@@ -459,9 +459,9 @@ idsInfix (InfixOp     _ qid) = [Function FuncInfix False qid]
 idsInfix (InfixConstr _ qid) = [DataCons ConsInfix False qid]
 
 idsStmt :: Statement a -> [Code]
-idsStmt (StmtExpr   _ e) = idsExpr e
-idsStmt (StmtDecl  _ ds) = concatMap idsDecl ds
-idsStmt (StmtBind _ p e) = idsPat p ++ idsExpr e
+idsStmt (StmtExpr   _ e)  = idsExpr e
+idsStmt (StmtDecl _ _ ds) = concatMap idsDecl ds
+idsStmt (StmtBind _ p e)  = idsPat p ++ idsExpr e
 
 idsAlt :: Alt a -> [Code]
 idsAlt (Alt _ p rhs) = idsPat p ++ idsRhs rhs
