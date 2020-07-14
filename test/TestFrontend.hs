@@ -202,6 +202,8 @@ failInfos = map (uncurry mkFailTest)
       , "Type variable b occurs more than once in left hand side of type declaration"
       ]
     )
+  , ("MissingLabelInUpdate",
+      ["Undefined record label `l1'"] )
   , ("MultipleArities", ["Equations for `test' have different arities"])
   , ("MultipleDefinitions",
       ["Multiple definitions for data/record constructor `Rec'"]
