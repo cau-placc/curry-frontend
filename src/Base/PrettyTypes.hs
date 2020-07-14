@@ -10,7 +10,8 @@
 
    TODO
 -}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE     CPP        #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Base.PrettyTypes where
 
 #if __GLASGOW_HASKELL__ >= 804
