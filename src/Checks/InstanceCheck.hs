@@ -22,7 +22,6 @@ module Checks.InstanceCheck (instanceCheck) where
 import           Control.Monad.Extra        (concatMapM, whileM, unless)
 import qualified Control.Monad.State as S   (State, execState, gets, modify)
 import           Data.List                  (nub, partition, sortBy)
-import           Data.Maybe                 (catMaybes)
 import qualified Data.Map            as Map
 import qualified Data.Set.Extra      as Set
 
@@ -202,30 +201,26 @@ groupDeriveInfos = scc bound free
         free (DeriveInfo _ _ _ tys _) = concatMap typeConstrs tys
 
 bindDerivedInstances :: ClassEnv -> [DeriveInfo] -> INCM ()
-bindDerivedInstances clsEnv dis = unless (any hasFunType dis) $ do
+bindDerivedInstances clsEnv dis = unless (any hasDataFunType dis) $ do
   mapM_ (enterInitialPredSet clsEnv) dis
   whileM $ concatMapM (inferPredSets clsEnv) dis >>= updatePredSets
   where
-    hasFunType (DeriveInfo _ _ _ tys clss) =
+    hasDataFunType (DeriveInfo _ _ _ tys clss) =
       clss == [qDataId] && any isFunType tys
 
-enterInitialPredSet :: ClassEnv -> DeriveInfo -> INCM [Bool]
+enterInitialPredSet :: ClassEnv -> DeriveInfo -> INCM ()
 enterInitialPredSet clsEnv (DeriveInfo p tc pty _ clss) =
-  mapM (bindDerivedInstance clsEnv p tc pty) clss
+  mapM_ (bindDerivedInstance clsEnv p tc pty) clss
 
 -- Note: The methods and arities entered into the instance environment have
 -- to match methods and arities of the later generated instance declarations.
 
 bindDerivedInstance :: ClassEnv -> Position -> QualIdent -> PredType -> QualIdent
-                    -> INCM Bool
+                    -> INCM ()
 bindDerivedInstance clsEnv p tc pty cls = do
   m <- getModuleIdent
-  mps <- inferPredSet clsEnv p tc pty [] cls
-  case mps of
-    Just (i, ps) -> modifyInstEnv (bindInstInfo i (m, ps, impls)) >>
-                    return True
-    -- encountered unsatisfied DataClass constraint -> dont derive it here
-    Nothing      -> return False
+  ((i, ps), _) <- inferPredSet clsEnv p tc pty [] cls
+  modifyInstEnv (bindInstInfo i (m, ps, impls))
   where impls | cls == qEqId      = [(eqOpId, 2)]
               | cls == qOrdId     = [(leqOpId, 2)]
               | cls == qEnumId    = [ (succId, 1), (predId, 1), (toEnumId, 1)
@@ -239,12 +234,12 @@ bindDerivedInstance clsEnv p tc pty cls = do
               | otherwise         =
                 internalError "InstanceCheck.bindDerivedInstance.impls"
 
-inferPredSets :: ClassEnv -> DeriveInfo -> INCM [(InstIdent, PredSet)]
+inferPredSets :: ClassEnv -> DeriveInfo -> INCM [((InstIdent, PredSet), Bool)]
 inferPredSets clsEnv (DeriveInfo p tc pty tys clss) =
-  catMaybes <$> mapM (inferPredSet clsEnv p tc pty tys) clss
+  mapM (inferPredSet clsEnv p tc pty tys) clss
 
 inferPredSet :: ClassEnv -> Position -> QualIdent -> PredType -> [Type]
-             -> QualIdent -> INCM (Maybe (InstIdent, PredSet))
+             -> QualIdent -> INCM ((InstIdent, PredSet), Bool)
 inferPredSet clsEnv p tc (PredType ps inst) tys cls = do
   m <- getModuleIdent
   let doc = ppPred m $ Pred cls inst
@@ -256,23 +251,24 @@ inferPredSet clsEnv p tc (PredType ps inst) tys cls = do
     reducePredSet (cls == qDataId) p "derived instance" doc clsEnv ps'''
   let ps5 = filter noPolyPred $ Set.toList ps4
   if any (isDataPred m) (Set.toList novarps ++ ps5) && cls == qDataId
-    then return Nothing
+    then return    (((cls, tc), ps4), False)
     else mapM_ (reportUndecidable p "derived instance" doc) ps5
-         >> return (Just ((cls, tc), ps4))
+         >> return (((cls, tc), ps4), True)
   where
     noPolyPred (Pred _ (TypeVariable _)) = False
     noPolyPred (Pred _ _               ) = True
     isDataPred _ (Pred qid _) = qid == qDataId
 inferPredSet _ _ _ _ _ _ = internalError "InstanceCheck.inferPredSet"
 
-updatePredSets :: [(InstIdent, PredSet)] -> INCM Bool
+updatePredSets :: [((InstIdent, PredSet), Bool)] -> INCM Bool
 updatePredSets = fmap or . mapM (uncurry updatePredSet)
 
-updatePredSet :: InstIdent -> PredSet -> INCM Bool
-updatePredSet i ps = do
+updatePredSet :: (InstIdent, PredSet) -> Bool -> INCM Bool
+updatePredSet (i, ps) enter = do
   inEnv <- getInstEnv
   case lookupInstInfo i inEnv of
     Just (m, ps', is)
+      | not enter -> modifyInstEnv (removeInstInfo i) >> return False
       | ps == ps' -> return False
       | otherwise -> do
         modifyInstEnv $ bindInstInfo i (m, ps, is)

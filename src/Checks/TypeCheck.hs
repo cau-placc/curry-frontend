@@ -1069,6 +1069,7 @@ tcPatternHelper _ t@(RecordPattern spi _ c fs) = do
   -- MARK
   -- (ps, ty) <- fmap arrowBase <$> lift (skol (constrType m c vEnv))
   (ps, ty) <- fmap arrowBase <$> lift (inst (constrType m c vEnv))
+  -- tcField does not support passing "used" variables, thus we do it by hand
   used <- S.get
   (ps', fs') <- lift $ mapAccumM (tcField (tcPatternWith used) "pattern"
     (\t' -> pPrintPrec 0 t $-$ text "Term:" <+> pPrintPrec 0 t') ty) ps fs
@@ -1096,6 +1097,8 @@ tcPatternHelper p t@(FunctionPattern spi _ f ts) = do
   m <- lift getModuleIdent
   vEnv <- lift getValueEnv
   (ps, ty) <- lift $ inst (funType m f vEnv)
+  -- insert all
+  S.modify (flip (foldr Set.insert) (bv t))
   tcFuncPattern p spi (pPrintPrec 0 t) f id ps ty ts
 tcPatternHelper p (InfixFuncPattern spi a t1 op t2) = do
   (ps, ty, t') <- tcPatternHelper p (FunctionPattern spi a op [t1, t2])
@@ -1111,9 +1114,8 @@ tcFuncPattern _ spi _ f ts ps ty [] =
 tcFuncPattern p spi doc f ts ps ty (t':ts') = do
   (alpha, beta) <- lift $
     tcArrow p "functional pattern" (doc $-$ text "Term:" <+> pPrintPrec 0 t) ty
-  let ps' = Set.insert (Pred qDataId alpha) ps
-  (ps'', t'') <- ptcPatternArg p "functional pattern" doc ps' alpha t'
-  tcFuncPattern p spi doc f (ts . (t'' :)) ps'' beta ts'
+  (ps', t'') <- ptcPatternArg p "functional pattern" doc ps alpha t'
+  tcFuncPattern p spi doc f (ts . (t'' :)) ps' beta ts'
   where t = FunctionPattern spi (predType ty) f (ts [])
 
 ptcPatternArg :: HasPosition p => p -> String -> Doc -> PredSet -> Type
