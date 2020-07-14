@@ -28,7 +28,10 @@ import           Control.Applicative    ((<$>))
 import qualified Control.Exception as E (SomeException, catch)
 
 import           Data.List              (isInfixOf, sort)
-import           Distribution.TestSuite
+import qualified Data.Map as Map        (insert)
+import           Distribution.TestSuite ( Test (..), TestInstance (..)
+                                        , Progress (..), Result (..)
+                                        , OptionDescr)
 import           System.FilePath        (FilePath, (</>), (<.>))
 
 import           Curry.Base.Message     (Message, message, ppMessages, ppError)
@@ -36,11 +39,12 @@ import           Curry.Base.Monad       (CYIO, runCYIO)
 import           Curry.Base.Pretty      (text)
 import qualified CompilerOpts as CO     ( Options (..), WarnOpts (..)
                                         , WarnFlag (..), Verbosity (VerbQuiet)
-                                        , defaultOptions, defaultWarnOpts)
+                                        , CppOpts (..)
+                                        , defaultOptions)
 import CurryBuilder                     (buildCurry)
 
 tests :: IO [Test]
-tests = return [passingTests, warningTests, failingTests]
+tests = return [failingTests, passingTests, warningTests]
 
 runSecure :: CYIO a -> IO (Either [Message] (a, [Message]))
 runSecure act = runCYIO act `E.catch` handler
@@ -54,7 +58,7 @@ runTest opts test errorMsgs =
     else catchE     <$> runSecure (buildCurry opts' test)
   where
     cppOpts       = CO.optCppOpts opts
-    cppDefs       = Map.insert "__PAKCS__" 300 (CO.cppDefinitions cppOpts)
+    cppDefs       = Map.insert "__PAKCS__" 3 (CO.cppDefinitions cppOpts)
     wOpts         = CO.optWarnOpts opts
     wFlags        =   CO.WarnUnusedBindings
                     : CO.WarnUnusedGlobalBindings
@@ -82,18 +86,18 @@ runTest opts test errorMsgs =
 showMessages :: [Message] -> String
 showMessages = show . ppMessages ppError . sort
 
+-- group of test which should fail yielding a specific error message
+failingTests :: Test
+failingTests = Group { groupName    = "Failing Tests"
+, concurrently = False
+, groupTests   = map (mkTest "test/fail/") failInfos
+}
+
 -- group of tests which should pass
 passingTests :: Test
 passingTests = Group { groupName    = "Passing Tests"
                      , concurrently = False
                      , groupTests   = map (mkTest "test/pass/") passInfos
-                     }
-
--- group of test which should fail yielding a specific error message
-failingTests :: Test
-failingTests = Group { groupName    = "Failing Tests"
-                     , concurrently = False
-                     , groupTests   = map (mkTest "test/fail/") failInfos
                      }
 
 -- group of tests which should pass producing a specific warning message
@@ -130,61 +134,6 @@ type TestInfo = (String, [String], [OptionDescr], Maybe SetOption, [String])
 type SetOption = String -> String -> Either String TestInstance
 
 --------------------------------------------------------------------------------
--- Definition of passing tests
---------------------------------------------------------------------------------
-
--- generate a simple passing test
-mkPassTest :: String -> TestInfo
-mkPassTest name = (name, [], [], Nothing, [])
-
--- To add a passing test to the test suite simply add the module name of the
--- test code to the following list
-passInfos :: [TestInfo]
-passInfos = map mkPassTest
-  [ "AbstractCurryBug"
-  , "ACVisibility"
-  , "AnonymVar"
-  , "CaseComplete"
-  -- MARK
-  -- , "ChurchEncoding"
-  -- , "ClassMethods"
-  , "DataPass"
-  , "DefaultPrecedence"
-  , "Dequeue"
-  , "ExplicitLayout"
-  , "FCase"
-  , "FP_Lifting"
-  , "FP_NonCyclic"
-  , "FP_NonLinearity"
-  , "FunctionalPatterns"
-  , "HaskellRecords"
-  , "Hierarchical"
-  , "Infix"
-  , "Inline"
-  , "Lambda"
-  , "Maybe"
-  , "NegLit"
-  , "Newtype1"
-  , "Newtype2"
-  , "NonLinearLHS"
-  , "OperatorDefinition"
-  , "PatDecl"
-  , "Prelude"
-  , "Pretty"
-  , "RecordsPolymorphism"
-  , "RecordTest1"
-  , "RecordTest2"
-  , "RecordTest3"
-  , "ReexportTest"
-  , "SelfExport"
-  , "SpaceLeak"
-  , "TyConsTest"
-  , "TypedExpr"
-  , "UntypedAcy"
-  , "Unzip"
-  ]
-
---------------------------------------------------------------------------------
 -- Definition of failing tests
 --------------------------------------------------------------------------------
 
@@ -205,10 +154,10 @@ failInfos = map (uncurry mkFailTest)
       , "applyFunTest2 = applyFun funA 'a' 'b'"
       ]
     )
-  [ ("DataFail",
+  , ("DataFail",
       [ "Missing instance for Prelude.Data Test1"
-      , "Missing instance for Prelude.Data (Test2 _3)"
-      , "Missing instance for Prelude.Data (Test2 _5)"
+      , "Missing instance for Prelude.Data (Test2"
+      , "Missing instance for Prelude.Data (Test2"
       , "Missing instance for Prelude.Data Test1"
       ]
     )
@@ -286,6 +235,67 @@ failInfos = map (uncurry mkFailTest)
       , "Unbound type variable c"
       ]
     )
+  ]
+
+--------------------------------------------------------------------------------
+-- Definition of passing tests
+--------------------------------------------------------------------------------
+
+-- generate a simple passing test
+mkPassTest :: String -> TestInfo
+mkPassTest = flip mkFailTest []
+
+-- To add a passing test to the test suite simply add the module name of the
+-- test code to the following list
+passInfos :: [TestInfo]
+passInfos = map mkPassTest
+  [ "AbstractCurryBug"
+  , "ACVisibility"
+  , "AnonymVar"
+  , "CaseComplete"
+  , "DataPass"
+  , "DefaultPrecedence"
+  , "Dequeue"
+  , "EmptyWhere"
+  , "ExplicitLayout"
+  , "FCase"
+  , "FP_Lifting"
+  , "FP_NonCyclic"
+  , "FP_NonLinearity"
+  , "FunctionalPatterns"
+  , "HaskellRecords"
+  , "Hierarchical"
+  , "ImportRestricted"
+  , "ImportRestricted2"
+  , "ImpredDollar"
+  , "Infix"
+  , "Inline"
+  , "Lambda"
+  , "Maybe"
+  , "Monad"
+  , "NegLit"
+  , "Newtype1"
+  , "Newtype2"
+  , "NonLinearLHS"
+  , "OperatorDefinition"
+  , "PatDecl"
+  , "Prelude"
+  , "Pretty"
+  , "RecordsPolymorphism"
+  , "RecordTest1"
+  , "RecordTest2"
+  , "RecordTest3"
+  , "ReexportTest"
+  , "ScottEncoding"
+  , "SelfExport"
+  , "SpaceLeak"
+  , "Subsumption"
+  , "TermInv"
+  , "TyConsTest"
+  , "TypedExpr"
+  , "UntypedAcy"
+  , "Unzip"
+  , "WhereAfterDo"
   ]
 
 --------------------------------------------------------------------------------
