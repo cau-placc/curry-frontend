@@ -145,16 +145,7 @@ mkFailTest name errorMsgs = (name, [], [], Nothing, errorMsgs)
 -- test code and the expected error message(s) to the following list
 failInfos :: [TestInfo]
 failInfos = map (uncurry mkFailTest)
-  [ ("AmbiguousTypeVariable",
-      [ "Ambiguous type variable"
-      , "inferred for equation"
-      , "applyFunTest = applyFun funA True False"
-      , "Ambiguous type variable"
-      , "inferred for equation"
-      , "applyFunTest2 = applyFun funA 'a' 'b'"
-      ]
-    )
-  , ("DataFail",
+  [ ("DataFail",
       [ "Missing instance for Prelude.Data Test1"
       , "Missing instance for Prelude.Data (Test2"
       , "Missing instance for Prelude.Data (Test2"
@@ -163,15 +154,6 @@ failInfos = map (uncurry mkFailTest)
     )
   , ("ErrorMultipleSignature", ["More than one type signature for `f'"])
   , ("ErrorMultipleSignature", ["More than one type signature for `f'"])
-  , ("EscapingTypeVariable",
-      [ "Type error in application"
-      , "runBag"
-      , "  (do e <- newElem \"Hello, world!\""
-      , "      return e)"
-      , "Type error in application"
-      , "runBag (newElem \"Hello, world!\")"
-      ]
-    )
   , ("ExportCheck/AmbiguousName", ["Ambiguous name `not'"])
   , ("ExportCheck/AmbiguousType", ["Ambiguous type `Bool'"])
   , ("ExportCheck/ModuleNotImported", ["Module `Foo' not imported"])
@@ -232,8 +214,7 @@ failInfos = map (uncurry mkFailTest)
       ]
     )
   , ("UnboundTypeVariable",
-      [ "Unbound type variable a"
-      , "Unbound type variable b"
+      [ "Unbound type variable b"
       , "Unbound type variable c"
       ]
     )
