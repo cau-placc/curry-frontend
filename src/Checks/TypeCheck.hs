@@ -44,12 +44,11 @@ import Prelude hiding ((<>))
 import           Control.Applicative        ((<$>), (<*>))
 #endif
 import           Control.Monad.Trans (lift)
-import           Control.Monad.Extra (allM, eitherM, filterM, foldM, liftM, (&&^),
+import           Control.Monad.Extra (allM, filterM, foldM, liftM, (&&^),
                                       notM, replicateM, when, unless, unlessM)
 import qualified Control.Monad.State as S
                                      (State, StateT, get, gets, put, modify,
                                       runState, evalStateT)
-import           Data.Foldable       (foldrM)
 import           Data.Function       (on)
 import           Data.List           (nub, nubBy, partition, sortBy, (\\))
 import qualified Data.Map            as Map (Map, empty, insert, lookup)
@@ -470,7 +469,6 @@ tcPDeclGroup ps [(i, FreeDecl p fvs)] = do
       (ps2, ty2) <- freshDataType
       ps' <- unify idt "free variable" (ppIdent idt) emptyPredSet (unpredType ty1) ps2 ty2
       return ((idt, n, ForAll ids ty1), ps')
-    addDataPred _ = internalError "TypeCheck.addDataPred"
 tcPDeclGroup ps pds = do
   vEnv <- getValueEnv
   vss <- mapM (tcDeclVars . snd) pds
@@ -560,19 +558,12 @@ tcFunctionPDecl i ps tySc@(ForAll _ pty) p f eqs = do
 tcEquation :: Type -> PredSet -> Equation a
            -> TCM (PredSet, Equation PredType)
 tcEquation ty ps eqn@(Equation p lhs rhs) =
-  tcEqn ty p lhs rhs >>- unifyDecl p "equation" (pPrint eqn) ps ty
+  tcEqn p lhs rhs >>- unifyDecl p "equation" (pPrint eqn) ps ty
 
-tcEqn :: Type -> SpanInfo -> Lhs a -> Rhs a
+tcEqn :: SpanInfo -> Lhs a -> Rhs a
       -> TCM (PredSet, Type, Equation PredType)
-tcEqn tySc p lhs rhs = do
+tcEqn p lhs rhs = do
   (ps, tys, lhs', ps', ty, rhs') <- withLocalValueEnv $ do
-    -- MARK
-    -- bindLambdaVars lhs
-    -- (ps, tys, lhs') <- tcLhs p lhs
-    -- (ps', ty, rhs') <- tcRhs rhs
-    let lhsArity = length $ snd $ flatLhs lhs
-        (psTys, resTy) = arrowUnapply tySc
-        resTy' = foldr TypeArrow resTy (drop lhsArity psTys)
     bindLambdaVars lhs
     (ps, tys, lhs') <- S.evalStateT (tcLhs p lhs) Set.empty
     (ps', ty, rhs') <- tcRhs rhs
@@ -781,7 +772,6 @@ instance Binding (Rhs a) where
     sigs <- getSigEnv
     modifyValueEnv $ flip (foldr (bindDeclArity m tcEnv clsEnv sigs)) ds
     isNonExpansive e &&^ isNonExpansive ds
-  isNonExpansive (GuardedRhs _ _ _ _) = return False
 
 -- A record construction is non-expansive only if all field labels are present.
 
@@ -893,7 +883,6 @@ tcTopPDecl (i, ClassDecl p li cx cls tv ds)     = withLocalSigEnv $ do
   vpds' <- mapM (tcClassMethodPDecl (qualify cls) tv) vpds
   return (i, ClassDecl p li cx cls tv $ fromPDecls $ map untyped opds ++ vpds')
 tcTopPDecl (i, InstanceDecl p li cx qcls ty ds) = do
-  m <- getModuleIdent
   tcEnv <- getTyConsEnv
   pty <- expandPoly $ QualTypeExpr NoSpanInfo cx ty
   mid <- getModuleIdent
@@ -1052,7 +1041,7 @@ tcPatternHelper p t@(ConstructorPattern spi _ c ts) = do
   vEnv <- lift getValueEnv
   -- MARK
   -- (ps, (tys, ty')) <- fmap arrowUnapply <$> lift (skol (constrType m c vEnv))
-  (ps, (tys, ty')) <- fmap arrowUnapply <$> lift (inst (constrType m c vEnv))
+  (ps, (tys, ty')) <- fmap arrowUnapply <$> lift (skol (constrType m c vEnv))
   (ps', ts') <- mapAccumM (uncurry . ptcPatternArg p "pattern" (pPrintPrec 0 t))
                           ps (zip tys ts)
   return (ps', ty', ConstructorPattern spi (predType ty') c ts')
@@ -1068,7 +1057,7 @@ tcPatternHelper _ t@(RecordPattern spi _ c fs) = do
   vEnv <- lift getValueEnv
   -- MARK
   -- (ps, ty) <- fmap arrowBase <$> lift (skol (constrType m c vEnv))
-  (ps, ty) <- fmap arrowBase <$> lift (inst (constrType m c vEnv))
+  (ps, ty) <- fmap arrowBase <$> lift (skol (constrType m c vEnv))
   -- tcField does not support passing "used" variables, thus we do it by hand
   used <- S.get
   (ps', fs') <- lift $ mapAccumM (tcField (tcPatternWith used) "pattern"
