@@ -457,9 +457,6 @@ tcPDeclGroup ps [(i, ExternalDecl p fs)] = do
 tcPDeclGroup ps [(i, FreeDecl p fvs)] = do
   vs <- mapM (tcDeclVar False) (bv fvs)
   m <- getModuleIdent
-  -- MARK
-  -- modifyValueEnv $ flip (bindVars m) vs
-  -- return (ps, [(i, FreeDecl p (map (\(v, _, ForAll _ pty) -> Var pty v) vs))])
   (vs', ps') <- unzip <$> mapM addDataPred vs
   modifyValueEnv $ flip (bindVars m) vs'
   let d = FreeDecl p (map (\(v, _, ForAll _ ty) -> Var ty v) vs')
@@ -1039,8 +1036,6 @@ tcPatternHelper _ (VariablePattern spi _ v) = do
 tcPatternHelper p t@(ConstructorPattern spi _ c ts) = do
   m <- lift getModuleIdent
   vEnv <- lift getValueEnv
-  -- MARK
-  -- (ps, (tys, ty')) <- fmap arrowUnapply <$> lift (skol (constrType m c vEnv))
   (ps, (tys, ty')) <- fmap arrowUnapply <$> lift (skol (constrType m c vEnv))
   (ps', ts') <- mapAccumM (uncurry . ptcPatternArg p "pattern" (pPrintPrec 0 t))
                           ps (zip tys ts)
@@ -1055,8 +1050,6 @@ tcPatternHelper p (ParenPattern spi t) = do
 tcPatternHelper _ t@(RecordPattern spi _ c fs) = do
   m <- lift getModuleIdent
   vEnv <- lift getValueEnv
-  -- MARK
-  -- (ps, ty) <- fmap arrowBase <$> lift (skol (constrType m c vEnv))
   (ps, ty) <- fmap arrowBase <$> lift (skol (constrType m c vEnv))
   -- tcField does not support passing "used" variables, thus we do it by hand
   used <- S.get
