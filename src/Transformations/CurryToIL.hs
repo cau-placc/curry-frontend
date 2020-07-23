@@ -39,7 +39,6 @@ import qualified Data.Set             as Set (Set, empty, insert, delete, toList
 import Curry.Base.Ident
 import Curry.Syntax hiding (caseAlt)
 
-import Base.CurryTypes (toType)
 import Base.Expr
 import Base.Messages (internalError)
 import Base.Types hiding (polyType)
@@ -283,7 +282,6 @@ transTVars tcEnv ty' =
           build ty (foldr IL.KindArrow k ks)
           -- infer kinds for args
           mapM_ (uncurry build) (zip tys ks)
-    build _ _ = error "Transformation.CurryToIL.transTVars"
 
 type KindSubst = Map.Map Int IL.Kind
 
