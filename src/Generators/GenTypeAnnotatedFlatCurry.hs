@@ -241,7 +241,9 @@ trTypeSynonym (CS.TypeDecl _ t tvs ty) = do
   t'   <- trQualIdent qid
   vis  <- getTypeVisibility qid
   tEnv <- S.gets tcEnv
-  ty'  <- trType (transType $ expandType m tEnv $ toType tvs ty)
+  ty'  <- trType (transType tEnv $
+                  expandType m tEnv $
+                  toType tvs ty)
   return [TypeSyn t' vis [0 .. length tvs - 1] ty']
 trTypeSynonym _                        = return []
 
@@ -292,7 +294,12 @@ trType :: IL.Type -> FlatState TypeExpr
 trType (IL.TypeConstructor t tys) = TCons <$> trQualIdent t <*> mapM trType tys
 trType (IL.TypeVariable      idx) = return $ TVar $ abs idx
 trType (IL.TypeArrow     ty1 ty2) = FuncType <$> trType ty1 <*> trType ty2
-trType (IL.TypeForall    idxs ty) = ForallType (map abs idxs) <$> trType ty
+trType (IL.TypeForall    idxs ty) = ForallType (map trVar idxs) <$> trType ty
+  where
+    trVar (i, k) = (abs i, trKind k)
+    trKind IL.KindStar          = KStar
+    trKind (IL.KindVariable  _) = KStar
+    trKind (IL.KindArrow k1 k2) = KArrow (trKind k1) (trKind k2)
 
 -- Convert a fixity
 cvFixity :: CS.Infix -> Fixity
@@ -306,15 +313,14 @@ cvFixity CS.Infix  = InfixOp
 
 -- Translate a function declaration
 trAFuncDecl :: IL.Decl -> FlatState [AFuncDecl TypeExpr]
-trAFuncDecl (IL.FunctionDecl f vs _ e) = do
+trAFuncDecl (IL.FunctionDecl f vs ty e) = do
   f'  <- trQualIdent f
   a   <- getArity f
   vis <- getVisibility f
   ty' <- trType ty
   r'  <- trARule ty vs e
   return [AFunc f' a vis ty' r']
-  where ty = foldr IL.TypeArrow (IL.typeOf e) $ map fst vs
-trAFuncDecl (IL.ExternalDecl     f ty) = do
+trAFuncDecl (IL.ExternalDecl      f ty) = do
   f'   <- trQualIdent f
   a    <- getArity f
   vis  <- getVisibility f
@@ -362,8 +368,8 @@ trAExpr (IL.Letrec   bs e) = inNestedEnv $ do
   ALet <$> trType (IL.typeOf e)
        <*> (zip <$> mapM (uncurry newVar) vs <*> mapM trAExpr es)
        <*> trAExpr e
-trAExpr (IL.Typed e _) = ATyped <$> ty' <*> trAExpr e <*> ty'
-  where ty' = trType $ IL.typeOf e
+trAExpr (IL.Typed e ty) = ATyped <$> ty' <*> trAExpr e <*> ty'
+  where ty' = trType $ ty
 
 -- Translate a literal
 trLiteral :: IL.Literal -> FlatState Literal
@@ -450,6 +456,9 @@ type NormState a = S.State (Int, Map.Map Int Int) a
 class Normalize a where
   normalize :: a -> NormState a
 
+instance Normalize a => Normalize [a] where
+  normalize = mapM normalize
+
 instance Normalize Int where
   normalize i = do
     (n, m) <- S.get
@@ -461,38 +470,40 @@ instance Normalize Int where
 
 instance Normalize TypeExpr where
   normalize (TVar           i) = TVar <$> normalize i
-  normalize (TCons      q tys) = TCons q <$> mapM normalize tys
+  normalize (TCons      q tys) = TCons q <$> normalize tys
   normalize (FuncType ty1 ty2) = FuncType <$> normalize ty1 <*> normalize ty2
-  normalize (ForallType is ty) =
-    ForallType <$> mapM normalize is <*> normalize ty
-
-instance Normalize b => Normalize (a, b) where
-  normalize (x, y) = ((,) x) <$> normalize y
+  normalize (ForallType is ty) = ForallType <$> mapM normalizeTypeVar is
+                                            <*> normalize ty
+    where normalizeTypeVar (tv, k) = (,) <$> normalize tv <*> pure k
 
 instance Normalize a => Normalize (AFuncDecl a) where
   normalize (AFunc f a v ty r) = AFunc f a v <$> normalize ty <*> normalize r
 
 instance Normalize a => Normalize (ARule a) where
   normalize (ARule     ty vs e) = ARule <$> normalize ty
-                                        <*> mapM normalize vs
+                                        <*> mapM normalizeTuple vs
                                         <*> normalize e
   normalize (AExternal ty    s) = flip AExternal s <$> normalize ty
+
+normalizeTuple :: Normalize b => (a, b) -> NormState (a, b)
+normalizeTuple (a, b) = (,) <$> pure a <*> normalize b  
 
 instance Normalize a => Normalize (AExpr a) where
   normalize (AVar  ty       v) = flip AVar  v  <$> normalize ty
   normalize (ALit  ty       l) = flip ALit  l  <$> normalize ty
   normalize (AComb ty ct f es) = flip AComb ct <$> normalize ty
-                                               <*> normalize f
-                                               <*> mapM normalize es
+                                               <*> normalizeTuple f
+                                               <*> normalize es
   normalize (ALet  ty    ds e) = ALet <$> normalize ty
                                       <*> mapM normalizeBinding ds
                                       <*> normalize e
-    where normalizeBinding (v, b) = (,) <$> normalize v <*> normalize b
+    where normalizeBinding (v, b) = (,) <$> normalizeTuple v <*> normalize b
   normalize (AOr   ty     a b) = AOr <$> normalize ty <*> normalize a
                                      <*> normalize b
   normalize (ACase ty ct e bs) = flip ACase ct <$> normalize ty <*> normalize e
-                                               <*> mapM normalize bs
-  normalize (AFree  ty   vs e) = AFree <$> normalize ty <*> mapM normalize vs
+                                               <*> normalize bs
+  normalize (AFree  ty   vs e) = AFree <$> normalize ty
+                                       <*> mapM normalizeTuple vs
                                        <*> normalize e
   normalize (ATyped ty  e ty') = ATyped <$> normalize ty <*> normalize e
                                         <*> normalize ty'
@@ -501,8 +512,9 @@ instance Normalize a => Normalize (ABranchExpr a) where
   normalize (ABranch p e) = ABranch <$> normalize p <*> normalize e
 
 instance Normalize a => Normalize (APattern a) where
-  normalize (APattern  ty c vs) = APattern <$> normalize ty <*> normalize c
-                                           <*> mapM normalize vs
+  normalize (APattern  ty c vs) = APattern <$> normalize ty
+                                           <*> normalizeTuple c
+                                           <*> mapM normalizeTuple vs
   normalize (ALPattern ty    l) = flip ALPattern l <$> normalize ty
 
 -- -----------------------------------------------------------------------------
