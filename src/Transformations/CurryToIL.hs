@@ -244,9 +244,15 @@ polyType ty                =
 -- as all variables have already been renamed.
 
 data KIS = KIS
-  { nextId :: Int
+  { _nextId :: Int
   , kinds  :: Map.Map Int IL.Kind
   }
+
+freshId :: S.State KIS Int
+freshId = do
+  KIS i ks <- S.get
+  S.put (KIS (i+1) ks)
+  return i
 
 transTVars :: TCEnv -> Type -> [(Int, IL.Kind)]
 transTVars tcEnv ty' =
@@ -277,7 +283,7 @@ transTVars tcEnv ty' =
           mapM_ (uncurry build) (zip tys $ unarrowKind $ transKind k')
         _ -> do -- var of forall
           -- construct new kind vars
-          ks <- mapM (const (S.gets nextId >>= return . IL.KindVariable)) tys
+          ks <- mapM (const (freshId >>= return . IL.KindVariable)) tys
           -- infer kind for v
           build ty (foldr IL.KindArrow k ks)
           -- infer kinds for args
