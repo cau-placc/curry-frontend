@@ -313,7 +313,7 @@ unifyKind (IL.KindArrow k1 k2) (IL.KindArrow k1' k2') =
   let s1 = unifyKind k1 k1'
       s2 = unifyKind (applyKindSubst s1 k2) (applyKindSubst s1 k2')
   in s1 `composeKindSubst` s2
-unifyKind _ _ = error "Transformation.CurryToIL.unifyKind"
+unifyKind k1 k2 = error $ "Transformation.CurryToIL.unifyKind: " ++ show k1 ++ ", " ++ show k2
 
 -- Each function in the program is translated into a function of the
 -- intermediate language. The arguments of the function are renamed such
