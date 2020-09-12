@@ -158,7 +158,7 @@ trDecl :: Decl Type -> TransM [IL.Decl]
 trDecl (DataDecl     _ tc tvs cs _) = (:[]) <$> trData tc tvs cs
 trDecl (NewtypeDecl  _ tc tvs nc _) = (:[]) <$> trNewtype tc tvs nc
 trDecl (ExternalDataDecl  _ tc tvs) = (:[]) <$> trExternalData tc tvs
-trDecl (FunctionDecl    _ ty f eqs) = (:[]) <$> trFunction f ty eqs
+trDecl (FunctionDecl    _ _ f  eqs) = (:[]) <$> trFunction f eqs
 trDecl (ExternalDecl          _ vs) = mapM trExternal vs
 trDecl _                            = return []
 
@@ -335,18 +335,19 @@ unifyKind k1 k2 = error $ "Transformation.CurryToIL.unifyKind: " ++ show k1 ++ "
 -- selector function have to be renamed according to the name mapping
 -- computed for its first argument.
 
-trFunction :: Ident -> Type -> [Equation Type] -> TransM IL.Decl
-trFunction f ty eqs = do
+trFunction :: Ident -> [Equation Type] -> TransM IL.Decl
+trFunction f eqs = do
   f' <- trQualify f
   tcEnv <- getTCEnv
-  let ty' = transType tcEnv $ polyType ty
-      vs' = zip (map (transType tcEnv . typeOf) ts) vs
+  let tys = map typeOf ts
+      ty' = transType tcEnv $ polyType $ foldr TypeArrow (typeOf rhs) tys
+      vs' = zip (map (transType tcEnv) tys) vs
   alts <- mapM (trEquation vs ws) eqs
   return $ IL.FunctionDecl f' vs' ty' (flexMatch vs' alts)
   where
   -- vs are the variables needed for the function: _1, _2, etc.
   -- ws is an infinite list for introducing additional variables later
-  Equation _ lhs _ = head eqs
+  Equation _ lhs rhs = head eqs
   (_, ts) = flatLhs lhs
   (vs, ws) = splitAt (length ts) (argNames (mkIdent ""))
 
