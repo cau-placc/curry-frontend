@@ -211,6 +211,8 @@ failInfos = map (uncurry mkFailTest)
       , "Function: h"
       , "Type signature too general"
       , "Function: g'"
+      , "Type signature too general"
+      , "Function: n"
       ]
     )
   , ("UnboundTypeVariable",
