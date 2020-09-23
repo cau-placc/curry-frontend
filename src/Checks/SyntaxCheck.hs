@@ -1137,9 +1137,10 @@ checkLabels _ (Just c) ls css = do
                            [l | (l, cs) <- zip ls css, c' `notElem` cs]
     _             -> internalError $
                        "Checks.SyntaxCheck.checkLabels: " ++ show c
-checkLabels p Nothing ls css =
-  when (null (foldr1 intersect css))
-    $ report $ errNoCommonCons (spanInfo2Pos p) ls
+checkLabels p Nothing ls css
+  | not (null (foldr1 intersect css)) ||
+    any null css = ok
+  | otherwise    = report $ errNoCommonCons (spanInfo2Pos p) ls
 
 checkField :: (a -> SCM a) -> Field a -> SCM (Field a)
 checkField check (Field p l x) = Field p l <$> check x
