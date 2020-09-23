@@ -53,7 +53,7 @@ import           Data.Function       (on)
 import           Data.List           (nub, nubBy, partition, sortBy, (\\))
 import qualified Data.Map            as Map (Map, empty, insert, lookup)
 import           Data.Maybe                 (fromJust, fromMaybe, isJust)
-import qualified Data.Set.Extra      as Set ( Set, concatMap, deleteMin, empty, filter
+import qualified Data.Set.Extra      as Set ( Set, concatMap, deleteMin, empty
                                             , fromList, insert, member
                                             , notMember, partition, singleton
                                             , toList, union, unions )
@@ -1600,7 +1600,7 @@ applyDefaults p what doc fvs ps ty = do
       tvs'  = nub $ filter (`Set.notMember` fvs) (typeVars ps')
   mapM_ (report . errAmbiguousTypeVariable m p what doc ps' ty') tvs'
   modifyTypeSubst $ compose theta
-  return $ Set.filter (\(Pred _ (TypeVariable tv)) -> tv `elem` fvs) ps'
+  return ps'
 
 bindDefault :: [Type] -> InstEnv' -> PredSet -> Int -> TypeSubst -> TypeSubst
 bindDefault defs inEnv ps tv =
