@@ -78,9 +78,12 @@ primTypes =
         nil   = mkPreludeQName "[]"
         cons  = mkPreludeQName ":"
 
+mkKindStarTVar :: TVarIndex -> TypeDecl
+mkKindStarTVar i = TVar (i, KindStar)
+
 mkTupleType :: Int -> TypeDecl
 mkTupleType arity = Type tuple Public [0 .. arity - 1]
-  [Cons tuple arity Public (map TVar [0 .. arity - 1])]
+  [Cons tuple arity Public (map mkKindStarTVar [0 .. arity - 1])]
   where tuple = mkPreludeQName $ '(' : replicate (arity - 1) ',' ++ ")"
 
 mkPreludeQName :: String -> QName

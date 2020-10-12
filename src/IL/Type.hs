@@ -69,11 +69,13 @@ data NewConstrDecl = NewConstrDecl QualIdent Type
 data ConstrDecl = ConstrDecl QualIdent [Type]
     deriving (Eq, Show)
 
+type TypeVariableWithKind = (Int, Kind)
+
 data Type
   = TypeConstructor QualIdent [Type]
-  | TypeVariable    Int
+  | TypeVariable    TypeVariableWithKind
   | TypeArrow       Type Type
-  | TypeForall      [(Int, Kind)] Type
+  | TypeForall      [TypeVariableWithKind] Type
     deriving (Eq, Show)
 
 data Kind
