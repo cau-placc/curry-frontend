@@ -56,15 +56,15 @@ ppImport :: ModuleIdent -> Doc
 ppImport m = text "import" <+> text (moduleName m)
 
 ppDecl :: Decl -> Doc
-ppDecl (DataDecl                   tc n cs) = sep $
-  text "data" <+> ppTypeLhs tc n :
+ppDecl (DataDecl                   tc ks cs) = sep $
+  text "data" <+> ppTypeLhs tc (length ks) :
   map (nest dataIndent)
       (zipWith (<+>) (equals : repeat (char '|')) (map ppConstr cs))
-ppDecl (NewtypeDecl                tc n nc) = sep $
-  text "newtype" <+> ppTypeLhs tc n :
+ppDecl (NewtypeDecl                tc ks nc) = sep $
+  text "newtype" <+> ppTypeLhs tc (length ks) :
   [nest dataIndent (equals <+> ppNewConstr nc)]
-ppDecl (ExternalDataDecl              tc n) =
-  text "external data" <+> ppTypeLhs tc n
+ppDecl (ExternalDataDecl              tc ks) =
+  text "external data" <+> ppTypeLhs tc (length ks)
 ppDecl (FunctionDecl             f vs ty e) = ppTypeSig f ty $$ sep
   [ ppQIdent f <+> hsep (map (ppIdent . snd) vs) <+> equals
   , nest bodyIndent (ppExpr 0 e)]

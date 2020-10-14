@@ -186,9 +186,12 @@ completeConsAlts ea ce alts = do
 
   -- unifier for data type and concrete pattern type
   dataTy  = let TypeConstructor qid tys = patTy
-            in TypeConstructor qid $ map TypeVariable [0 .. length tys - 1]
+            in TypeConstructor qid $ map mkKindStarTypeVariable [0 .. length tys - 1]
   patTy   = let Alt pat _ = head consAlts in typeOf pat
   tySubst = matchType dataTy patTy idSubst
+
+  -- wrap a type variable with the * kind
+  mkKindStarTypeVariable i = TypeVariable (i, KindStar)
 
   -- generate a new constructor pattern
   genPat (qid, tys) = ConstructorPattern patTy qid <$>
@@ -374,7 +377,7 @@ getComplConstrs (Module mid _ ds) menv tcEnv cs@(c:_)
   -- built-in lists
   | c `elem` [qNilId, qConsId] = complementary cs
     [ (qNilId, [])
-    , (qConsId, [TypeVariable 0, transType tcEnv (listType boolType)])
+    , (qConsId, [TypeVariable (0, IL.KindStar), transType tcEnv (listType boolType)])
     ]
   -- current module
   | mid' == mid                = getCCFromDecls cs ds
@@ -454,7 +457,7 @@ instance SubstType a => SubstType [a] where
 
 instance SubstType Type where
   subst sigma (TypeConstructor q tys) = TypeConstructor q $ subst sigma tys
-  subst sigma (TypeVariable tv)       = substVar' TypeVariable subst sigma tv
+  subst sigma (TypeVariable (tv, k))  = substVar' (\tv' -> TypeVariable (tv', k)) subst sigma tv
   subst sigma (TypeArrow ty1 ty2)
     = TypeArrow (subst sigma ty1) (subst sigma ty2)
   subst sigma (TypeForall tvs ty)
@@ -467,8 +470,8 @@ matchType ty1 ty2 = fromMaybe noMatch (matchType' ty1 ty2)
                                 showsPrec 11 ty1 " " ++ showsPrec 11 ty2 ""
 
 matchType' :: Type -> Type -> Maybe (TypeSubst -> TypeSubst)
-matchType' (TypeVariable tv) ty
-  | ty == TypeVariable tv = Just id
+matchType' (TypeVariable (tv, k)) ty
+  | ty == TypeVariable (tv, k) = Just id
   | otherwise = Just (bindSubst tv ty)
 matchType' (TypeConstructor tc1 tys1) (TypeConstructor tc2 tys2)
   | tc1 == tc2 = Just $ foldr (\(ty1, ty2) -> (matchType ty1 ty2 .)) id $ tys

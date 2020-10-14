@@ -218,7 +218,10 @@ transType tcEnv ty' = transType' ty' []
     ks = transTVars tcEnv ty'
     transType' (TypeConstructor    tc) = IL.TypeConstructor tc
     transType' (TypeApply     ty1 ty2) = transType' ty1 . (transType' ty2 [] :)
-    transType' (TypeVariable       tv) = foldl applyType' (IL.TypeVariable tv)
+    transType' (TypeVariable       tv) = foldl applyType' (IL.TypeVariable tv')
+      where tv' = case filter ((== tv) . fst) ks of
+                    (v:_) -> v
+                    _     -> error $ "Transformation.CurryToIL.transType: Type variable has no kind"
     transType' (TypeConstrained tys _) = transType' (head tys)
     transType' (TypeArrow     ty1 ty2) =
       foldl applyType' (IL.TypeArrow (transType' ty1 []) (transType' ty2 []))

@@ -42,8 +42,10 @@
 -}
 
 module IL.Type
-  ( -- * Data types
-    Module (..), Decl (..), ConstrDecl (..), NewConstrDecl (..), Type (..)
+  ( -- * Representation of (type) variables
+    TypeVariableWithKind
+    -- * Data types
+  , Module (..), Decl (..), ConstrDecl (..), NewConstrDecl (..), Type (..)
   , Kind (..), Literal (..), ConstrTerm (..), Expression (..), Eval (..)
   , Alt (..), Binding (..)
   ) where
@@ -56,9 +58,9 @@ data Module = Module ModuleIdent [ModuleIdent] [Decl]
     deriving (Eq, Show)
 
 data Decl
-  = DataDecl         QualIdent Int [ConstrDecl]
-  | NewtypeDecl      QualIdent Int NewConstrDecl
-  | ExternalDataDecl QualIdent Int
+  = DataDecl         QualIdent [Kind] [ConstrDecl]
+  | NewtypeDecl      QualIdent [Kind] NewConstrDecl
+  | ExternalDataDecl QualIdent [Kind]
   | FunctionDecl     QualIdent [(Type, Ident)] Type Expression
   | ExternalDecl     QualIdent Type
     deriving (Eq, Show)

@@ -71,7 +71,7 @@ primTypes =
   [ Type arrow Public [0, 1] []
   , Type unit Public [] [(Cons unit 0 Public [])]
   , Type nil Public [0] [ Cons nil  0 Public []
-                        , Cons cons 2 Public [TVar 0, TCons nil [TVar 0]]
+                        , Cons cons 2 Public [TVar (0, KindStar), TCons nil [TVar (0, KindStar)]]
                         ]
   ] ++ map mkTupleType [2 .. maxTupleArity]
   where arrow = mkPreludeQName "(->)"
@@ -81,7 +81,7 @@ primTypes =
 
 mkTupleType :: Int -> TypeDecl
 mkTupleType arity = Type tuple Public [0 .. arity - 1]
-  [Cons tuple arity Public (map TVar [0 .. arity - 1])]
+  [Cons tuple arity Public (map TVar [(i, KindStar) | i <- [0 .. arity - 1]])]
   where tuple = mkPreludeQName $ '(' : replicate (arity - 1) ',' ++ ")"
 
 mkPreludeQName :: String -> QName

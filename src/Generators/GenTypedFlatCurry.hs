@@ -78,12 +78,9 @@ primTypes =
         nil   = mkPreludeQName "[]"
         cons  = mkPreludeQName ":"
 
-mkKindStarTVar :: TVarIndex -> TypeDecl
-mkKindStarTVar i = TVar (i, KindStar)
-
 mkTupleType :: Int -> TypeDecl
-mkTupleType arity = Type tuple Public [0 .. arity - 1]
-  [Cons tuple arity Public (map mkKindStarTVar [0 .. arity - 1])]
+mkTupleType arity = Type tuple Public [(i, KStar) | i <- [0 .. arity - 1]]
+  [Cons tuple arity Public [(i, KStar) | i <- [0 .. arity - 1]])]
   where tuple = mkPreludeQName $ '(' : replicate (arity - 1) ',' ++ ")"
 
 mkPreludeQName :: String -> QName
@@ -294,14 +291,20 @@ trNewConstrDecl (IL.NewConstrDecl qid ty) = NewCons
 -- Translate a type expression
 trType :: IL.Type -> FlatState TypeExpr
 trType (IL.TypeConstructor t tys) = TCons <$> trQualIdent t <*> mapM trType tys
-trType (IL.TypeVariable      idx) = return $ TVar $ abs idx
+trType (IL.TypeVariable      idx) = return $ TVar $ trTVarWithKind idx
 trType (IL.TypeArrow     ty1 ty2) = FuncType <$> trType ty1 <*> trType ty2
-trType (IL.TypeForall    idxs ty) = ForallType (map trVar idxs) <$> trType ty
+trType (IL.TypeForall    idxs ty) = ForallType (map trTVarWithKind idxs) <$> trType ty
   where
-    trVar (i, k) = (abs i, trKind k)
-    trKind IL.KindStar          = KStar
-    trKind (IL.KindVariable  _) = KStar
-    trKind (IL.KindArrow k1 k2) = KArrow (trKind k1) (trKind k2)
+
+-- Translates a type variable with kind.
+trTVarWithKind :: (Int, IL.Kind) -> (Int, Kind)
+trTVarWithKind (i, k) = (abs i, trKind k)
+
+-- Translate a kind
+trKind :: IL.Kind -> Kind
+trKind IL.KindStar          = KStar
+trKind (IL.KindVariable  _) = KStar
+trKind (IL.KindArrow k1 k2) = KArrow (trKind k1) (trKind k2)
 
 -- Convert a fixity
 cvFixity :: CS.Infix -> Fixity
