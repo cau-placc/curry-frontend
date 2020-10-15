@@ -143,6 +143,14 @@ constrType c = do
     [NewtypeConstructor _ _ (ForAll _ (PredType _ ty))] -> return ty
     _ -> internalError $ "CurryToIL.constrType: " ++ show c
 
+-- Return the kinds of a type constructor's type variables
+tcTVarKinds :: QualIdent -> TransM [Kind]
+tcTVarKinds qid = do
+  tcEnv <- getTCEnv
+  let mid = fromJust $ qidModule qid
+      kind = tcKind mid qid tcEnv
+  return $ kindArgs kind
+
 -- -----------------------------------------------------------------------------
 -- Translation
 -- -----------------------------------------------------------------------------
@@ -165,12 +173,14 @@ trDecl _                            = return []
 trData :: Ident -> [Ident] -> [ConstrDecl] -> TransM IL.Decl
 trData tc tvs cs = do
   tc' <- trQualify tc
-  IL.DataDecl tc' (length tvs) <$> mapM trConstrDecl cs
+  ks <- tcTVarKinds tc'
+  IL.DataDecl tc' (transKind <$> ks) <$> mapM trConstrDecl cs
 
 trNewtype :: Ident -> [Ident] -> NewConstrDecl -> TransM IL.Decl
 trNewtype tc tvs nc = do
   tc' <- trQualify tc
-  IL.NewtypeDecl tc' (length tvs) <$> trNewConstrDecl nc
+  ks <- tcTVarKinds tc'
+  IL.NewtypeDecl tc' (transKind <$> ks) <$> trNewConstrDecl nc
 
 trConstrDecl :: ConstrDecl -> TransM IL.ConstrDecl
 trConstrDecl d = do
@@ -196,7 +206,10 @@ trNewConstrDecl d = do
   constr (NewRecordDecl    _ c _) = c
 
 trExternalData :: Ident -> [Ident] -> TransM IL.Decl
-trExternalData tc tvs = flip IL.ExternalDataDecl (length tvs) <$> trQualify tc
+trExternalData tc tvs = do
+  tc' <- trQualify tc
+  ks <- tcTVarKinds tc'
+  return $ IL.ExternalDataDecl tc' (transKind <$> ks)
 
 trExternal :: Var Type -> TransM IL.Decl
 trExternal (Var ty f) = do

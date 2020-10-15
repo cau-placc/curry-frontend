@@ -80,7 +80,7 @@ primTypes =
 
 mkTupleType :: Int -> TypeDecl
 mkTupleType arity = Type tuple Public [(i, KStar) | i <- [0 .. arity - 1]]
-  [Cons tuple arity Public [(i, KStar) | i <- [0 .. arity - 1]])]
+  [Cons tuple arity Public [(i, KStar) | i <- [0 .. arity - 1]]]
   where tuple = mkPreludeQName $ '(' : replicate (arity - 1) ',' ++ ")"
 
 mkPreludeQName :: String -> QName
