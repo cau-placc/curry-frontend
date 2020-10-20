@@ -72,7 +72,7 @@ primTypes =
   [ Type arrow Public [(0, KStar), (1, KStar)] []
   , Type unit Public [] [(Cons unit 0 Public [])]
   , Type nil Public [(0, KStar)] [ Cons nil  0 Public []
-                                 , Cons cons 2 Public [TVar (0, KStar), TCons nil [TVar (0, KStar)]]
+                                 , Cons cons 2 Public [TVar 0, TCons nil [TVar 0]]
                                  ]
   ] ++ map mkTupleType [2 .. maxTupleArity]
   where arrow = mkPreludeQName "(->)"
@@ -82,7 +82,7 @@ primTypes =
 
 mkTupleType :: Int -> TypeDecl
 mkTupleType arity = Type tuple Public [(i, KStar) | i <- [0 .. arity - 1]]
-  [Cons tuple arity Public [TVar (i, KStar) | i <- [0 .. arity - 1]]]
+  [Cons tuple arity Public $ map TVar [0 .. arity - 1]]
   where tuple = mkPreludeQName $ '(' : replicate (arity - 1) ',' ++ ")"
 
 mkPreludeQName :: String -> QName
@@ -264,7 +264,7 @@ trTypeDecl (IL.DataDecl      qid ks []) = do
   c   <- trQualIdent $ qualify (mkIdent $ "_Constr#" ++ idName (unqualify qid))
   let ks' = trKind <$> ks
       tvs = zip [0..] ks'
-  return [Type q' vis tvs [Cons c 1 Private [TCons q' $ map TVar tvs]]]
+  return [Type q' vis tvs [Cons c 1 Private [TCons q' $ TVar <$> fst <$> tvs]]]
 trTypeDecl (IL.DataDecl      qid ks cs) = do
   q'  <- trQualIdent qid
   vis <- getTypeVisibility qid
@@ -304,7 +304,7 @@ trNewConstrDecl (IL.NewConstrDecl qid ty) = NewCons
 -- Translate a type expression
 trType :: IL.Type -> FlatState TypeExpr
 trType (IL.TypeConstructor t tys) = TCons <$> trQualIdent t <*> mapM trType tys
-trType (IL.TypeVariable      idx) = return $ TVar $ trTVarWithKind idx
+trType (IL.TypeVariable      idx) = return $ TVar $ abs idx
 trType (IL.TypeArrow     ty1 ty2) = FuncType <$> trType ty1 <*> trType ty2
 trType (IL.TypeForall    idxs ty) = ForallType (map trTVarWithKind idxs) <$> trType ty
 
@@ -486,7 +486,7 @@ instance Normalize Int where
       Just n' -> return n'
 
 instance Normalize TypeExpr where
-  normalize (TVar      (i, k)) = TVar <$> ((,) <$> normalize i <*> pure k)
+  normalize (TVar           i) = TVar <$> normalize i
   normalize (TCons      q tys) = TCons q <$> normalize tys
   normalize (FuncType ty1 ty2) = FuncType <$> normalize ty1 <*> normalize ty2
   normalize (ForallType is ty) = ForallType <$> mapM normalizeTypeVar is

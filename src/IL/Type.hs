@@ -75,7 +75,7 @@ type TypeVariableWithKind = (Int, Kind)
 
 data Type
   = TypeConstructor QualIdent [Type]
-  | TypeVariable    TypeVariableWithKind
+  | TypeVariable    Int
   | TypeArrow       Type Type
   | TypeForall      [TypeVariableWithKind] Type
     deriving (Eq, Show)

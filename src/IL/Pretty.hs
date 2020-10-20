@@ -89,7 +89,7 @@ ppType p (TypeConstructor tc tys)
   | tc == qListId && length tys == 1 = brackets (ppType 0 (head tys))
   | otherwise                        = parenIf (p > 1 && not (null tys))
     (ppQIdent tc <+> fsep (map (ppType 2) tys))
-ppType _ (TypeVariable (n, _)) = ppTypeVar n
+ppType _ (TypeVariable      n) = ppTypeVar n
 ppType p (TypeArrow   ty1 ty2) = parenIf (p > 0)
                                  (fsep (ppArrow (TypeArrow ty1 ty2)))
   where
