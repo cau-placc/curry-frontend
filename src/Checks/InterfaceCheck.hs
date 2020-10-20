@@ -54,14 +54,13 @@ import           Data.List                (sort)
 import           Data.Maybe               (fromMaybe, isJust, isNothing)
 
 import Curry.Base.Ident
-import Curry.Base.Position
 import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
 
 import Base.CurryKinds (toKind')
 import Base.CurryTypes
-import Base.Messages (Message, posMessage, internalError)
+import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.TopEnv
 import Base.Types
 
@@ -116,17 +115,17 @@ interfaceCheck pEnv tcEnv clsEnv inEnv tyEnv (Interface m _ ds) =
         initState = ICState m pEnv tcEnv clsEnv inEnv tyEnv []
 
 checkImport :: IDecl -> IC ()
-checkImport (IInfixDecl p fix pr op) = checkPrecInfo check p op
+checkImport (IInfixDecl _ fix pr op) = checkPrecInfo check op op
   where check (PrecInfo op' (OpPrec fix' pr')) =
           op == op' && fix == fix' && pr == pr'
-checkImport (HidingDataDecl p tc k tvs) =
-  checkTypeInfo "hidden data type" check p tc
+checkImport (HidingDataDecl _ tc k tvs) =
+  checkTypeInfo "hidden data type" check tc tc
   where check (DataType     tc' k' _)
           | tc == tc' && toKind' k (length tvs) == k' = Just ok
         check (RenamingType tc' k' _)
           | tc == tc' && toKind' k (length tvs) == k' = Just ok
         check _ = Nothing
-checkImport (IDataDecl p tc k tvs cs _) = checkTypeInfo "data type" check p tc
+checkImport (IDataDecl _ tc k tvs cs _) = checkTypeInfo "data type" check tc tc
   where check (DataType     tc' k' cs')
           | tc == tc' && toKind' k (length tvs) == k' &&
             (null cs || map constrId cs == map constrIdent cs')
@@ -135,43 +134,43 @@ checkImport (IDataDecl p tc k tvs cs _) = checkTypeInfo "data type" check p tc
           | tc == tc' && toKind' k (length tvs) == k' && null cs
           = Just ok
         check _ = Nothing
-checkImport (INewtypeDecl p tc k tvs nc _) = checkTypeInfo "newtype" check p tc
+checkImport (INewtypeDecl _ tc k tvs nc _) = checkTypeInfo "newtype" check tc tc
   where check (RenamingType tc' k' nc')
           | tc == tc' && toKind' k (length tvs) == k' &&
             nconstrId nc == constrIdent nc'
           = Just (checkNewConstrImport tc tvs nc)
         check _ = Nothing
-checkImport (ITypeDecl p tc k tvs ty) = do
+checkImport (ITypeDecl _ tc k tvs ty) = do
   m <- getModuleIdent
   let check (AliasType tc' k' n' ty')
         | tc == tc' && toKind' k (length tvs) == k' &&
           length tvs == n' && toQualType m tvs ty == ty'
         = Just ok
       check _ = Nothing
-  checkTypeInfo "synonym type" check p tc
-checkImport (IFunctionDecl p f (Just tv) n ty) = do
+  checkTypeInfo "synonym type" check tc tc
+checkImport (IFunctionDecl _ f (Just tv) n ty) = do
   m <- getModuleIdent
   let check (Value f' cm' n' pty) =
         f == f' && isJust cm' && n' == n &&
         toQualPredType m [tv] ty == rawPredType pty
       check _ = False
-  checkValueInfo "method" check p f
-checkImport (IFunctionDecl p f Nothing n ty) = do
+  checkValueInfo "method" check f f
+checkImport (IFunctionDecl _ f Nothing n ty) = do
   m <- getModuleIdent
   let check (Value f' cm' n' pty) =
         f == f' && isNothing cm' && n' == n &&
         toQualPredType m [] ty == rawPredType pty
       check _ = False
-  checkValueInfo "function" check p f
-checkImport (HidingClassDecl p cx cls k _) = do
+  checkValueInfo "function" check f f
+checkImport (HidingClassDecl _ cx cls k _) = do
   clsEnv <- getClassEnv
   let check (TypeClass cls' k' _)
         | cls == cls' && toKind' k 0 == k' &&
           [cls'' | Constraint _ cls'' _ <- cx] == superClasses cls' clsEnv
         = Just ok
       check _ = Nothing
-  checkTypeInfo "hidden type class" check p cls
-checkImport (IClassDecl p cx cls k clsvar ms _) = do
+  checkTypeInfo "hidden type class" check cls cls
+checkImport (IClassDecl _ cx cls k clsvar ms _) = do
   clsEnv <- getClassEnv
   let check (TypeClass cls' k' fs)
         | cls == cls' && toKind' k 0 == k' &&
@@ -180,30 +179,30 @@ checkImport (IClassDecl p cx cls k clsvar ms _) = do
             map (\f -> (methodName f, methodArity f)) fs
         = Just $ mapM_ (checkMethodImport cls clsvar) ms
       check _ = Nothing
-  checkTypeInfo "type class" check p cls
-checkImport (IInstanceDecl p cx cls ty is m) =
-  checkInstInfo check p (cls, typeConstr ty) m
+  checkTypeInfo "type class" check cls cls
+checkImport (IInstanceDecl _ cx cls ty is m) =
+  checkInstInfo check cls (cls, typeConstr ty) m
   where TypeContext ps _ = toPredType [] $ ContextType NoSpanInfo cx ty
         check ps' is' = ps == ps' && sort is == sort is'
 
 checkConstrImport :: QualIdent -> [Ident] -> ConstrDecl -> IC ()
-checkConstrImport tc tvs (ConstrDecl p c tys) = do
+checkConstrImport tc tvs (ConstrDecl _ c tys) = do
   m <- getModuleIdent
   let qc = qualifyLike tc c
       check (DataConstructor c' _ _ (TypeForall vs (TypeContext ps ty))) =
         qc == c' && length tvs == length vs &&
         qualifyType m (toConstrType tc tvs tys) == TypeContext ps ty
       check _ = False
-  checkValueInfo "data constructor" check p qc
-checkConstrImport tc tvs (ConOpDecl p ty1 op ty2) = do
+  checkValueInfo "data constructor" check c qc
+checkConstrImport tc tvs (ConOpDecl _ ty1 op ty2) = do
   m <- getModuleIdent
   let qc = qualifyLike tc op
       check (DataConstructor c' _ _ (TypeForall vs (TypeContext ps ty))) =
         qc == c' && length tvs == length vs &&
         qualifyType m (toConstrType tc tvs [ty1, ty2]) == TypeContext ps ty
       check _ = False
-  checkValueInfo "data constructor" check p qc
-checkConstrImport tc tvs (RecordDecl p c fs) = do
+  checkValueInfo "data constructor" check op qc
+checkConstrImport tc tvs (RecordDecl _ c fs) = do
   m <- getModuleIdent
   let qc = qualifyLike tc c
       (ls, tys) = unzip [(l, ty) | FieldDecl _ labels ty <- fs, l <- labels]
@@ -211,36 +210,36 @@ checkConstrImport tc tvs (RecordDecl p c fs) = do
         qc == c' && length tvs == length vs && ls == ls' &&
         qualifyType m (toConstrType tc tvs tys) == TypeContext ps ty
       check _ = False
-  checkValueInfo "data constructor" check p qc
+  checkValueInfo "data constructor" check c qc
 
 checkNewConstrImport :: QualIdent -> [Ident] -> NewConstrDecl -> IC ()
-checkNewConstrImport tc tvs (NewConstrDecl p c ty) = do
+checkNewConstrImport tc tvs (NewConstrDecl _ c ty) = do
   m <- getModuleIdent
   let qc = qualifyLike tc c
       check (NewtypeConstructor c' _ (TypeForall uqvs (TypeContext _ ty'))) =
         qc == c' && length tvs == length uqvs &&
         toQualType m tvs ty == head (arrowArgs ty')
       check _ = False
-  checkValueInfo "newtype constructor" check p qc
-checkNewConstrImport tc tvs (NewRecordDecl p c (l, ty)) = do
+  checkValueInfo "newtype constructor" check c qc
+checkNewConstrImport tc tvs (NewRecordDecl _ c (l, ty)) = do
   m <- getModuleIdent
   let qc = qualifyLike tc c
       check (NewtypeConstructor c' l' (TypeForall uqvs (TypeContext _ ty'))) =
         qc == c' && length tvs == length uqvs && l == l' &&
         toQualType m tvs ty == head (arrowArgs ty')
       check _ = False
-  checkValueInfo "newtype constructor" check p qc
+  checkValueInfo "newtype constructor" check c qc
 
 checkMethodImport :: QualIdent -> Ident -> IMethodDecl -> IC ()
-checkMethodImport qcls clsvar (IMethodDecl p f _ qty) =
-  checkValueInfo "method" check p qf
+checkMethodImport qcls clsvar (IMethodDecl _ f _ qty) =
+  checkValueInfo "method" check f qf
   where qf = qualifyLike qcls f
         check (Value f' cm' _ pty) =
           qf == f' && isJust cm' &&
           toMethodType qcls clsvar qty == rawPredType pty
         check _ = False
 
-checkPrecInfo :: (PrecInfo -> Bool) -> Position -> QualIdent -> IC ()
+checkPrecInfo :: HasSpanInfo s => (PrecInfo -> Bool) -> s -> QualIdent -> IC ()
 checkPrecInfo check p op = do
   pEnv <- getPrecEnv
   let checkInfo m op' = case qualLookupTopEnv op pEnv of
@@ -250,7 +249,7 @@ checkPrecInfo check p op = do
         _      -> internalError "checkPrecInfo"
   checkImported checkInfo op
 
-checkTypeInfo :: String -> (TypeInfo -> Maybe (IC ())) -> Position
+checkTypeInfo :: HasSpanInfo s => String -> (TypeInfo -> Maybe (IC ())) -> s
               -> QualIdent -> IC ()
 checkTypeInfo what check p tc = do
   tcEnv <- getTyConsEnv
@@ -260,7 +259,7 @@ checkTypeInfo what check p tc = do
         _    -> internalError "checkTypeInfo"
   checkImported checkInfo tc
 
-checkInstInfo :: (PredSet -> [(Ident, Int)] -> Bool) -> Position -> InstIdent
+checkInstInfo :: HasSpanInfo s => (PredSet -> [(Ident, Int)] -> Bool) -> s -> InstIdent
               -> Maybe ModuleIdent -> IC ()
 checkInstInfo check p i mm = do
   inEnv <- getInstEnv
@@ -272,7 +271,7 @@ checkInstInfo check p i mm = do
         Nothing -> report $ errNoInstance p m i
   checkImported checkInfo (maybe qualify qualifyWith mm anonId)
 
-checkValueInfo :: HasPosition a => String -> (ValueInfo -> Bool) -> a
+checkValueInfo :: HasSpanInfo a => String -> (ValueInfo -> Bool) -> a
                -> QualIdent -> IC ()
 checkValueInfo what check p x = do
   tyEnv <- getValueEnv
@@ -282,7 +281,7 @@ checkValueInfo what check p x = do
                   (report $ errImportConflict p' what m x')
         _    -> internalError "checkValueInfo"
   checkImported checkInfo x
-  where p' = getPosition p
+  where p' = getSpanInfo p
 
 checkImported :: (ModuleIdent -> Ident -> IC ()) -> QualIdent -> IC ()
 checkImported _ (QualIdent _ Nothing  _) = ok
@@ -292,32 +291,32 @@ checkImported f (QualIdent _ (Just m) x) = f m x
 -- Error messages
 -- ---------------------------------------------------------------------------
 
-errNotExported :: Position -> String -> ModuleIdent -> Ident -> Message
-errNotExported p what m x = posMessage p $
+errNotExported :: HasSpanInfo s => s -> String -> ModuleIdent -> Ident -> Message
+errNotExported p what m x = spanInfoMessage p $
   text "Inconsistent module interfaces"
   $+$ text "Module" <+> text (moduleName m)
   <+> text "does not export"<+> text what <+> text (escName x)
 
-errNoPrecedence :: Position -> ModuleIdent -> Ident -> Message
-errNoPrecedence p m x = posMessage p $
+errNoPrecedence :: HasSpanInfo s => s -> ModuleIdent -> Ident -> Message
+errNoPrecedence p m x = spanInfoMessage p $
   text "Inconsistent module interfaces"
   $+$ text "Module" <+> text (moduleName m)
   <+> text "does not define a precedence for" <+> text (escName x)
 
-errNoInstance :: Position -> ModuleIdent -> InstIdent -> Message
-errNoInstance p m i = posMessage p $
+errNoInstance :: HasSpanInfo s => s -> ModuleIdent -> InstIdent -> Message
+errNoInstance p m i = spanInfoMessage p $
   text "Inconsistent module interfaces"
   $+$ text "Module" <+> text (moduleName m)
   <+> text "does not define an instance for" <+> ppInstIdent i
 
-errImportConflict :: Position -> String -> ModuleIdent -> Ident -> Message
-errImportConflict p what m x = posMessage p $
+errImportConflict :: HasSpanInfo s => s -> String -> ModuleIdent -> Ident -> Message
+errImportConflict p what m x = spanInfoMessage p $
   text "Inconsistent module interfaces"
   $+$ text "Declaration of" <+> text what <+> text (escName x)
   <+> text "does not match its definition in module" <+> text (moduleName m)
 
-errInstanceConflict :: Position -> ModuleIdent -> InstIdent -> Message
-errInstanceConflict p m i = posMessage p $
+errInstanceConflict :: HasSpanInfo s => s -> ModuleIdent -> InstIdent -> Message
+errInstanceConflict p m i = spanInfoMessage p $
   text "Inconsistent module interfaces"
   $+$ text "Declaration of instance" <+> ppInstIdent i
   <+> text "does not match its definition in module" <+> text (moduleName m)

@@ -20,13 +20,13 @@ import           Control.Monad.Extra (allM, unlessM)
 import qualified Control.Monad.State as S (State, gets, modify, runState)
 
 import           Curry.Base.Ident
-import           Curry.Base.Position
 import           Curry.Base.Pretty
+import           Curry.Base.SpanInfo (SpanInfo, HasSpanInfo (..))
 import           Curry.Syntax
 import           Curry.Syntax.Pretty ()
 
 import           Base.CurryTypes
-import           Base.Messages       (Message, posMessage)
+import           Base.Messages       (Message, spanInfoMessage)
 
 import           Env.TypeConstructor (TCEnv, TypeInfo (..), qualLookupTypeInfo)
 
@@ -89,7 +89,7 @@ checkImpredDecl (InstanceDecl _ _ _ _ ty ds) = do
 checkImpredDecl (DefaultDecl _ tys)          = mapM_ checkType tys
   where
     checkType te = unlessM (checkSimpleType te) $
-      report $ errIllegalDefaultType (getPosition te) te
+      report $ errIllegalDefaultType (getSpanInfo te) te
 checkImpredDecl _                            = ok
 
 checkImpredConsDecl :: ConstrDecl -> ICM ()
@@ -109,17 +109,17 @@ checkImpredType :: TypeExpr -> ICM ()
 checkImpredType (ConstructorType _ _)      = ok
 checkImpredType te@(ApplyType spi ty1 ty2) = do
   unlessM (checkSimpleType ty2) $
-    report $ errIllegalPolymorphicType (getPosition spi) te
+    report $ errIllegalPolymorphicType spi te
   checkImpredType ty1
   checkImpredType ty2
 checkImpredType (VariableType _ _)         = ok
 checkImpredType te@(TupleType spi tys)     = do
   unlessM (allM checkSimpleType tys) $
-    report $ errIllegalPolymorphicType (getPosition spi) te
+    report $ errIllegalPolymorphicType spi te
   mapM_ checkImpredType tys
 checkImpredType te@(ListType spi ty)       = do
   unlessM (checkSimpleType ty) $
-    report $ errIllegalPolymorphicType (getPosition spi) te
+    report $ errIllegalPolymorphicType spi te
   checkImpredType ty
 checkImpredType (ArrowType _ ty1 ty2)      = do
   checkImpredType ty1
@@ -152,14 +152,14 @@ checkSimpleType (ForallType _ _ _)     = return False
 -- Error messages
 -- -----------------------------------------------------------------------------
 
-errIllegalPolymorphicType :: Position -> TypeExpr -> Message
-errIllegalPolymorphicType p ty = posMessage p $ vcat
+errIllegalPolymorphicType :: SpanInfo -> TypeExpr -> Message
+errIllegalPolymorphicType spi ty = spanInfoMessage spi $ vcat
   [ text "Illegal polymorphic type" <+> pPrintPrec 0 ty
   , text "Impredicative polymorphism isn't yet supported."
   ]
 
-errIllegalDefaultType :: Position -> TypeExpr -> Message
-errIllegalDefaultType p ty = posMessage p $ vcat
+errIllegalDefaultType :: SpanInfo -> TypeExpr -> Message
+errIllegalDefaultType spi ty = spanInfoMessage spi $ vcat
   [ text "Illegal polymorphic type:" <+> pPrintPrec 0 ty
   , text "When checking the types in a default declaration."
   ]

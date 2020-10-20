@@ -39,7 +39,7 @@ import Base.CurryKinds
 import Base.Expr
 import Base.Kinds
 import Base.KindSubst
-import Base.Messages (Message, posMessage, internalError)
+import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.SCC
 import Base.TopEnv
 import Base.Types
@@ -440,41 +440,41 @@ kcDecl _     (ExternalDataDecl _ _ _) = ok
 kcDecl tcEnv (NewtypeDecl _ tc tvs nc _) = do
   (_, tcEnv') <- bindTypeVars tc tvs tcEnv
   kcNewConstrDecl tcEnv' nc
-kcDecl tcEnv t@(TypeDecl p tc tvs ty) = do
+kcDecl tcEnv t@(TypeDecl _ tc tvs ty) = do
   (k, tcEnv') <- bindTypeVars tc tvs tcEnv
-  kcType tcEnv' p "type declaration" (pPrint t) k ty
-kcDecl tcEnv (TypeSig p _ qty) = kcTypeSig tcEnv p qty
+  kcType tcEnv' "type declaration" (pPrint t) k ty
+kcDecl tcEnv (TypeSig _ _ qty) = kcTypeSig tcEnv qty
 kcDecl tcEnv (FunctionDecl _ _ _ eqs) = mapM_ (kcEquation tcEnv) eqs
 kcDecl _     (ExternalDecl _ _) = ok
 kcDecl tcEnv (PatternDecl _ _ rhs) = kcRhs tcEnv rhs
 kcDecl _     (FreeDecl _ _) = ok
-kcDecl tcEnv (DefaultDecl p tys) = do
+kcDecl tcEnv (DefaultDecl _ tys) = do
   tcEnv' <- foldM bindFreshKind tcEnv $ nub $ fv tys
-  mapM_ (kcValueType tcEnv' p "default declaration" empty) tys
-kcDecl tcEnv (ClassDecl p _ cx cls tv ds) = do
+  mapM_ (kcValueType tcEnv' "default declaration" empty) tys
+kcDecl tcEnv (ClassDecl _ _ cx cls tv ds) = do
   m <- getModuleIdent
   let tcEnv' = bindTypeVar tv (clsKind m (qualifyWith m cls) tcEnv) tcEnv
-  kcContext tcEnv' p cx
+  kcContext tcEnv' cx
   mapM_ (kcDecl tcEnv') ds
 kcDecl tcEnv (InstanceDecl p _ cx qcls inst ds) = do
   m <- getModuleIdent
   tcEnv' <- foldM bindFreshKind tcEnv $ fv inst
-  kcContext tcEnv' p cx
-  kcType tcEnv' p what doc (clsKind m qcls tcEnv) inst
+  kcContext tcEnv' cx
+  kcType tcEnv' what doc (clsKind m qcls tcEnv) inst
   mapM_ (kcDecl tcEnv') ds
     where
       what = "instance declaration"
       doc = pPrint (InstanceDecl p WhitespaceLayout cx qcls inst [])
 
 kcConstrDecl :: TCEnv -> ConstrDecl -> KCM ()
-kcConstrDecl tcEnv d@(ConstrDecl p _ tys) = do
-  mapM_ (kcValueType tcEnv p what doc) tys
+kcConstrDecl tcEnv d@(ConstrDecl _ _ tys) = do
+  mapM_ (kcValueType tcEnv what doc) tys
     where
       what = "data constructor declaration"
       doc = pPrint d
-kcConstrDecl tcEnv d@(ConOpDecl p ty1 _ ty2) = do
-  kcValueType tcEnv p what doc ty1
-  kcValueType tcEnv p what doc ty2
+kcConstrDecl tcEnv d@(ConOpDecl _ ty1 _ ty2) = do
+  kcValueType tcEnv what doc ty1
+  kcValueType tcEnv what doc ty2
     where
       what = "data constructor declaration"
       doc = pPrint d
@@ -482,12 +482,12 @@ kcConstrDecl tcEnv (RecordDecl _ _ fs) = do
   mapM_ (kcFieldDecl tcEnv) fs
 
 kcFieldDecl :: TCEnv -> FieldDecl -> KCM ()
-kcFieldDecl tcEnv d@(FieldDecl p _ ty) =
-  kcValueType tcEnv p "field declaration" (pPrint d) ty
+kcFieldDecl tcEnv d@(FieldDecl _ _ ty) =
+  kcValueType tcEnv "field declaration" (pPrint d) ty
 
 kcNewConstrDecl :: TCEnv -> NewConstrDecl -> KCM ()
-kcNewConstrDecl tcEnv d@(NewConstrDecl p _ ty) =
-  kcValueType tcEnv p "newtype constructor declaration" (pPrint d) ty
+kcNewConstrDecl tcEnv d@(NewConstrDecl _ _ ty) =
+  kcValueType tcEnv "newtype constructor declaration" (pPrint d) ty
 kcNewConstrDecl tcEnv (NewRecordDecl p _ (l, ty)) =
   kcFieldDecl tcEnv (FieldDecl p [l] ty)
 
@@ -495,116 +495,116 @@ kcEquation :: TCEnv -> Equation a -> KCM ()
 kcEquation tcEnv (Equation _ _ rhs) = kcRhs tcEnv rhs
 
 kcRhs :: TCEnv -> Rhs a -> KCM ()
-kcRhs tcEnv (SimpleRhs p _ e ds) = do
-  kcExpr tcEnv p e
+kcRhs tcEnv (SimpleRhs _ _ e ds) = do
+  kcExpr tcEnv e
   mapM_ (kcDecl tcEnv) ds
 kcRhs tcEnv (GuardedRhs _ _ es ds) = do
   mapM_ (kcCondExpr tcEnv) es
   mapM_ (kcDecl tcEnv) ds
 
 kcCondExpr :: TCEnv -> CondExpr a -> KCM ()
-kcCondExpr tcEnv (CondExpr p g e) = kcExpr tcEnv p g >> kcExpr tcEnv p e
+kcCondExpr tcEnv (CondExpr _ g e) = kcExpr tcEnv g >> kcExpr tcEnv e
 
-kcExpr :: HasPosition p => TCEnv -> p -> Expression a -> KCM ()
-kcExpr _     _ (Literal _ _ _) = ok
-kcExpr _     _ (Variable _ _ _) = ok
-kcExpr _     _ (Constructor _ _ _) = ok
-kcExpr tcEnv p (Paren _ e) = kcExpr tcEnv p e
-kcExpr tcEnv p (Typed _ e qty) = do
-  kcExpr tcEnv p e
-  kcTypeSig tcEnv p qty
-kcExpr tcEnv p (Record _ _ _ fs) = mapM_ (kcField tcEnv p) fs
-kcExpr tcEnv p (RecordUpdate _ e fs) = do
-  kcExpr tcEnv p e
-  mapM_ (kcField tcEnv p) fs
-kcExpr tcEnv p (Tuple _ es) = mapM_ (kcExpr tcEnv p) es
-kcExpr tcEnv p (List _ _ es) = mapM_ (kcExpr tcEnv p) es
-kcExpr tcEnv p (ListCompr _ e stms) = do
-  kcExpr tcEnv p e
-  mapM_ (kcStmt tcEnv p) stms
-kcExpr tcEnv p (EnumFrom _ e) = kcExpr tcEnv p e
-kcExpr tcEnv p (EnumFromThen _ e1 e2) = do
-  kcExpr tcEnv p e1
-  kcExpr tcEnv p e2
-kcExpr tcEnv p (EnumFromTo _ e1 e2) = do
-  kcExpr tcEnv p e1
-  kcExpr tcEnv p e2
-kcExpr tcEnv p (EnumFromThenTo _ e1 e2 e3) = do
-  kcExpr tcEnv p e1
-  kcExpr tcEnv p e2
-  kcExpr tcEnv p e3
-kcExpr tcEnv p (UnaryMinus _ e) = kcExpr tcEnv p e
-kcExpr tcEnv p (Apply _ e1 e2) = do
-  kcExpr tcEnv p e1
-  kcExpr tcEnv p e2
-kcExpr tcEnv p (InfixApply _ e1 _ e2) = do
-  kcExpr tcEnv p e1
-  kcExpr tcEnv p e2
-kcExpr tcEnv p (LeftSection _ e _) = kcExpr tcEnv p e
-kcExpr tcEnv p (RightSection _ _ e) = kcExpr tcEnv p e
-kcExpr tcEnv p (Lambda _ _ e) = kcExpr tcEnv p e
-kcExpr tcEnv p (Let _ _ ds e) = do
+kcExpr :: TCEnv -> Expression a -> KCM ()
+kcExpr _     (Literal _ _ _) = ok
+kcExpr _     (Variable _ _ _) = ok
+kcExpr _     (Constructor _ _ _) = ok
+kcExpr tcEnv (Paren _ e) = kcExpr tcEnv e
+kcExpr tcEnv (Typed _ e qty) = do
+  kcExpr tcEnv e
+  kcTypeSig tcEnv qty
+kcExpr tcEnv (Record _ _ _ fs) = mapM_ (kcField tcEnv) fs
+kcExpr tcEnv (RecordUpdate _ e fs) = do
+  kcExpr tcEnv e
+  mapM_ (kcField tcEnv) fs
+kcExpr tcEnv (Tuple _ es) = mapM_ (kcExpr tcEnv) es
+kcExpr tcEnv (List _ _ es) = mapM_ (kcExpr tcEnv) es
+kcExpr tcEnv (ListCompr _ e stms) = do
+  kcExpr tcEnv e
+  mapM_ (kcStmt tcEnv) stms
+kcExpr tcEnv (EnumFrom _ e) = kcExpr tcEnv e
+kcExpr tcEnv (EnumFromThen _ e1 e2) = do
+  kcExpr tcEnv e1
+  kcExpr tcEnv e2
+kcExpr tcEnv (EnumFromTo _ e1 e2) = do
+  kcExpr tcEnv e1
+  kcExpr tcEnv e2
+kcExpr tcEnv (EnumFromThenTo _ e1 e2 e3) = do
+  kcExpr tcEnv e1
+  kcExpr tcEnv e2
+  kcExpr tcEnv e3
+kcExpr tcEnv (UnaryMinus _ e) = kcExpr tcEnv e
+kcExpr tcEnv (Apply _ e1 e2) = do
+  kcExpr tcEnv e1
+  kcExpr tcEnv e2
+kcExpr tcEnv (InfixApply _ e1 _ e2) = do
+  kcExpr tcEnv e1
+  kcExpr tcEnv e2
+kcExpr tcEnv (LeftSection _ e _) = kcExpr tcEnv e
+kcExpr tcEnv (RightSection _ _ e) = kcExpr tcEnv e
+kcExpr tcEnv (Lambda _ _ e) = kcExpr tcEnv e
+kcExpr tcEnv (Let _ _ ds e) = do
   mapM_ (kcDecl tcEnv) ds
-  kcExpr tcEnv p e
-kcExpr tcEnv p (Do _ _ stms e) = do
-  mapM_ (kcStmt tcEnv p) stms
-  kcExpr tcEnv p e
-kcExpr tcEnv p (IfThenElse _ e1 e2 e3) = do
-  kcExpr tcEnv p e1
-  kcExpr tcEnv p e2
-  kcExpr tcEnv p e3
-kcExpr tcEnv p (Case _ _ _ e alts) = do
-  kcExpr tcEnv p e
+  kcExpr tcEnv e
+kcExpr tcEnv (Do _ _ stms e) = do
+  mapM_ (kcStmt tcEnv) stms
+  kcExpr tcEnv e
+kcExpr tcEnv (IfThenElse _ e1 e2 e3) = do
+  kcExpr tcEnv e1
+  kcExpr tcEnv e2
+  kcExpr tcEnv e3
+kcExpr tcEnv (Case _ _ _ e alts) = do
+  kcExpr tcEnv e
   mapM_ (kcAlt tcEnv) alts
 
-kcStmt :: HasPosition p => TCEnv -> p -> Statement a -> KCM ()
-kcStmt tcEnv p (StmtExpr _ e) = kcExpr tcEnv p e
-kcStmt tcEnv _ (StmtDecl _ _ ds) = mapM_ (kcDecl tcEnv) ds
-kcStmt tcEnv p (StmtBind _ _ e) = kcExpr tcEnv p e
+kcStmt :: TCEnv -> Statement a -> KCM ()
+kcStmt tcEnv (StmtExpr _ e) = kcExpr tcEnv e
+kcStmt tcEnv (StmtDecl _ _ ds) = mapM_ (kcDecl tcEnv) ds
+kcStmt tcEnv (StmtBind _ _ e) = kcExpr tcEnv e
 
 kcAlt :: TCEnv -> Alt a -> KCM ()
 kcAlt tcEnv (Alt _ _ rhs) = kcRhs tcEnv rhs
 
-kcField :: HasPosition p => TCEnv -> p -> Field (Expression a) -> KCM ()
-kcField tcEnv p (Field _ _ e) = kcExpr tcEnv p e
+kcField :: TCEnv -> Field (Expression a) -> KCM ()
+kcField tcEnv (Field _ _ e) = kcExpr tcEnv e
 
-kcContext :: HasPosition p => TCEnv -> p -> Context -> KCM ()
-kcContext tcEnv p = mapM_ (kcConstraint tcEnv p)
+kcContext :: TCEnv -> Context -> KCM ()
+kcContext tcEnv = mapM_ (kcConstraint tcEnv)
 
-kcConstraint :: HasPosition p => TCEnv -> p -> Constraint -> KCM ()
-kcConstraint tcEnv p sc@(Constraint _ qcls ty) = do
+kcConstraint :: TCEnv -> Constraint -> KCM ()
+kcConstraint tcEnv sc@(Constraint _ qcls ty) = do
   m <- getModuleIdent
-  kcType tcEnv p "class constraint" doc (clsKind m qcls tcEnv) ty
+  kcType tcEnv "class constraint" doc (clsKind m qcls tcEnv) ty
   where
     doc = pPrint sc
 
-kcTypeSig :: HasPosition p => TCEnv -> p -> TypeExpr -> KCM ()
-kcTypeSig tcEnv p (ContextType _ cx ty) = do
+kcTypeSig :: TCEnv -> TypeExpr -> KCM ()
+kcTypeSig tcEnv (ContextType _ cx ty) = do
   tcEnv' <- foldM bindFreshKind tcEnv free
-  kcContext tcEnv' p cx
-  kcValueType tcEnv' p "type signature" doc ty
+  kcContext tcEnv' cx
+  kcValueType tcEnv' "type signature" doc ty
   where
     free = filter (null . flip lookupTypeInfo tcEnv) $ nub $ fv ty
     doc = pPrintPrec 0 ty
-kcTypeSig tcEnv p ty = do
+kcTypeSig tcEnv ty = do
   tcEnv' <- foldM bindFreshKind tcEnv free
-  kcValueType tcEnv' p "type signature" doc ty
+  kcValueType tcEnv' "type signature" doc ty
   where
     free = filter (null . flip lookupTypeInfo tcEnv) $ nub $ fv ty
     doc = pPrintPrec 0 ty
 
-kcValueType :: HasPosition p => TCEnv -> p -> String -> Doc -> TypeExpr -> KCM ()
-kcValueType tcEnv p what doc = kcType tcEnv p what doc KindStar
+kcValueType :: TCEnv -> String -> Doc -> TypeExpr -> KCM ()
+kcValueType tcEnv what doc = kcType tcEnv what doc KindStar
 
-kcType :: HasPosition p => TCEnv -> p -> String -> Doc -> Kind -> TypeExpr -> KCM ()
-kcType tcEnv p what doc k ty = do
-  k' <- kcTypeExpr tcEnv p "type expression" doc' 0 ty
-  unify p what (doc $-$ text "Type:" <+> doc') k k'
+kcType :: TCEnv -> String -> Doc -> Kind -> TypeExpr -> KCM ()
+kcType tcEnv what doc k ty = do
+  k' <- kcTypeExpr tcEnv "type expression" doc' 0 ty
+  unify ty what (doc $-$ text "Type:" <+> doc') k k'
   where
     doc' = pPrintPrec 0 ty
 
-kcTypeExpr :: HasPosition p => TCEnv -> p -> String -> Doc -> Int -> TypeExpr -> KCM Kind
-kcTypeExpr tcEnv p _ _ n (ConstructorType _ tc) = do
+kcTypeExpr :: TCEnv -> String -> Doc -> Int -> TypeExpr -> KCM Kind
+kcTypeExpr tcEnv _ _ n (ConstructorType p tc) = do
   m <- getModuleIdent
   case qualLookupTypeInfo tc tcEnv of
     [AliasType _ _ n' _] -> case n >= n' of
@@ -613,32 +613,32 @@ kcTypeExpr tcEnv p _ _ n (ConstructorType _ tc) = do
         report $ errPartialAlias p tc n' n
         freshKindVar
     _ -> return $ tcKind m tc tcEnv
-kcTypeExpr tcEnv p what doc n (ApplyType _ ty1 ty2) = do
-  (alpha, beta) <- kcTypeExpr tcEnv p what doc (n + 1) ty1 >>=
+kcTypeExpr tcEnv what doc n (ApplyType p ty1 ty2) = do
+  (alpha, beta) <- kcTypeExpr tcEnv what doc (n + 1) ty1 >>=
     kcArrow p what (doc $-$ text "Type:" <+> pPrintPrec 0 ty1)
-  kcTypeExpr tcEnv p what doc 0 ty2 >>=
+  kcTypeExpr tcEnv what doc 0 ty2 >>=
     unify p what (doc $-$ text "Type:" <+> pPrintPrec 0 ty2) alpha
   return beta
-kcTypeExpr tcEnv _ _ _ _ (VariableType _ tv) = return (varKind tv tcEnv)
-kcTypeExpr tcEnv p what doc _ (TupleType _ tys) = do
-  mapM_ (kcValueType tcEnv p what doc) tys
+kcTypeExpr tcEnv _ _ _      (VariableType _ tv) = return (varKind tv tcEnv)
+kcTypeExpr tcEnv what doc _ (TupleType _ tys) = do
+  mapM_ (kcValueType tcEnv what doc) tys
   return KindStar
-kcTypeExpr tcEnv p what doc _ (ListType _ ty) = do
-  kcValueType tcEnv p what doc ty
+kcTypeExpr tcEnv what doc _ (ListType _ ty) = do
+  kcValueType tcEnv what doc ty
   return KindStar
-kcTypeExpr tcEnv p what doc _ (ArrowType _ ty1 ty2) = do
-  kcValueType tcEnv p what doc ty1
-  kcValueType tcEnv p what doc ty2
+kcTypeExpr tcEnv what doc _ (ArrowType _ ty1 ty2) = do
+  kcValueType tcEnv what doc ty1
+  kcValueType tcEnv what doc ty2
   return KindStar
-kcTypeExpr tcEnv p what doc n (ParenType _ ty) = kcTypeExpr tcEnv p what doc n ty
-kcTypeExpr tcEnv p what doc n (ContextType _ cx ty) = do
-  kcContext tcEnv p cx
-  kcTypeExpr tcEnv p what doc n ty
-kcTypeExpr tcEnv p what doc n (ForallType _ vs ty) = do
+kcTypeExpr tcEnv what doc n (ParenType _ ty) = kcTypeExpr tcEnv what doc n ty
+kcTypeExpr tcEnv what doc n (ContextType _ cx ty) = do
+  kcContext tcEnv cx
+  kcTypeExpr tcEnv what doc n ty
+kcTypeExpr tcEnv what doc n (ForallType _ vs ty) = do
   tcEnv' <- foldM bindFreshKind tcEnv vs
-  kcTypeExpr tcEnv' p what doc n ty
+  kcTypeExpr tcEnv' what doc n ty
 
-kcArrow :: HasPosition p => p -> String -> Doc -> Kind -> KCM (Kind, Kind)
+kcArrow :: HasSpanInfo p => p -> String -> Doc -> Kind -> KCM (Kind, Kind)
 kcArrow p what doc k = do
   theta <- getKindSubst
   case subst theta k of
@@ -657,7 +657,7 @@ kcArrow p what doc k = do
 -- ---------------------------------------------------------------------------
 
 -- The unification uses Robinson's algorithm.
-unify :: HasPosition p => p -> String -> Doc -> Kind -> Kind -> KCM ()
+unify :: HasSpanInfo p => p -> String -> Doc -> Kind -> Kind -> KCM ()
 unify p what doc k1 k2 = do
   theta <- getKindSubst
   let k1' = subst theta k1
@@ -717,9 +717,9 @@ isTypeOrNewtypeDecl _                       = False
 errRecursiveTypes :: [Ident] -> Message
 errRecursiveTypes []       = internalError
   "KindCheck.errRecursiveTypes: empty list"
-errRecursiveTypes [tc]     = posMessage tc $ hsep $ map text
+errRecursiveTypes [tc]     = spanInfoMessage tc $ hsep $ map text
   ["Recursive synonym or renaming type", idName tc]
-errRecursiveTypes (tc:tcs) = posMessage tc $
+errRecursiveTypes (tc:tcs) = spanInfoMessage tc $
   text "Mutually recursive synonym and/or renaming types" <+>
     text (idName tc) <> types empty tcs
   where
@@ -732,9 +732,9 @@ errRecursiveTypes (tc:tcs) = posMessage tc $
 errRecursiveClasses :: [Ident] -> Message
 errRecursiveClasses []         = internalError
   "KindCheck.errRecursiveClasses: empty list"
-errRecursiveClasses [cls]      = posMessage cls $ hsep $ map text
+errRecursiveClasses [cls]      = spanInfoMessage cls $ hsep $ map text
   ["Recursive type class", idName cls]
-errRecursiveClasses (cls:clss) = posMessage cls $
+errRecursiveClasses (cls:clss) = spanInfoMessage cls $
   text "Mutually recursive type classes" <+> text (idName cls) <>
     classes empty clss
   where
@@ -744,15 +744,15 @@ errRecursiveClasses (cls:clss) = posMessage cls $
     classPos cls' =
       text (idName cls') <+> parens (text $ showLine $ getPosition cls')
 
-errNonArrowKind :: HasPosition p => p -> String -> Doc -> Kind -> Message
-errNonArrowKind p what doc k = posMessage p $ vcat
+errNonArrowKind :: HasSpanInfo p => p -> String -> Doc -> Kind -> Message
+errNonArrowKind p what doc k = spanInfoMessage p $ vcat
   [ text "Kind error in" <+> text what, doc
   , text "Kind:" <+> ppKind k
   , text "Cannot be applied"
   ]
 
-errPartialAlias :: HasPosition p => p -> QualIdent -> Int -> Int -> Message
-errPartialAlias p tc arity argc = posMessage p $ hsep
+errPartialAlias :: HasSpanInfo p => p -> QualIdent -> Int -> Int -> Message
+errPartialAlias p tc arity argc = spanInfoMessage p $ hsep
   [ text "Type synonym", ppQIdent tc
   , text "requires at least"
   , int arity, text (plural arity "argument") <> comma
@@ -761,8 +761,8 @@ errPartialAlias p tc arity argc = posMessage p $ hsep
   where
     plural n x = if n == 1 then x else x ++ "s"
 
-errKindMismatch ::  HasPosition p => p -> String -> Doc -> Kind -> Kind -> Message
-errKindMismatch p what doc k1 k2 = posMessage p $ vcat
+errKindMismatch :: HasSpanInfo p => p -> String -> Doc -> Kind -> Kind -> Message
+errKindMismatch p what doc k1 k2 = spanInfoMessage p $ vcat
   [ text "Kind error in"  <+> text what, doc
   , text "Inferred kind:" <+> ppKind k2
   , text "Expected kind:" <+> ppKind k1

@@ -67,17 +67,16 @@ import qualified Data.Set.Extra      as Set (Set, concatMap, deleteMin, empty,
                                              union, unions)
 
 import           Curry.Base.Ident
-import           Curry.Base.Position
 import           Curry.Base.Pretty
 import           Curry.Base.SpanInfo
 import           Curry.Syntax
 import           Curry.Syntax.Pretty
-import           Curry.Syntax.Utils  (flatLhs)
 
 import           Base.CurryTypes
 import           Base.Expr
 import           Base.Kinds
-import           Base.Messages       (Message, internalError, posMessage)
+import           Base.Messages       (Message, internalError, spanInfoMessage,
+                                      spanInfoMessage)
 import           Base.SCC
 import           Base.TopEnv
 import           Base.TypeExpansion
@@ -340,7 +339,7 @@ checkFieldLabel (NewtypeDecl _ _ _ (NewRecordDecl p _ (l, ty)) _)
   = tcFieldLabel (l, p, ty) >> ok
 checkFieldLabel _ = ok
 
-tcFieldLabel :: HasPosition p => (Ident, p, TypeExpr) -> TCM (Ident, p, Type)
+tcFieldLabel :: HasSpanInfo p => (Ident, p, TypeExpr) -> TCM (Ident, p, Type)
 tcFieldLabel (l, p, ty) = (,,) l p <$> expandTypeExpr ty
 
 groupLabels :: Eq a => [(a, b, c)] -> [(a, b, [c])]
@@ -349,7 +348,7 @@ groupLabels ((x, y, z):xyzs) = (x, y, z : map thd3 xyzs') : groupLabels xyzs''
   where
     (xyzs', xyzs'') = partition ((x ==) . fst3) xyzs
 
-tcFieldLabels :: HasPosition p => (Ident, p, [Type]) -> TCM ()
+tcFieldLabels :: HasSpanInfo p => (Ident, p, [Type]) -> TCM ()
 tcFieldLabels (_, _, [])     = ok
 tcFieldLabels (l, p, ty:tys) = unless (not (any (ty /=) tys)) $ do
   m <- getModuleIdent
@@ -682,7 +681,7 @@ lambdaVar v = do
   ty <- freshTypeVar
   return (v, 0, monoType ty)
 
-unifyDecl :: HasPosition p => p -> String -> Doc -> PredSet -> Type -> PredSet
+unifyDecl :: HasSpanInfo p => p -> String -> Doc -> PredSet -> Type -> PredSet
           -> Type -> TCM PredSet
 unifyDecl p what doc psLhs tyLhs psRhs tyRhs = do
   ps <- unifyHelp True p what doc psRhs tyRhs psLhs tyLhs
@@ -705,7 +704,7 @@ defaultPDecl fvs ps ty (_, PatternDecl p t _)    = case t of
   _                     -> return ps
 defaultPDecl _ _ _ _ = internalError "TypeCheck.defaultPDecl"
 
-applyDefaultsDecl :: HasPosition p => p -> String -> Doc -> Set.Set Int
+applyDefaultsDecl :: HasSpanInfo p => p -> String -> Doc -> Set.Set Int
                   -> PredSet -> Type -> TCM PredSet
 applyDefaultsDecl p what doc fvs ps ty = do
   theta <- getTypeSubst
@@ -761,14 +760,14 @@ checkPDeclType tySc ps ty (i, FunctionDecl p _ f eqs) = do
   tySc' <- expandTypeExpr tySc
   unlessM (checkTypeSig tySc' ty) $ do
     m <- getModuleIdent
-    report $ errTypeSigTooGeneral p m (text "Function:" <+> ppIdent f) tySc
+    report $ errTypeSigTooGeneral m (text "Function:" <+> ppIdent f) tySc
                                   (rawPredType ty)
   return (ps, (i, FunctionDecl p tySc' f eqs))
 checkPDeclType tySc ps ty (i, PatternDecl p (VariablePattern spi _ v) rhs) = do
   tySc' <- expandTypeExpr tySc
   unlessM (checkTypeSig tySc' ty) $ do
     m <- getModuleIdent
-    report $ errTypeSigTooGeneral p m (text "Variable:" <+> ppIdent v) tySc
+    report $ errTypeSigTooGeneral m (text "Variable:" <+> ppIdent v) tySc
                                   (rawPredType ty)
   return (ps, (i, PatternDecl p (VariablePattern spi tySc' v) rhs))
 checkPDeclType _ _ _ _ = internalError "TypeCheck.checkPDeclType"
@@ -1025,21 +1024,21 @@ tcMethodPDecl _ _ _ = internalError "TypeCheck.tcMethodPDecl"
 
 checkClassMethodType :: TypeExpr -> Type -> PDecl Type
                      -> TCM (PDecl Type)
-checkClassMethodType qty tySc pd@(_, FunctionDecl p _ f _) = do
+checkClassMethodType qty tySc pd@(_, FunctionDecl _ _ f _) = do
   pty <- expandTypeExpr qty
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
-    report $ errTypeSigTooGeneral p m (text "Method:" <+> ppIdent f) qty
+    report $ errTypeSigTooGeneral m (text "Method:" <+> ppIdent f) qty
                                   (rawPredType tySc)
   return pd
 checkClassMethodType _ _ _ = internalError "TypeCheck.checkClassMethodType"
 
 checkInstMethodType :: Type -> Type -> PDecl Type -> TCM (PDecl Type)
-checkInstMethodType pty tySc pd@(_, FunctionDecl p _ f _) = do
+checkInstMethodType pty tySc pd@(_, FunctionDecl _ _ f _) = do
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
     report $
-      errMethodTypeTooSpecific p m (text "Method:" <+> ppIdent f) pty
+      errMethodTypeTooSpecific f m (text "Method:" <+> ppIdent f) pty
                                (rawPredType tySc)
   return pd
 checkInstMethodType _ _ _ = internalError "TypeCheck.checkInstMethodType"
@@ -1091,7 +1090,7 @@ tcLiteral poly (Float _)
   | otherwise = fmap ((,) emptyPredSet) (freshConstrained fractionalTypes)
 tcLiteral _    (String _) = return (emptyPredSet, stringType)
 
-tcLhs :: HasPosition p => p -> Lhs a -> PTCM (PredSet, [Type], Lhs Type)
+tcLhs :: HasSpanInfo p => p -> Lhs a -> PTCM (PredSet, [Type], Lhs Type)
 tcLhs p (FunLhs spi f ts) = do
   (pss, tys, ts') <- unzip3 <$> mapM (tcPatternHelper p) ts
   return (Set.unions pss, tys, FunLhs spi f ts')
@@ -1114,17 +1113,17 @@ tcLhs p (ApLhs spi lhs ts) = do
 -- We also keep track of already used variables,
 -- in order to add a Data constraint for non-linear patterns
 
-tcPattern :: HasPosition p => p -> Pattern a
+tcPattern :: HasSpanInfo p => p -> Pattern a
           -> TCM (PredSet, Type, Pattern Type)
 tcPattern = tcPatternWith Set.empty
 
-tcPatternWith :: HasPosition p => Set.Set Ident -> p -> Pattern a
+tcPatternWith :: HasSpanInfo p => Set.Set Ident -> p -> Pattern a
               -> TCM (PredSet, Type, Pattern Type)
 tcPatternWith s p pt = S.evalStateT (tcPatternHelper p pt) s
 
 type PTCM a = S.StateT (Set.Set Ident) TCM a
 
-tcPatternHelper :: HasPosition p => p -> Pattern a
+tcPatternHelper :: HasSpanInfo p => p -> Pattern a
                 -> PTCM (PredSet, Type, Pattern Type)
 tcPatternHelper _ (LiteralPattern spi _ l) = do
   (ps, ty) <- lift $ tcLiteral False l
@@ -1194,7 +1193,7 @@ tcPatternHelper p (InfixFuncPattern spi a t1 op t2) = do
   let FunctionPattern _ a' op' [t1', t2'] = t'
   return (ps, ty, InfixFuncPattern spi a' t1' op' t2')
 
-tcFuncPattern :: HasPosition p => p -> SpanInfo -> Doc -> QualIdent
+tcFuncPattern :: HasSpanInfo p => p -> SpanInfo -> Doc -> QualIdent
               -> ([Pattern Type] -> [Pattern Type])
               -> PredSet -> Type -> [Pattern a]
               -> PTCM (PredSet, Type, Pattern Type)
@@ -1207,14 +1206,14 @@ tcFuncPattern p spi doc f ts ps ty (t':ts') = do
   tcFuncPattern p spi doc f (ts . (t'' :)) ps' beta ts'
   where t = FunctionPattern spi ty f (ts [])
 
-ptcPatternArg :: HasPosition p => p -> String -> Doc -> PredSet -> Type
+ptcPatternArg :: HasSpanInfo p => p -> String -> Doc -> PredSet -> Type
              -> Pattern a -> PTCM (PredSet, Pattern Type)
 ptcPatternArg p what doc ps ty t =
   tcPatternHelper p t >>-
     (\ps' ty' -> lift $
       unify p what (doc $-$ text "Term:" <+> pPrintPrec 0 t) ps ty ps' ty')
 
-tcPatternArg :: HasPosition p => p -> String -> Doc -> PredSet -> Type
+tcPatternArg :: HasSpanInfo p => p -> String -> Doc -> PredSet -> Type
              -> Pattern a -> TCM (PredSet, Pattern Type)
 tcPatternArg p what doc ps ty t =
   tcPattern p t >>-
@@ -1240,7 +1239,7 @@ tcCondExpr cm ty ps (CondExpr p g e) = do
   (ps'', e') <- tcExpr cm p e >>- unify p "guarded expression" (pPrintPrec 0 e) ps' ty
   return (ps'', CondExpr p g' e')
 
-tcExpr :: HasPosition p => CheckMode -> p -> Expression a
+tcExpr :: HasSpanInfo p => CheckMode -> p -> Expression a
        -> TCM (PredSet, Type, Expression Type)
 tcExpr _     _ (Literal spi _ l) = do
   (ps, ty) <- tcLiteral True l
@@ -1271,7 +1270,7 @@ tcExpr _     p (Typed spi e qty) = do
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
     report $
-      errTypeSigTooGeneral p m (text "Expression:" <+> pPrintPrec 0 e) qty
+      errTypeSigTooGeneral m (text "Expression:" <+> pPrintPrec 0 e) qty
                            (rawPredType tySc)
   return (ps `Set.union` gps, ty, Typed spi e' qty)
 tcExpr _     p e@(Record spi _ c fs) = do
@@ -1391,7 +1390,7 @@ tcExpr cm    p (Case spi li ct e as) = do
   (ps', as') <- mapAccumM (tcAlt cm tyLhs tyRhs) ps as
   return (ps', tyRhs, Case spi li ct e' as')
 
-tcArg :: HasPosition p => CheckMode -> p -> String -> Doc -> PredSet -> Type
+tcArg :: HasSpanInfo p => CheckMode -> p -> String -> Doc -> PredSet -> Type
       -> Expression a -> TCM (PredSet, Expression Type)
 tcArg cm p what doc ps ty e =
   tcExpr cm p e >>- unify p what (doc $-$ text "Term:" <+> pPrintPrec 0 e) ps ty
@@ -1415,7 +1414,7 @@ tcAltern cm tyLhs p t rhs = do
                         (ps `Set.union` ps')
   return (ps'', ty', Alt p t' rhs')
 
-tcQual :: HasPosition p => p -> PredSet -> Statement a
+tcQual :: HasSpanInfo p => p -> PredSet -> Statement a
        -> TCM (PredSet, Statement Type)
 tcQual p ps (StmtExpr spi e) = do
   (ps', e') <- tcExpr Infer p e >>- unify p "guard" (pPrintPrec 0 e) ps boolType
@@ -1430,7 +1429,7 @@ tcQual p ps q@(StmtBind spi t e) = do
   (ps'', t') <- tcPatternArg p "generator" (pPrint q) ps' alpha t
   return (ps'', StmtBind spi t' e')
 
-tcStmt :: HasPosition p => p -> PredSet -> Maybe Type -> Statement a
+tcStmt :: HasSpanInfo p => p -> PredSet -> Maybe Type -> Statement a
        -> TCM ((PredSet, Maybe Type), Statement Type)
 tcStmt p ps mTy (StmtExpr spi e) = do
   (ps', ty) <- maybe freshMonadType (return . (,) emptyPredSet) mTy
@@ -1505,7 +1504,7 @@ tcInfixOp _ (InfixConstr _ op) = do
 -- The first unification in 'tcField' cannot fail; it serves only for
 -- instantiating the type variables in the field label's type.
 
-tcField :: (Position -> a b -> TCM (PredSet, Type, a Type))
+tcField :: (SpanInfo -> a b -> TCM (PredSet, Type, a Type))
         -> String -> (a b -> Doc) -> Type -> PredSet -> Field (a b)
         -> TCM (PredSet, Field (a Type))
 tcField check what doc ty ps (Field p l x) = do
@@ -1514,11 +1513,11 @@ tcField check what doc ty ps (Field p l x) = do
   (ps', ty') <- inst (labelType m l vEnv)
   let TypeArrow ty1 ty2 = ty'
   _ <- unify p "field label" empty emptyPredSet ty emptyPredSet ty1
-  (ps'', x') <- check (spanInfo2Pos p) x >>-
+  (ps'', x') <- check p x >>-
     unify p ("record " ++ what) (doc x) (ps `Set.union` ps') ty2
   return (ps'', Field p l x')
 
-tcMissingField :: HasPosition p => p -> Type -> QualIdent -> TCM PredSet
+tcMissingField :: HasSpanInfo p => p -> Type -> QualIdent -> TCM PredSet
 tcMissingField p ty l = do
   m <- getModuleIdent
   vEnv <- getValueEnv
@@ -1529,7 +1528,7 @@ tcMissingField p ty l = do
 
 -- | Checks that its argument can be used as an arrow type @a -> b@ and returns
 -- the pair @(a, b)@.
-tcArrow :: HasPosition p => p -> String -> Doc -> Type -> TCM (Type, Type)
+tcArrow :: HasSpanInfo p => p -> String -> Doc -> Type -> TCM (Type, Type)
 tcArrow p what doc ty = do
   theta <- getTypeSubst
   unaryArrow (subst theta ty)
@@ -1547,7 +1546,7 @@ tcArrow p what doc ty = do
 
 -- | Checks that its argument can be used as an arrow type @a -> b -> c@ and
 -- returns the triple @(a, b, c)@.
-tcBinary :: HasPosition p => p -> String -> Doc -> Type
+tcBinary :: HasSpanInfo p => p -> String -> Doc -> Type
          -> TCM (Type, Type, Type)
 tcBinary p what doc ty = tcArrow p what doc ty >>= uncurry binaryArrow
   where
@@ -1566,11 +1565,11 @@ tcBinary p what doc ty = tcArrow p what doc ty >>= uncurry binaryArrow
 -- Unification (Robinson's algorithm)
 -- -----------------------------------------------------------------------------
 
-unify :: HasPosition p => p -> String -> Doc -> PredSet -> Type -> PredSet
+unify :: HasSpanInfo p => p -> String -> Doc -> PredSet -> Type -> PredSet
       -> Type -> TCM PredSet
 unify = unifyHelp False
 
-unifyHelp :: HasPosition p => Bool -> p -> String -> Doc -> PredSet -> Type
+unifyHelp :: HasSpanInfo p => Bool -> p -> String -> Doc -> PredSet -> Type
           -> PredSet -> Type -> TCM PredSet
 unifyHelp b p what doc ps1 ty1 ps2 ty2 = do
   theta <- getTypeSubst
@@ -1736,7 +1735,7 @@ unifyTypeLists m (ty1:tys1) (ty2:tys2) = eitherM (return . Left)
 -- the reduction and thus may cause a further extension of the current type
 -- substitution.
 
-reducePredSet :: HasPosition p => p -> String -> Doc -> PredSet -> TCM PredSet
+reducePredSet :: HasSpanInfo p => p -> String -> Doc -> PredSet -> TCM PredSet
 reducePredSet p what doc ps = do
   m <- getModuleIdent
   clsEnv <- getClassEnv
@@ -1762,7 +1761,7 @@ instPredSet (sEnv, dEnv) qcls ty = case Map.lookup qcls dEnv of
                                       (lookupInstInfo (qcls, tc) sEnv)
     _                         -> Nothing
 
-reportMissingInstance :: HasPosition p => ModuleIdent -> p -> String -> Doc
+reportMissingInstance :: HasSpanInfo p => ModuleIdent -> p -> String -> Doc
                       -> InstEnv' -> TypeSubst -> Pred -> TCM TypeSubst
 reportMissingInstance m p what doc inEnv theta (Pred qcls ty) =
   case subst theta ty of
@@ -1801,7 +1800,7 @@ hasInstance inEnv qcls = isJust . instPredSet inEnv qcls
 -- types that satisfies all constraints for the ambiguous type variable. An
 -- error is reported if no such type exists.
 
-applyDefaults :: HasPosition p => p -> String -> Doc -> Set.Set Int -> PredSet
+applyDefaults :: HasSpanInfo p => p -> String -> Doc -> Set.Set Int -> PredSet
               -> Type -> TCM PredSet
 applyDefaults p what doc fvs ps ty = do
   m <- getModuleIdent
@@ -2008,48 +2007,48 @@ localTypes vEnv = [tySc | (_, Value _ _ _ tySc) <- localBindings vEnv]
 -- -----------------------------------------------------------------------------
 
 errPolymorphicVar :: Ident -> Message
-errPolymorphicVar v = posMessage v $ hsep $ map text
+errPolymorphicVar v = spanInfoMessage v $ hsep $ map text
   ["Variable", idName v, "has a polymorphic type"]
 
-errTypeSigTooGeneral :: HasPosition a => a -> ModuleIdent -> Doc -> TypeExpr
+errTypeSigTooGeneral :: ModuleIdent -> Doc -> TypeExpr
                      -> Type -> Message
-errTypeSigTooGeneral p m what tySc ty = posMessage p $ vcat
+errTypeSigTooGeneral m what tySc ty = spanInfoMessage tySc $ vcat
   [ text "Type signature too general", what
   , text "Inferred type:" <+> ppType m ty
   , text "Type signature:" <+> pPrintPrec 0 tySc ]
 
-errMethodTypeTooSpecific :: HasPosition a => a -> ModuleIdent -> Doc -> Type
+errMethodTypeTooSpecific :: HasSpanInfo a => a -> ModuleIdent -> Doc -> Type
                          -> Type -> Message
-errMethodTypeTooSpecific p m doc ety ity = posMessage p $ vcat
+errMethodTypeTooSpecific p m doc ety ity = spanInfoMessage p $ vcat
   [ text "Method type too specific", doc
   , text "Inferred type:" <+> ppType m ity
   , text "Expected type:" <+> ppType m ety ]
 
-errNonFunctionType :: HasPosition a => a -> String -> Doc -> ModuleIdent -> Type
+errNonFunctionType :: HasSpanInfo a => a -> String -> Doc -> ModuleIdent -> Type
                    -> Message
-errNonFunctionType p what doc m ty = posMessage p $ vcat
+errNonFunctionType p what doc m ty = spanInfoMessage p $ vcat
   [ text "Type error in" <+> text what, doc
   , text "Type:" <+> ppType m ty
   , text "Cannot be applied" ]
 
-errNonBinaryOp :: HasPosition a => a -> String -> Doc -> ModuleIdent -> Type
+errNonBinaryOp :: HasSpanInfo a => a -> String -> Doc -> ModuleIdent -> Type
                -> Message
-errNonBinaryOp p what doc m ty = posMessage p $ vcat
+errNonBinaryOp p what doc m ty = spanInfoMessage p $ vcat
   [ text "Type error in" <+> text what, doc
   , text "Type:" <+> ppType m ty
   , text "Cannot be used as binary operator" ]
 
-errTypeMismatch :: HasPosition a => a -> String -> Doc -> ModuleIdent -> Type
+errTypeMismatch :: HasSpanInfo a => a -> String -> Doc -> ModuleIdent -> Type
                 -> Type -> Doc -> Message
-errTypeMismatch p what doc m ety ity reason = posMessage p $ vcat
+errTypeMismatch p what doc m ety ity reason = spanInfoMessage p $ vcat
   [ text "Type error in" <+> text what, doc
   , text "Inferred type:" <+> ppType m ity
   , text "Expected type:" <+> ppType m ety
   , reason ]
 
-errSubsumption :: HasPosition a => a -> String -> Doc -> ModuleIdent -> Type
+errSubsumption :: HasSpanInfo a => a -> String -> Doc -> ModuleIdent -> Type
                -> Type -> Message
-errSubsumption p what doc m ety ity = posMessage p $ vcat
+errSubsumption p what doc m ety ity = spanInfoMessage p $ vcat
   [ text "Type error in" <+> text what, doc
   , text "The type" <+> ppType m ity
   , text "is not as polymorphic as"
@@ -2079,23 +2078,23 @@ errEscapingTypeVariable m tv ty1 ty2 = sep
   , text "because type variable" <+> ppType m (TypeVariable tv)
                                  <+> text "would escape its scope" ]
 
-errIncompatibleLabelTypes :: HasPosition a => a -> ModuleIdent -> Ident -> Type
+errIncompatibleLabelTypes :: HasSpanInfo a => a -> ModuleIdent -> Ident -> Type
                           -> Type -> Message
-errIncompatibleLabelTypes p m l ty1 ty2 = posMessage p $ sep
+errIncompatibleLabelTypes p m l ty1 ty2 = spanInfoMessage p $ sep
   [ text "Labeled types" <+> ppIdent l <+> text "::" <+> ppType m ty1
   , nest 10 $ text "and" <+> ppIdent l <+> text "::" <+> ppType m ty2
   , text "are incompatible" ]
 
-errMissingInstance :: HasPosition a => ModuleIdent -> a -> String -> Doc -> Pred
+errMissingInstance :: HasSpanInfo a => ModuleIdent -> a -> String -> Doc -> Pred
                    -> Message
-errMissingInstance m p what doc pr = posMessage p $ vcat
+errMissingInstance m p what doc pr = spanInfoMessage p $ vcat
   [ text "Missing instance for" <+> ppPred m pr
   , text "in" <+> text what
   , doc ]
 
-errAmbiguousTypeVariable :: HasPosition a => ModuleIdent -> a -> String -> Doc
+errAmbiguousTypeVariable :: HasSpanInfo a => ModuleIdent -> a -> String -> Doc
                          -> Type -> Int -> Message
-errAmbiguousTypeVariable m p what doc ty tv = posMessage p $ vcat
+errAmbiguousTypeVariable m p what doc ty tv = spanInfoMessage p $ vcat
   [ text "Ambiguous type variable" <+> ppType m (TypeVariable tv)
   , text "in type" <+> ppType m ty
   , text "inferred for" <+> text what

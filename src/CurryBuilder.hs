@@ -23,8 +23,7 @@ import System.FilePath ((</>), normalise)
 
 import Curry.Base.Ident
 import Curry.Base.Monad
-import Curry.Base.Position (Position)
-import Curry.Base.SpanInfo (spanInfo2Pos)
+import Curry.Base.SpanInfo (SpanInfo)
 import Curry.Base.Pretty
 import Curry.Files.Filenames
 import Curry.Files.PathUtils
@@ -114,8 +113,8 @@ processPragmas opts0 ps = do
   let opts1 = foldl processLanguagePragma opts0
                 [ e | LanguagePragma _ es <- ps, KnownExtension _ e <- es ]
   foldM processOptionPragma opts1 $
-    [ (spanInfo2Pos p, s) | OptionsPragma p (Just FRONTEND) s <- ps ] ++
-      [ (spanInfo2Pos p, s) | OptionsPragma p (Just CYMAKE) s <- ps ]
+    [ (p, s) | OptionsPragma p (Just FRONTEND) s <- ps ] ++
+      [ (p, s) | OptionsPragma p (Just CYMAKE) s <- ps ]
   where
   processLanguagePragma opts CPP
     = opts { optCppOpts = (optCppOpts opts) { cppRun = True } }
@@ -216,13 +215,13 @@ cancelMissing act f = liftIO (act f) >>= \res -> case res of
   Nothing  -> failMessages [errModificationTime f]
   Just val -> ok val
 
-errUnknownOptions :: Position -> [String] -> Message
-errUnknownOptions p errs = posMessage p $
+errUnknownOptions :: SpanInfo -> [String] -> Message
+errUnknownOptions spi errs = spanInfoMessage spi $
   text "Unknown flag(s) in {-# OPTIONS_FRONTEND #-} pragma:"
   <+> sep (punctuate comma $ map text errs)
 
-errIllegalOption :: Position -> String -> Message
-errIllegalOption p err = posMessage p $
+errIllegalOption :: SpanInfo -> String -> Message
+errIllegalOption spi err = spanInfoMessage spi $
   text "Illegal option in {-# OPTIONS_FRONTEND #-} pragma:" <+> text err
 
 errMissing :: String -> String -> Message
