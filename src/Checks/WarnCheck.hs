@@ -55,7 +55,7 @@ import Base.Types
 import Base.Utils (findMultiples)
 import Env.ModuleAlias
 import Env.Class (ClassEnv, classMethods, hasDefaultImpl)
-import Env.TypeConstructor ( TCEnv, TypeInfo (..), lookupTypeInfo
+import Env.TypeConstructor ( TCEnv, TypeInfo (..)
                            , qualLookupTypeInfo, getOrigName )
 import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 
@@ -856,7 +856,7 @@ getTyCons :: QualIdent -> WCM [DataConstr]
 getTyCons tc = do
   tc'   <- unAlias tc
   tcEnv <- gets tyConsEnv
-  return $ case lookupTypeInfo (unqualify tc) tcEnv of
+  return $ case qualLookupTypeInfo tc tcEnv of
     [DataType     _ _ cs] -> cs
     [RenamingType _ _ nc] -> [nc]
     _ -> case qualLookupTypeInfo tc' tcEnv of
