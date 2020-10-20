@@ -27,7 +27,7 @@ import System.IO                  (hFlush, hPutStrLn, stderr, stdout)
 import System.Exit                (exitFailure)
 
 import Curry.Base.Message         ( Message, message, posMessage, spanInfoMessage
-                                  , ppWarning, ppMessages, ppError)
+                                  , ppWarning, ppMessagesWithPreviews, ppError)
 import Curry.Base.Pretty          (Doc, text)
 import CompilerOpts               (Options (..), WarnOpts (..), Verbosity (..))
 
@@ -71,7 +71,7 @@ warnOrAbort opts msgs = when (wnWarn opts && not (null msgs)) $ do
 -- |Print a list of messages on 'stderr'
 printMessages :: (Message -> Doc) -> [Message] -> IO ()
 printMessages msgType msgs
-  = unless (null msgs) $ putErrLn (show $ ppMessages msgType $ sort msgs)
+  = unless (null msgs) $ putErrLn =<< (fmap show $ ppMessagesWithPreviews msgType $ sort msgs)
 
 -- |Raise an internal error
 internalError :: String -> a
