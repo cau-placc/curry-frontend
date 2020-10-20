@@ -37,7 +37,7 @@ import Curry.Syntax
 import Curry.Syntax.Pretty
 
 import Base.Expr (Expr (fv))
-import Base.Messages (Message, posMessage, internalError)
+import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.TopEnv
 import Base.Utils (findMultiples, findDouble)
 
@@ -66,7 +66,7 @@ typeSyntaxCheck exts tcEnv mdl@(Module _ _ _ m _ _ ds) =
   where
     tcds = filter isTypeOrClassDecl ds
     dfds = filter isDefaultDecl ds
-    dfps = map (\(DefaultDecl p _) -> spanInfo2Pos p) dfds
+    dfps = map (\(DefaultDecl p _) -> p) dfds
     tEnv = foldr (bindType m) (fmap toTypeKind tcEnv) tcds
     state = TSCState m tEnv exts Map.empty 1 []
 
@@ -400,10 +400,9 @@ checkSimpleConstraint c@(Constraint _ _ ty) =
 
 checkClassMethod :: Ident -> Decl a -> TSCM ()
 checkClassMethod tv (TypeSig spi _ qty) = do
-  unless (tv `elem` fv qty) $ report $ errAmbiguousType p tv
+  unless (tv `elem` fv qty) $ report $ errAmbiguousType spi tv
   let QualTypeExpr _ cx _ = qty
-  when (tv `elem` fv cx) $ report $ errConstrainedClassVariable p tv
-  where p = spanInfo2Pos spi
+  when (tv `elem` fv cx) $ report $ errConstrainedClassVariable spi tv
 checkClassMethod _ _ = ok
 
 checkInstanceType :: SpanInfo -> InstanceType -> TSCM ()
@@ -413,7 +412,7 @@ checkInstanceType p inst = do
     not (isTypeSyn (typeConstr inst) tEnv) &&
     not (any isAnonId $ typeVariables inst) &&
     isNothing (findDouble $ fv inst)) $
-      report $ errIllegalInstanceType (spanInfo2Pos p) inst
+      report $ errIllegalInstanceType p inst
 
 checkTypeLhs :: [Ident] -> TSCM ()
 checkTypeLhs = checkTypeVars "left hand side of type declaration"
@@ -595,11 +594,11 @@ checkClosed tvs (ArrowType _ ty1 ty2) = mapM_ (checkClosed tvs) [ty1, ty2]
 checkClosed tvs (ParenType      _ ty) = checkClosed tvs ty
 checkClosed tvs (ForallType  _ vs ty) = checkClosed (tvs ++ vs) ty
 
-checkUsedExtension :: Position -> String -> KnownExtension -> TSCM ()
-checkUsedExtension pos msg ext = do
+checkUsedExtension :: SpanInfo -> String -> KnownExtension -> TSCM ()
+checkUsedExtension spi msg ext = do
   enabled <- hasExtension ext
   unless enabled $ do
-    report $ errMissingLanguageExtension pos msg ext
+    report $ errMissingLanguageExtension spi msg ext
     enableExtension ext
 
 -- ---------------------------------------------------------------------------
@@ -624,27 +623,27 @@ isTypeSyn tc tEnv = case qualLookupTypeKind tc tEnv of
 -- Error messages
 -- ---------------------------------------------------------------------------
 
-errMultipleDefaultDeclarations :: [Position] -> Message
-errMultipleDefaultDeclarations ps = posMessage (head ps) $
+errMultipleDefaultDeclarations :: [SpanInfo] -> Message
+errMultipleDefaultDeclarations spis = spanInfoMessage (head spis) $
   text "More than one default declaration:" $+$
-    nest 2 (vcat $ map showPos ps)
-  where showPos = text . showLine
+    nest 2 (vcat $ map showPos spis)
+  where showPos = text . showLine . getPosition
 
 errMultipleDeclarations :: [Ident] -> Message
-errMultipleDeclarations is = posMessage i $
+errMultipleDeclarations is = spanInfoMessage i $
   text "Multiple declarations of" <+> text (escName i) <+> text "at:" $+$
     nest 2 (vcat $ map showPos is)
   where i = head is
         showPos = text . showLine . getPosition
 
-errMissingLanguageExtension :: Position -> String -> KnownExtension -> Message
-errMissingLanguageExtension p what ext = posMessage p $
+errMissingLanguageExtension :: SpanInfo -> String -> KnownExtension -> Message
+errMissingLanguageExtension spi what ext = spanInfoMessage spi $
   text what <+> text "are not supported in standard Curry." $+$
   nest 2 (text "Use flag -X" <+> text (show ext)
           <+> text "to enable this extension.")
 
 errUndefined :: String -> QualIdent -> Message
-errUndefined what qident = posMessage qident $ hsep $ map text
+errUndefined what qident = spanInfoMessage qident $ hsep $ map text
   ["Undefined", what, qualName qident]
 
 errUndefinedClass :: QualIdent -> Message
@@ -654,46 +653,46 @@ errUndefinedType :: QualIdent -> Message
 errUndefinedType = errUndefined "type"
 
 errAmbiguousIdent :: QualIdent -> [QualIdent] -> Message
-errAmbiguousIdent qident qidents = posMessage qident $
+errAmbiguousIdent qident qidents = spanInfoMessage qident $
   text "Ambiguous identifier" <+> text (escQualName qident) $+$
     text "It could refer to:" $+$ nest 2 (vcat (map (text . qualName) qidents))
 
-errAmbiguousType :: Position -> Ident -> Message
-errAmbiguousType p ident = posMessage p $ hsep $ map text
+errAmbiguousType :: SpanInfo -> Ident -> Message
+errAmbiguousType spi ident = spanInfoMessage spi $ hsep $ map text
   [ "Method type does not mention class variable", idName ident ]
 
-errConstrainedClassVariable :: Position -> Ident -> Message
-errConstrainedClassVariable p ident = posMessage p $ hsep $ map text
+errConstrainedClassVariable :: SpanInfo -> Ident -> Message
+errConstrainedClassVariable spi ident = spanInfoMessage spi $ hsep $ map text
   [ "Method context must not constrain class variable", idName ident ]
 
 errNonLinear :: Ident -> String -> Message
-errNonLinear tv what = posMessage tv $ hsep $ map text
+errNonLinear tv what = spanInfoMessage tv $ hsep $ map text
   [ "Type variable", idName tv, "occurs more than once in", what ]
 
 errNoVariable :: Ident -> String -> Message
-errNoVariable tv what = posMessage tv $ hsep $ map text
+errNoVariable tv what = spanInfoMessage tv $ hsep $ map text
   ["Type constructor or type class identifier", idName tv, "used in", what]
 
 errUnboundVariable :: Ident -> Message
-errUnboundVariable tv = posMessage tv $ hsep $ map text
+errUnboundVariable tv = spanInfoMessage tv $ hsep $ map text
   [ "Unbound type variable", idName tv ]
 
 errIllegalConstraint :: Constraint -> Message
-errIllegalConstraint c@(Constraint _ qcls _) = posMessage qcls $ vcat
+errIllegalConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
   [ text "Illegal class constraint" <+> pPrint c
   , text "Constraints must be of the form C u or C (u t1 ... tn),"
   , text "where C is a type class, u is a type variable and t1, ..., tn are types."
   ]
 
 errIllegalSimpleConstraint :: Constraint -> Message
-errIllegalSimpleConstraint c@(Constraint _ qcls _) = posMessage qcls $ vcat
+errIllegalSimpleConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
   [ text "Illegal class constraint" <+> pPrint c
   , text "Constraints in class and instance declarations must be of"
   , text "the form C u, where C is a type class and u is a type variable."
   ]
 
-errIllegalInstanceType :: Position -> InstanceType -> Message
-errIllegalInstanceType p inst = posMessage p $ vcat
+errIllegalInstanceType :: SpanInfo -> InstanceType -> Message
+errIllegalInstanceType spi inst = spanInfoMessage spi $ vcat
   [ text "Illegal instance type" <+> ppInstanceType inst
   , text "The instance type must be of the form (T u_1 ... u_n),"
   , text "where T is not a type synonym and u_1, ..., u_n are"
@@ -701,7 +700,7 @@ errIllegalInstanceType p inst = posMessage p $ vcat
   ]
 
 errIllegalDataInstance :: QualIdent -> Message
-errIllegalDataInstance qcls = posMessage qcls $ vcat
+errIllegalDataInstance qcls = spanInfoMessage qcls $ vcat
   [ text "Illegal instance of" <+> ppQIdent qcls
   , text "Instances of this class cannot be defined."
   , text "Instead, they are automatically derived if possible."

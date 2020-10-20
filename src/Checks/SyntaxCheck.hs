@@ -53,7 +53,8 @@ import           Curry.Base.SpanInfo
 import           Curry.Syntax
 
 import           Base.Expr
-import           Base.Messages       (Message, internalError, posMessage)
+import           Base.Messages       (Message, internalError,
+                                      spanInfoMessage)
 import           Base.NestEnv
 import           Base.SCC            (scc)
 import           Base.Utils          (findDouble, findMultiples, (++!))
@@ -588,7 +589,7 @@ checkPrecedence :: SpanInfo -> Maybe Precedence -> SCM (Maybe Precedence)
 checkPrecedence _ Nothing  = return Nothing
 checkPrecedence p (Just i) = do
   unless (0 <= i && i <= 9) $ report
-                            $ errPrecedenceOutOfRange (spanInfo2Pos p) i
+                            $ errPrecedenceOutOfRange p i
   return $ Just i
 
 checkVar' :: String -> Var a -> SCM (Var a)
@@ -622,7 +623,7 @@ checkEqLhs pspi toplhs = do
       | not $ isDataConstr f env -> return left
       | k /= globalScopeId       -> return right
       | null infos               -> return left
-      | otherwise                -> do report $ errToplevelPattern p
+      | otherwise                -> do report $ errToplevelPattern pspi
                                        return right
       where f'    = renameIdent f k
             infos = qualLookupVar (qualifyWith m f) env
@@ -633,7 +634,7 @@ checkEqLhs pspi toplhs = do
       | not $ isDataConstr op env -> return left
       | k /= globalScopeId        -> return right
       | null infos                -> return left
-      | otherwise                 -> do report $ errToplevelPattern p
+      | otherwise                 -> do report $ errToplevelPattern pspi
                                         return right
       where op'   = renameIdent op k
             infos = qualLookupVar (qualifyWith m op) env
@@ -653,7 +654,6 @@ checkEqLhs pspi toplhs = do
         r               -> do report $ errNonVariable "curried definition" f
                               return $ r
         where (f, _) = flatLhs lhs
-  where p = spanInfo2Pos pspi
 
 checkOpLhs :: Integer -> RenameEnv -> (Pattern a -> Pattern a)
            -> Pattern a -> Either (Ident, Lhs a) (Pattern a)
@@ -737,7 +737,7 @@ checkLhs p (FunLhs    spi f ts) = FunLhs spi f <$> mapM (checkPattern p) ts
 checkLhs p (OpLhs spi t1 op t2) = do
   let wrongCalls = concatMap (checkParenPattern (Just $ qualify op)) [t1,t2]
   unless (null wrongCalls) $ report $ errInfixWithoutParens
-    (getPosition op) wrongCalls
+    spi wrongCalls
   flip (OpLhs spi) op <$> checkPattern p t1 <*> checkPattern p t2
 checkLhs p (ApLhs   spi lhs ts) =
   ApLhs spi <$> checkLhs p lhs <*> mapM (checkPattern p) ts
@@ -836,7 +836,7 @@ checkConstructorPattern p spi c ts = do
     | null ts && not (isQualified c)
     = return $ VariablePattern spi () $ renameIdent (unqualify c) k -- (varIdent r) k
     | otherwise = do
-      checkFuncPatsExtension (spanInfo2Pos p)
+      checkFuncPatsExtension p
       checkFuncPatCall r c
       ts' <- mapM (checkPattern p) ts
       mapM_ (checkFPTerm p) ts'
@@ -863,7 +863,7 @@ checkInfixPattern p spi t1 op t2 = do
     when (n /= 2) $ report $ errWrongArity op n 2
     flip (InfixPattern spi ()) qop <$> checkPattern p t1 <*> checkPattern p t2
   funcPattern r qop = do
-    checkFuncPatsExtension (spanInfo2Pos p)
+    checkFuncPatsExtension p
     checkFuncPatCall r qop
     ts' <- mapM (checkPattern p) [t1,t2]
     let [t1',t2'] = ts'
@@ -968,7 +968,7 @@ checkVariable :: SpanInfo -> a -> QualIdent -> SCM (Expression a)
 checkVariable spi a v
     -- anonymous free variable
   | isAnonId (unqualify v) = do
-    checkAnonFreeVarsExtension $ getPosition v
+    checkAnonFreeVarsExtension $ getSpanInfo v
     (\n -> Variable spi a $ updQualIdent id (`renameIdent` n) v) <$> newId
     -- return $ Variable v
     -- normal variable
@@ -1057,9 +1057,9 @@ banFPTerm s p (ListPattern             _ _ ts) = mapM_ (banFPTerm s p) ts
 banFPTerm s p (AsPattern                _ _ t) = banFPTerm s p t
 banFPTerm s p (LazyPattern                _ t) = banFPTerm s p t
 banFPTerm s p pat@(FunctionPattern    _ _ _ _)
- = report $ errUnsupportedFuncPattern s (spanInfo2Pos p) pat
+ = report $ errUnsupportedFuncPattern s p pat
 banFPTerm s p pat@(InfixFuncPattern _ _ _ _ _)
- = report $ errUnsupportedFuncPattern s (spanInfo2Pos p) pat
+ = report $ errUnsupportedFuncPattern s p pat
 
 checkOp :: InfixOp a -> SCM (InfixOp a)
 checkOp op = do
@@ -1140,7 +1140,7 @@ checkLabels _ (Just c) ls css = do
 checkLabels p Nothing ls css
   | not (null (foldr1 intersect css)) ||
     any null css = ok
-  | otherwise    = report $ errNoCommonCons (spanInfo2Pos p) ls
+  | otherwise    = report $ errNoCommonCons p ls
 
 checkField :: (a -> SCM a) -> Field a -> SCM (Field a)
 checkField check (Field p l x) = Field p l <$> check x
@@ -1239,7 +1239,7 @@ checkFPTerm p (TuplePattern           _ ts) = mapM_ (checkFPTerm p) ts
 checkFPTerm p (ListPattern          _ _ ts) = mapM_ (checkFPTerm p) ts
 checkFPTerm p (AsPattern             _ _ t) = checkFPTerm p t
 checkFPTerm p t@(LazyPattern           _ _) =
-  report $ errUnsupportedFPTerm "Lazy" (spanInfo2Pos p) t
+  report $ errUnsupportedFPTerm "Lazy" p t
 checkFPTerm p (RecordPattern      _ _ _ fs) = mapM_ (checkFPTerm p)
                                             [ t | Field _ _ t <- fs ]
 checkFPTerm _ (FunctionPattern     _ _ _ _) = ok -- do not check again
@@ -1249,19 +1249,19 @@ checkFPTerm _ (InfixFuncPattern  _ _ _ _ _) = ok -- do not check again
 -- Miscellaneous functions
 -- ---------------------------------------------------------------------------
 
-checkFuncPatsExtension :: Position -> SCM ()
-checkFuncPatsExtension p = checkUsedExtension p
+checkFuncPatsExtension :: SpanInfo -> SCM ()
+checkFuncPatsExtension spi = checkUsedExtension spi
   "Functional Patterns" FunctionalPatterns
 
-checkAnonFreeVarsExtension :: Position -> SCM ()
-checkAnonFreeVarsExtension p = checkUsedExtension p
+checkAnonFreeVarsExtension :: SpanInfo -> SCM ()
+checkAnonFreeVarsExtension spi = checkUsedExtension spi
   "Anonymous free variables" AnonFreeVars
 
-checkUsedExtension :: Position -> String -> KnownExtension -> SCM ()
-checkUsedExtension pos msg ext = do
+checkUsedExtension :: SpanInfo -> String -> KnownExtension -> SCM ()
+checkUsedExtension spi msg ext = do
   enabled <- hasExtension ext
   unless enabled $ do
-    report $ errMissingLanguageExtension pos msg ext
+    report $ errMissingLanguageExtension spi msg ext
     enableExtension ext -- to avoid multiple warnings
 
 typeArity :: TypeExpr -> Int
@@ -1279,43 +1279,43 @@ opAnnotation (InfixConstr a _) = a
 -- Error messages
 -- ---------------------------------------------------------------------------
 
-errUnsupportedFPTerm :: String -> Position -> Pattern a -> Message
-errUnsupportedFPTerm s p pat = posMessage p $ text s
+errUnsupportedFPTerm :: String -> SpanInfo -> Pattern a -> Message
+errUnsupportedFPTerm s spi pat = spanInfoMessage spi $ text s
   <+> text "patterns are not supported inside a functional pattern."
   $+$ pPrintPrec 0 pat
 
-errUnsupportedFuncPattern :: String -> Position -> Pattern a -> Message
-errUnsupportedFuncPattern s p pat = posMessage p $
+errUnsupportedFuncPattern :: String -> SpanInfo -> Pattern a -> Message
+errUnsupportedFuncPattern s spi pat = spanInfoMessage spi $
   text "Functional patterns are not supported inside a" <+> text s <> dot
   $+$ pPrintPrec 0 pat
 
 errFuncPatNotGlobal :: QualIdent -> Message
-errFuncPatNotGlobal f = posMessage f $ hsep $ map text
+errFuncPatNotGlobal f = spanInfoMessage f $ hsep $ map text
   ["Function", escQualName f, "in functional pattern is not global"]
 
 errFuncPatCyclic :: QualIdent -> QualIdent -> Message
-errFuncPatCyclic fp f = posMessage fp $ hsep $ map text
+errFuncPatCyclic fp f = spanInfoMessage fp $ hsep $ map text
   [ "Function", escName $ unqualify fp, "used in functional pattern depends on"
   , escName $ unqualify f, " causing a cyclic dependency"]
 
-errPrecedenceOutOfRange :: Position -> Integer -> Message
-errPrecedenceOutOfRange p i = posMessage p $ hsep $ map text
+errPrecedenceOutOfRange :: SpanInfo -> Integer -> Message
+errPrecedenceOutOfRange spi i = spanInfoMessage spi $ hsep $ map text
   ["Precedence out of range:", show i]
 
 errUndefinedVariable :: QualIdent -> Message
-errUndefinedVariable v = posMessage v $ hsep $ map text
+errUndefinedVariable v = spanInfoMessage v $ hsep $ map text
   [escQualName v, "is undefined"]
 
 errUndefinedData :: QualIdent -> Message
-errUndefinedData c = posMessage c $ hsep $ map text
+errUndefinedData c = spanInfoMessage c $ hsep $ map text
   ["Undefined data constructor", escQualName c]
 
 errUndefinedLabel :: QualIdent -> Message
-errUndefinedLabel l = posMessage l $  hsep $ map text
+errUndefinedLabel l = spanInfoMessage l $  hsep $ map text
   ["Undefined record label", escQualName l]
 
 errUndefinedMethod :: QualIdent -> Ident -> Message
-errUndefinedMethod qcls f = posMessage f $ hsep $ map text
+errUndefinedMethod qcls f = spanInfoMessage f $ hsep $ map text
   [escName f, "is not a (visible) method of class", escQualName qcls]
 
 errAmbiguousIdent :: [RenameInfo] -> QualIdent -> Message
@@ -1330,26 +1330,26 @@ errAmbiguousLabel :: [RenameInfo] -> QualIdent -> Message
 errAmbiguousLabel = errAmbiguous "field label"
 
 errAmbiguous :: String -> [RenameInfo] -> QualIdent -> Message
-errAmbiguous what rs qn = posMessage qn
+errAmbiguous what rs qn = spanInfoMessage qn
   $   text "Ambiguous" <+> text what <+> text (escQualName qn)
   $+$ text "It could refer to:"
   $+$ nest 2 (vcat (map ppRenameInfo rs))
 
 errDuplicateDefinition :: Ident -> Message
-errDuplicateDefinition v = posMessage v $ hsep $ map text
+errDuplicateDefinition v = spanInfoMessage v $ hsep $ map text
   ["More than one definition for", escName v]
 
 errDuplicateVariables :: [Ident] -> Message
 errDuplicateVariables [] = internalError
   "SyntaxCheck.errDuplicateVariables: empty list"
-errDuplicateVariables (v:vs) = posMessage v $
+errDuplicateVariables (v:vs) = spanInfoMessage v $
   text (escName v) <+> text "occurs more than one in pattern at:" $+$
   nest 2 (vcat (map (ppPosition . getPosition) (v:vs)))
 
 errMultipleDataConstructor :: [Ident] -> Message
 errMultipleDataConstructor [] = internalError
   "SyntaxCheck.errMultipleDataDeclaration: empty list"
-errMultipleDataConstructor (i:is) = posMessage i $
+errMultipleDataConstructor (i:is) = spanInfoMessage i $
   text "Multiple definitions for data/record constructor" <+> text (escName i)
   <+> text "at:" $+$
   nest 2 (vcat (map (ppPosition . getPosition) (i:is)))
@@ -1357,7 +1357,7 @@ errMultipleDataConstructor (i:is) = posMessage i $
 errMultipleDeclarations :: ModuleIdent -> [Ident] -> Message
 errMultipleDeclarations _ [] = internalError
   "SyntaxCheck.errMultipleDeclarations: empty list"
-errMultipleDeclarations m (i:is) = posMessage i $
+errMultipleDeclarations m (i:is) = spanInfoMessage i $
   text "Multiple declarations of" <+> text (escQualName (qualifyWith m i))
   $+$ text "Declared at:" $+$
   nest 2 (vcat (map (ppPosition . getPosition) (i:is)))
@@ -1365,63 +1365,63 @@ errMultipleDeclarations m (i:is) = posMessage i $
 errDuplicateTypeSig :: [Ident] -> Message
 errDuplicateTypeSig [] = internalError
   "SyntaxCheck.errDuplicateTypeSig: empty list"
-errDuplicateTypeSig (v:vs) = posMessage v $
+errDuplicateTypeSig (v:vs) = spanInfoMessage v $
   text "More than one type signature for" <+> text (escName v)
   <+> text "at:" $+$
   nest 2 (vcat (map (ppPosition . getPosition) (v:vs)))
 
 errDuplicateLabel :: String -> QualIdent -> Message
-errDuplicateLabel what l = posMessage l $ hsep $ map text
+errDuplicateLabel what l = spanInfoMessage l $ hsep $ map text
   ["Field label", escQualName l, "occurs more than once in record", what]
 
 errNonVariable :: String -> Ident -> Message
-errNonVariable what c = posMessage c $ hsep $ map text
+errNonVariable what c = spanInfoMessage c $ hsep $ map text
   ["Data constructor", escName c, "in left hand side of", what]
 
 errNoBody :: Ident -> Message
-errNoBody v = posMessage v $  hsep $ map text ["No body for", escName v]
+errNoBody v = spanInfoMessage v $  hsep $ map text ["No body for", escName v]
 
-errNoCommonCons :: Position -> [QualIdent] -> Message
-errNoCommonCons p ls = posMessage p $
+errNoCommonCons :: SpanInfo -> [QualIdent] -> Message
+errNoCommonCons spi ls = spanInfoMessage spi $
   text "No constructor has all of these fields:"
   $+$ nest 2 (vcat (map (text . escQualName) ls))
 
 errNoLabel :: QualIdent -> QualIdent -> Message
-errNoLabel c l = posMessage l $ hsep $ map text
+errNoLabel c l = spanInfoMessage l $ hsep $ map text
   [escQualName l, "is not a field label of constructor", escQualName c]
 
 errNoTypeSig :: Ident -> Message
-errNoTypeSig f = posMessage f $ hsep $ map text
+errNoTypeSig f = spanInfoMessage f $ hsep $ map text
   ["No type signature for external function", escName f]
 
-errToplevelPattern :: Position -> Message
-errToplevelPattern p = posMessage p $ text
+errToplevelPattern :: SpanInfo -> Message
+errToplevelPattern spi = spanInfoMessage spi $ text
   "Pattern declaration not allowed at top-level"
 
 errDifferentArity :: [Ident] -> Message
 errDifferentArity [] = internalError
   "SyntaxCheck.errDifferentArity: empty list"
-errDifferentArity (i:is) = posMessage i $
+errDifferentArity (i:is) = spanInfoMessage i $
   text "Equations for" <+> text (escName i) <+> text "have different arities"
   <+> text "at:" $+$
   nest 2 (vcat (map (ppPosition . getPosition) (i:is)))
 
 errWrongArity :: QualIdent -> Int -> Int -> Message
-errWrongArity c arity' argc = posMessage c $ hsep (map text
+errWrongArity c arity' argc = spanInfoMessage c $ hsep (map text
   ["Data constructor", escQualName c, "expects", arguments arity'])
   <> comma <+> text "but is applied to" <+> text (show argc)
   where arguments 0 = "no arguments"
         arguments 1 = "1 argument"
         arguments n = show n ++ " arguments"
 
-errMissingLanguageExtension :: Position -> String -> KnownExtension -> Message
-errMissingLanguageExtension p what ext = posMessage p $
+errMissingLanguageExtension :: SpanInfo -> String -> KnownExtension -> Message
+errMissingLanguageExtension spi what ext = spanInfoMessage spi $
   text what <+> text "are not supported in standard Curry." $+$
   nest 2 (text "Use flag or -X" <+> text (show ext)
           <+> text "to enable this extension.")
 
-errInfixWithoutParens :: Position -> [(QualIdent, QualIdent)] -> Message
-errInfixWithoutParens p calls = posMessage p $
+errInfixWithoutParens :: SpanInfo -> [(QualIdent, QualIdent)] -> Message
+errInfixWithoutParens spi calls = spanInfoMessage spi $
   text "Missing parens in infix patterns:" $+$
   vcat (map showCall calls)
   where

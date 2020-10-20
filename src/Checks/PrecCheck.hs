@@ -37,7 +37,7 @@ import Curry.Base.Pretty
 import Curry.Syntax
 
 import Base.Expr
-import Base.Messages (Message, posMessage, internalError)
+import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.Utils    (findMultiples)
 
 import Env.OpPrec (OpPrecEnv, OpPrec (..), PrecInfo (..), defaultP, bindP
@@ -491,18 +491,18 @@ a @+@ b = fromSrcSpan (combineSpans (getSrcSpan a) (getSrcSpan b))
 -- ---------------------------------------------------------------------------
 
 errUndefinedOperator :: Ident -> Message
-errUndefinedOperator op = posMessage op $ hsep $ map text
+errUndefinedOperator op = spanInfoMessage op $ hsep $ map text
   ["No definition for", escName op, "in this scope"]
 
 errMultiplePrecedence :: [Ident] -> Message
 errMultiplePrecedence []       = internalError
   "PrecCheck.errMultiplePrecedence: empty list"
-errMultiplePrecedence (op:ops) = posMessage op $
+errMultiplePrecedence (op:ops) = spanInfoMessage op $
   (hsep $ map text ["More than one fixity declaration for", escName op, "at"])
   $+$ nest 2 (vcat (map (ppPosition . getPosition) (op:ops)))
 
 errInvalidParse :: String -> Ident -> QualIdent -> Message
-errInvalidParse what op1 op2 = posMessage op1 $ hsep $ map text
+errInvalidParse what op1 op2 = spanInfoMessage op1 $ hsep $ map text
   [ "Invalid use of", what, escName op1, "with", escQualName op2, "in"
   , showLine $ getPosition op2]
 
@@ -510,6 +510,6 @@ errInvalidParse what op1 op2 = posMessage op1 $ hsep $ map text
 -- TODO: Is this still true after span update for parser?
 
 errAmbiguousParse :: String -> QualIdent -> QualIdent -> Message
-errAmbiguousParse what op1 op2 = posMessage op1 $ hsep $ map text
+errAmbiguousParse what op1 op2 = spanInfoMessage op1 $ hsep $ map text
   ["Ambiguous use of", what, escQualName op1, "with", escQualName op2, "in"
   , showLine $ getPosition op2]

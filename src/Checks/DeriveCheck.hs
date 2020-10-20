@@ -15,11 +15,11 @@
 module Checks.DeriveCheck (deriveCheck) where
 
 import Curry.Base.Ident
-import Curry.Base.Position
 import Curry.Base.Pretty
+import Curry.Base.SpanInfo (HasSpanInfo)
 import Curry.Syntax
 
-import Base.Messages (Message, posMessage)
+import Base.Messages (Message, spanInfoMessage)
 
 import Env.TypeConstructor
 
@@ -80,26 +80,26 @@ constrArity c@(RecordDecl  _ _ _) = length $ recordLabels c
 -- Error messages
 -- ---------------------------------------------------------------------------
 
-errNoAbstractDerive :: HasPosition a => a -> Message
-errNoAbstractDerive p = posMessage p $
+errNoAbstractDerive :: HasSpanInfo a => a -> Message
+errNoAbstractDerive s = spanInfoMessage s $
   text "Instances can only be derived for data types with" <+>
   text "at least one constructor"
 
 errNotDerivable :: QualIdent -> Message
-errNotDerivable cls = posMessage cls $ hsep $ map text
+errNotDerivable cls = spanInfoMessage cls $ hsep $ map text
   ["Instances of type class", escQualName cls, "cannot be derived"]
 
 errNoDataDerive :: QualIdent -> Message
-errNoDataDerive qcls = posMessage qcls $ hsep $ map text
+errNoDataDerive qcls = spanInfoMessage qcls $ hsep $ map text
   [ "Instances of type class"
   , escQualName qcls
   , "are automatically derived if possible"]
 
-errNotEnum :: HasPosition a => a -> Message
-errNotEnum p = posMessage p $
+errNotEnum :: HasSpanInfo a => a -> Message
+errNotEnum p = spanInfoMessage p $
   text "Instances for Enum can be derived only for enumeration types"
 
-errNotBounded :: HasPosition a => a -> Message
-errNotBounded p = posMessage p $
+errNotBounded :: HasSpanInfo a => a -> Message
+errNotBounded p = spanInfoMessage p $
   text "Instances of Bounded can be derived only for enumeration" <+>
   text "and single constructor types"

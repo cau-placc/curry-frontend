@@ -93,33 +93,32 @@ loadInterfaces paths (Module _ _ _ m _ is _) = do
 -- for in the import paths and compiled.
 loadInterface :: HasPosition a => [ModuleIdent] -> (a, ModuleIdent)
               -> IntfLoader ()
-loadInterface ctxt imp@(pp, m)
-  | m `elem` ctxt = report [errCyclicImport p (m : takeWhile (/= m) ctxt)]
+loadInterface ctxt (_, m)
+  | m `elem` ctxt = report [errCyclicImport $ m : takeWhile (/= m) ctxt]
   | otherwise     = do
     isLoaded <- loaded m
     unless isLoaded $ do
       paths  <- searchPaths
       mbIntf <- liftIO $ lookupCurryInterface paths m
       case mbIntf of
-        Nothing -> report [errInterfaceNotFound p m]
-        Just fn -> compileInterface ctxt imp fn
-  where p = getPosition pp
+        Nothing -> report [errInterfaceNotFound m]
+        Just fn -> compileInterface ctxt m fn
 
 -- |Compile an interface by recursively loading its dependencies.
 --
 -- After reading an interface, all imported interfaces are recursively
 -- loaded and inserted into the interface's environment.
-compileInterface :: HasPosition p => [ModuleIdent] -> (p, ModuleIdent) -> FilePath
+compileInterface :: [ModuleIdent] -> ModuleIdent -> FilePath
                  -> IntfLoader ()
-compileInterface ctxt (p, m) fn = do
+compileInterface ctxt m fn = do
   mbSrc <- liftIO $ readModule fn
   case mbSrc of
-    Nothing  -> report [errInterfaceNotFound p m]
+    Nothing  -> report [errInterfaceNotFound m]
     Just src -> case runCYMIgnWarn (parseInterface fn src) of
       Left err -> report err
       Right intf@(Interface n is _) ->
         if m /= n
-          then report [errWrongInterface (first fn) m n]
+          then report [errWrongInterface m n]
           else do
             let (intf', intfErrs) = intfSyntaxCheck intf
             mapM_ report [intfErrs]
@@ -127,22 +126,22 @@ compileInterface ctxt (p, m) fn = do
             addInterface m intf'
 
 -- Error message for required interface that could not be found.
-errInterfaceNotFound :: HasPosition p => p -> ModuleIdent -> Message
-errInterfaceNotFound p m = posMessage p $
+errInterfaceNotFound :: ModuleIdent -> Message
+errInterfaceNotFound m = spanInfoMessage m $
   text "Interface for module" <+> text (moduleName m) <+> text "not found"
 
 -- Error message for an unexpected interface.
-errWrongInterface :: HasPosition p => p -> ModuleIdent -> ModuleIdent -> Message
-errWrongInterface p m n = posMessage p $
+errWrongInterface :: ModuleIdent -> ModuleIdent -> Message
+errWrongInterface m n = spanInfoMessage m $
   text "Expected interface for" <+> text (moduleName m)
   <> comma <+> text "but found" <+> text (moduleName n)
 
 -- Error message for a cyclic import.
-errCyclicImport :: HasPosition p => p -> [ModuleIdent] -> Message
-errCyclicImport _ []  = internalError "Interfaces.errCyclicImport: empty list"
-errCyclicImport p [m] = posMessage p $
+errCyclicImport :: [ModuleIdent] -> Message
+errCyclicImport []  = internalError "Interfaces.errCyclicImport: empty list"
+errCyclicImport [m] = spanInfoMessage m $
   text "Recursive import for module" <+> text (moduleName m)
-errCyclicImport p ms  = posMessage p $
+errCyclicImport ms  = spanInfoMessage (head ms) $
   text "Cyclic import dependency between modules"
   <+> hsep (punctuate comma (map text inits)) <+> text "and" <+> text lastm
   where

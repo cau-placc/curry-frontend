@@ -29,7 +29,7 @@ import           Data.List                (nub, partition)
 import           Data.Maybe               (isNothing)
 
 import Base.Expr
-import Base.Messages (Message, posMessage, internalError)
+import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.TopEnv
 import Base.Utils    (findMultiples, findDouble)
 
@@ -37,7 +37,6 @@ import Env.TypeConstructor
 import Env.Type
 
 import Curry.Base.Ident
-import Curry.Base.Position
 import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
@@ -124,7 +123,7 @@ checkIDecl (IInstanceDecl p cx qcls inst is m) = do
   checkClass qcls
   QualTypeExpr _ cx' inst' <- checkQualType $ QualTypeExpr NoSpanInfo cx inst
   checkSimpleContext cx'
-  checkInstanceType p inst'
+  checkInstanceType inst'
   mapM_ (report . errMultipleImplementation . head) $ findMultiples $ map fst is
   return $ IInstanceDecl p cx' qcls inst' is m
 
@@ -178,19 +177,19 @@ checkSimpleConstraint c@(Constraint _ _ ty) =
 checkIMethodDecl :: Ident -> IMethodDecl -> ISC IMethodDecl
 checkIMethodDecl tv (IMethodDecl p f a qty) = do
   qty' <- checkQualType qty
-  unless (tv `elem` fv qty') $ report $ errAmbiguousType p tv
+  unless (tv `elem` fv qty') $ report $ errAmbiguousType f tv
   let QualTypeExpr _ cx _ = qty'
-  when (tv `elem` fv cx) $ report $ errConstrainedClassVariable p tv
+  when (tv `elem` fv cx) $ report $ errConstrainedClassVariable f tv
   return $ IMethodDecl p f a qty'
 
-checkInstanceType :: Position -> InstanceType -> ISC ()
-checkInstanceType p inst = do
+checkInstanceType :: InstanceType -> ISC ()
+checkInstanceType inst = do
   tEnv <- getTypeEnv
   unless (isSimpleType inst &&
     not (isTypeSyn (typeConstr inst) tEnv) &&
     null (filter isAnonId $ typeVars inst) &&
     isNothing (findDouble $ fv inst)) $
-      report $ errIllegalInstanceType p inst
+      report $ errIllegalInstanceType inst inst
 
 checkQualType :: QualTypeExpr -> ISC QualTypeExpr
 checkQualType (QualTypeExpr spi cx ty) = do
@@ -291,7 +290,7 @@ isTypeSyn tc tEnv = case qualLookupTypeKind tc tEnv of
 -- ---------------------------------------------------------------------------
 
 errUndefined :: String -> QualIdent -> Message
-errUndefined what qident = posMessage qident $ hsep $ map text
+errUndefined what qident = spanInfoMessage qident $ hsep $ map text
   ["Undefined", what, qualName qident]
 
 errUndefinedClass :: QualIdent -> Message
@@ -301,46 +300,46 @@ errUndefinedType :: QualIdent -> Message
 errUndefinedType = errUndefined "type"
 
 errMultipleImplementation :: Ident -> Message
-errMultipleImplementation f = posMessage f $ hsep $ map text
+errMultipleImplementation f = spanInfoMessage f $ hsep $ map text
   ["Arity information for method", idName f, "occurs more than once"]
 
-errAmbiguousType :: Position -> Ident -> Message
-errAmbiguousType p ident = posMessage p $ hsep $ map text
+errAmbiguousType :: HasSpanInfo s => s -> Ident -> Message
+errAmbiguousType p ident = spanInfoMessage p $ hsep $ map text
   [ "Method type does not mention class variable", idName ident ]
 
-errConstrainedClassVariable :: Position -> Ident -> Message
-errConstrainedClassVariable p ident = posMessage p $ hsep $ map text
+errConstrainedClassVariable :: HasSpanInfo s => s -> Ident -> Message
+errConstrainedClassVariable p ident = spanInfoMessage p $ hsep $ map text
   [ "Method context must not constrain class variable", idName ident ]
 
 errNonLinear :: Ident -> String -> Message
-errNonLinear tv what = posMessage tv $ hsep $ map text
+errNonLinear tv what = spanInfoMessage tv $ hsep $ map text
   [ "Type variable", escName tv, "occurs more than once in", what ]
 
 errNoVariable :: Ident -> String -> Message
-errNoVariable tv what = posMessage tv $ hsep $ map text
+errNoVariable tv what = spanInfoMessage tv $ hsep $ map text
   [ "Type constructor or type class identifier", escName tv, "used in", what ]
 
 errUnboundVariable :: Ident -> Message
-errUnboundVariable tv = posMessage tv $
+errUnboundVariable tv = spanInfoMessage tv $
   text "Undefined type variable" <+> text (escName tv)
 
 errBadTypeSynonym :: QualIdent -> Message
-errBadTypeSynonym tc = posMessage tc $ text "Synonym type"
+errBadTypeSynonym tc = spanInfoMessage tc $ text "Synonym type"
                     <+> text (qualName tc) <+> text "in interface"
 
 errNoElement :: String -> String -> QualIdent -> Ident -> Message
-errNoElement what for tc x = posMessage tc $ hsep $ map text
+errNoElement what for tc x = spanInfoMessage x $ hsep $ map text
   [ "Hidden", what, escName x, "is not defined for", for, qualName tc ]
 
 errIllegalSimpleConstraint :: Constraint -> Message
-errIllegalSimpleConstraint c@(Constraint _ qcls _) = posMessage qcls $ vcat
+errIllegalSimpleConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
   [ text "Illegal class constraint" <+> pPrint c
   , text "Constraints in class and instance declarations must be of"
   , text "the form C u, where C is a type class and u is a type variable."
   ]
 
-errIllegalInstanceType :: Position -> InstanceType -> Message
-errIllegalInstanceType p inst = posMessage p $ vcat
+errIllegalInstanceType :: HasSpanInfo s => s -> InstanceType -> Message
+errIllegalInstanceType p inst = spanInfoMessage p $ vcat
   [ text "Illegal instance type" <+> pPrint inst
   , text "The instance type must be of the form (T u_1 ... u_n),"
   , text "where T is not a type synonym and u_1, ..., u_n are"

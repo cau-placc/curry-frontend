@@ -17,7 +17,7 @@ module Base.Messages
     -- * program abortion
   , abortWith, abortWithMessage, abortWithMessages, warnOrAbort, internalError
     -- * creating messages
-  , Message, message, posMessage
+  , Message, message, posMessage, spanInfoMessage
   ) where
 
 import Control.Monad              (unless, when)
@@ -26,8 +26,8 @@ import Data.List                  (sort)
 import System.IO                  (hFlush, hPutStrLn, stderr, stdout)
 import System.Exit                (exitFailure)
 
-import Curry.Base.Message         ( Message, message, posMessage, ppWarning
-                                  , ppMessages, ppError)
+import Curry.Base.Message         ( Message, message, posMessage, spanInfoMessage
+                                  , ppWarning, ppMessagesWithPreviews, ppError)
 import Curry.Base.Pretty          (Doc, text)
 import CompilerOpts               (Options (..), WarnOpts (..), Verbosity (..))
 
@@ -71,7 +71,7 @@ warnOrAbort opts msgs = when (wnWarn opts && not (null msgs)) $ do
 -- |Print a list of messages on 'stderr'
 printMessages :: (Message -> Doc) -> [Message] -> IO ()
 printMessages msgType msgs
-  = unless (null msgs) $ putErrLn (show $ ppMessages msgType $ sort msgs)
+  = unless (null msgs) $ putErrLn =<< (fmap show $ ppMessagesWithPreviews msgType $ sort msgs)
 
 -- |Raise an internal error
 internalError :: String -> a
