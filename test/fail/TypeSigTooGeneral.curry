@@ -10,3 +10,6 @@ f' xs = g' (reverse xs)
   where
     g' :: [b] -> [b]
     g' ys = xs ++ ys
+
+n :: Show a => f a
+n = 23

@@ -223,9 +223,9 @@ checkExpr (InfixApply spi e1 op e2) = do
   e1' <- checkExpr e1
   e2' <- checkExpr e2
   fixPrec spi e1' op e2'
-checkExpr (LeftSection      spi e op) = checkExpr e >>= checkLSection spi op
-checkExpr (RightSection     spi op e) = checkExpr e >>= checkRSection spi op
-checkExpr (Lambda           spi ts e) =
+checkExpr (LeftSection    spi   e op) = checkExpr e >>= checkLSection spi op
+checkExpr (RightSection   spi   op e) = checkExpr e >>= checkRSection spi op
+checkExpr (Lambda         spi   ts e) =
   Lambda spi <$> mapM checkPattern ts <*> checkExpr e
 checkExpr (Let           spi li ds e) = withLocalPrecEnv $
   Let spi li <$> checkDecls ds <*> checkExpr e

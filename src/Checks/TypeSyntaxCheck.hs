@@ -1,68 +1,67 @@
-{-|
-Module      : Checks.TypeSyntaxCheck
-Description : Checks the type syntax of a Curry module
-Copyright   : (c) 2016–2017 Finn Teegen
-                  2019 Jan-Hendrik Matthes
-License     : BSD-3-Clause
+{- |
+    Module      :  $Header$
+    Description :  Checks type syntax
+    Copyright   :  (c) 2016 - 2017 Finn Teegen
+    License     :  BSD-3-clause
 
-Maintainer  : fte@informatik.uni-kiel.de
-Stability   : experimental
-Portability : portable
+    Maintainer  :  bjp@informatik.uni-kiel.de
+    Stability   :  experimental
+    Portability :  portable
 
-After the source file has been parsed and all modules have been imported, the
-compiler first checks all type definitions and signatures. In particular, this
-module disambiguates nullary type constructors and type variables, which -- in
-contrast to Haskell -- is not possible on purely syntactic criteria. In
-addition it is checked that all type constructors and type variables occurring
-on the right hand side of a type declaration are actually defined and no
-identifier is defined more than once. Furthermore it is checked whether a
-specific language extension (e.g. 'RankNTypes') is needed.
+   After the source file has been parsed and all modules have been
+   imported, the compiler first checks all type definitions and
+   signatures. In particular, this module disambiguates nullary type
+   constructors and type variables, which -- in contrast to Haskell -- is
+   not possible on purely syntactic criteria. In addition it is checked
+   that all type constructors and type variables occurring on the right
+   hand side of a type declaration are actually defined and no identifier
+   is defined more than once.
 -}
-
 {-# LANGUAGE CPP #-}
-
 module Checks.TypeSyntaxCheck (typeSyntaxCheck) where
 
 #if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative (pure, (<$>), (<*>))
+import           Control.Applicative      ((<$>), (<*>), pure)
 #endif
-import           Control.Monad       (unless, when)
-import qualified Control.Monad.State as S (State, gets, modify, runState)
-import           Data.List           (nub)
-import qualified Data.Map            as Map
-import           Data.Maybe          (fromMaybe, isNothing)
+import           Control.Monad            (unless, when)
+import qualified Control.Monad.State as S (State, runState, gets, modify)
+import           Data.List                (nub)
+import qualified Data.Map as Map
+import           Data.Maybe               (fromMaybe, isNothing)
 
-import           Curry.Base.Ident
-import           Curry.Base.Position
-import           Curry.Base.Pretty
-import           Curry.Base.SpanInfo
-import           Curry.Syntax
-import           Curry.Syntax.Pretty
+import Curry.Base.Ident
+import Curry.Base.Position
+import Curry.Base.SpanInfo
+import Curry.Base.Pretty
+import Curry.Syntax
+import Curry.Syntax.Pretty
 
-import           Base.Expr           (Expr (fv))
-import           Base.Messages       (Message, internalError, spanInfoMessage)
-import           Base.TopEnv
-import           Base.Utils          (findDouble, findMultiples)
-import           Env.Type
-import           Env.TypeConstructor (TCEnv)
+import Base.Expr (Expr (fv))
+import Base.Messages (Message, spanInfoMessage, internalError)
+import Base.TopEnv
+import Base.Utils (findMultiples, findDouble)
 
--- TODO: Use span information for error messages.
+import Env.TypeConstructor (TCEnv)
+import Env.Type
 
--- | In order to check type constructor applications, the compiler maintains an
--- environment containing all known type constructors and type classes. The
--- function 'typeSyntaxCheck' expects a type constructor environment that is
--- already initialized with the imported type constructors and type classes.
--- The type constructor environment is converted to a type identifier
--- environment, before all locally defined type constructors and type classes
--- are added to this environment and the declarations are checked within this
--- environment.
+-- TODO Use span info for err messages
+
+-- In order to check type constructor applications, the compiler
+-- maintains an environment containing all known type constructors and
+-- type classes. The function 'typeSyntaxCheck' expects a type constructor
+-- environment that is already initialized with the imported type constructors
+-- and type classes. The type constructor environment is converted to a type
+-- identifier environment, before all locally defined type constructors and
+-- type classes are added to this environment and the declarations are checked
+-- within this environment.
+
 typeSyntaxCheck :: [KnownExtension] -> TCEnv -> Module a
                 -> ((Module a, [KnownExtension]), [Message])
 typeSyntaxCheck exts tcEnv mdl@(Module _ _ _ m _ _ ds) =
   case findMultiples $ map getIdent tcds of
-    []  -> if length dfds <= 1
-             then runTSCM (checkModule mdl) state
-             else ((mdl, exts), [errMultipleDefaultDeclarations dfps])
+    [] -> if length dfds <= 1
+            then runTSCM (checkModule mdl) state
+            else ((mdl, exts), [errMultipleDefaultDeclarations dfps])
     tss -> ((mdl, exts), map errMultipleDeclarations tss)
   where
     tcds = filter isTypeOrClassDecl ds
@@ -71,14 +70,10 @@ typeSyntaxCheck exts tcEnv mdl@(Module _ _ _ m _ _ ds) =
     tEnv = foldr (bindType m) (fmap toTypeKind tcEnv) tcds
     state = TSCState m tEnv exts Map.empty 1 []
 
---------------------------------------------------------------------------------
 -- Type Syntax Check Monad
---------------------------------------------------------------------------------
-
--- | The Type Syntax Check Monad is a state monad with a 'TSCState'.
 type TSCM = S.State TSCState
 
--- | The internal state of the Type Syntax Check.
+-- |Internal state of the Type Syntax Check
 data TSCState = TSCState
   { moduleIdent :: ModuleIdent
   , typeEnv     :: TypeEnv
@@ -89,8 +84,7 @@ data TSCState = TSCState
   }
 
 runTSCM :: TSCM a -> TSCState -> (a, [Message])
-runTSCM tscm s = let (a, s') = S.runState tscm s
-                  in (a, reverse $ errors s')
+runTSCM tscm s = let (a, s') = S.runState tscm s in (a, reverse $ errors s')
 
 getModuleIdent :: TSCM ModuleIdent
 getModuleIdent = S.gets moduleIdent
@@ -136,7 +130,7 @@ ok :: TSCM ()
 ok = return ()
 
 bindType :: ModuleIdent -> Decl a -> TypeEnv -> TypeEnv
-bindType m (DataDecl _ tc _ cs _)    = bindTypeKind m tc (Data qtc ids)
+bindType m (DataDecl _ tc _ cs _) = bindTypeKind m tc (Data qtc ids)
   where
     qtc = qualifyWith m tc
     ids = map constrId cs ++ nub (concatMap recordLabels cs)
@@ -147,23 +141,23 @@ bindType m (NewtypeDecl _ tc _ nc _) = bindTypeKind m tc (Data qtc ids)
   where
     qtc = qualifyWith m tc
     ids = nconstrId nc : nrecordLabels nc
-bindType m (TypeDecl _ tc _ _)       = bindTypeKind m tc (Alias qtc)
+bindType m (TypeDecl _ tc _ _) = bindTypeKind m tc (Alias qtc)
   where
     qtc = qualifyWith m tc
 bindType m (ClassDecl _ _ _ cls _ ds)  = bindTypeKind m cls (Class qcls ms)
   where
     qcls = qualifyWith m cls
     ms = concatMap methods ds
-bindType _ _                         = id
+bindType _ _ = id
 
---------------------------------------------------------------------------------
--- Renaming
---------------------------------------------------------------------------------
+-- As preparation for the kind check, type variables within type declarations
+-- have to be renamed since existentially quantified type variable may shadow
+-- a universally quantified variable from the left hand side of a type
+-- declaration.
 
--- TODO: The renaming may be used to support scoped type variables in the
--- future.
+-- TODO: This renaming may be used to support scoped type variables in future.
 
--- TODO: In the long run, the renaming may be merged with the syntax check
+-- TODO: In the long run, this renaming may be merged with the syntax check
 -- renaming and moved into a separate module.
 
 type RenameEnv = Map.Map Ident Ident
@@ -184,16 +178,17 @@ instance Rename a => Rename [a] where
   rename = mapM rename
 
 instance Rename (Decl a) where
-  rename (DataDecl p tc tvs cs clss)    = withLocalEnv $ do
+  rename (InfixDecl p fix pr ops) = return $ InfixDecl p fix pr ops
+  rename (DataDecl p tc tvs cs clss) = withLocalEnv $ do
     bindVars tvs
     DataDecl p tc <$> rename tvs <*> rename cs <*> pure clss
-  rename (ExternalDataDecl p tc tvs)    = withLocalEnv $ do
+  rename (ExternalDataDecl p tc tvs) = withLocalEnv $ do
     bindVars tvs
     ExternalDataDecl p tc <$> rename tvs
   rename (NewtypeDecl p tc tvs nc clss) = withLocalEnv $ do
     bindVars tvs
     NewtypeDecl p tc <$> rename tvs <*> rename nc <*> pure clss
-  rename (TypeDecl p tc tvs ty)         = withLocalEnv $ do
+  rename (TypeDecl p tc tvs ty) = withLocalEnv $ do
     bindVars tvs
     TypeDecl p tc <$> rename tvs <*> rename ty
   rename (TypeSig p fs qty)                =
@@ -224,22 +219,24 @@ instance Rename FieldDecl where
   rename (FieldDecl p ls ty) = FieldDecl p ls <$> rename ty
 
 instance Rename NewConstrDecl where
-  rename (NewConstrDecl p c ty)      = NewConstrDecl p c <$> rename ty
+  rename (NewConstrDecl p c ty) = NewConstrDecl p c <$> rename ty
   rename (NewRecordDecl p c (l, ty)) = NewRecordDecl p c . (,) l <$> rename ty
 
 instance Rename Constraint where
   rename (Constraint spi cls ty) = Constraint spi cls <$> rename ty
 
+instance Rename QualTypeExpr where
+  rename (QualTypeExpr spi cx ty) = QualTypeExpr spi <$> rename cx <*> rename ty
+
 instance Rename TypeExpr where
   rename (ConstructorType spi tc) = return $ ConstructorType spi tc
-  rename (ApplyType spi ty1 ty2)  = ApplyType spi <$> rename ty1 <*> rename ty2
-  rename (VariableType spi tv)    = VariableType spi <$> rename tv
-  rename (TupleType spi tys)      = TupleType spi <$> rename tys
-  rename (ListType spi ty)        = ListType spi <$> rename ty
-  rename (ArrowType spi ty1 ty2)  = ArrowType spi <$> rename ty1 <*> rename ty2
-  rename (ParenType spi ty)       = ParenType spi <$> rename ty
-  rename (ContextType spi cx ty)  = ContextType spi <$> rename cx <*> rename ty
-  rename (ForallType spi vs ty)   = withLocalEnv $ do
+  rename (ApplyType spi ty1 ty2) = ApplyType spi <$> rename ty1 <*> rename ty2
+  rename (VariableType spi tv) = VariableType spi <$> rename tv
+  rename (TupleType spi tys) = TupleType spi <$> rename tys
+  rename (ListType spi ty) = ListType spi <$> rename ty
+  rename (ArrowType spi ty1 ty2) = ArrowType spi <$> rename ty1 <*> rename ty2
+  rename (ParenType spi ty) = ParenType spi <$> rename ty
+  rename (ForallType spi vs ty) = do
     bindVars vs
     ForallType spi <$> mapM rename vs <*> rename ty
 
@@ -317,14 +314,10 @@ bindVars = mapM_ bindVar
 lookupVar :: Ident -> TSCM (Maybe Ident)
 lookupVar tv = Map.lookup tv <$> getRenameEnv
 
---------------------------------------------------------------------------------
--- Type Syntax Check
---------------------------------------------------------------------------------
-
--- When type declarations are checked, the compiler will allow anonymous type
--- variables on the left hand side of the declaration, but not on the right hand
--- side. Function and pattern declarations must be traversed because they can
--- contain local type signatures.
+-- When type declarations are checked, the compiler will allow anonymous
+-- type variables on the left hand side of the declaration, but not on
+-- the right hand side. Function and pattern declarations must be
+-- traversed because they can contain local type signatures.
 
 checkModule :: Module a -> TSCM (Module a, [KnownExtension])
 checkModule (Module spi li ps m es is ds) = do
@@ -348,8 +341,8 @@ checkDecl (TypeDecl p tc tvs ty)              = do
   checkTypeLhs tvs
   ty' <- checkClosedType tvs ty
   return $ TypeDecl p tc tvs ty'
-checkDecl (TypeSig p vs ty)                   =
-  TypeSig p vs <$> checkClosedTypeSig [] ty
+checkDecl (TypeSig p vs qty)                   =
+  TypeSig p vs <$> checkQualType qty
 checkDecl (FunctionDecl a p f eqs)            = FunctionDecl a p f <$>
   mapM checkEquation eqs
 checkDecl (PatternDecl p t rhs)               = PatternDecl p t <$> checkRhs rhs
@@ -359,107 +352,87 @@ checkDecl (ClassDecl p li cx cls clsvar ds)   = do
   checkTypeVars "class declaration" [clsvar]
   cx' <- checkClosedContext [clsvar] cx
   checkSimpleContext cx'
-  ds' <- mapM (checkClassDecl clsvar) ds
+  ds' <- mapM checkDecl ds
   mapM_ (checkClassMethod clsvar) ds'
   return $ ClassDecl p li cx' cls clsvar ds'
 checkDecl (InstanceDecl p li cx qcls inst ds) = do
   checkClass True qcls
-  cxty <- checkType $ ContextType NoSpanInfo cx inst
-  let ContextType _ cx' inst' = cxty
+  QualTypeExpr _ cx' inst' <- checkQualType $ QualTypeExpr NoSpanInfo cx inst
   checkSimpleContext cx'
   checkInstanceType p inst'
   InstanceDecl p li cx' qcls inst' <$> mapM checkDecl ds
 checkDecl d                                   = return d
 
-checkClassDecl :: Ident -> Decl a -> TSCM (Decl a)
-checkClassDecl tv (TypeSig p vs ty)
-  = TypeSig p vs <$> checkClosedTypeSig [tv] ty
-checkClassDecl _  dc                = checkDecl dc
-
 checkConstrDecl :: [Ident] -> ConstrDecl -> TSCM ConstrDecl
-checkConstrDecl tvs (ConstrDecl p c tys)     = do
+checkConstrDecl tvs (ConstrDecl p c tys) = do
   tys' <- mapM (checkClosedType tvs) tys
   return $ ConstrDecl p c tys'
 checkConstrDecl tvs (ConOpDecl p ty1 op ty2) = do
   tys' <- mapM (checkClosedType tvs) [ty1, ty2]
   let [ty1', ty2'] = tys'
   return $ ConOpDecl p ty1' op ty2'
-checkConstrDecl tvs (RecordDecl p c fs)      = do
+checkConstrDecl tvs (RecordDecl p c fs) = do
   fs' <- mapM (checkFieldDecl tvs) fs
   return $ RecordDecl p c fs'
 
 checkFieldDecl :: [Ident] -> FieldDecl -> TSCM FieldDecl
-checkFieldDecl tvs (FieldDecl p ls ty)
-  = FieldDecl p ls <$> checkClosedType tvs ty
+checkFieldDecl tvs (FieldDecl p ls ty) =
+  FieldDecl p ls <$> checkClosedType tvs ty
 
 checkNewConstrDecl :: [Ident] -> NewConstrDecl -> TSCM NewConstrDecl
-checkNewConstrDecl tvs (NewConstrDecl p c ty)      = do
-  ty' <- checkClosedType tvs ty
+checkNewConstrDecl tvs (NewConstrDecl p c ty) = do
+  ty'  <- checkClosedType tvs ty
   return $ NewConstrDecl p c ty'
 checkNewConstrDecl tvs (NewRecordDecl p c (l, ty)) = do
-  ty' <- checkClosedType tvs ty
+  ty'  <- checkClosedType tvs ty
   return $ NewRecordDecl p c (l, ty')
 
 checkSimpleContext :: Context -> TSCM ()
 checkSimpleContext = mapM_ checkSimpleConstraint
 
 checkSimpleConstraint :: Constraint -> TSCM ()
-checkSimpleConstraint c@(Constraint _ _ ty)
-  = unless (isVariableType ty) $ report $ errIllegalSimpleConstraint c
+checkSimpleConstraint c@(Constraint _ _ ty) =
+  unless (isVariableType ty) $ report $ errIllegalSimpleConstraint c
 
 -- Class method's type signatures have to obey a few additional restrictions.
--- The class variable must appear in the method's type and the method's context
--- must not contain any additional constraints for that class variable.
+-- The class variable must appear in the method's type and the method's
+-- context must not contain any additional constraints for that class variable.
 
 checkClassMethod :: Ident -> Decl a -> TSCM ()
-checkClassMethod tv (TypeSig spi _ ty) = do
-  unless (tv `elem` fv ty) $ report $ errAmbiguousType spi tv
-  constrainedClsVar <- checkConstrainedClsVar tv ty
-  when constrainedClsVar $ report $ errConstrainedClassVariable spi tv
-checkClassMethod _  _                  = ok
-
-checkConstrainedClsVar :: Ident -> TypeExpr -> TSCM Bool
-checkConstrainedClsVar tv (ApplyType _ ty1 ty2)
-  = or <$> mapM (checkConstrainedClsVar tv) [ty1, ty2]
-checkConstrainedClsVar tv (TupleType _ tys)
-  = or <$> mapM (checkConstrainedClsVar tv) tys
-checkConstrainedClsVar tv (ListType _ ty)       = checkConstrainedClsVar tv ty
-checkConstrainedClsVar tv (ArrowType _ ty1 ty2)
-  = or <$> mapM (checkConstrainedClsVar tv) [ty1, ty2]
-checkConstrainedClsVar tv (ParenType _ ty)      = checkConstrainedClsVar tv ty
-checkConstrainedClsVar tv (ContextType _ cx ty)
-  = (||) <$> return (tv `elem` fv cx) <*> checkConstrainedClsVar tv ty
-checkConstrainedClsVar tv (ForallType _ vs ty)
-  | tv `notElem` vs = checkConstrainedClsVar tv ty
-checkConstrainedClsVar _  _                     = return False
+checkClassMethod tv (TypeSig spi _ qty) = do
+  unless (tv `elem` fv qty) $ report $ errAmbiguousType spi tv
+  let QualTypeExpr _ cx _ = qty
+  when (tv `elem` fv cx) $ report $ errConstrainedClassVariable spi tv
+checkClassMethod _ _ = ok
 
 checkInstanceType :: SpanInfo -> InstanceType -> TSCM ()
 checkInstanceType p inst = do
   tEnv <- getTypeEnv
-  unless (isSimpleType inst && not (isTypeSyn (typeConstr inst) tEnv)
-                            && not (any isAnonId $ typeVariables inst)
-                            && isNothing (findDouble $ fv inst)) $
-    report $ errIllegalInstanceType p inst
+  unless (isSimpleType inst &&
+    not (isTypeSyn (typeConstr inst) tEnv) &&
+    not (any isAnonId $ typeVariables inst) &&
+    isNothing (findDouble $ fv inst)) $
+      report $ errIllegalInstanceType p inst
 
 checkTypeLhs :: [Ident] -> TSCM ()
 checkTypeLhs = checkTypeVars "left hand side of type declaration"
 
--- | Checks a list of type variables for:
+-- |Checks a list of type variables for
 -- * Anonymous type variables are allowed
--- * Only type variables (no type constructors)
--- * Linearity
+-- * only type variables (no type constructors)
+-- * linearity
 checkTypeVars :: String -> [Ident] -> TSCM ()
-checkTypeVars _    []       = ok
-checkTypeVars what (tv:tvs) = do
+checkTypeVars _    []         = ok
+checkTypeVars what (tv : tvs) = do
   unless (isAnonId tv) $ do
     isTypeConstrOrClass <- not . null . lookupTypeKind tv <$> getTypeEnv
     when isTypeConstrOrClass $ report $ errNoVariable tv what
     when (tv `elem` tvs) $ report $ errNonLinear tv what
   checkTypeVars what tvs
 
--- Checking expressions is rather straight forward. The compiler must only
--- traverse the structure of expressions in order to find local declaration
--- groups.
+-- Checking expressions is rather straight forward. The compiler must
+-- only traverse the structure of expressions in order to find local
+-- declaration groups.
 
 checkEquation :: Equation a -> TSCM (Equation a)
 checkEquation (Equation p lhs rhs) = Equation p lhs <$> checkRhs rhs
@@ -474,29 +447,32 @@ checkCondExpr :: CondExpr a -> TSCM (CondExpr a)
 checkCondExpr (CondExpr spi g e) = CondExpr spi <$> checkExpr g <*> checkExpr e
 
 checkExpr :: Expression a -> TSCM (Expression a)
-checkExpr (Paren spi e)                 = Paren spi <$> checkExpr e
-checkExpr (Typed spi e qty)
-  = Typed spi <$> checkExpr e <*> checkClosedTypeSig [] qty
-checkExpr (Record spi a c fs)           = Record spi a c <$>
-  mapM checkFieldExpr fs
-checkExpr (RecordUpdate spi e fs)       = RecordUpdate spi <$> checkExpr e <*>
-  mapM checkFieldExpr fs
-checkExpr (Tuple spi es)                = Tuple spi <$> mapM checkExpr es
-checkExpr (List spi a es)               = List spi a <$> mapM checkExpr es
-checkExpr (ListCompr spi e qs)          = ListCompr spi <$> checkExpr e
+checkExpr l@(Literal             _ _ _) = return l
+checkExpr v@(Variable            _ _ _) = return v
+checkExpr c@(Constructor         _ _ _) = return c
+checkExpr (Paren                 spi e) = Paren spi <$> checkExpr e
+checkExpr (Typed             spi e qty) = Typed spi <$> checkExpr e
+                                                    <*> checkQualType qty
+checkExpr (Record           spi a c fs) =
+  Record spi a c <$> mapM checkFieldExpr fs
+checkExpr (RecordUpdate       spi e fs) =
+  RecordUpdate spi <$> checkExpr e <*> mapM checkFieldExpr fs
+checkExpr (Tuple                spi es) = Tuple spi <$> mapM checkExpr es
+checkExpr (List               spi a es) = List spi a <$> mapM checkExpr es
+checkExpr (ListCompr          spi e qs) = ListCompr spi <$> checkExpr e
                                                         <*> mapM checkStmt qs
-checkExpr (EnumFrom spi e)              = EnumFrom spi <$> checkExpr e
-checkExpr (EnumFromThen spi e1 e2)      = EnumFromThen spi <$> checkExpr e1
+checkExpr (EnumFrom              spi e) = EnumFrom spi <$> checkExpr e
+checkExpr (EnumFromThen      spi e1 e2) = EnumFromThen spi <$> checkExpr e1
                                                            <*> checkExpr e2
-checkExpr (EnumFromTo spi e1 e2)        = EnumFromTo spi <$> checkExpr e1
+checkExpr (EnumFromTo        spi e1 e2) = EnumFromTo spi <$> checkExpr e1
                                                          <*> checkExpr e2
 checkExpr (EnumFromThenTo spi e1 e2 e3) = EnumFromThenTo spi <$> checkExpr e1
                                                              <*> checkExpr e2
                                                              <*> checkExpr e3
-checkExpr (UnaryMinus spi e)            = UnaryMinus spi <$> checkExpr e
-checkExpr (Apply spi e1 e2)             = Apply spi <$> checkExpr e1
+checkExpr (UnaryMinus            spi e) = UnaryMinus spi <$> checkExpr e
+checkExpr (Apply             spi e1 e2) = Apply spi <$> checkExpr e1
                                                     <*> checkExpr e2
-checkExpr (InfixApply spi e1 op e2)     = InfixApply spi <$> checkExpr e1
+checkExpr (InfixApply     spi e1 op e2) = InfixApply spi <$> checkExpr e1
                                                          <*> return op
                                                          <*> checkExpr e2
 checkExpr (LeftSection spi e op)        = flip (LeftSection spi) op <$>
@@ -525,10 +501,16 @@ checkAlt (Alt spi t rhs) = Alt spi t <$> checkRhs rhs
 checkFieldExpr :: Field (Expression a) -> TSCM (Field (Expression a))
 checkFieldExpr (Field spi l e) = Field spi l <$> checkExpr e
 
--- The parser cannot distinguish unqualified nullary type constructors and type
--- variables. Therefore, if the compiler finds an unbound identifier in a
--- position where a type variable is admissible, it will interpret the
--- identifier as such.
+-- The parser cannot distinguish unqualified nullary type constructors
+-- and type variables. Therefore, if the compiler finds an unbound
+-- identifier in a position where a type variable is admissible, it will
+-- interpret the identifier as such.
+
+checkQualType :: QualTypeExpr -> TSCM QualTypeExpr
+checkQualType (QualTypeExpr spi cx ty) = do
+  ty' <- checkType ty
+  cx' <- checkClosedContext (fv ty') cx
+  return $ QualTypeExpr spi cx' ty'
 
 checkClosedContext :: [Ident] -> Context -> TSCM Context
 checkClosedContext tvs cx = do
@@ -574,66 +556,43 @@ checkClosedType tvs ty = do
   checkClosed tvs ty'
   return ty'
 
--- | If a type signature starts with a forall type, the type must be closed.
-checkClosedTypeSig :: [Ident] -> TypeExpr -> TSCM TypeExpr
-checkClosedTypeSig tvs ty@(ForallType _ _ _) = checkClosedType tvs ty
-checkClosedTypeSig _   ty                    = checkType ty
-
 checkType :: TypeExpr -> TSCM TypeExpr
-checkType (ForallType spi vs ty) = do
-  -- Allow forall types at the beginning of a type when the `ExplicitForAll`
-  -- language extension is enabled.
-  rankNTypesEnabled <- hasExtension RankNTypes
-  unless rankNTypesEnabled $ do
-    checkUsedExtension spi "Explicit foralls" ExplicitForAll
-  ForallType spi vs <$> checkType ty
-checkType ty = checkType' ty
-
-checkType' :: TypeExpr -> TSCM TypeExpr
-checkType' c@(ConstructorType spi tc) = do
+checkType c@(ConstructorType spi tc) = do
   m <- getModuleIdent
   tEnv <- getTypeEnv
   case qualLookupTypeKind tc tEnv of
-    [] | isQTupleId tc        -> return c
-       | not (isQualified tc) -> return $ VariableType spi $ unqualify tc
-       | otherwise            -> report (errUndefinedType tc) >> return c
+    []
+      | isQTupleId tc -> return c
+      | not (isQualified tc) -> return $ VariableType spi $ unqualify tc
+      | otherwise -> report (errUndefinedType tc) >> return c
     [Class _ _] -> report (errUndefinedType tc) >> return c
-    [_]         -> return c
-    tks         -> case qualLookupTypeKind (qualQualify m tc) tEnv of
+    [_] -> return c
+    tks -> case qualLookupTypeKind (qualQualify m tc) tEnv of
       [Class _ _] -> report (errUndefinedType tc) >> return c
-      [_]         -> return c
-      _           -> do report (errAmbiguousIdent tc $ map origName tks)
-                        return c
-checkType' (ApplyType spi ty1 ty2)
-  = ApplyType spi <$> checkType' ty1 <*> checkType' ty2
-checkType' v@(VariableType spi tv)
+      [_] -> return c
+      _ -> report (errAmbiguousIdent tc $ map origName tks) >> return c
+checkType (ApplyType spi ty1 ty2) = ApplyType spi <$> checkType ty1
+                                                  <*> checkType ty2
+checkType v@(VariableType spi tv)
   | isAnonId tv = return v
-  | otherwise   = checkType' $ ConstructorType spi (qualify tv)
-checkType' (TupleType spi tys)     = TupleType spi <$> mapM checkType' tys
-checkType' (ListType spi ty)       = ListType spi <$> checkType' ty
-checkType' (ArrowType spi ty1 ty2) = ArrowType spi <$> checkType' ty1
-                                                  <*> checkType' ty2
-checkType' (ParenType spi ty)      = ParenType spi <$> checkType' ty
-checkType' (ContextType spi cx ty) = do
-  ty' <- checkType' ty
-  cx' <- checkClosedContext (fv ty') cx
-  return $ ContextType spi cx' ty'
-checkType' (ForallType spi vs ty)  = do
-  checkUsedExtension spi "Arbitrary-rank types" RankNTypes
-  ForallType spi vs <$> checkType' ty
+  | otherwise   = checkType $ ConstructorType  spi (qualify tv)
+checkType (TupleType     spi tys) = TupleType  spi    <$> mapM checkType tys
+checkType (ListType       spi ty) = ListType   spi    <$> checkType ty
+checkType (ArrowType spi ty1 ty2) = ArrowType  spi    <$> checkType ty1
+                                                      <*> checkType ty2
+checkType (ParenType      spi ty) = ParenType  spi    <$> checkType ty
+checkType (ForallType  spi vs ty) = ForallType spi vs <$> checkType ty
 
 checkClosed :: [Ident] -> TypeExpr -> TSCM ()
 checkClosed _   (ConstructorType _ _) = ok
 checkClosed tvs (ApplyType _ ty1 ty2) = mapM_ (checkClosed tvs) [ty1, ty2]
-checkClosed tvs (VariableType _ tv)
-  = when (isAnonId tv || tv `notElem` tvs) $ report $ errUnboundVariable tv
-checkClosed tvs (TupleType _ tys)     = mapM_ (checkClosed tvs) tys
-checkClosed tvs (ListType _ ty)       = checkClosed tvs ty
+checkClosed tvs (VariableType   _ tv) =
+  when (isAnonId tv || tv `notElem` tvs) $ report $ errUnboundVariable tv
+checkClosed tvs (TupleType     _ tys) = mapM_ (checkClosed tvs) tys
+checkClosed tvs (ListType       _ ty) = checkClosed tvs ty
 checkClosed tvs (ArrowType _ ty1 ty2) = mapM_ (checkClosed tvs) [ty1, ty2]
-checkClosed tvs (ParenType _ ty)      = checkClosed tvs ty
-checkClosed tvs (ContextType _ cx ty) = do _ <- checkClosedContext tvs cx
-                                           checkClosed tvs ty
-checkClosed tvs (ForallType _ vs ty)  = checkClosed (tvs ++ vs) ty
+checkClosed tvs (ParenType      _ ty) = checkClosed tvs ty
+checkClosed tvs (ForallType  _ vs ty) = checkClosed (tvs ++ vs) ty
 
 checkUsedExtension :: SpanInfo -> String -> KnownExtension -> TSCM ()
 checkUsedExtension spi msg ext = do
@@ -642,12 +601,12 @@ checkUsedExtension spi msg ext = do
     report $ errMissingLanguageExtension spi msg ext
     enableExtension ext
 
--- -----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 -- Auxiliary definitions
--- -----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 
 getIdent :: Decl a -> Ident
-getIdent (DataDecl _ tc _ _ _)     = tc
+getIdent (DataDecl     _ tc _ _ _) = tc
 getIdent (ExternalDataDecl _ tc _) = tc
 getIdent (NewtypeDecl _ tc _ _ _)  = tc
 getIdent (TypeDecl _ tc _ _)       = tc
@@ -657,33 +616,31 @@ getIdent _                         = internalError
 
 isTypeSyn :: QualIdent -> TypeEnv -> Bool
 isTypeSyn tc tEnv = case qualLookupTypeKind tc tEnv of
-                      [Alias _] -> True
-                      _         -> False
+  [Alias _] -> True
+  _ -> False
 
--- -----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 -- Error messages
--- -----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
 
 errMultipleDefaultDeclarations :: [SpanInfo] -> Message
 errMultipleDefaultDeclarations spis = spanInfoMessage (head spis) $
-  text "More than one default declaration:" $+$ nest 2 (vcat $ map showPos spis)
-  where
-    showPos = text . showLine . getPosition
+  text "More than one default declaration:" $+$
+    nest 2 (vcat $ map showPos spis)
+  where showPos = text . showLine . getPosition
 
 errMultipleDeclarations :: [Ident] -> Message
 errMultipleDeclarations is = spanInfoMessage i $
-  text "Multiple declarations of" <+> text (escName i)
-                                  <+> text "at:"
-                                  $+$ nest 2 (vcat $ map showPos is)
-  where
-    i = head is
-    showPos = text . showLine . getPosition
+  text "Multiple declarations of" <+> text (escName i) <+> text "at:" $+$
+    nest 2 (vcat $ map showPos is)
+  where i = head is
+        showPos = text . showLine . getPosition
 
 errMissingLanguageExtension :: SpanInfo -> String -> KnownExtension -> Message
 errMissingLanguageExtension spi what ext = spanInfoMessage spi $
-  text what <+> text "are not supported in standard Curry."
-            $+$ nest 2 (text "Use flag -X" <+> text (show ext)
-                                           <+> text "to enable this extension.")
+  text what <+> text "are not supported in standard Curry." $+$
+  nest 2 (text "Use flag -X" <+> text (show ext)
+          <+> text "to enable this extension.")
 
 errUndefined :: String -> QualIdent -> Message
 errUndefined what qident = spanInfoMessage qident $ hsep $ map text
@@ -697,21 +654,20 @@ errUndefinedType = errUndefined "type"
 
 errAmbiguousIdent :: QualIdent -> [QualIdent] -> Message
 errAmbiguousIdent qident qidents = spanInfoMessage qident $
-  text "Ambiguous identifier" <+> text (escQualName qident)
-                              $+$ text "It could refer to:"
-                              $+$ nest 2 (vcat (map (text . qualName) qidents))
+  text "Ambiguous identifier" <+> text (escQualName qident) $+$
+    text "It could refer to:" $+$ nest 2 (vcat (map (text . qualName) qidents))
 
 errAmbiguousType :: SpanInfo -> Ident -> Message
 errAmbiguousType spi ident = spanInfoMessage spi $ hsep $ map text
-  ["Method type does not mention class variable", idName ident]
+  [ "Method type does not mention class variable", idName ident ]
 
 errConstrainedClassVariable :: SpanInfo -> Ident -> Message
 errConstrainedClassVariable spi ident = spanInfoMessage spi $ hsep $ map text
-  ["Method context must not constrain class variable", idName ident]
+  [ "Method context must not constrain class variable", idName ident ]
 
 errNonLinear :: Ident -> String -> Message
 errNonLinear tv what = spanInfoMessage tv $ hsep $ map text
-  ["Type variable", idName tv, "occurs more than once in", what]
+  [ "Type variable", idName tv, "occurs more than once in", what ]
 
 errNoVariable :: Ident -> String -> Message
 errNoVariable tv what = spanInfoMessage tv $ hsep $ map text
@@ -719,17 +675,17 @@ errNoVariable tv what = spanInfoMessage tv $ hsep $ map text
 
 errUnboundVariable :: Ident -> Message
 errUnboundVariable tv = spanInfoMessage tv $ hsep $ map text
-  ["Unbound type variable", idName tv]
+  [ "Unbound type variable", idName tv ]
 
 errIllegalConstraint :: Constraint -> Message
-errIllegalConstraint c@(Constraint _ cls _) = spanInfoMessage cls $ vcat
+errIllegalConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
   [ text "Illegal class constraint" <+> pPrint c
   , text "Constraints must be of the form C u or C (u t1 ... tn),"
   , text "where C is a type class, u is a type variable and t1, ..., tn are types."
   ]
 
 errIllegalSimpleConstraint :: Constraint -> Message
-errIllegalSimpleConstraint c@(Constraint _ cls _) = spanInfoMessage cls $ vcat
+errIllegalSimpleConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
   [ text "Illegal class constraint" <+> pPrint c
   , text "Constraints in class and instance declarations must be of"
   , text "the form C u, where C is a type class and u is a type variable."

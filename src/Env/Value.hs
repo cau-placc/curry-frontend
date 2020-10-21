@@ -22,6 +22,7 @@
     information. On import two values are considered equal if their original
     names match.
 -}
+{-# LANGUAGE CPP #-}
 module Env.Value
   ( ValueEnv, ValueInfo (..)
   , bindGlobalInfo, bindFun, qualBindFun, rebindFun, unbindFun
@@ -30,8 +31,9 @@ module Env.Value
   , ValueType (..), bindLocalVars, bindLocalVar
   ) where
 
+#if __GLASGOW_HASKELL__ >= 804
 import Prelude hiding ((<>))
-import Control.Monad (zipWithM)
+#endif
 
 import Curry.Base.Ident
 import Curry.Base.Pretty (Pretty(..))
@@ -46,15 +48,15 @@ import Text.PrettyPrint
 
 data ValueInfo
   -- |Data constructor with original name, arity, list of record labels and type
-  = DataConstructor    QualIdent                   Int [Ident] Type
+  = DataConstructor    QualIdent                   Int [Ident] TypeScheme
   -- |Newtype constructor with original name, record label and type
   -- (arity is always 1)
-  | NewtypeConstructor QualIdent                       Ident   Type
+  | NewtypeConstructor QualIdent                       Ident   TypeScheme
   -- |Value with original name, class method name, arity and type
-  | Value              QualIdent (Maybe QualIdent) Int         Type
+  | Value              QualIdent (Maybe QualIdent) Int         TypeScheme
   -- |Record label with original name, list of constructors for which label
   -- is a valid field and type (arity is always 1)
-  | Label              QualIdent [QualIdent]                   Type
+  | Label              QualIdent [QualIdent]                   TypeScheme
     deriving Show
 
 instance Entity ValueInfo where
@@ -65,7 +67,7 @@ instance Entity ValueInfo where
 
   merge (DataConstructor c1 ar1 ls1 ty1) (DataConstructor c2 ar2 ls2 ty2)
     | c1 == c2 && ar1 == ar2 && ty1 == ty2 = do
-      ls' <- zipWithM mergeLabel ls1 ls2
+      ls' <- sequence (zipWith mergeLabel ls1 ls2)
       Just (DataConstructor c1 ar1 ls' ty1)
   merge (NewtypeConstructor c1 l1 ty1) (NewtypeConstructor c2 l2 ty2)
     | c1 == c2 && ty1 == ty2 = do
@@ -79,18 +81,16 @@ instance Entity ValueInfo where
   merge _ _ = Nothing
 
 instance Pretty ValueInfo where
-  pPrint (DataConstructor qid ar _ pty)
-    = text "data" <+> pPrint qid
-                  <>  text "/" <> int ar
-                  <+> equals <+> pPrint (rawPredType pty)
-  pPrint (NewtypeConstructor qid _ pty)
-    = text "newtype" <+> pPrint qid
-                     <+> equals <+> pPrint (rawPredType pty)
-  pPrint (Value qid _ ar pty)
-    = pPrint qid <>  text "/" <> int ar
-                 <+> equals <+> pPrint (rawPredType pty)
-  pPrint (Label qid _ pty)
-    = text "label" <+> pPrint qid <+> equals <+> pPrint (rawPredType pty)
+  pPrint (DataConstructor qid ar _ tySc) =     text "data" <+> pPrint qid
+                                           <>  text "/" <> int ar
+                                           <+> equals <+> pPrint tySc
+  pPrint (NewtypeConstructor qid _ tySc) =     text "newtype" <+> pPrint qid
+                                           <+> equals <+> pPrint tySc
+  pPrint (Value qid _ ar tySc)           =     pPrint qid
+                                           <>  text "/" <> int ar
+                                           <+> equals <+> pPrint tySc
+  pPrint (Label qid _ tySc)              =     text "label" <+> pPrint qid
+                                           <+> equals <+> pPrint tySc
 
 mergeLabel :: Ident -> Ident -> Maybe Ident
 mergeLabel l1 l2
@@ -115,7 +115,7 @@ bindGlobalInfo f m c ty = bindTopEnv c v . qualBindTopEnv qc v
   where qc = qualifyWith m c
         v  = f qc ty
 
-bindFun :: ModuleIdent -> Ident -> Maybe QualIdent -> Int -> Type
+bindFun :: ModuleIdent -> Ident -> Maybe QualIdent -> Int -> TypeScheme
         -> ValueEnv -> ValueEnv
 bindFun m f cm a ty
   | hasGlobalScope f = bindTopEnv f v . qualBindTopEnv qf v
@@ -123,12 +123,12 @@ bindFun m f cm a ty
   where qf = qualifyWith m f
         v  = Value qf cm a ty
 
-qualBindFun :: ModuleIdent -> Ident -> Maybe QualIdent -> Int -> Type
+qualBindFun :: ModuleIdent -> Ident -> Maybe QualIdent -> Int -> TypeScheme
             -> ValueEnv -> ValueEnv
 qualBindFun m f cm a ty = qualBindTopEnv qf $ Value qf cm a ty
   where qf = qualifyWith m f
 
-rebindFun :: ModuleIdent -> Ident -> Maybe QualIdent -> Int -> Type
+rebindFun :: ModuleIdent -> Ident -> Maybe QualIdent -> Int -> TypeScheme
           -> ValueEnv -> ValueEnv
 rebindFun m f cm a ty
   | hasGlobalScope f = rebindTopEnv f v . qualRebindTopEnv qf v
@@ -163,8 +163,8 @@ tupleDCs :: [ValueInfo]
 tupleDCs = map dataInfo tupleData
   where dataInfo (DataConstr _ tys) =
           let n = length tys
-           in DataConstructor (qTupleId n) n (replicate n anonId) $
-                TypeForall [0..n-1] (foldr TypeArrow (tupleType tys) tys)
+          in  DataConstructor (qTupleId n) n (replicate n anonId) $
+                ForAll n $ predType $ foldr TypeArrow (tupleType tys) tys
         dataInfo (RecordConstr _ _ _) =
           internalError $ "Env.Value.tupleDCs: " ++ show tupleDCs
 
@@ -179,9 +179,8 @@ initDCEnv = foldr predefDC emptyTopEnv
   where predefDC (c, a, ty) = predefTopEnv c' (DataConstructor c' a ls ty)
           where ls = replicate a anonId
                 c' = qualify c
-        constrType (TypeForall vs ty) =
-          TypeForall vs . foldr TypeArrow ty
-        constrType pty = internalError $ "Env.Value.initDCEnv: " ++ show pty
+        constrType (ForAll n (PredType ps ty)) =
+          ForAll n . PredType ps . foldr TypeArrow ty
 
 -- The functions 'bindLocalVar' and 'bindLocalVars' add the type of one or
 -- many local variables or functions to the value environment. In contrast
@@ -190,16 +189,19 @@ initDCEnv = foldr predefDC emptyTopEnv
 
 class ValueType t where
   toValueType :: Type -> t
-  fromValueType :: t -> Type
+  fromValueType :: t -> PredType
 
 instance ValueType Type where
   toValueType = id
-  fromValueType ty@(TypeContext _ _) = ty
-  fromValueType ty = ty
+  fromValueType = predType
+
+instance ValueType PredType where
+  toValueType = predType
+  fromValueType = id
 
 bindLocalVars :: ValueType t => [(Ident, Int, t)] -> ValueEnv -> ValueEnv
 bindLocalVars = flip $ foldr bindLocalVar
 
 bindLocalVar :: ValueType t => (Ident, Int, t) -> ValueEnv -> ValueEnv
 bindLocalVar (v, a, ty) =
-  bindTopEnv v $ Value (qualify v) Nothing a $ polyType $ fromValueType ty
+  bindTopEnv v $ Value (qualify v) Nothing a $ typeScheme $ fromValueType ty

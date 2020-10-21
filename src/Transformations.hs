@@ -38,19 +38,19 @@ qual (env, mdl) = (qualifyEnv env, mdl')
   where mdl' = Q.qual (moduleIdent env) (tyConsEnv env) (valueEnv env) mdl
 
 -- |Automatically derive instances.
-derive :: CompEnv (Module Type) -> CompEnv (Module Type)
+derive :: CompEnv (Module PredType) -> CompEnv (Module PredType)
 derive (env, mdl) = (env, mdl')
   where mdl' = DV.derive (tyConsEnv env) (valueEnv env) (instEnv env)
                          (opPrecEnv env) mdl
 
 -- |Remove any syntactic sugar, changes the value environment.
-desugar :: CompEnv (Module Type) -> CompEnv (Module Type)
+desugar :: CompEnv (Module PredType) -> CompEnv (Module PredType)
 desugar (env, mdl) = (env { valueEnv = tyEnv' }, mdl')
   where (mdl', tyEnv') = DS.desugar (extensions env) (valueEnv env)
                                     (tyConsEnv env) mdl
 
 -- |Insert dictionaries, changes the type constructor and value environments.
-insertDicts :: CompEnv (Module Type) -> CompEnv (Module Type)
+insertDicts :: CompEnv (Module PredType) -> CompEnv (Module Type)
 insertDicts (env, mdl) = (env { interfaceEnv = intfEnv'
                               , tyConsEnv = tcEnv'
                               , valueEnv = vEnv'

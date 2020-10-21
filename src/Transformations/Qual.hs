@@ -74,7 +74,7 @@ qDecl e@(ExternalDataDecl        _ _ _) = return e
 qDecl (NewtypeDecl      p n vs nc clss) = NewtypeDecl p n vs <$>
   qNewConstrDecl nc <*> mapM qClass clss
 qDecl (TypeDecl              p n vs ty) = TypeDecl p n vs <$> qTypeExpr ty
-qDecl (TypeSig                p fs qty) = TypeSig p fs <$> qTypeExpr qty
+qDecl (TypeSig                p fs qty) = TypeSig p fs <$> qQualTypeExpr qty
 qDecl (FunctionDecl          a p f eqs) = FunctionDecl a p f <$> mapM qEquation eqs
 qDecl e@(ExternalDecl              _ _) = return e
 qDecl (PatternDecl             p t rhs) = PatternDecl p <$> qPattern t <*> qRhs rhs
@@ -119,9 +119,11 @@ qTypeExpr (ListType           spi ty) = ListType spi  <$> qTypeExpr ty
 qTypeExpr (ArrowType     spi ty1 ty2) = ArrowType spi <$> qTypeExpr ty1
                                               <*> qTypeExpr ty2
 qTypeExpr (ParenType          spi ty) = ParenType spi <$> qTypeExpr ty
-qTypeExpr (ContextType     spi cx ty) = ContextType spi <$> qContext cx
-                                                        <*> qTypeExpr ty
 qTypeExpr (ForallType      spi vs ty) = ForallType spi vs <$> qTypeExpr ty
+
+qQualTypeExpr :: Qual QualTypeExpr
+qQualTypeExpr (QualTypeExpr spi cx ty) = QualTypeExpr spi <$> qContext cx
+                                                          <*> qTypeExpr ty
 
 qEquation :: Qual (Equation a)
 qEquation (Equation p lhs rhs) = Equation p <$> qLhs lhs <*> qRhs rhs
@@ -168,7 +170,7 @@ qExpr (Variable            spi a v) = Variable     spi a <$> qIdent v
 qExpr (Constructor         spi a c) = Constructor  spi a <$> qIdent c
 qExpr (Paren                 spi e) = Paren        spi   <$> qExpr e
 qExpr (Typed             spi e qty) = Typed        spi   <$> qExpr e
-                                                         <*> qTypeExpr qty
+                                                         <*> qQualTypeExpr qty
 qExpr (Record           spi a c fs) =
   Record spi a <$> qIdent c <*> mapM (qField qExpr) fs
 qExpr (RecordUpdate       spi e fs) =

@@ -263,7 +263,6 @@ data DumpLevel
   | DumpExtensionChecked  -- ^ dump source code after extension checking
   | DumpTypeSyntaxChecked -- ^ dump source code after type syntax checking
   | DumpKindChecked       -- ^ dump source code after kind checking
-  | DumpImpredChecked     -- ^ dump source code after impredicativity checking
   | DumpSyntaxChecked     -- ^ dump source code after syntax checking
   | DumpPrecChecked       -- ^ dump source code after precedence checking
   | DumpDeriveChecked     -- ^ dump source code after derive checking
@@ -290,7 +289,6 @@ dumpLevel = [ (DumpCondCompiled     , "dump-cond" , "conditional compiling"     
             , (DumpExtensionChecked , "dump-exc"  , "extension checking"              )
             , (DumpTypeSyntaxChecked, "dump-tsc"  , "type syntax checking"            )
             , (DumpKindChecked      , "dump-kc"   , "kind checking"                   )
-            , (DumpImpredChecked    , "dump-ipc"  , "impredicativity checking"        )
             , (DumpSyntaxChecked    , "dump-sc"   , "syntax checking"                 )
             , (DumpPrecChecked      , "dump-pc"   , "precedence checking"             )
             , (DumpDeriveChecked    , "dump-dc"   , "derive checking"                 )
@@ -323,10 +321,6 @@ extensions =
     , "desugar negated literals as negative literal" )
   , ( NoImplicitPrelude        , "NoImplicitPrelude"
     , "do not implicitly import the Prelude"         )
-  , ( RankNTypes               , "RankNTypes"
-    , "enable arbitrary-rank types"                  )
-  , ( ExplicitForAll           , "ExplicitForAll"
-    , "enable explicit foralls"                      )
   ]
 
 -- -----------------------------------------------------------------------------

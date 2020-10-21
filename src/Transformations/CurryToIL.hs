@@ -130,8 +130,8 @@ varType :: QualIdent -> TransM Type
 varType f = do
   tyEnv <- getValueEnv
   case qualLookupValue f tyEnv of
-    [Value _ _ _ tySc] -> return $ rawType tySc
-    [Label _ _ tySc] -> return $ rawType tySc
+    [Value _ _ _ (ForAll _ (PredType _ ty))] -> return ty
+    [Label _ _ (ForAll _ (PredType _ ty))] -> return ty
     _ -> internalError $ "CurryToIL.varType: " ++ show f
 
 -- Return the type of a constructor
@@ -139,8 +139,8 @@ constrType :: QualIdent -> TransM Type
 constrType c = do
   vEnv <- getValueEnv
   case qualLookupValue c vEnv of
-    [DataConstructor  _ _ _ tySc] -> return $ rawType tySc
-    [NewtypeConstructor _ _ tySc] -> return $ rawType tySc
+    [DataConstructor  _ _ _ (ForAll _ (PredType _ ty))] -> return ty
+    [NewtypeConstructor _ _ (ForAll _ (PredType _ ty))] -> return ty
     _ -> internalError $ "CurryToIL.constrType: " ++ show c
 
 -- -----------------------------------------------------------------------------
@@ -158,7 +158,7 @@ trDecl :: Decl Type -> TransM [IL.Decl]
 trDecl (DataDecl     _ tc tvs cs _) = (:[]) <$> trData tc tvs cs
 trDecl (NewtypeDecl  _ tc tvs nc _) = (:[]) <$> trNewtype tc tvs nc
 trDecl (ExternalDataDecl  _ tc tvs) = (:[]) <$> trExternalData tc tvs
-trDecl (FunctionDecl     _ _ f eqs) = (:[]) <$> trFunction f eqs
+trDecl (FunctionDecl    _ _ f  eqs) = (:[]) <$> trFunction f eqs
 trDecl (ExternalDecl          _ vs) = mapM trExternal vs
 trDecl _                            = return []
 
@@ -209,11 +209,11 @@ trExternal (Var ty f) = do
 -- to transform all types to first order terms. To that end, we assume the
 -- existence of a type synonym 'type @ f a = f a'. In addition, the type
 -- representation of the intermediate language does not support constrained
--- type variables. The former are fixed and the later are replaced by fresh
--- type constructors.
+-- type variables and skolem types. The former are fixed and the later are
+-- replaced by fresh type constructors.
 
 transType :: TCEnv -> Type -> IL.Type
-transType tcEnv ty' = IL.prenexType $ transType' ty' []
+transType tcEnv ty' = transType' ty' []
   where
     ks = transTVars tcEnv ty'
     transType' (TypeConstructor    tc) = IL.TypeConstructor tc
@@ -225,8 +225,6 @@ transType tcEnv ty' = IL.prenexType $ transType' ty' []
     transType' (TypeForall     tvs ty) =
       foldl applyType' (IL.TypeForall tvs' (transType' ty []))
       where tvs' = filter ((`elem` tvs) . fst) ks
-    transType' (TypeContext       _ _)
-      = internalError "Transformation.CurryToIL.transType'"
 
 applyType' :: IL.Type -> IL.Type -> IL.Type
 applyType' ty1 ty2 =
@@ -283,14 +281,13 @@ transTVars tcEnv ty' =
         TypeConstructor tc -> do
           let k' = tcKind (fromJust $ qidModule tc) tc tcEnv
           mapM_ (uncurry build) (zip tys $ unarrowKind $ transKind k')
-        _ -> do -- var or forall
+        _ -> do -- var of forall
           -- construct new kind vars
           ks <- mapM (const (freshId >>= return . IL.KindVariable)) tys
           -- infer kind for v
           build ty (foldr IL.KindArrow k ks)
           -- infer kinds for args
           mapM_ (uncurry build) (zip tys ks)
-    build _ _ = error "Transformation.CurryToIL.transTVars"
 
 type KindSubst = Map.Map Int IL.Kind
 
@@ -322,7 +319,7 @@ unifyKind (IL.KindArrow k1 k2) (IL.KindArrow k1' k2') =
   let s1 = unifyKind k1 k1'
       s2 = unifyKind (applyKindSubst s1 k2) (applyKindSubst s1 k2')
   in s1 `composeKindSubst` s2
-unifyKind _ _ = error "Transformations.CurryToIL.unifyKind"
+unifyKind k1 k2 = error $ "Transformation.CurryToIL.unifyKind: " ++ show k1 ++ ", " ++ show k2
 
 -- Each function in the program is translated into a function of the
 -- intermediate language. The arguments of the function are renamed such
@@ -450,12 +447,10 @@ trExpr (v:vs) env (Case _ _ ct e alts) = do
         -- subject is referenced -> introduce binding for v as subject
       | v `elem` fv expr                -> IL.Let (IL.Binding v e') expr
       | otherwise                       -> expr
-trExpr vs env (Typed spi e (ContextType _ _ ty))
-  = trExpr vs env (Typed spi e ty)
 trExpr vs env (Typed _ e _) = do
   tcEnv <- getTCEnv
   e' <- trExpr vs env e
-  return $ IL.Typed e' (transType tcEnv $ polyType $ typeOf e) -- TODO: When supporting scoped type variables, we should consider the given type signature instead of the annotated type.
+  return $ IL.Typed e' (transType tcEnv $ typeOf e)
 trExpr _ _ _ = internalError "CurryToIL.trExpr"
 
 trAlt :: [Ident] -> RenameEnv -> Alt Type -> TransM Match

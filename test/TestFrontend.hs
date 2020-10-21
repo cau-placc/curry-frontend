@@ -22,7 +22,9 @@
 {-# LANGUAGE CPP #-}
 module TestFrontend (tests) where
 
-import           Prelude                hiding (fail)
+#if __GLASGOW_HASKELL__ < 710
+import           Control.Applicative    ((<$>))
+#endif
 import qualified Control.Exception as E (SomeException, catch)
 
 import           Data.List              (isInfixOf, sort)
@@ -56,7 +58,7 @@ runTest opts test errorMsgs =
     else catchE     <$> runSecure (buildCurry opts' test)
   where
     cppOpts       = CO.optCppOpts opts
-    cppDefs       = Map.insert "__PAKCS__" 300 (CO.cppDefinitions cppOpts)
+    cppDefs       = Map.insert "__PAKCS__" 3 (CO.cppDefinitions cppOpts)
     wOpts         = CO.optWarnOpts opts
     wFlags        =   CO.WarnUnusedBindings
                     : CO.WarnUnusedGlobalBindings
@@ -137,25 +139,13 @@ type SetOption = String -> String -> Either String TestInstance
 
 -- generate a simple failing test
 mkFailTest :: String -> [String] -> TestInfo
-mkFailTest n errorMsgs = (n, [], [], Nothing, errorMsgs)
+mkFailTest name errorMsgs = (name, [], [], Nothing, errorMsgs)
 
 -- To add a failing test to the test suite simply add the module name of the
 -- test code and the expected error message(s) to the following list
 failInfos :: [TestInfo]
 failInfos = map (uncurry mkFailTest)
-  [ ("AmbiguousTypeVariable",
-      [ "Ambiguous type variable"
-      , "inferred for equation"
-      , "applyFunTest = applyFun funA True False"
-      , "Ambiguous type variable"
-      , "inferred for equation"
-      , "applyFunTest2 = applyFun funA 'a' 'b'"
-      ]
-    )
-  , ("ClassHiddenFail",
-      [ "`methodB' is not a (visible) method of class `A'" ]
-    )
-  , ("DataFail",
+  [ ("DataFail",
       [ "Missing instance for Prelude.Data Test1"
       , "Missing instance for Prelude.Data (Test2"
       , "Missing instance for Prelude.Data (Test2"
@@ -164,15 +154,6 @@ failInfos = map (uncurry mkFailTest)
     )
   , ("ErrorMultipleSignature", ["More than one type signature for `f'"])
   , ("ErrorMultipleSignature", ["More than one type signature for `f'"])
-  , ("EscapingTypeVariable",
-      [ "Type error in application"
-      , "runBag"
-      , "  (do e <- newElem \"Hello, world!\""
-      , "      return e)"
-      , "Type error in application"
-      , "runBag (newElem \"Hello, world!\")"
-      ]
-    )
   , ("ExportCheck/AmbiguousName", ["Ambiguous name `not'"])
   , ("ExportCheck/AmbiguousType", ["Ambiguous type `Bool'"])
   , ("ExportCheck/ModuleNotImported", ["Module `Foo' not imported"])
@@ -198,61 +179,6 @@ failInfos = map (uncurry mkFailTest)
       , "Module Prelude does not export bar"
       ]
     )
-  , ("ImpredDollar",
-      [ "Type error in infix application"
-      , "constFun x $ f"
-      , "Cannot instantiate unification variable"
-      , "with a type involving foralls:"
-      , "Impredicative polymorphism isn't yet supported."
-      ]
-    )
-  , ("ImpredPoly",
-      [ "Illegal polymorphic type (Bool, forall b. a -> b, Int)"
-      , "Illegal polymorphic type [forall a. a -> a]"
-      , "Illegal polymorphic type Maybe (forall a. a -> a)"
-      , "Illegal polymorphic type [forall a. a -> a]"
-      , "Illegal polymorphic type (Func Bool, Func Int)"
-      , "Illegal polymorphic type Maybe (Func Bool)"
-      ]
-    )
-  , ("ImpredPolyUnify",
-      [ "Type error in equation"
-      , "constFunFail = error \"fail\""
-      , "Cannot instantiate unification variable"
-      , "with a type involving foralls:"
-      , "Impredicative polymorphism isn't yet supported."
-      , "Type error in application"
-      , "id constFun"
-      , "Cannot instantiate unification variable"
-      , "with a type involving foralls:"
-      , "Impredicative polymorphism isn't yet supported."
-      , "Type error in application"
-      , "($) (constFun x)"
-      , "Cannot instantiate unification variable"
-      , "with a type involving foralls:"
-      , "Impredicative polymorphism isn't yet supported."
-      , "Type error in left section"
-      , "(constFun x $)"
-      , "Cannot instantiate unification variable"
-      , "with a type involving foralls:"
-      , "Impredicative polymorphism isn't yet supported."
-      , "Type error in application"
-      , "constFun x ($ f)"
-      , "Cannot instantiate unification variable"
-      , "with a type involving foralls:"
-      , "Impredicative polymorphism isn't yet supported."
-      , "Type error in equation"
-      , "applyMaybe' = flip applyMaybe"
-      , "Cannot instantiate unification variable"
-      , "with a type involving foralls:"
-      , "Impredicative polymorphism isn't yet supported."
-      ]
-    )
-  , ("IncompatibleTypes",
-      [ "Type error in equation"
-      , "whereTest = whereTest'"
-      ]
-    )
   , ("KindCheck",
       [ "Type variable a occurs more than once in left hand side of type declaration"
       , "Type variable b occurs more than once in left hand side of type declaration"
@@ -272,23 +198,8 @@ failInfos = map (uncurry mkFailTest)
     )
   , ("PragmaError", ["Unknown language extension"])
   , ("PrecedenceRange", ["Precedence out of range"])
-  , ("RankNTypes", ["Arbitrary-rank types are not supported in standard Curry."])
-  , ("RankNTypesFuncPats", ["Missing instance for Prelude.Data (forall c. Prelude.Int ->"])
   , ("RecordLabelIDs", ["Multiple declarations of `RecordLabelIDs.id'"])
   , ("RecursiveTypeSyn", ["Mutually recursive synonym and/or renaming types A and B (line 12.6)"])
-  , ("Subsumption",
-      [ "Type error in application"
-      , "applyFun idFun"
-      , "Type error in application"
-      , "applyFun idBool"
-      , "Type error in application"
-      , "applyEqFun ((==) :: Bool -> Bool -> Bool)"
-      , "Type error in application"
-      , "trueFun False"
-      , "Type error in application"
-      , "fun1 fun2"
-      ]
-    )
   , ("SyntaxError", ["Type error in application"])
   , ("TypedFreeVariables",
       ["Variable x has a polymorphic type", "Type error in equation"]
@@ -300,11 +211,12 @@ failInfos = map (uncurry mkFailTest)
       , "Function: h"
       , "Type signature too general"
       , "Function: g'"
+      , "Type signature too general"
+      , "Function: n"
       ]
     )
   , ("UnboundTypeVariable",
-      [ "Unbound type variable a"
-      , "Unbound type variable b"
+      [ "Unbound type variable b"
       , "Unbound type variable c"
       ]
     )
@@ -325,11 +237,7 @@ passInfos = map mkPassTest
   [ "AbstractCurryBug"
   , "ACVisibility"
   , "AnonymVar"
-  , "ApLhs"
   , "CaseComplete"
-  , "ChurchEncoding"
-  , "ClassHiddenPass"
-  , "ClassMethods"
   , "DataPass"
   , "DefaultPrecedence"
   , "Dequeue"
@@ -344,12 +252,10 @@ passInfos = map mkPassTest
   , "Hierarchical"
   , "ImportRestricted"
   , "ImportRestricted2"
-  , "ImpredDollar"
   , "Infix"
   , "Inline"
   , "Lambda"
   , "Maybe"
-  , "Monad"
   , "NegLit"
   , "Newtype1"
   , "Newtype2"
@@ -358,18 +264,13 @@ passInfos = map mkPassTest
   , "PatDecl"
   , "Prelude"
   , "Pretty"
-  , "RankNTypes"
-  , "RankNTypesImport"
   , "RecordsPolymorphism"
   , "RecordTest1"
   , "RecordTest2"
   , "RecordTest3"
   , "ReexportTest"
-  , "ScottEncoding"
   , "SelfExport"
   , "SpaceLeak"
-  , "Subsumption"
-  , "TermInv"
   , "TyConsTest"
   , "TypedExpr"
   , "UntypedAcy"
@@ -449,12 +350,6 @@ warnInfos = map (uncurry mkFailTest)
       [ "Unused declaration of variable `x'", "Shadowing symbol `x'"])
   , ("TabCharacter",
       [ "Tab character"])
-  , ("TypeVariableShadowing",
-      [ "Shadowing type variable `a'"
-      , "Shadowing type variable `a'"
-      , "Shadowing type variable `a'"
-      , "Shadowing type variable `a'"
-      , "Shadowing type variable `a'" ])
   , ("UnexportedFunction",
       [ "Unused declaration of variable `q'"
       , "Unused declaration of variable `g'" ]

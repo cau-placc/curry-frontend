@@ -30,7 +30,7 @@ import qualified Data.Set            as Set (Set, empty, insert, member)
 
 import           Curry.Base.Ident
 import           Curry.Base.SpanInfo
-import           Curry.FlatCurry.Typed.Goodies (typeName, allVarsInTypeExpr)
+import           Curry.FlatCurry.Typed.Goodies (typeName)
 import           Curry.FlatCurry.Typed.Type
 import qualified Curry.Syntax as CS
 
@@ -42,7 +42,6 @@ import Base.TypeExpansion
 import Base.Types
 
 import CompilerEnv
-import Env.Class           (initClassEnv)
 import Env.OpPrec          (mkPrec)
 import Env.TypeConstructor (TCEnv)
 import Env.Value           (ValueEnv, ValueInfo (..), qualLookupValue)
@@ -242,7 +241,7 @@ trTypeSynonym (CS.TypeDecl _ t tvs ty) = do
   vis  <- getTypeVisibility qid
   tEnv <- S.gets tcEnv
   ty'  <- trType (transType tEnv $
-                  expandType m tEnv initClassEnv $
+                  expandType m tEnv $
                   toType tvs ty)
   return [TypeSyn t' vis [0 .. length tvs - 1] ty']
 trTypeSynonym _                        = return []
@@ -325,7 +324,8 @@ trTFuncDecl (IL.ExternalDecl      f ty) = do
   a    <- getArity f
   vis  <- getVisibility f
   ty'  <- trType ty
-  return [TFunc f' a vis ty' (TExternal ty' (qualName f))]
+  r'   <- trTExternal ty f
+  return [TFunc f' a vis ty' r']
 trTFuncDecl _                           = return []
 
 -- Translate a function rule.
@@ -334,6 +334,9 @@ trTRule :: [(IL.Type, Ident)] -> IL.Expression
         -> FlatState TRule
 trTRule vs e = withFreshEnv $ TRule <$> mapM (uncurry newVar) vs
                                     <*> trTExpr e
+
+trTExternal :: IL.Type -> QualIdent -> FlatState TRule
+trTExternal ty f = flip TExternal (qualName f) <$> trType ty
 
 -- Translate an expression
 trTExpr :: IL.Expression -> FlatState TExpr
@@ -422,25 +425,12 @@ genCall call ty f es = do
 genTComb :: IL.Type -> QName -> [IL.Expression] -> CombType -> FlatState TExpr
 genTComb ty qid es ct = do
   ty' <- trType ty
-  let ty'' = snd $ defunc ty' (length es)
+  let ty'' = defunc ty' (length es)
   TComb ty'' ct qid <$> mapM trTExpr es
   where
-    -- The types are in weak prenex normal form.
-    -- So for a ForallType we just need to call defunc on the inner type.
-    -- If a type variable occurs in one of the removed parts of the type,
-    -- We have to remove it from the Variables bound by forall, as that variable
-    -- is not polymorphic anymore.
-    defunc ty'                 0 =
-      ([], ty')
-    defunc (ForallType vs ty1) n =
-      let (tys, ty') = defunc ty1 n
-          tvs = nub $ concatMap allVarsInTypeExpr tys
-      in ([], ForallType (filter ((`elem` tvs) . fst) vs) ty')
-    defunc (FuncType  ty1 ty2) n =
-      let (tys, ty') = defunc ty2 (n - 1)
-      in (ty1:tys, ty')
-    defunc _                _ =
-      internalError $ "GenTypeAnnotatedFlatCurry.genAComb.defunc: " ++ show ty
+  defunc t               0 = t
+  defunc (FuncType _ t2) n = defunc t2 (n - 1)
+  defunc _               _ = internalError "GenTypedFlatCurry.genTComb.defunc"
 
 genApply :: TExpr -> [IL.Expression] -> FlatState TExpr
 genApply e es = do
@@ -491,8 +481,8 @@ instance Normalize TRule where
   normalize (TExternal ty    s) = flip TExternal s <$> normalize ty
 
 normalizeVar :: (VarIndex, TypeExpr) -> NormState (VarIndex, TypeExpr)
-normalizeVar (v, ty) = (,) <$> pure v <*> normalize ty
-
+normalizeVar (v, ty) = (,) <$> pure v <*> normalize ty  
+  
 instance Normalize TExpr where
   normalize (TVarE  ty       v) = flip TVarE  v <$> normalize ty
   normalize (TLit   ty       l) = flip TLit  l  <$> normalize ty

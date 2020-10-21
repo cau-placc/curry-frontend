@@ -19,9 +19,9 @@ module Base.CurryKinds
   ( toKind, toKind', fromKind, fromKind', ppKind
   ) where
 
-import Curry.Base.Pretty   (Doc)
+import Curry.Base.Pretty (Doc)
 import Curry.Syntax.Pretty (pPrintPrec)
-import Curry.Syntax.Type   (KindExpr (..))
+import Curry.Syntax.Type (KindExpr (..))
 
 import Base.Kinds
 

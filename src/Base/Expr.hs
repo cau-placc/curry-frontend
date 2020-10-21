@@ -83,7 +83,7 @@ instance QualExpr (Lhs a) where
   qfv m lhs = qfv m $ snd $ flatLhs lhs
 
 instance QualExpr (Rhs a) where
-  qfv m (SimpleRhs _ _ e ds) = filterBv ds $ qfv m e  ++ qfv m ds
+  qfv m (SimpleRhs  _ _ e  ds) = filterBv ds $ qfv m e  ++ qfv m ds
   qfv m (GuardedRhs _ _ es ds) = filterBv ds $ qfv m es ++ qfv m ds
 
 instance QualExpr (CondExpr a) where
@@ -182,6 +182,12 @@ instance Expr Constraint where
 instance QuantExpr Constraint where
   bv _ = []
 
+instance Expr QualTypeExpr where
+  fv (QualTypeExpr _ _ ty) = fv ty
+
+instance QuantExpr QualTypeExpr where
+  bv (QualTypeExpr _ _ ty) = bv ty
+
 instance Expr TypeExpr where
   fv (ConstructorType     _ _) = []
   fv (ApplyType     _ ty1 ty2) = fv ty1 ++ fv ty2
@@ -190,7 +196,6 @@ instance Expr TypeExpr where
   fv (ListType          _  ty) = fv ty
   fv (ArrowType     _ ty1 ty2) = fv ty1 ++ fv ty2
   fv (ParenType          _ ty) = fv ty
-  fv (ContextType      _ _ ty) = fv ty
   fv (ForallType      _ vs ty) = filter (`notElem` vs) $ fv ty
 
 instance QuantExpr TypeExpr where
@@ -201,7 +206,6 @@ instance QuantExpr TypeExpr where
   bv (ListType           _ ty) = bv ty
   bv (ArrowType     _ ty1 ty2) = bv ty1 ++ bv ty2
   bv (ParenType          _ ty) = bv ty
-  bv (ContextType      _ _ ty) = bv ty
   bv (ForallType     _ tvs ty) = tvs ++ bv ty
 
 filterBv :: QuantExpr e => e -> [Ident] -> [Ident]

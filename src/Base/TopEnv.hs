@@ -88,12 +88,12 @@ predefTopEnv k v (TopEnv env) = case Map.lookup k env of
 -- |Insert an 'Entity' as unqualified into a 'TopEnv'
 importTopEnv :: Entity a => ModuleIdent -> Ident -> a -> TopEnv a
              -> TopEnv a
-importTopEnv m x = addImport m (qualify x)
+importTopEnv m x y env = addImport m (qualify x) y env
 
 -- |Insert an 'Entity' as qualified into a 'TopEnv'
 qualImportTopEnv :: Entity a => ModuleIdent -> Ident -> a -> TopEnv a
                  -> TopEnv a
-qualImportTopEnv m x = addImport m (qualifyWith m x)
+qualImportTopEnv m x y env = addImport m (qualifyWith m x) y env
 
 -- local helper
 addImport :: Entity a => ModuleIdent -> QualIdent -> a -> TopEnv a
@@ -109,7 +109,7 @@ addImport m k v (TopEnv env) = TopEnv $
     Nothing  -> imp : mergeImport y xs
 
 bindTopEnv :: Ident -> a -> TopEnv a -> TopEnv a
-bindTopEnv x = qualBindTopEnv (qualify x)
+bindTopEnv x y env = qualBindTopEnv (qualify x) y env
 
 qualBindTopEnv :: QualIdent -> a -> TopEnv a -> TopEnv a
 qualBindTopEnv x y (TopEnv env)
@@ -117,7 +117,7 @@ qualBindTopEnv x y (TopEnv env)
   where
   bindLocal y' ys
     | null [ y'' | (Local, y'') <- ys ] = (Local, y') : ys
-    | otherwise                         = ys
+    | otherwise = internalError $ "qualBindTopEnv " ++ show x
 
 rebindTopEnv :: Ident -> a -> TopEnv a -> TopEnv a
 rebindTopEnv = qualRebindTopEnv . qualify

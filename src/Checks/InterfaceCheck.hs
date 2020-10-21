@@ -150,16 +150,16 @@ checkImport (ITypeDecl _ tc k tvs ty) = do
   checkTypeInfo "synonym type" check tc tc
 checkImport (IFunctionDecl _ f (Just tv) n ty) = do
   m <- getModuleIdent
-  let check (Value f' cm' n' pty) =
+  let check (Value f' cm' n' (ForAll _ ty')) =
         f == f' && isJust cm' && n' == n &&
-        toQualPredType m [tv] ty == rawPredType pty
+        toQualPredType m [tv] ty == ty'
       check _ = False
   checkValueInfo "method" check f f
 checkImport (IFunctionDecl _ f Nothing n ty) = do
   m <- getModuleIdent
-  let check (Value f' cm' n' pty) =
+  let check (Value f' cm' n' (ForAll _ ty')) =
         f == f' && isNothing cm' && n' == n &&
-        toQualPredType m [] ty == rawPredType pty
+        toQualPredType m [] ty == ty'
       check _ = False
   checkValueInfo "function" check f f
 checkImport (HidingClassDecl _ cx cls k _) = do
@@ -182,33 +182,33 @@ checkImport (IClassDecl _ cx cls k clsvar ms _) = do
   checkTypeInfo "type class" check cls cls
 checkImport (IInstanceDecl _ cx cls ty is m) =
   checkInstInfo check cls (cls, typeConstr ty) m
-  where TypeContext ps _ = toPredType [] $ ContextType NoSpanInfo cx ty
+  where PredType ps _ = toPredType [] $ QualTypeExpr NoSpanInfo cx ty
         check ps' is' = ps == ps' && sort is == sort is'
 
 checkConstrImport :: QualIdent -> [Ident] -> ConstrDecl -> IC ()
 checkConstrImport tc tvs (ConstrDecl _ c tys) = do
   m <- getModuleIdent
   let qc = qualifyLike tc c
-      check (DataConstructor c' _ _ (TypeForall vs (TypeContext ps ty))) =
-        qc == c' && length tvs == length vs &&
-        qualifyType m (toConstrType tc tvs tys) == TypeContext ps ty
+      check (DataConstructor c' _ _ (ForAll uqvs pty)) =
+        qc == c' && length tvs == uqvs &&
+        qualifyPredType m (toConstrType tc tvs tys) == pty
       check _ = False
   checkValueInfo "data constructor" check c qc
 checkConstrImport tc tvs (ConOpDecl _ ty1 op ty2) = do
   m <- getModuleIdent
   let qc = qualifyLike tc op
-      check (DataConstructor c' _ _ (TypeForall vs (TypeContext ps ty))) =
-        qc == c' && length tvs == length vs &&
-        qualifyType m (toConstrType tc tvs [ty1, ty2]) == TypeContext ps ty
+      check (DataConstructor c' _ _ (ForAll uqvs pty)) =
+        qc == c' && length tvs == uqvs &&
+        qualifyPredType m (toConstrType tc tvs [ty1, ty2]) == pty
       check _ = False
   checkValueInfo "data constructor" check op qc
 checkConstrImport tc tvs (RecordDecl _ c fs) = do
   m <- getModuleIdent
   let qc = qualifyLike tc c
       (ls, tys) = unzip [(l, ty) | FieldDecl _ labels ty <- fs, l <- labels]
-      check (DataConstructor c' _ ls' (TypeForall vs (TypeContext ps ty))) =
-        qc == c' && length tvs == length vs && ls == ls' &&
-        qualifyType m (toConstrType tc tvs tys) == TypeContext ps ty
+      check (DataConstructor c' _ ls' (ForAll uqvs pty)) =
+        qc == c' && length tvs == uqvs && ls == ls' &&
+        qualifyPredType m (toConstrType tc tvs tys) == pty
       check _ = False
   checkValueInfo "data constructor" check c qc
 
@@ -216,16 +216,15 @@ checkNewConstrImport :: QualIdent -> [Ident] -> NewConstrDecl -> IC ()
 checkNewConstrImport tc tvs (NewConstrDecl _ c ty) = do
   m <- getModuleIdent
   let qc = qualifyLike tc c
-      check (NewtypeConstructor c' _ (TypeForall uqvs (TypeContext _ ty'))) =
-        qc == c' && length tvs == length uqvs &&
-        toQualType m tvs ty == head (arrowArgs ty')
+      check (NewtypeConstructor c' _ (ForAll uqvs (PredType _ ty'))) =
+        qc == c' && length tvs == uqvs && toQualType m tvs ty == head (arrowArgs ty')
       check _ = False
   checkValueInfo "newtype constructor" check c qc
 checkNewConstrImport tc tvs (NewRecordDecl _ c (l, ty)) = do
   m <- getModuleIdent
   let qc = qualifyLike tc c
-      check (NewtypeConstructor c' l' (TypeForall uqvs (TypeContext _ ty'))) =
-        qc == c' && length tvs == length uqvs && l == l' &&
+      check (NewtypeConstructor c' l' (ForAll uqvs (PredType _ ty'))) =
+        qc == c' && length tvs == uqvs && l == l' &&
         toQualType m tvs ty == head (arrowArgs ty')
       check _ = False
   checkValueInfo "newtype constructor" check c qc
@@ -234,9 +233,9 @@ checkMethodImport :: QualIdent -> Ident -> IMethodDecl -> IC ()
 checkMethodImport qcls clsvar (IMethodDecl _ f _ qty) =
   checkValueInfo "method" check f qf
   where qf = qualifyLike qcls f
-        check (Value f' cm' _ pty) =
+        check (Value f' cm' _ (ForAll _ pty)) =
           qf == f' && isJust cm' &&
-          toMethodType qcls clsvar qty == rawPredType pty
+          toMethodType qcls clsvar qty == pty
         check _ = False
 
 checkPrecInfo :: HasSpanInfo s => (PrecInfo -> Bool) -> s -> QualIdent -> IC ()

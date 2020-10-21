@@ -79,7 +79,6 @@ Executable curry-frontend
     , Checks.ExportCheck
     , Checks.ExtensionCheck
     , Checks.ImportSyntaxCheck
-    , Checks.ImpredCheck
     , Checks.InstanceCheck
     , Checks.InterfaceCheck
     , Checks.InterfaceSyntaxCheck
@@ -182,7 +181,6 @@ Test-Suite test-frontend
     , Checks.ExportCheck
     , Checks.ExtensionCheck
     , Checks.ImportSyntaxCheck
-    , Checks.ImpredCheck
     , Checks.InstanceCheck
     , Checks.InterfaceCheck
     , Checks.InterfaceSyntaxCheck

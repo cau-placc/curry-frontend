@@ -17,7 +17,6 @@ module Checks where
 import qualified Checks.InstanceCheck     as INC (instanceCheck)
 import qualified Checks.InterfaceCheck    as IC  (interfaceCheck)
 import qualified Checks.ImportSyntaxCheck as ISC (importCheck)
-import qualified Checks.ImpredCheck       as IPC (impredCheck)
 import qualified Checks.DeriveCheck       as DC  (deriveCheck)
 import qualified Checks.ExportCheck       as EC  (exportCheck, expandExports)
 import qualified Checks.ExtensionCheck    as EXC (extensionCheck)
@@ -86,16 +85,6 @@ kindCheck _ (env, mdl)
   where ((tcEnv', clsEnv'), msgs) = KC.kindCheck (tyConsEnv env) (classEnv env)
                                                  mdl
 
--- |Check for impredicative types.
---
--- * Declarations: remains unchanged
--- * Environment:  remains unchanged
-impredCheck :: Monad m => Check m (Module ())
-impredCheck _ (env, mdl)
-  | null msgs = ok (env, mdl')
-  | otherwise = failMessages msgs
-  where (mdl', msgs) = IPC.impredCheck (tyConsEnv env) mdl
-
 -- |Check for a correct syntax.
 --
 -- * Declarations: Nullary data constructors and variables are
@@ -144,7 +133,7 @@ instanceCheck _ (env, Module spi li ps m es is ds)
 -- * Declarations: Type annotations are added to all expressions.
 -- * Environment:  The value environment is updated.
 typeCheck :: Monad m => Options -> CompEnv (Module a)
-          -> CYT m (CompEnv (Module Type))
+          -> CYT m (CompEnv (Module PredType))
 typeCheck _ (env, Module spi li ps m es is ds)
   | null msgs = ok (env { valueEnv = vEnv' }, Module spi li ps m es is ds')
   | otherwise = failMessages msgs

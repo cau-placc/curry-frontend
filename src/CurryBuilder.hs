@@ -33,7 +33,8 @@ import Curry.Syntax ( ModulePragma (..), Extension (KnownExtension)
 import Base.Messages
 
 import CompilerOpts ( Options (..), CppOpts (..), DebugOpts (..)
-                    , TargetType (..), defaultDebugOpts, updateOpts )
+                    , TargetType (..), defaultDebugOpts, updateOpts
+                    , optRemoveUnusedImports )
 import CurryDeps    (Source (..), flatDeps)
 import Modules      (compileModule)
 
@@ -81,8 +82,8 @@ findCurry opts s = do
 makeCurry :: Options -> [(ModuleIdent, Source)] ->  CYIO ()
 makeCurry opts srcs = mapM_ process' (zip [1 ..] srcs)
   where
-  total  = length srcs
-  tgtDir = addCurrySubdirModule (optUseSubdir opts)
+  total    = length srcs
+  tgtDir m = addCurrySubdirModule (optUseSubdir opts) m
 
   process' :: (Int, (ModuleIdent, Source)) -> CYIO ()
   process' (n, (m, Source fn ps is)) = do
@@ -141,11 +142,11 @@ quotedWords :: String -> [String]
 quotedWords str = case dropWhile isSpace str of
   []        -> []
   s@('\'' : cs) -> case break (== '\'') cs of
-    (_     , []    ) -> def s
-    (quoted, _:rest) -> quoted : quotedWords rest
+    (_     , []      ) -> def s
+    (quoted, (_:rest)) -> quoted : quotedWords rest
   s@('"'  : cs) -> case break (== '"') cs of
-    (_     , []    ) -> def s
-    (quoted, _:rest) -> quoted : quotedWords rest
+    (_     , []      ) -> def s
+    (quoted, (_:rest)) -> quoted : quotedWords rest
   s         -> def s
   where
   def s = let (w, rest) = break isSpace s in  w : quotedWords rest

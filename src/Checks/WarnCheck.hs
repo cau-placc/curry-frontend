@@ -42,15 +42,15 @@ import Curry.Base.Position
 import Curry.Base.Pretty
 import Curry.Base.SpanInfo
 import Curry.Syntax
-import Curry.Syntax.Pretty (ppIdent)
+import Curry.Syntax.Utils  (typeVariables)
+import Curry.Syntax.Pretty (pPrint)
 
-import Base.CurryTypes (ppPredType, toPredSet, fromPred)
+import Base.CurryTypes (ppTypeScheme, fromPred, toPredSet)
 import Base.Messages   (Message, spanInfoMessage, internalError)
 import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                        , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv
                        , qualModifyNestEnv)
 
-import Base.Expr  (Expr (fv))
 import Base.Types
 import Base.Utils (findMultiples)
 import Env.ModuleAlias
@@ -64,8 +64,8 @@ import CompilerOpts
 -- Find potentially incorrect code in a Curry program and generate warnings
 -- for the following issues:
 --   - multiply imported modules, multiply imported/hidden values
---   - unreferenced (type) variables
---   - shadowing (type) variables
+--   - unreferenced variables
+--   - shadowing variables
 --   - idle case alternatives
 --   - overlapping case alternatives
 --   - non-adjacent function rules
@@ -145,33 +145,11 @@ runOn s f = sort $ warnings $ execState f s
 checkExports :: Maybe ExportSpec -> WCM () -- TODO checks
 checkExports Nothing                      = ok
 checkExports (Just (Exporting _ exports)) = do
-  m <- getModuleIdent
-  if any (isCurrentModuleExport m) exports
-    then ok
-    else mapM_ (visitExport m ) exports >> reportUnusedGlobalVars
+  mapM_ visitExport exports
+  reportUnusedGlobalVars
     where
-      isCurrentModuleExport m (ExportModule _ m') = m == m'
-      isCurrentModuleExport _ _                   = False
-
-      visitExport _ (Export         _ qid    ) =
-        visitQId qid
-      visitExport m (ExportTypeWith _ qid ids) = do
-        visitQId qid
-        mapM_ (visitQId . qualifyWith m) ids
-      visitExport m (ExportTypeAll  _ qid    ) = do
-        tcEnv <- gets tyConsEnv
-        case qualLookupTypeInfo (qualQualify m qid) tcEnv of
-          [DataType     _ _ cns] -> mapM_ (visitCons m) cns
-          [RenamingType _ _ cn ] -> visitCons m cn
-          [TypeClass    _ _ mts] -> mapM_ (visitMethod m) mts
-          _                      -> ok
-      visitExport _ _              = ok
-
-      visitMethod m (ClassMethod f _ _) = visitQId (qualifyWith m f)
-
-      visitCons m (DataConstr   c    _) = visitQId (qualifyWith m c)
-      visitCons m (RecordConstr c fs _) = visitQId (qualifyWith m c) >>
-                                          mapM_ (visitQId . qualifyWith m) fs
+      visitExport (Export _ qid) = visitQId qid
+      visitExport _              = ok
 
 -- ---------------------------------------------------------------------------
 -- checkImports
@@ -297,9 +275,6 @@ checkDecl (InstanceDecl p _ cx cls ty ds) = do
   checkOrphanInstance p cx cls ty
   checkMissingMethodImplementations p cls ds
   mapM_ checkDecl ds
-checkDecl (TypeSig                _ _ ty) = do
-  let tvs = map (setPosition $ getPosition ty) (nub (fv ty))
-  checkTypeExpr (ForallType NoSpanInfo tvs ty)
 checkDecl _                             = ok
 
 --TODO: shadowing und context etc.
@@ -332,12 +307,9 @@ checkTypeExpr (TupleType           _ tys) = mapM_ checkTypeExpr tys
 checkTypeExpr (ListType             _ ty) = checkTypeExpr ty
 checkTypeExpr (ArrowType       _ ty1 ty2) = mapM_ checkTypeExpr [ty1, ty2]
 checkTypeExpr (ParenType            _ ty) = checkTypeExpr ty
-checkTypeExpr (ContextType        _ _ ty) = checkTypeExpr ty
-checkTypeExpr (ForallType        _ vs ty) = inNestedScope $ do
-  mapM_ checkTypeShadowing vs
+checkTypeExpr (ForallType        _ vs ty) = do
   mapM_ insertTypeVar vs
   checkTypeExpr ty
-  reportUnusedTypeVars vs
 
 -- Checks locally declared identifiers (i.e. functions and logic variables)
 -- for shadowing
@@ -420,10 +392,7 @@ checkCondExpr (CondExpr _ c e) = checkExpr c >> checkExpr e
 checkExpr :: Expression () -> WCM ()
 checkExpr (Variable            _ _ v) = visitQId v
 checkExpr (Paren                 _ e) = checkExpr e
-checkExpr (Typed              _ e ty) = do
-  checkExpr e
-  let tvs = map (setPosition $ getPosition ty) (nub (fv ty))
-  checkTypeExpr (ForallType NoSpanInfo tvs ty)
+checkExpr (Typed               _ e _) = checkExpr e
 checkExpr (Record           _ _ _ fs) = mapM_ (checkField checkExpr) fs
 checkExpr (RecordUpdate       _ e fs) = do
   checkExpr e
@@ -534,7 +503,7 @@ checkMissingTypeSignatures ds = warnFor WarnMissingSignatures $ do
     tyScs <- mapM getTyScheme untypedFs
     mapM_ report $ zipWith (warnMissingTypeSignature mid) untypedFs tyScs
 
-getTyScheme :: Ident -> WCM Type
+getTyScheme :: Ident -> WCM TypeScheme
 getTyScheme q = do
   m     <- getModuleIdent
   tyEnv <- gets valueEnv
@@ -542,11 +511,10 @@ getTyScheme q = do
     [Value  _ _ _ tys] -> tys
     _ -> internalError $ "Checks.WarnCheck.getTyScheme: " ++ show q
 
-warnMissingTypeSignature :: ModuleIdent -> Ident -> Type -> Message
-warnMissingTypeSignature mid i pty = spanInfoMessage i $ fsep
+warnMissingTypeSignature :: ModuleIdent -> Ident -> TypeScheme -> Message
+warnMissingTypeSignature mid i tys = spanInfoMessage i $ fsep
   [ text "Top-level binding with no type signature:"
-  , nest 2 $ text (showIdent i) <+> text "::"
-                                <+> ppPredType mid (rawPredType pty)
+  , nest 2 $ text (showIdent i) <+> text "::" <+> ppTypeScheme mid tys
   ]
 
 -- -----------------------------------------------------------------------------
@@ -845,8 +813,8 @@ getConTy q = do
   tyEnv <- gets valueEnv
   tcEnv <- gets tyConsEnv
   case qualLookupValue q tyEnv of
-    [DataConstructor  _ _ _ tySc] -> return $ rawType tySc
-    [NewtypeConstructor _ _ tySc] -> return $ rawType tySc
+    [DataConstructor  _ _ _ (ForAll _ (PredType _ ty))] -> return ty
+    [NewtypeConstructor _ _ (ForAll _ (PredType _ ty))] -> return ty
     _ -> case qualLookupTypeInfo q tcEnv of
       [AliasType _ _ _ ty] -> return ty
       _ -> internalError $ "Checks.WarnCheck.getConTy: " ++ show q
@@ -980,7 +948,7 @@ warnMissingPattern spi loc pats = spanInfoMessage spi
     | null cs   = ppPats
     | otherwise = ppPats <+> text "with" <+> hsep (map ppCons cs)
     where ppPats = hsep (map (pPrintPrec 2) ps)
-  ppCons (i, lits) = ppIdent i <+> text "`notElem`"
+  ppCons (i, lits) = pPrint i <+> text "`notElem`"
             <+> pPrintPrec 0 (List NoSpanInfo () (map (Literal NoSpanInfo ()) lits))
 
 -- |Warning message for unreachable patterns.
@@ -1063,7 +1031,6 @@ insertTypeExpr (TupleType        _ tys) = mapM_ insertTypeExpr tys
 insertTypeExpr (ListType          _ ty) = insertTypeExpr ty
 insertTypeExpr (ArrowType    _ ty1 ty2) = mapM_ insertTypeExpr [ty1,ty2]
 insertTypeExpr (ParenType         _ ty) = insertTypeExpr ty
-insertTypeExpr (ContextType     _ _ ty) = insertTypeExpr ty
 insertTypeExpr (ForallType      _ _ ty) = insertTypeExpr ty
 
 insertConstrDecl :: ConstrDecl -> WCM ()
@@ -1275,7 +1242,7 @@ checkCaseModeDecl (TypeDecl _ tc vs ty) = do
   checkCaseModeTypeExpr ty
 checkCaseModeDecl (TypeSig _ fs qty) = do
   mapM_ (checkCaseModeID isFuncName) fs
-  checkCaseModeTypeExpr qty
+  checkCaseModeQualTypeExpr qty
 checkCaseModeDecl (FunctionDecl _ _ f eqs) = do
   checkCaseModeID isFuncName f
   mapM_ checkCaseModeEquation eqs
@@ -1341,13 +1308,15 @@ checkCaseModeTypeExpr (ArrowType _ ty1 ty2) = do
   checkCaseModeTypeExpr ty1
   checkCaseModeTypeExpr ty2
 checkCaseModeTypeExpr (ParenType _ ty) = checkCaseModeTypeExpr ty
-checkCaseModeTypeExpr (ContextType _ cx ty) = do
-  checkCaseModeContext cx
-  checkCaseModeTypeExpr ty
 checkCaseModeTypeExpr (ForallType _ tvs ty) = do
   mapM_ (checkCaseModeID isVarName) tvs
   checkCaseModeTypeExpr ty
 checkCaseModeTypeExpr _ = ok
+
+checkCaseModeQualTypeExpr :: QualTypeExpr -> WCM ()
+checkCaseModeQualTypeExpr (QualTypeExpr _ cx ty) = do
+  checkCaseModeContext cx
+  checkCaseModeTypeExpr ty
 
 checkCaseModeEquation :: Equation a -> WCM ()
 checkCaseModeEquation (Equation _ lhs rhs) = do
@@ -1405,7 +1374,7 @@ checkCaseModeExpr :: Expression a -> WCM ()
 checkCaseModeExpr (Paren _ e) = checkCaseModeExpr e
 checkCaseModeExpr (Typed _ e qty) = do
   checkCaseModeExpr e
-  checkCaseModeTypeExpr qty
+  checkCaseModeQualTypeExpr qty
 checkCaseModeExpr (Record _ _ _ fs) = mapM_ checkCaseModeFieldExpr fs
 checkCaseModeExpr (RecordUpdate _ e fs) = do
   checkCaseModeExpr e
@@ -1519,27 +1488,6 @@ getPredFromContext cx =
   let vs = concatMap (\(Constraint _ _ ty) -> typeVariables ty) cx
   in (vs, toPredSet vs cx)
 
-getPredFromType :: TypeExpr -> ([Ident], PredSet)
-getPredFromType (ContextType _ cx ty) =
-  let (vs1, ps1) = getPredFromContext cx
-      (vs2, ps2) = getPredFromType ty
-  in (vs1 ++ vs2, Set.union ps1 ps2)
-getPredFromType (ApplyType _ ty1 ty2) =
-  let (vs1, ps1) = getPredFromType ty1
-      (vs2, ps2) = getPredFromType ty2
-  in (vs1 ++ vs2, Set.union ps1 ps2)
-getPredFromType (ArrowType _ ty1 ty2) =
-  let (vs1, ps1) = getPredFromType ty1
-      (vs2, ps2) = getPredFromType ty2
-  in (vs1 ++ vs2, Set.union ps1 ps2)
-getPredFromType (TupleType _ tys) =
-  let (vss, pss) = unzip $ map getPredFromType tys
-  in (concat vss, Set.unions pss)
-getPredFromType (ListType  _ ty) = getPredFromType ty
-getPredFromType (ParenType _ ty) = getPredFromType ty
-getPredFromType (ForallType _ _ ty) = getPredFromType ty
-getPredFromType _ = ([], Set.empty)
-
 checkRedContext' :: (Pred -> Message) -> PredSet -> WCM ()
 checkRedContext' f ps = do
   m     <- gets moduleId
@@ -1548,9 +1496,9 @@ checkRedContext' f ps = do
   mapM_ (report . f) (getRedPredSet m cenv tcEnv ps)
 
 checkRedContextDecl :: Decl a -> WCM ()
-checkRedContextDecl (TypeSig _ ids ty) =
+checkRedContextDecl (TypeSig _ ids (QualTypeExpr _ cx _)) =
   checkRedContext' (warnRedContext (warnRedFuncString ids) vs) ps
-  where (vs, ps) = getPredFromType ty
+  where (vs, ps) = getPredFromContext cx
 checkRedContextDecl (FunctionDecl _ _ _ eqs) = mapM_ checkRedContextEq eqs
 checkRedContextDecl (PatternDecl _ _ rhs) = checkRedContextRhs rhs
 checkRedContextDecl (ClassDecl _ _ cx i _ ds) = do
@@ -1565,11 +1513,6 @@ checkRedContextDecl (InstanceDecl _ _ cx qid _ ds) = do
     ps
   mapM_ checkRedContextDecl ds
   where (vs, ps) = getPredFromContext cx
-checkRedContextDecl (TypeDecl _ idt _ ty) =
-  checkRedContext'
-    (warnRedContext (text ("type declaration " ++ escName idt)) vs)
-    ps
-  where (vs, ps) = getPredFromType ty
 checkRedContextDecl _ = return ()
 
 checkRedContextEq :: Equation a -> WCM ()
@@ -1590,10 +1533,10 @@ checkRedContextCond (CondExpr _ e1 e2) = do
 
 checkRedContextExpr :: Expression a -> WCM ()
 checkRedContextExpr (Paren _ e) = checkRedContextExpr e
-checkRedContextExpr (Typed _ e ty) = do
+checkRedContextExpr (Typed _ e (QualTypeExpr _ cx _)) = do
   checkRedContextExpr e
   checkRedContext' (warnRedContext (text "type signature") vs) ps
-  where (vs, ps) = getPredFromType ty
+  where (vs, ps) = getPredFromContext cx
 checkRedContextExpr (Record _ _ _ fs) = mapM_ checkRedContextFieldExpr fs
 checkRedContextExpr (RecordUpdate _ e fs) = do
   checkRedContextExpr e
