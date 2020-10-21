@@ -56,15 +56,15 @@ ppImport :: ModuleIdent -> Doc
 ppImport m = text "import" <+> text (moduleName m)
 
 ppDecl :: Decl -> Doc
-ppDecl (DataDecl                   tc n cs) = sep $
-  text "data" <+> ppTypeLhs tc n :
+ppDecl (DataDecl                   tc ks cs) = sep $
+  text "data" <+> ppTypeLhs tc (length ks) :
   map (nest dataIndent)
       (zipWith (<+>) (equals : repeat (char '|')) (map ppConstr cs))
-ppDecl (NewtypeDecl                tc n nc) = sep $
-  text "newtype" <+> ppTypeLhs tc n :
+ppDecl (NewtypeDecl                tc ks nc) = sep $
+  text "newtype" <+> ppTypeLhs tc (length ks) :
   [nest dataIndent (equals <+> ppNewConstr nc)]
-ppDecl (ExternalDataDecl              tc n) =
-  text "external data" <+> ppTypeLhs tc n
+ppDecl (ExternalDataDecl              tc ks) =
+  text "external data" <+> ppTypeLhs tc (length ks)
 ppDecl (FunctionDecl             f vs ty e) = ppTypeSig f ty $$ sep
   [ ppQIdent f <+> hsep (map (ppIdent . snd) vs) <+> equals
   , nest bodyIndent (ppExpr 0 e)]
@@ -89,9 +89,9 @@ ppType p (TypeConstructor tc tys)
   | tc == qListId && length tys == 1 = brackets (ppType 0 (head tys))
   | otherwise                        = parenIf (p > 1 && not (null tys))
     (ppQIdent tc <+> fsep (map (ppType 2) tys))
-ppType _ (TypeVariable    n) = ppTypeVar n
-ppType p (TypeArrow ty1 ty2) = parenIf (p > 0)
-                               (fsep (ppArrow (TypeArrow ty1 ty2)))
+ppType _ (TypeVariable      n) = ppTypeVar n
+ppType p (TypeArrow   ty1 ty2) = parenIf (p > 0)
+                                 (fsep (ppArrow (TypeArrow ty1 ty2)))
   where
   ppArrow (TypeArrow ty1' ty2') = ppType 1 ty1' <+> text "->" : ppArrow ty2'
   ppArrow ty                    = [ppType 0 ty]

@@ -53,3 +53,10 @@ simpleKind n = foldr KindArrow KindStar $ replicate n KindStar
 -- |The function 'isSimpleKind' returns whether a kind is simple or not.
 isSimpleKind :: Kind -> Bool
 isSimpleKind k = k == simpleKind (kindArity k)
+
+-- |Fetches a kind's 'arguments', i.e. everything before an
+-- arrow at the top-level. For example: A kind k1 -> k2 -> k3
+-- would have the arguments [k1, k2].
+kindArgs :: Kind -> [Kind]
+kindArgs (KindArrow k k') = k : kindArgs k'
+kindArgs _                = []

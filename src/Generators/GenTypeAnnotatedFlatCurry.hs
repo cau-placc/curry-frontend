@@ -35,6 +35,7 @@ import           Curry.FlatCurry.Annotated.Type
 import qualified Curry.Syntax as CS
 
 import Base.CurryTypes     (toType)
+import qualified Base.Kinds as K
 import Base.Messages       (internalError)
 import Base.NestEnv        ( NestEnv, emptyEnv, bindNestEnv, lookupNestEnv
                            , nestEnv, unnestEnv )
@@ -43,7 +44,7 @@ import Base.Types
 
 import CompilerEnv
 import Env.OpPrec          (mkPrec)
-import Env.TypeConstructor (TCEnv)
+import Env.TypeConstructor (TCEnv, tcKind)
 import Env.Value           (ValueEnv, ValueInfo (..), qualLookupValue)
 
 import qualified IL
@@ -68,11 +69,11 @@ patchPrelude p@(AProg n _ ts fs os)
 
 primTypes :: [TypeDecl]
 primTypes =
-  [ Type arrow Public [0, 1] []
+  [ Type arrow Public [(0, KStar), (1, KStar)] []
   , Type unit Public [] [(Cons unit 0 Public [])]
-  , Type nil Public [0] [ Cons nil  0 Public []
-                        , Cons cons 2 Public [TVar 0, TCons nil [TVar 0]]
-                        ]
+  , Type nil Public [(0, KStar)] [ Cons nil  0 Public []
+                                 , Cons cons 2 Public [TVar 0, TCons nil [TVar 0]]
+                                 ]
   ] ++ map mkTupleType [2 .. maxTupleArity]
   where arrow = mkPreludeQName "(->)"
         unit  = mkPreludeQName "()"
@@ -80,8 +81,8 @@ primTypes =
         cons  = mkPreludeQName ":"
 
 mkTupleType :: Int -> TypeDecl
-mkTupleType arity = Type tuple Public [0 .. arity - 1]
-  [Cons tuple arity Public (map TVar [0 .. arity - 1])]
+mkTupleType arity = Type tuple Public [(i, KStar) | i <- [0 .. arity - 1]]
+  [Cons tuple arity Public $ map TVar [0 .. arity - 1]]
   where tuple = mkPreludeQName $ '(' : replicate (arity - 1) ',' ++ ")"
 
 mkPreludeQName :: String -> QName
@@ -244,7 +245,11 @@ trTypeSynonym (CS.TypeDecl _ t tvs ty) = do
   ty'  <- trType (transType tEnv $
                   expandType m tEnv $
                   toType tvs ty)
-  return [TypeSyn t' vis [0 .. length tvs - 1] ty']
+  let ks = map trInternalKind $ K.kindArgs $ tcKind m qid tEnv
+  return [TypeSyn t' vis (zip [0..] ks) ty']
+  where trInternalKind :: K.Kind -> Kind
+        trInternalKind (K.KindArrow k1 k2) = KArrow (trInternalKind k1) (trInternalKind k2)
+        trInternalKind _                   = KStar
 trTypeSynonym _                        = return []
 
 -- Translate a data declaration
@@ -253,26 +258,33 @@ trTypeSynonym _                        = return []
 -- declarations with zero constructors and without the additional constructor
 -- empty data declarations could not be distinguished from external ones.
 trTypeDecl :: IL.Decl -> FlatState [TypeDecl]
-trTypeDecl (IL.DataDecl      qid a []) = do
+trTypeDecl (IL.DataDecl      qid ks []) = do
   q'  <- trQualIdent qid
   vis <- getTypeVisibility qid
   c   <- trQualIdent $ qualify (mkIdent $ "_Constr#" ++ idName (unqualify qid))
-  let tvs = [0 .. a - 1]
-  return [Type q' vis tvs [Cons c 1 Private [TCons q' $ map TVar tvs]]]
-trTypeDecl (IL.DataDecl      qid a cs) = do
+  let ks' = trKind <$> ks
+      tvs = zip [0..] ks'
+  return [Type q' vis tvs [Cons c 1 Private [TCons q' $ TVar <$> fst <$> tvs]]]
+trTypeDecl (IL.DataDecl      qid ks cs) = do
   q'  <- trQualIdent qid
   vis <- getTypeVisibility qid
   cs' <- mapM trConstrDecl cs
-  return [Type q' vis [0 .. a - 1] cs']
-trTypeDecl (IL.NewtypeDecl   qid a nc) = do
+  let ks' = trKind <$> ks
+      tvs = zip [0..] ks'
+  return [Type q' vis tvs cs']
+trTypeDecl (IL.NewtypeDecl   qid ks nc) = do
   q'  <- trQualIdent qid
   vis <- getTypeVisibility qid
   nc' <- trNewConstrDecl nc
-  return [TypeNew q' vis [0 .. a - 1] nc']
-trTypeDecl (IL.ExternalDataDecl qid a) = do
+  let ks' = trKind <$> ks
+      tvs = zip [0..] ks'
+  return [TypeNew q' vis tvs nc']
+trTypeDecl (IL.ExternalDataDecl qid ks) = do
   q'  <- trQualIdent qid
   vis <- getTypeVisibility qid
-  return [Type q' vis [0 .. a - 1] []]
+  let ks' = trKind <$> ks
+      tvs = zip [0..] ks'
+  return [Type q' vis tvs []]
 trTypeDecl _                           = return []
 
 -- Translate a constructor declaration
@@ -294,12 +306,17 @@ trType :: IL.Type -> FlatState TypeExpr
 trType (IL.TypeConstructor t tys) = TCons <$> trQualIdent t <*> mapM trType tys
 trType (IL.TypeVariable      idx) = return $ TVar $ abs idx
 trType (IL.TypeArrow     ty1 ty2) = FuncType <$> trType ty1 <*> trType ty2
-trType (IL.TypeForall    idxs ty) = ForallType (map trVar idxs) <$> trType ty
-  where
-    trVar (i, k) = (abs i, trKind k)
-    trKind IL.KindStar          = KStar
-    trKind (IL.KindVariable  _) = KStar
-    trKind (IL.KindArrow k1 k2) = KArrow (trKind k1) (trKind k2)
+trType (IL.TypeForall    idxs ty) = ForallType (map trTVarWithKind idxs) <$> trType ty
+
+-- Translates a type variable with kind.
+trTVarWithKind :: (Int, IL.Kind) -> (Int, Kind)
+trTVarWithKind (i, k) = (abs i, trKind k)
+
+-- Translate a kind
+trKind :: IL.Kind -> Kind
+trKind IL.KindStar          = KStar
+trKind (IL.KindVariable  _) = KStar
+trKind (IL.KindArrow k1 k2) = KArrow (trKind k1) (trKind k2)
 
 -- Convert a fixity
 cvFixity :: CS.Infix -> Fixity

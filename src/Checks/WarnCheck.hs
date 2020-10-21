@@ -21,6 +21,8 @@ module Checks.WarnCheck (warnCheck) where
 import Prelude hiding ((<>))
 #endif
 
+import           Control.Applicative
+  ((<|>))
 import           Control.Monad
   (filterM, foldM_, guard, liftM, liftM2, when, unless, void)
 import           Control.Monad.State.Strict    (State, execState, gets, modify)
@@ -55,7 +57,7 @@ import Base.Types
 import Base.Utils (findMultiples)
 import Env.ModuleAlias
 import Env.Class (ClassEnv, classMethods, hasDefaultImpl)
-import Env.TypeConstructor ( TCEnv, TypeInfo (..)
+import Env.TypeConstructor ( TCEnv, TypeInfo (..), lookupTypeInfo
                            , qualLookupTypeInfo, getOrigName )
 import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 
@@ -824,14 +826,17 @@ getTyCons :: QualIdent -> WCM [DataConstr]
 getTyCons tc = do
   tc'   <- unAlias tc
   tcEnv <- gets tyConsEnv
-  return $ case qualLookupTypeInfo tc tcEnv of
-    [DataType     _ _ cs] -> cs
-    [RenamingType _ _ nc] -> [nc]
-    _ -> case qualLookupTypeInfo tc' tcEnv of
-      [DataType     _ _ cs] -> cs
-      [RenamingType _ _ nc] -> [nc]
-      err -> internalError $ "Checks.WarnCheck.getTyCons: " ++
-                               show tc ++ ' ' : show err ++ '\n' : show tcEnv
+  let getTyCons' :: [TypeInfo] -> Either String [DataConstr]
+      getTyCons' ti = case ti of
+        [DataType     _ _ cs] -> Right cs
+        [RenamingType _ _ nc] -> Right $ [nc]
+        _                     -> Left $ "Checks.WarnCheck.getTyCons: " ++ show tc ++ ' ' : show ti ++ '\n' : show tcEnv
+      csResult = getTyCons' (qualLookupTypeInfo tc tcEnv)
+             <|> getTyCons' (qualLookupTypeInfo tc' tcEnv)
+             <|> getTyCons' (lookupTypeInfo (unqualify tc) tcEnv) -- Fall back on unqualified lookup if qualified doesn't work
+  case csResult of
+    Right cs -> return cs
+    Left err -> internalError err
 
 -- |Resugar the exhaustive patterns previously desugared at 'simplifyPat'.
 tidyExhaustivePats :: ExhaustivePats -> WCM ExhaustivePats
