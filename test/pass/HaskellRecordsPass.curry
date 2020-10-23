@@ -2,9 +2,9 @@
 data D = C1 Int
        | C2 String
        | C3 Bool
-data RD = RD {}
-data RD = RD { x,y,z :: Int, a :: Bool, r :: RD }
-data RD a = RD { f :: a }
+data RD1 = RD1 {}
+data RD2 = RD2 { x,y,z :: Int, a :: Bool, r :: RD1 }
+data RD3 a = RD3 { f :: a }
 
 -- newtype
 newtype RN = RN { x :: Int }
@@ -24,6 +24,6 @@ r3' = (r r3) { x = 24, y = 72 }
 r3' = (r3 { })
 
 -- record pattern
-f R1 { x = 45 } = True
-f R1 { x = 45, y = False } = True
-f R1 { } = True
+f' R1 { x = 45 } = True
+f' R1 { x = 45, y = False } = True
+f' R1 { } = True
