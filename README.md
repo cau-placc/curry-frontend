@@ -12,18 +12,14 @@ but can also be used with a variety of other backends, most notably including
 
 ## Requirements
 
-* `cabal-install`
-* A recent version of the `curry-base` package, installed locally
+* Make sure that a recent version of Haskell Stack is installed on your computer
 
 ## Building
 
-To build the project, run `cabal v1-build`.
+* To build the project, run `make`.
+* To test the project, run `make runtests`.
 
-## Running
-
-To run the project, use `cabal v1-run`.
-
-Alternatively, you can launch the built executable manually from `dist/build/curry-frontend`.
+The built executable will be located at `bin/curry-frontend`.
 
 ## Usage
 
