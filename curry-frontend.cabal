@@ -1,9 +1,9 @@
-Name:          curry-frontend
-Version:       2.0.0
-Cabal-Version: 2.0
-Synopsis:      Compile the functional logic language Curry to several
+name:          curry-frontend
+version:       2.0.0
+cabal-version: 2.0
+synopsis:      Compile the functional logic language Curry to several
                intermediate formats
-Description:   The Curry front end consists of the executable program
+description:   The Curry front end consists of the executable program
                "curry-frontend".
                It is used by various backends to compile Curry programs to
                an intermediate representation.
@@ -14,28 +14,28 @@ Description:   The Curry front end consists of the executable program
                representations.
                For further information, please check
                <http://curry-language.org>
-Category:      Language
-License:       BSD3
-License-File:  LICENSE
-Author:        Wolfgang Lux, Martin Engelke, Bernd Brassel, Holger Siegel,
+category:      Language
+license:       BSD3
+license-file:  LICENSE
+author:        Wolfgang Lux, Martin Engelke, Bernd Brassel, Holger Siegel,
                Bjoern Peemoeller, Finn Teegen
-Maintainer:    fte@informatik.uni-kiel.de
-Homepage:      http://curry-language.org
-Build-Type:    Simple
-Stability:     experimental
+maintainer:    fte@informatik.uni-kiel.de
+homepage:      http://curry-language.org
+build-type:    Simple
+stability:     experimental
 
-Extra-Source-Files: LIESMICH CHANGELOG.md
+extra-source-files: README.md CHANGELOG.md
 
-Data-Dir:   data
-Data-Files: currysource.css
+data-dir:   data
+data-files: currysource.css
 
 source-repository head
   type:     git
   location: https://git.ps.informatik.uni-kiel.de/curry/curry-frontend.git
 
-Executable curry-frontend
+executable curry-frontend
   hs-source-dirs:   src
-  Main-is:          cymake.hs
+  main-is:          cymake.hs
   default-language: Haskell2010
   other-extensions: CPP, TemplateHaskell, OverloadedStrings
   ghc-options:      -Wall
@@ -133,7 +133,7 @@ Executable curry-frontend
   autogen-modules:
       Paths_curry_frontend
 
-Test-Suite test-frontend
+test-suite test-frontend
   type:             detailed-0.9
   hs-source-dirs:   test, src
   test-module:      TestFrontend
