@@ -54,7 +54,9 @@ executable curry-frontend
     , process
     , network-uri >= 2.6
     , pretty
-    , curry-base == 1.2.0
+    , binary
+    , time
+    , parsec
   other-modules:
       Base.AnnotExpr
     , Base.CurryKinds
@@ -88,6 +90,44 @@ executable curry-frontend
     , Checks.TypeCheck
     , Checks.TypeSyntaxCheck
     , Checks.WarnCheck
+    , Curry.AbstractCurry
+    , Curry.AbstractCurry.Files
+    , Curry.AbstractCurry.Type
+    , Curry.Base.Ident
+    , Curry.Base.LexComb
+    , Curry.Base.LLParseComb
+    , Curry.Base.Message
+    , Curry.Base.Monad
+    , Curry.Base.Position
+    , Curry.Base.Pretty
+    , Curry.Base.Span
+    , Curry.Base.SpanInfo
+    , Curry.CondCompile.Parser
+    , Curry.CondCompile.Transform
+    , Curry.CondCompile.Type
+    , Curry.Files.Filenames
+    , Curry.Files.PathUtils
+    , Curry.Files.Unlit
+    , Curry.FlatCurry
+    , Curry.FlatCurry.Files
+    , Curry.FlatCurry.Goodies
+    , Curry.FlatCurry.InterfaceEquivalence
+    , Curry.FlatCurry.Pretty
+    , Curry.FlatCurry.Type
+    , Curry.FlatCurry.Typeable
+    , Curry.FlatCurry.Annotated.Goodies
+    , Curry.FlatCurry.Annotated.Type
+    , Curry.FlatCurry.Typed.Goodies
+    , Curry.FlatCurry.Typed.Type
+    , Curry.Syntax
+    , Curry.Syntax.Extension
+    , Curry.Syntax.InterfaceEquivalence
+    , Curry.Syntax.Lexer
+    , Curry.Syntax.Parser
+    , Curry.Syntax.Pretty
+    , Curry.Syntax.ShowModule
+    , Curry.Syntax.Type
+    , Curry.Syntax.Utils
     , CompilerEnv
     , CompilerOpts
     , CondCompile
@@ -190,6 +230,44 @@ test-suite test-frontend
     , Checks.TypeCheck
     , Checks.TypeSyntaxCheck
     , Checks.WarnCheck
+    , Curry.AbstractCurry
+    , Curry.AbstractCurry.Files
+    , Curry.AbstractCurry.Type
+    , Curry.Base.Ident
+    , Curry.Base.LexComb
+    , Curry.Base.LLParseComb
+    , Curry.Base.Message
+    , Curry.Base.Monad
+    , Curry.Base.Position
+    , Curry.Base.Pretty
+    , Curry.Base.Span
+    , Curry.Base.SpanInfo
+    , Curry.CondCompile.Parser
+    , Curry.CondCompile.Transform
+    , Curry.CondCompile.Type
+    , Curry.Files.Filenames
+    , Curry.Files.PathUtils
+    , Curry.Files.Unlit
+    , Curry.FlatCurry
+    , Curry.FlatCurry.Files
+    , Curry.FlatCurry.Goodies
+    , Curry.FlatCurry.InterfaceEquivalence
+    , Curry.FlatCurry.Pretty
+    , Curry.FlatCurry.Type
+    , Curry.FlatCurry.Typeable
+    , Curry.FlatCurry.Annotated.Goodies
+    , Curry.FlatCurry.Annotated.Type
+    , Curry.FlatCurry.Typed.Goodies
+    , Curry.FlatCurry.Typed.Type
+    , Curry.Syntax
+    , Curry.Syntax.Extension
+    , Curry.Syntax.InterfaceEquivalence
+    , Curry.Syntax.Lexer
+    , Curry.Syntax.Parser
+    , Curry.Syntax.Pretty
+    , Curry.Syntax.ShowModule
+    , Curry.Syntax.Type
+    , Curry.Syntax.Utils
     , CompilerEnv
     , CompilerOpts
     , CondCompile
