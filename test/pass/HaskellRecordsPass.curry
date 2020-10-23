@@ -7,23 +7,21 @@ data RD2 = RD2 { x,y,z :: Int, a :: Bool, r :: RD1 }
 data RD3 a = RD3 { f :: a }
 
 -- newtype
-newtype RN = RN { x :: Int }
+newtype RN = RN { x' :: Int }
 
 -- record construction
-r1 = R1 { x = 12, y = False }
-r2 = R2 { }
-r3 = R3 { x = 42,  r = r3 }
+r1 = RD1 { }
+r2 = RD2 { x = 12, y = 24, z = 34, a = False, r = r1 }
+r3 = RD3 { f = r2 }
 
 -- record selection
-i = x r3
+i = x r2
 
 -- record update
-r3' = r3 { x = 24, y = 72 }
-r3' = (r r3) { x = 24, y = 72 }
-
-r3' = (r3 { })
+r2' = r2 { x = 12, y = 72 }
+r3' = (f r3) { x = 12, y = 72 }
 
 -- record pattern
-f' R1 { x = 45 } = True
-f' R1 { x = 45, y = False } = True
-f' R1 { } = True
+f' RD2 { x = 45 } = True
+f' RD2 { x = 45, a = False } = True
+f' RD2 { } = True
