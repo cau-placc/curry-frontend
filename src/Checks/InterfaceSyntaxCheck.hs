@@ -40,7 +40,6 @@ import Curry.Base.Ident
 import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
-import Curry.Syntax.Pretty
 
 data ISCState = ISCState
   { typeEnv :: TypeEnv
