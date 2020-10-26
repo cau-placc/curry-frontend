@@ -173,6 +173,7 @@ failInfos = map (uncurry mkFailTest)
       , "Functional patterns are not supported inside a do sequence"
       ]
     )
+  , ("HaskellRecordsFail", ["Unexpected token `,'"])
   , ("FP_NonGlobal", ["Function `f1' in functional pattern is not global"])
   , ("ImportError",
       [ "Module Prelude does not export foo"
@@ -249,6 +250,7 @@ passInfos = map mkPassTest
   , "FP_NonLinearity"
   , "FunctionalPatterns"
   , "HaskellRecords"
+  , "HaskellRecordsPass"
   , "Hierarchical"
   , "ImportRestricted"
   , "ImportRestricted2"

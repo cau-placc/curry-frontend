@@ -23,7 +23,6 @@ import qualified Data.Set as Set (Set, toAscList)
 
 import Curry.Base.Ident (identSupply)
 import Curry.Base.Pretty
-import Curry.Syntax.Pretty
 
 import Base.CurryTypes
 import Base.Types
