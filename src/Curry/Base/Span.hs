@@ -87,20 +87,17 @@ ppSpanPreview (Span f (Position _ sl sc) (Position _ el ec))
   | otherwise = do
       fileContents <- readFile f
 
-      let lnContents = take lnCount $ drop (sl - 1) $ lines fileContents
-          lnNumsRaw = (\i -> if (i - sl) `mod` lnInterval == 0 then show i else "") <$> [sl..el]
-          lnNums = text <$> lPadStr lnNumWidth <$> (vPad ++ lnNumsRaw ++ vPad)
-          gutter = text <$> replicate (lnCount + 2 * vPadCount) "|"
-          highlight = replicate (minC - 1) ' ' ++ replicate (1 + maxC - minC) '^'
-          previews = text <$> (vPad ++ lnContents ++ [highlight] ++ replicate (vPadCount - 1) "")
+      let lnContent = lines fileContents !! (sl - 1)
+          lnNum = text <$> lPadStr lnNumWidth <$> (vPad ++ [show sl] ++ vPad)
+          ec' = if isMultiline then length lnContent else ec
+          gutter = text <$> replicate (1 + 2 * vPadCount) "|"
+          highlight = replicate (sc - 1) ' ' ++ replicate (1 + ec' - sc) '^' ++ if isMultiline then "..." else ""
+          previews = text <$> (vPad ++ [lnContent, highlight] ++ replicate (vPadCount - 1) "")
       
-      return $ vcat $ map hsep $ transpose [lnNums, gutter, previews]
+      return $ vcat $ map hsep $ transpose [lnNum, gutter, previews]
   where vPadCount = 1 -- Number of padding lines at the top and bottom
-        lnInterval = 1  -- Number of lines between displayed line numbers
-        lnCount = 1 + el - sl
-        minC = min sc ec
-        maxC = max sc ec
-        numWidth n = 1 + floor (logBase 10 $ (fromIntegral n) :: Double)
+        isMultiline = el - sl > 0
+        numWidth = length . show
         lnNumWidth = 1 + numWidth el
         vPad = replicate vPadCount ""
         lPadStr n s = replicate (n - length s) ' ' ++ s
