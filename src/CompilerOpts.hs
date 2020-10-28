@@ -164,7 +164,7 @@ defaultDebugOpts = DebugOpts
 defaultOptimizationOpts :: OptimizationOpts
 defaultOptimizationOpts = OptimizationOpts
   { optRemoveUnusedImports = True
-  , optDesugarNewtypes     = True
+  , optDesugarNewtypes     = False
   }
 
 -- |Modus operandi of the program
