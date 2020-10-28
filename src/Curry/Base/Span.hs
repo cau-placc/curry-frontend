@@ -97,7 +97,7 @@ ppSpanPreview (Span f (Position _ sl sc) (Position _ el ec))
       return $ vcat $ map hsep $ transpose [lnNum, gutter, previews]
   where vPadCount = 1 -- Number of padding lines at the top and bottom
         isMultiline = el - sl > 0
-        numWidth n = length $ show n
+        numWidth = length . show
         lnNumWidth = 1 + numWidth el
         vPad = replicate vPadCount ""
         lPadStr n s = replicate (n - length s) ' ' ++ s
