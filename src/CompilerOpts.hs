@@ -34,7 +34,7 @@ import System.Environment              (getArgs, getProgName)
 import System.FilePath                 ( addTrailingPathSeparator, normalise
                                        , splitSearchPath )
 
-import Curry.Files.Filenames           (currySubdir)
+import Curry.Files.Filenames           (defaultOutDir)
 import Curry.Syntax.Extension
 
 -- -----------------------------------------------------------------------------
@@ -116,7 +116,7 @@ defaultOptions = Options
   , optForce         = False
   , optLibraryPaths  = []
   , optImportPaths   = []
-  , optOutDir        = ".curry"
+  , optOutDir        = defaultOutDir
   , optHtmlDir       = Nothing
   , optUseSubdir     = True
   , optInterface     = True
@@ -435,9 +435,9 @@ options =
       (ReqArg (withArg onOpts $ \ arg opts -> opts { optHtmlDir =
         Just arg }) "dir")
       "write HTML documentation into directory `dir'"
-  , Option ""   ["no-subdir"]
+  , Option ""   ["no-subdir", "no-outdir"]
       (NoArg (onOpts $ \ opts -> opts { optUseSubdir = False }))
-      ("disable writing to `" ++ currySubdir ++ "' subdirectory")
+      ("disable writing to `" ++ defaultOutDir ++ "' subdirectory")
   , Option ""   ["no-intf"]
       (NoArg (onOpts $ \ opts -> opts { optInterface = False }))
       "do not create an interface file"

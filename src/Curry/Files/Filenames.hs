@@ -21,8 +21,8 @@ module Curry.Files.Filenames
   , moduleNameToFile, fileNameToModule, splitModuleFileName, isCurryFilePath
 
     -- * Curry sub-directory
-  , currySubdir, hasCurrySubdir, addCurrySubdir, addCurrySubdirModule
-  , ensureCurrySubdir
+  , defaultOutDir, hasOutDir, addOutDir, addOutDirModule
+  , ensureOutDir
 
     -- * File name extensions
     -- ** Curry files
@@ -83,39 +83,40 @@ isCurryFilePath str =  isValid str
 -- -----------------------------------------------------------------------------
 
 -- |The standard hidden subdirectory for curry files
-currySubdir :: String
-currySubdir = ".curry"
+defaultOutDir :: String
+defaultOutDir = ".curry"
 
--- |Does the given 'FilePath' contain the 'currySubdir'
+-- |Does the given 'FilePath' contain the 'outDir'
 -- as its last directory component?
-hasCurrySubdir :: FilePath -> Bool
-hasCurrySubdir f = not (null dirs) && last dirs == currySubdir
+hasOutDir :: String -> FilePath -> Bool
+hasOutDir outDir f = not (null dirs) && last dirs == outDir
   where dirs = splitDirectories $ takeDirectory f
 
--- |Add the 'currySubdir' to the given 'FilePath' if the flag is 'True' and
+-- |Add the 'outDir' to the given 'FilePath' if the flag is 'True' and
 -- the path does not already contain it, otherwise leave the path untouched.
-addCurrySubdir :: Bool -> FilePath -> FilePath
-addCurrySubdir b fn = if b then ensureCurrySubdir fn else fn
+addOutDir :: Bool -> String -> FilePath -> FilePath
+addOutDir b outDir fn = if b then ensureOutDir outDir fn else fn
 
--- |Add the 'currySubdir' to the given 'FilePath' if the flag is 'True' and
+-- |Add the 'outDir' to the given 'FilePath' if the flag is 'True' and
 -- the path does not already contain it, otherwise leave the path untouched.
-addCurrySubdirModule :: Bool -> ModuleIdent -> FilePath -> FilePath
-addCurrySubdirModule b m fn
+addOutDirModule :: Bool -> String -> ModuleIdent -> FilePath -> FilePath
+addOutDirModule b outDir m fn
   | b         = let (pre, file) = splitModuleFileName m fn
-                in  ensureCurrySubdir pre </> file
+                in  ensureOutDir outDir pre </> file
   | otherwise = fn
 
--- | Ensure that the 'currySubdir' is the last component of the
+-- | Ensure that the 'outDir' is the last component of the
 -- directory structure of the given 'FilePath'. If the 'FilePath' already
 -- contains the sub-directory, it remains unchanged.
-ensureCurrySubdir :: FilePath -- ^ original 'FilePath'
-                  -> FilePath -- ^ new 'FilePath'
-ensureCurrySubdir fn = normalise $ addSub (splitDirectories d) </> f
+ensureOutDir :: String   -- ^ the 'outDir'
+             -> FilePath -- ^ original 'FilePath'
+             -> FilePath -- ^ new 'FilePath'
+ensureOutDir outDir fn = normalise $ addSub (splitDirectories d) </> f
   where
   (d, f) = splitFileName fn
-  addSub dirs | null dirs                = currySubdir
-              | last dirs == currySubdir = joinPath dirs
-              | otherwise                = joinPath dirs </> currySubdir
+  addSub dirs | null dirs           = outDir
+              | last dirs == outDir = joinPath dirs
+              | otherwise           = joinPath dirs </> outDir
 
 -- -----------------------------------------------------------------------------
 -- File name extensions
