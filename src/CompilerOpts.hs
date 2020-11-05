@@ -54,7 +54,7 @@ data Options = Options
                                             --   for imports
   , optOutDir        :: FilePath            -- ^ output directory for FlatCurry, ...
   , optHtmlDir       :: Maybe FilePath      -- ^ output directory for HTML
-  , optUseSubdir     :: Bool                -- ^ use subdir for output?
+  , optUseOutDir     :: Bool                -- ^ use subdir for output?
   , optInterface     :: Bool                -- ^ create a FlatCurry interface file?
   , optPrepOpts      :: PrepOpts            -- ^ preprocessor options
   , optWarnOpts      :: WarnOpts            -- ^ warning options
@@ -118,7 +118,7 @@ defaultOptions = Options
   , optImportPaths   = []
   , optOutDir        = defaultOutDir
   , optHtmlDir       = Nothing
-  , optUseSubdir     = True
+  , optUseOutDir     = True
   , optInterface     = True
   , optPrepOpts      = defaultPrepOpts
   , optWarnOpts      = defaultWarnOpts
@@ -435,8 +435,8 @@ options =
       (ReqArg (withArg onOpts $ \ arg opts -> opts { optHtmlDir =
         Just arg }) "dir")
       "write HTML documentation into directory `dir'"
-  , Option ""   ["no-subdir", "no-outdir"]
-      (NoArg (onOpts $ \ opts -> opts { optUseSubdir = False }))
+  , Option ""   ["no-outdir", "no-subdir"]
+      (NoArg (onOpts $ \ opts -> opts { optUseOutDir = False }))
       ("disable writing to `" ++ defaultOutDir ++ "' subdirectory")
   , Option ""   ["no-intf"]
       (NoArg (onOpts $ \ opts -> opts { optInterface = False }))
