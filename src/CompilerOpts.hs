@@ -52,6 +52,7 @@ data Options = Options
                                             --   for libraries
   , optImportPaths   :: [FilePath]          -- ^ directories to search in
                                             --   for imports
+  , optOutDir        :: FilePath            -- ^ output directory for FlatCurry, ...
   , optHtmlDir       :: Maybe FilePath      -- ^ output directory for HTML
   , optUseSubdir     :: Bool                -- ^ use subdir for output?
   , optInterface     :: Bool                -- ^ create a FlatCurry interface file?
@@ -115,6 +116,7 @@ defaultOptions = Options
   , optForce         = False
   , optLibraryPaths  = []
   , optImportPaths   = []
+  , optOutDir        = ".curry"
   , optHtmlDir       = Nothing
   , optUseSubdir     = True
   , optInterface     = True
@@ -426,6 +428,9 @@ options =
               map (normalise . addTrailingPathSeparator) (splitSearchPath arg)
               }) "dir[:dir]")
       "search for imports in dir[:dir]"
+  , Option "o"  ["outdir"]
+      (ReqArg (withArg onOpts $ \ arg opts -> opts { optOutDir = arg }) "dir")
+      "write compilation artifacts (FlatCurry, ...) into directory `dir'"
   , Option []   ["htmldir"]
       (ReqArg (withArg onOpts $ \ arg opts -> opts { optHtmlDir =
         Just arg }) "dir")
