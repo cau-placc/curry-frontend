@@ -124,7 +124,7 @@ loadModule opts m fn = do
   -- parse and check module header
   (toks, mdl) <- parseModule opts m fn
   -- load the imported interfaces into an InterfaceEnv
-  let paths = map (addCurrySubdir (optUseSubdir opts))
+  let paths = map (addOutDir (optUseOutDir opts) (optOutDir opts))
                   ("." : optImportPaths opts)
   let withPrel = importPrelude opts mdl
   iEnv   <- loadInterfaces paths withPrel
@@ -296,7 +296,7 @@ writeTokens opts env = when tokTarget $ liftIO $
               (showTokenStream (tokens env))
   where
   tokTarget  = Tokens `elem` optTargetTypes opts
-  useSubDir  = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
+  useSubDir  = addOutDirModule (optUseOutDir opts) (optOutDir opts) (moduleIdent env)
 
 writeComments :: Options -> CompilerEnv -> CYIO ()
 writeComments opts env = when tokTarget $ liftIO $
@@ -304,7 +304,7 @@ writeComments opts env = when tokTarget $ liftIO $
               (showCommentTokenStream $ tokens env)
   where
   tokTarget  = Comments `elem` optTargetTypes opts
-  useSubDir  = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
+  useSubDir  = addOutDirModule (optUseOutDir opts) (optOutDir opts) (moduleIdent env)
 
 -- |Output the parsed 'Module' on request
 writeParsed :: Show a => Options -> CompEnv (CS.Module a) -> CYIO ()
@@ -312,7 +312,7 @@ writeParsed opts (env, mdl) = when srcTarget $ liftIO $
   writeModule (useSubDir $ sourceRepName (filePath env)) (CS.showModule mdl)
   where
   srcTarget  = Parsed `elem` optTargetTypes opts
-  useSubDir  = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
+  useSubDir  = addOutDirModule (optUseOutDir opts) (optOutDir opts) (moduleIdent env)
 
 writeHtml :: Options -> CompEnv (CS.Module a) -> CYIO ()
 writeHtml opts (env, mdl) = when htmlTarget $
@@ -332,7 +332,7 @@ writeInterface opts env intf@(CS.Interface m _ _)
 
   interfaceFile   = interfName (filePath env)
   outputInterface = liftIO $ writeModule
-                    (addCurrySubdirModule (optUseSubdir opts) m interfaceFile)
+                    (addOutDirModule (optUseOutDir opts) (optOutDir opts) m interfaceFile)
                     (show $ pPrint intf)
 
 matchInterface :: FilePath -> CS.Interface -> IO Bool
@@ -362,7 +362,7 @@ writeFlat opts env mdl il = do
   fcyName     = flatName (filePath env)
   fcyProg     = genFlatCurry tfcyProg
   fcyTarget   = FlatCurry `elem` optTargetTypes opts
-  useSubDir   = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
+  useSubDir   = addOutDirModule (optUseOutDir opts) (optOutDir opts) (moduleIdent env)
 
 writeFlatIntf :: Options -> CompilerEnv -> FC.Prog -> CYIO ()
 writeFlatIntf opts env prog
@@ -377,7 +377,7 @@ writeFlatIntf opts env prog
   targetFile      = flatIntName (filePath env)
   emptyIntf       = FC.Prog "" [] [] [] []
   fint            = genFlatInterface prog
-  useSubDir       = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
+  useSubDir       = addOutDirModule (optUseOutDir opts) (optOutDir opts) (moduleIdent env)
   outputInterface = liftIO $ FC.writeFlatCurry (useSubDir targetFile) fint
 
 writeAbstractCurry :: Options -> CompEnv (CS.Module PredType) -> CYIO ()
@@ -391,7 +391,7 @@ writeAbstractCurry opts (env, mdl) = do
   where
   acyTarget  = AbstractCurry        `elem` optTargetTypes opts
   uacyTarget = UntypedAbstractCurry `elem` optTargetTypes opts
-  useSubDir  = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
+  useSubDir  = addOutDirModule (optUseOutDir opts) (optOutDir opts) (moduleIdent env)
 
 
 writeAST :: Options -> CompEnv (CS.Module ()) -> CYIO ()
@@ -399,7 +399,7 @@ writeAST opts (env, mdl) = when astTarget $ liftIO $
   writeModule (useSubDir $ astName (filePath env)) (CS.showModule mdl)
   where
   astTarget  = AST `elem` optTargetTypes opts
-  useSubDir  = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
+  useSubDir  = addOutDirModule (optUseOutDir opts) (optOutDir opts) (moduleIdent env)
 
 
 writeShortAST :: Options -> CompEnv (CS.Module ()) -> CYIO ()
@@ -408,7 +408,7 @@ writeShortAST opts (env, mdl) = when astTarget $ liftIO $
               (CS.showModule $ shortenModuleAST mdl)
   where
   astTarget  = ShortAST `elem` optTargetTypes opts
-  useSubDir  = addCurrySubdirModule (optUseSubdir opts) (moduleIdent env)
+  useSubDir  = addOutDirModule (optUseOutDir opts) (optOutDir opts) (moduleIdent env)
 
 
 type Dump = (DumpLevel, CompilerEnv, String)

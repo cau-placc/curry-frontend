@@ -83,7 +83,7 @@ makeCurry :: Options -> [(ModuleIdent, Source)] ->  CYIO ()
 makeCurry opts srcs = mapM_ process' (zip [1 ..] srcs)
   where
   total    = length srcs
-  tgtDir m = addCurrySubdirModule (optUseSubdir opts) m
+  tgtDir m = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
 
   process' :: (Int, (ModuleIdent, Source)) -> CYIO ()
   process' (n, (m, Source fn ps is)) = do
@@ -163,7 +163,7 @@ process opts idx m fn deps
     status opts $ compMessage idx "Compiling" m (fn, head destFiles)
     compileModule opts m fn
 
-  tgtDir = addCurrySubdirModule (optUseSubdir opts) m
+  tgtDir = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
 
   destFiles = [ gen fn | (t, gen) <- nameGens, t `elem` optTargetTypes opts]
   nameGens  =

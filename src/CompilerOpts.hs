@@ -34,7 +34,7 @@ import System.Environment              (getArgs, getProgName)
 import System.FilePath                 ( addTrailingPathSeparator, normalise
                                        , splitSearchPath )
 
-import Curry.Files.Filenames           (currySubdir)
+import Curry.Files.Filenames           (defaultOutDir)
 import Curry.Syntax.Extension
 
 -- -----------------------------------------------------------------------------
@@ -52,8 +52,9 @@ data Options = Options
                                             --   for libraries
   , optImportPaths   :: [FilePath]          -- ^ directories to search in
                                             --   for imports
+  , optOutDir        :: FilePath            -- ^ output directory for FlatCurry, ...
   , optHtmlDir       :: Maybe FilePath      -- ^ output directory for HTML
-  , optUseSubdir     :: Bool                -- ^ use subdir for output?
+  , optUseOutDir     :: Bool                -- ^ use subdir for output?
   , optInterface     :: Bool                -- ^ create a FlatCurry interface file?
   , optPrepOpts      :: PrepOpts            -- ^ preprocessor options
   , optWarnOpts      :: WarnOpts            -- ^ warning options
@@ -115,8 +116,9 @@ defaultOptions = Options
   , optForce         = False
   , optLibraryPaths  = []
   , optImportPaths   = []
+  , optOutDir        = defaultOutDir
   , optHtmlDir       = Nothing
-  , optUseSubdir     = True
+  , optUseOutDir     = True
   , optInterface     = True
   , optPrepOpts      = defaultPrepOpts
   , optWarnOpts      = defaultWarnOpts
@@ -426,13 +428,16 @@ options =
               map (normalise . addTrailingPathSeparator) (splitSearchPath arg)
               }) "dir[:dir]")
       "search for imports in dir[:dir]"
+  , Option "o"  ["outdir"]
+      (ReqArg (withArg onOpts $ \ arg opts -> opts { optOutDir = arg }) "dir")
+      "write compilation artifacts (FlatCurry, ...) into directory `dir'"
   , Option []   ["htmldir"]
       (ReqArg (withArg onOpts $ \ arg opts -> opts { optHtmlDir =
         Just arg }) "dir")
       "write HTML documentation into directory `dir'"
-  , Option ""   ["no-subdir"]
-      (NoArg (onOpts $ \ opts -> opts { optUseSubdir = False }))
-      ("disable writing to `" ++ currySubdir ++ "' subdirectory")
+  , Option ""   ["no-outdir", "no-subdir"]
+      (NoArg (onOpts $ \ opts -> opts { optUseOutDir = False }))
+      ("disable writing to `" ++ defaultOutDir ++ "' subdirectory")
   , Option ""   ["no-intf"]
       (NoArg (onOpts $ \ opts -> opts { optInterface = False }))
       "do not create an interface file"
