@@ -35,7 +35,7 @@ module Curry.AbstractCurry.Type
 
 -- |Current version of AbstractCurry
 version :: String
-version = "AbstractCurry 2.0"
+version = "AbstractCurry 3.0"
 
 -- |A module name.
 type MName = String
