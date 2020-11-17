@@ -132,7 +132,7 @@ loadModule opts m fn = do
   is     <- importSyntaxCheck iEnv withPrel
   -- add information of imported modules
   cEnv   <- importModules withPrel iEnv is
-  return (cEnv { filePath = fn, tokens = toks }, mdl)
+  return (cEnv { filePath = fn, tokens = toks }, withPrel)
 
 parseModule :: Options -> ModuleIdent -> FilePath
             -> CYIO ([(Span, CS.Token)], CS.Module ())
