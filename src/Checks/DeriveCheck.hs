@@ -42,13 +42,13 @@ checkDerivable :: ModuleIdent -> TCEnv -> [ConstrDecl] -> QualIdent -> [Message]
 checkDerivable m tcEnv cs cls
   | ocls == qEnumId && not (isEnum cs)       = [errNotEnum cls]
   | ocls == qBoundedId && not (isBounded cs) = [errNotBounded cls]
-  | ocls `notElem` derivableClasses          = [errNotDerivable ocls]
-  | ocls == qDataId                          = [errNoDataDerive ocls]
+  | ocls `notElem` derivableClasses          = [errNotDerivable cls]
+  | ocls == qDataId                          = [errNoDataDerive cls]
   | otherwise                                = []
   where ocls = getOrigName m cls tcEnv
 
 derivableClasses :: [QualIdent]
-derivableClasses = [qEqId, qOrdId, qEnumId, qBoundedId, qReadId, qShowId]
+derivableClasses = [qEqId, qOrdId, qEnumId, qBoundedId, qReadId, qShowId, qDataId]
 
 -- Instances of 'Enum' can be derived only for enumeration types, i.e., types
 -- where all data constructors are constants.
@@ -93,13 +93,19 @@ errNoDataDerive :: QualIdent -> Message
 errNoDataDerive qcls = spanInfoMessage qcls $ hsep $ map text
   [ "Instances of type class"
   , escQualName qcls
-  , "are automatically derived if possible"]
+  , "are automatically derived if possible"
+  ]
 
-errNotEnum :: HasSpanInfo a => a -> Message
-errNotEnum p = spanInfoMessage p $
-  text "Instances for Enum can be derived only for enumeration types"
+errNotEnum :: QualIdent -> Message
+errNotEnum qcls = spanInfoMessage qcls $ hsep $ map text
+  [ "Instances of type class"
+  , escQualName qcls
+  , "can be derived only for enumeration types"
+  ]
 
-errNotBounded :: HasSpanInfo a => a -> Message
-errNotBounded p = spanInfoMessage p $
-  text "Instances of Bounded can be derived only for enumeration" <+>
-  text "and single constructor types"
+errNotBounded :: QualIdent -> Message
+errNotBounded qcls = spanInfoMessage qcls $ hsep $ map text
+  [ "Instances of type class"
+  , escQualName qcls
+  , "can be derived only for enumeration and single constructor types"
+  ]
