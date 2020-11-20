@@ -53,46 +53,7 @@ import Transformations     (transType)
 -- transforms intermediate language code (IL) to typed FlatCurry code
 genTypedFlatCurry :: CompilerEnv -> CS.Module Type -> IL.Module
                   -> TProg
-genTypedFlatCurry env mdl il = patchPrelude $ run env mdl (trModule il)
-
--- -----------------------------------------------------------------------------
--- Addition of primitive types for lists and tuples to the Prelude
--- -----------------------------------------------------------------------------
-
-patchPrelude :: TProg -> TProg
-patchPrelude p@(TProg n _ ts fs os)
-  | n == prelude = TProg n [] ts' fs os
-  | otherwise    = p
-  where ts' = sortBy (compare `on` typeName) pts
-        pts = primTypes ++ ts
-
-primTypes :: [TypeDecl]
-primTypes =
-  [ Type arrow Public [(0, KStar), (1, KStar)] []
-  , Type unit Public [] [(Cons unit 0 Public [])]
-  , Type nil Public [(0, KStar)] [ Cons nil  0 Public []
-                                 , Cons cons 2 Public [TVar 0, TCons nil [TVar 0]]
-                                 ]
-  ] ++ map mkTupleType [2 .. maxTupleArity]
-  where arrow = mkPreludeQName "(->)"
-        unit  = mkPreludeQName "()"
-        nil   = mkPreludeQName "[]"
-        cons  = mkPreludeQName ":"
-
-mkTupleType :: Int -> TypeDecl
-mkTupleType arity = Type tuple Public [(i, KStar) | i <- [0 .. arity - 1]]
-  [Cons tuple arity Public $ map TVar [0 .. arity - 1]]
-  where tuple = mkPreludeQName $ '(' : replicate (arity - 1) ',' ++ ")"
-
-mkPreludeQName :: String -> QName
-mkPreludeQName n = (prelude, n)
-
-prelude :: String
-prelude = "Prelude"
-
--- |Maximal arity of tuples
-maxTupleArity :: Int
-maxTupleArity = 15
+genTypedFlatCurry env mdl il = run env mdl (trModule il)
 
 -- -----------------------------------------------------------------------------
 
@@ -532,15 +493,7 @@ instance Normalize TPattern where
 -- -----------------------------------------------------------------------------
 
 trQualIdent :: QualIdent -> FlatState QName
-trQualIdent qid = do
-  mid <- getModuleIdent
-  return $ (moduleName $ fromMaybe mid mid', idName i)
-  where
-  mid' | i `elem` [listId, consId, nilId, unitId] || isTupleId i
-       = Just preludeMIdent
-       | otherwise
-       = qidModule qid
-  i = qidIdent qid
+trQualIdent qid = return $ (maybe "" moduleName $ qidModule qid, idName $ qidIdent qid)
 
 getTypeVisibility :: QualIdent -> FlatState Visibility
 getTypeVisibility i = S.gets $ \s ->

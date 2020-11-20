@@ -54,7 +54,7 @@ import qualified IL as IL
 ilTrans :: Bool -> ValueEnv -> TCEnv -> Module Type -> IL.Module
 ilTrans remIm vEnv tcEnv (Module _ _ _ m _ im ds) = IL.Module m im' ds'
   where ds' = R.runReader (concatMapM trDecl ds) (TransEnv m vEnv tcEnv)
-        im' = preludeMIdent : if remIm then imports m ds' else map moduleImport im
+        im' = if remIm then imports m ds' else map moduleImport im
         moduleImport (ImportDecl _ mdl _ _ _) = mdl
 
 
