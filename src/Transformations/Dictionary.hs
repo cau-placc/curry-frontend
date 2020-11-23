@@ -70,15 +70,15 @@ data DTState = DTState
 
 type DTM = S.State DTState
 
-insertDicts :: InterfaceEnv -> TCEnv -> ValueEnv -> ClassEnv -> InstEnv
-            -> OpPrecEnv -> Module PredType
+insertDicts :: Bool -> InterfaceEnv -> TCEnv -> ValueEnv -> ClassEnv
+            -> InstEnv -> OpPrecEnv -> Module PredType
             -> (Module Type, InterfaceEnv, TCEnv, ValueEnv, OpPrecEnv)
-insertDicts intfEnv tcEnv vEnv clsEnv inEnv pEnv mdl@(Module _ _ _ m _ _ _) =
+insertDicts inlDi intfEnv tcEnv vEnv clsEnv inEnv pEnv mdl@(Module _ _ _ m _ _ _) =
   (mdl', intfEnv', tcEnv', vEnv', pEnv')
   where initState =
           DTState m tcEnv vEnv clsEnv inEnv pEnv emptyAugEnv emptyDictEnv emptySpEnv 1
         (mdl', tcEnv', vEnv', pEnv') =
-          runDTM (augment mdl >>= dictTrans >>= specialize >>= cleanup) initState
+          runDTM (augment mdl >>= dictTrans >>= (if inlDi then specialize else return) >>= cleanup) initState
         intfEnv' = dictTransInterfaces vEnv' clsEnv intfEnv
 
 runDTM :: DTM a -> DTState -> (a, TCEnv, ValueEnv, OpPrecEnv)

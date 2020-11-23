@@ -104,8 +104,9 @@ data DebugOpts = DebugOpts
   } deriving Show
 
 data OptimizationOpts = OptimizationOpts
-  { optRemoveUnusedImports :: Bool -- ^ Remove unused imports in IL
-  , optDesugarNewtypes     :: Bool -- ^ Desugar newtypes
+  { optDesugarNewtypes     :: Bool -- ^ Desugar newtypes
+  , optInlineDictionaries  :: Bool -- ^ Inline type class dictionaries
+  , optRemoveUnusedImports :: Bool -- ^ Remove unused imports in IL
   } deriving Show
 
 -- | Default compiler options
@@ -165,8 +166,9 @@ defaultDebugOpts = DebugOpts
 
 defaultOptimizationOpts :: OptimizationOpts
 defaultOptimizationOpts = OptimizationOpts
-  { optRemoveUnusedImports = True
-  , optDesugarNewtypes     = False
+  { optDesugarNewtypes     = False
+  , optInlineDictionaries  = True
+  , optRemoveUnusedImports = True
   }
 
 -- |Modus operandi of the program
@@ -591,12 +593,16 @@ debugDescriptions =
 
 optimizeDescriptions :: OptErrTable OptimizationOpts
 optimizeDescriptions =
-  [ ( "desugar-newtypes", "desugars newtypes in FlatCurry"
+  [ ( "desugar-newtypes"        , "desugars newtypes in FlatCurry"
     , \ opts -> opts { optDesugarNewtypes     = True    })
+  , ( "inline-dictionaries"     , "inlines type class dictionaries"
+    , \ opts -> opts { optInlineDictionaries  = True    })
   , ( "remove-unused-imports"   , "removes unused imports"
     , \ opts -> opts { optRemoveUnusedImports = True    })
-  , ( "no-desugar-newtypes", "prevents desugaring of newtypes in FlatCurry"
+  , ( "no-desugar-newtypes"     , "prevents desugaring of newtypes in FlatCurry"
     , \ opts -> opts { optDesugarNewtypes     = False   })
+  , ( "no-inline-dictionaries"  , "prevents inlining of type class dictionaries"
+    , \ opts -> opts { optInlineDictionaries  = False   })
   , ( "no-remove-unused-imports", "prevents removing of unused imports"
     , \ opts -> opts { optRemoveUnusedImports = False   })
   ]

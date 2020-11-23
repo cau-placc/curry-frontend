@@ -50,14 +50,15 @@ desugar (env, mdl) = (env { valueEnv = tyEnv' }, mdl')
                                     (tyConsEnv env) mdl
 
 -- |Insert dictionaries, changes the type constructor and value environments.
-insertDicts :: CompEnv (Module PredType) -> CompEnv (Module Type)
-insertDicts (env, mdl) = (env { interfaceEnv = intfEnv'
-                              , tyConsEnv = tcEnv'
-                              , valueEnv = vEnv'
-                              , opPrecEnv = pEnv' }, mdl')
+insertDicts :: Bool -> CompEnv (Module PredType) -> CompEnv (Module Type)
+insertDicts inlDi (env, mdl) = (env { interfaceEnv = intfEnv'
+                                    , tyConsEnv = tcEnv'
+                                    , valueEnv = vEnv'
+                                    , opPrecEnv = pEnv' }, mdl')
   where (mdl', intfEnv', tcEnv', vEnv', pEnv') =
-          DI.insertDicts (interfaceEnv env) (tyConsEnv env) (valueEnv env)
-                         (classEnv env) (instEnv env) (opPrecEnv env) mdl
+          DI.insertDicts inlDi (interfaceEnv env) (tyConsEnv env)
+                         (valueEnv env) (classEnv env) (instEnv env)
+                         (opPrecEnv env) mdl
 
 -- |Remove newtype constructors.
 removeNewtypes :: Bool -> CompEnv (Module Type) -> CompEnv (Module Type)

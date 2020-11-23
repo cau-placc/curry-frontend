@@ -263,7 +263,7 @@ transModule :: Options -> CompEnv (CS.Module PredType)
 transModule opts mdl = do
   derived    <- dumpCS DumpDerived       $ derive               mdl
   desugared  <- dumpCS DumpDesugared     $ desugar              derived
-  dicts      <- dumpCS DumpDictionaries  $ insertDicts          desugared
+  dicts      <- dumpCS DumpDictionaries  $ insertDicts    inlDi desugared
   newtypes   <- dumpCS DumpNewtypes      $ removeNewtypes remNT dicts
   simplified <- dumpCS DumpSimplified    $ simplify             newtypes
   lifted     <- dumpCS DumpLifted        $ lift                 simplified
@@ -272,6 +272,7 @@ transModule opts mdl = do
   return (ilCaseComp, newtypes)
   where
   optOpts = optOptimizations opts
+  inlDi = optInlineDictionaries  optOpts
   remIm = optRemoveUnusedImports optOpts
   remNT = optDesugarNewtypes     optOpts
   dumpCS :: Show a => DumpLevel -> CompEnv (CS.Module a)
