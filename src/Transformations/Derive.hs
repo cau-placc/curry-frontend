@@ -164,7 +164,11 @@ deriveBinOp :: QualIdent -> Ident -> BinOpExpr -> Type -> [ConstrInfo]
 deriveBinOp cls op expr ty cis ps = do
   pty <- getInstMethodType ps cls ty op
   eqs <- mapM (deriveBinOpEquation op expr ty) $ sequence [cis, cis]
-  return $ FunctionDecl NoSpanInfo pty op eqs
+  return $ FunctionDecl NoSpanInfo pty op $
+    if null eqs
+      then [mkEquation NoSpanInfo op [] $
+        preludeFailed $ instType $ unpredType pty]
+      else eqs
 
 deriveBinOpEquation :: Ident -> BinOpExpr -> Type -> [ConstrInfo]
                     -> DVM (Equation PredType)
