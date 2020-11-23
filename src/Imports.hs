@@ -270,7 +270,6 @@ values m (IFunctionDecl _ f (Just tv) _ qty) =
   let mcls = case qty of
         QualTypeExpr _ ctx _ -> fmap (\(Constraint _ qcls _) -> qcls) $
                                 find (\(Constraint _ _ ty) -> isVar ty) ctx
-        _                    -> Nothing
   in [Value (qualQualify m f) mcls 0 (typeScheme (toQualPredType m [tv] qty))]
   where
     isVar (VariableType _ i) = i == tv

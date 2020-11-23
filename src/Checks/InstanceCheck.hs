@@ -255,7 +255,6 @@ inferPredSet clsEnv p tc (PredType ps inst) tys cls = do
     noPolyPred (Pred _ (TypeVariable _)) = False
     noPolyPred (Pred _ _               ) = True
     isDataPred _ (Pred qid _) = qid == qDataId
-inferPredSet _ _ _ _ _ _ = internalError "InstanceCheck.inferPredSet"
 
 updatePredSets :: [((InstIdent, PredSet), Bool)] -> INCM Bool
 updatePredSets = fmap or . mapM (uncurry updatePredSet)
