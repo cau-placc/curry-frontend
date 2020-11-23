@@ -591,14 +591,14 @@ debugDescriptions =
 
 optimizeDescriptions :: OptErrTable OptimizationOpts
 optimizeDescriptions =
-  [ ( "remove-unused-imports"   , "removes unused imports"
+  [ ( "desugar-newtypes", "desugars newtypes in FlatCurry"
+    , \ opts -> opts { optDesugarNewtypes     = True    })
+  , ( "remove-unused-imports"   , "removes unused imports"
     , \ opts -> opts { optRemoveUnusedImports = True    })
-  , ( "no-remove-unused-imports", "prevents removing of unused imports"
-    , \ opts -> opts { optRemoveUnusedImports = False   })
   , ( "no-desugar-newtypes", "prevents desugaring of newtypes in FlatCurry"
     , \ opts -> opts { optDesugarNewtypes     = False   })
-  , ( "desugar-newtypes", "desugars newtypes in FlatCurry"
-    , \ opts -> opts { optDesugarNewtypes     = True    })
+  , ( "no-remove-unused-imports", "prevents removing of unused imports"
+    , \ opts -> opts { optRemoveUnusedImports = False   })
   ]
 
 addFlag :: Eq a => a -> [a] -> [a]
