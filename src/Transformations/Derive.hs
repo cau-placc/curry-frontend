@@ -209,7 +209,7 @@ deriveAValue ty cis ps = do
   pty <- getInstMethodType ps qDataId ty aValueId
   return $ FunctionDecl NoSpanInfo pty aValueId $
     if null cis
-      then [mkEquation NoSpanInfo aValueId [] (preludeFailed $ instType ty)]
+      then [mkEquation NoSpanInfo aValueId [] $ preludeFailed $ instType ty]
       else map (aValueEquation ty) cis
 
 aValueEquation :: Type -> ConstrInfo -> Equation PredType
@@ -258,11 +258,13 @@ deriveSuccOrPred :: Ident -> Type -> [ConstrInfo] -> [ConstrInfo] -> PredSet
                  -> DVM (Decl PredType)
 deriveSuccOrPred f ty cis1 cis2 ps = do
   pty <- getInstMethodType ps qEnumId ty f
-  FunctionDecl NoSpanInfo pty f <$> if null eqs
-                                 then do
-                                        v <- freshArgument $ instType ty
-                                        return [failedEquation f ty v]
-                                 else return eqs
+  FunctionDecl NoSpanInfo pty f <$>
+    if null eqs
+      then do
+        v <- freshArgument $ instType ty
+        return [mkEquation NoSpanInfo f [uncurry (VariablePattern NoSpanInfo) v] $
+          preludeFailed $ instType ty]
+      else return eqs
   where eqs = zipWith (succOrPredEquation f ty) cis1 cis2
 
 succOrPredEquation :: Ident -> Type -> ConstrInfo -> ConstrInfo
@@ -271,11 +273,6 @@ succOrPredEquation f ty (_, c1, _, _) (_, c2, _, _) =
   mkEquation NoSpanInfo f [ConstructorPattern NoSpanInfo pty c1 []] $
     Constructor NoSpanInfo pty c2
   where pty = predType $ instType ty
-
-failedEquation :: Ident -> Type -> (PredType, Ident) -> Equation PredType
-failedEquation f ty v =
-  mkEquation NoSpanInfo f [uncurry (VariablePattern NoSpanInfo) v] $
-    preludeFailed $ instType ty
 
 deriveToEnum :: Type -> [ConstrInfo] -> PredSet -> DVM (Decl PredType)
 deriveToEnum ty cis ps = do
