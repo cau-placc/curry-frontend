@@ -33,8 +33,7 @@ import Curry.Syntax ( ModulePragma (..), Extension (KnownExtension)
 import Base.Messages
 
 import CompilerOpts ( Options (..), CppOpts (..), DebugOpts (..)
-                    , TargetType (..), defaultDebugOpts, updateOpts
-                    , optRemoveUnusedImports )
+                    , TargetType (..), defaultDebugOpts, updateOpts )
 import CurryDeps    (Source (..), flatDeps)
 import Modules      (compileModule)
 
