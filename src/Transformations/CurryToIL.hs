@@ -223,7 +223,7 @@ trExternal (Var ty f) = do
 -- The type representation in the intermediate language does not support
 -- types with higher order kinds. Therefore, the type transformations has
 -- to transform all types to first order terms. To that end, we assume the
--- existence of a type synonym 'type @ f a = f a'. In addition, the type
+-- existence of a type synonym 'type Apply f a = f a'. In addition, the type
 -- representation of the intermediate language does not support constrained
 -- type variables and skolem types. The former are fixed and the later are
 -- replaced by fresh type constructors.
