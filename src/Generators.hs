@@ -42,8 +42,7 @@ genUntypedAbstractCurry :: CompilerEnv -> CS.Module PredType -> AC.CurryProg
 genUntypedAbstractCurry = GAC.genAbstractCurry True
 
 -- |Generate typed FlatCurry
-genTypedFlatCurry :: CompilerEnv -> CS.Module Type -> IL.Module
-                  -> TFC.TProg
+genTypedFlatCurry :: AFC.AProg FC.TypeExpr -> TFC.TProg
 genTypedFlatCurry = GTFC.genTypedFlatCurry
 
 -- |Generate type-annotated FlatCurry

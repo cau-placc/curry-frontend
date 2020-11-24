@@ -354,12 +354,12 @@ writeFlat opts env mdl il = do
     liftIO $ FC.writeFlatCurry (useSubDir fcyName) fc
   writeFlatIntf opts env fcyProg
   where
-  tfcyName    = typedFlatName (filePath env)
-  tfcyProg    = genTypedFlatCurry env mdl il
-  tfcyTarget  = TypedFlatCurry `elem` optTargetTypes opts
   tafcyName   = typeAnnFlatName (filePath env)
   tafcyProg   = genTypeAnnotatedFlatCurry env mdl il
   tafcyTarget = TypeAnnotatedFlatCurry `elem` optTargetTypes opts
+  tfcyName    = typedFlatName (filePath env)
+  tfcyProg    = genTypedFlatCurry tafcyProg
+  tfcyTarget  = TypedFlatCurry `elem` optTargetTypes opts
   fcyName     = flatName (filePath env)
   fcyProg     = genFlatCurry tfcyProg
   fcyTarget   = FlatCurry `elem` optTargetTypes opts
