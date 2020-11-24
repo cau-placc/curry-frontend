@@ -336,7 +336,7 @@ trTFuncDecl (IL.FunctionDecl f vs ty e) = do
   ty' <- trType ty
   r'  <- trTRule vs e
   return [TFunc f' a vis ty' r']
-trTFuncDecl (IL.ExternalDecl      f ty) = do
+trTFuncDecl (IL.ExternalDecl    f _ ty) = do
   f'   <- trQualIdent f
   a    <- getArity f
   vis  <- getVisibility f

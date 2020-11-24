@@ -62,7 +62,7 @@ data Decl
   | NewtypeDecl      QualIdent [Kind] NewConstrDecl
   | ExternalDataDecl QualIdent [Kind]
   | FunctionDecl     QualIdent [(Type, Ident)] Type Expression
-  | ExternalDecl     QualIdent Type
+  | ExternalDecl     QualIdent Int Type
     deriving (Eq, Show)
 
 data NewConstrDecl = NewConstrDecl QualIdent Type

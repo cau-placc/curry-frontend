@@ -75,7 +75,7 @@ mdlsDecl (IL.NewtypeDecl    _ _ nc) ms = mdlsNewConstrDecl nc
   where mdlsNewConstrDecl (IL.NewConstrDecl _ ty) = mdlsType ty ms
 mdlsDecl (IL.ExternalDataDecl  _ _) ms = ms
 mdlsDecl (IL.FunctionDecl _ _ ty e) ms = mdlsType ty (mdlsExpr e ms)
-mdlsDecl (IL.ExternalDecl     _ ty) ms = mdlsType ty ms
+mdlsDecl (IL.ExternalDecl   _ _ ty) ms = mdlsType ty ms
 
 mdlsType :: IL.Type -> Set.Set ModuleIdent -> Set.Set ModuleIdent
 mdlsType (IL.TypeConstructor tc tys) ms = modules tc (foldr mdlsType ms tys)
@@ -125,14 +125,16 @@ getTCEnv = R.asks tyconEnv
 trQualify :: Ident -> TransM QualIdent
 trQualify i = flip qualifyWith i <$> R.asks moduleIdent
 
--- Return the type of a variable
-varType :: QualIdent -> TransM Type
-varType f = do
-  tyEnv <- getValueEnv
-  case qualLookupValue f tyEnv of
-    [Value _ _ _ (ForAll _ (PredType _ ty))] -> return ty
-    [Label _ _ (ForAll _ (PredType _ ty))] -> return ty
-    _ -> internalError $ "CurryToIL.varType: " ++ show f
+getArity :: QualIdent -> TransM Int
+getArity qid = do
+    vEnv <- getValueEnv
+    return $ case qualLookupValue qid vEnv of
+      [DataConstructor  _ a _ _] -> a
+      [NewtypeConstructor _ _ _] -> 1
+      [Value            _ _ a _] -> a
+      [Label              _ _ _] -> 1
+      _                          ->
+        internalError $ "CurryToIL.getArity: " ++ show qid
 
 -- Return the type of a constructor
 constrType :: QualIdent -> TransM Type
@@ -215,7 +217,8 @@ trExternal :: Var Type -> TransM IL.Decl
 trExternal (Var ty f) = do
   tcEnv <- getTCEnv
   f' <- trQualify f
-  return $ IL.ExternalDecl f' (transType tcEnv $ polyType ty)
+  a <- getArity f'
+  return $ IL.ExternalDecl f' a (transType tcEnv $ polyType ty)
 
 -- The type representation in the intermediate language does not support
 -- types with higher order kinds. Therefore, the type transformations has
@@ -422,10 +425,10 @@ trExpr _  env (Variable    _ ty v)
       Nothing -> fun tcEnv
       Just v' -> return $ IL.Variable (transType tcEnv ty) v' -- apply renaming
   where
-    fun tcEnv = (IL.Function (transType tcEnv ty) v . arrowArity) <$> varType v
+    fun tcEnv = IL.Function (transType tcEnv ty) v <$> getArity v
 trExpr _  _   (Constructor _ ty c) = do
   tcEnv <- getTCEnv
-  (IL.Constructor (transType tcEnv ty) c . arrowArity) <$> constrType c
+  IL.Constructor (transType tcEnv ty) c <$> getArity c
 trExpr vs env (Apply     _ e1 e2)
   = IL.Apply <$> trExpr vs env e1 <*> trExpr vs env e2
 trExpr vs env (Let      _ _ ds e) = do

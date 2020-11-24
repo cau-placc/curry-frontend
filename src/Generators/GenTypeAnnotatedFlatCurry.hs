@@ -45,7 +45,6 @@ import Base.Types
 import CompilerEnv
 import Env.OpPrec          (mkPrec)
 import Env.TypeConstructor (TCEnv, tcKind)
-import Env.Value           (ValueEnv, ValueInfo (..), qualLookupValue)
 
 import qualified IL
 import Transformations     (transType)
@@ -109,7 +108,6 @@ data FlatEnv = FlatEnv
   , tyExports    :: Set.Set Ident    -- exported types
   , valExports   :: Set.Set Ident    -- exported values (functions + constructors)
   , tcEnv        :: TCEnv            -- type constructor environment
-  , tyEnv        :: ValueEnv         -- type environment
   , fixities     :: [CS.IDecl]       -- fixity declarations
   , typeSynonyms :: [CS.Decl Type]   -- type synonyms
   , imports      :: [ModuleIdent]    -- module imports
@@ -132,7 +130,6 @@ run env (CS.Module _ _ _ mid es is ds) act = S.evalState act env0
     -- This includes *all* imports, even unused ones
     , imports      = nub [ m | CS.ImportDecl _ m _ _ _ <- is ]
     -- Environment to retrieve the type of identifiers
-    , tyEnv        = valueEnv env
     , tcEnv        = tyConsEnv env
     -- Fixity declarations
     , fixities     = [ CS.IInfixDecl (spanInfo2Pos p) fix (mkPrec mPrec) (qualifyWith mid o)
@@ -160,15 +157,6 @@ buildValueExports _   _  = id
 
 getModuleIdent :: FlatState ModuleIdent
 getModuleIdent = S.gets modIdent
-
-getArity :: QualIdent -> FlatState Int
-getArity qid = S.gets tyEnv >>= \ env -> return $ case qualLookupValue qid env of
-  [DataConstructor  _ a _ _] -> a
-  [NewtypeConstructor _ _ _] -> 1
-  [Value            _ _ a _] -> a
-  [Label              _ _ _] -> 1
-  _                          ->
-    internalError ("GenTypeAnnotatedFlatCurry.getArity: " ++ qualName qid)
 
 getFixities :: FlatState [CS.IDecl]
 getFixities = S.gets fixities
@@ -332,14 +320,12 @@ cvFixity CS.Infix  = InfixOp
 trAFuncDecl :: IL.Decl -> FlatState [AFuncDecl TypeExpr]
 trAFuncDecl (IL.FunctionDecl f vs ty e) = do
   f'  <- trQualIdent f
-  a   <- getArity f
   vis <- getVisibility f
   ty' <- trType ty
   r'  <- trARule ty vs e
-  return [AFunc f' a vis ty' r']
-trAFuncDecl (IL.ExternalDecl      f ty) = do
+  return [AFunc f' (length vs) vis ty' r']
+trAFuncDecl (IL.ExternalDecl    f a ty) = do
   f'   <- trQualIdent f
-  a    <- getArity f
   vis  <- getVisibility f
   ty'  <- trType ty
   r'   <- trAExternal ty f
@@ -361,8 +347,8 @@ trAExternal ty f = flip AExternal (qualName f) <$> trType ty
 trAExpr :: IL.Expression -> FlatState (AExpr TypeExpr)
 trAExpr (IL.Literal       ty l) = ALit <$> trType ty <*> trLiteral l
 trAExpr (IL.Variable      ty v) = AVar <$> trType ty <*> getVarIndex v
-trAExpr (IL.Function    ty f _) = genCall Fun ty f []
-trAExpr (IL.Constructor ty c _) = genCall Con ty c []
+trAExpr (IL.Function    ty f a) = genCall Fun ty f a []
+trAExpr (IL.Constructor ty c a) = genCall Con ty c a []
 trAExpr (IL.Apply        e1 e2) = trApply e1 e2
 trAExpr c@(IL.Case      t e bs) = flip ACase (cvEval t) <$> trType (IL.typeOf c) <*> trAExpr e
                                   <*> mapM (inNestedEnv . trAlt) bs
@@ -400,8 +386,8 @@ trApply e1 e2 = genFlatApplic e1 [e2]
   where
   genFlatApplic e es = case e of
     IL.Apply        ea eb -> genFlatApplic ea (eb:es)
-    IL.Function    ty f _ -> genCall Fun ty f es
-    IL.Constructor ty c _ -> genCall Con ty c es
+    IL.Function    ty f a -> genCall Fun ty f a es
+    IL.Constructor ty c a -> genCall Con ty c a es
     _ -> do
       expr <- trAExpr e
       genApply expr es
@@ -426,11 +412,10 @@ cvEval IL.Flex  = Flex
 data Call = Fun | Con
 
 -- Generate a function or constructor call
-genCall :: Call -> IL.Type -> QualIdent -> [IL.Expression]
+genCall :: Call -> IL.Type -> QualIdent -> Int -> [IL.Expression]
         -> FlatState (AExpr TypeExpr)
-genCall call ty f es = do
+genCall call ty f arity es = do
   f'    <- trQualIdent f
-  arity <- getArity f
   case compare supplied arity of
     LT -> genAComb ty f' es (part call (arity - supplied))
     EQ -> genAComb ty f' es (full call)
