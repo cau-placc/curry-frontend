@@ -346,9 +346,9 @@ matchInterface ifn i = do
 
 writeFlat :: Options -> CompilerEnv -> CS.Module Type -> IL.Module -> CYIO ()
 writeFlat opts env mdl il = do
-  (_, tfc) <- dumpWith opts show (pPrint . genFlatCurry) DumpTypedFlatCurry (env, tfcyProg)
+  (_, tafc) <- dumpWith opts show (pPrint . genFlatCurry) DumpTypedFlatCurry (env, tafcyProg)
   when tfcyTarget  $ liftIO $ FC.writeFlatCurry (useSubDir tfcyName) tafcyProg
-  when tafcyTarget $ liftIO $ FC.writeFlatCurry (useSubDir tafcyName) tfc
+  when tafcyTarget $ liftIO $ FC.writeFlatCurry (useSubDir tafcyName) tafc
   when fcyTarget $ do
     (_, fc) <- dumpWith opts show pPrint DumpFlatCurry (env, fcyProg)
     liftIO $ FC.writeFlatCurry (useSubDir fcyName) fc
@@ -361,7 +361,7 @@ writeFlat opts env mdl il = do
   tfcyProg    = genTypedFlatCurry tafcyProg
   tfcyTarget  = TypedFlatCurry `elem` optTargetTypes opts
   fcyName     = flatName (filePath env)
-  fcyProg     = genFlatCurry tfcyProg
+  fcyProg     = genFlatCurry tafcyProg
   fcyTarget   = FlatCurry `elem` optTargetTypes opts
   useSubDir   = addOutDirModule (optUseOutDir opts) (optOutDir opts) (moduleIdent env)
 

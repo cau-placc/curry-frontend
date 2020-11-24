@@ -51,7 +51,7 @@ genTypeAnnotatedFlatCurry :: CompilerEnv -> CS.Module Type -> IL.Module
 genTypeAnnotatedFlatCurry = GTAFC.genTypeAnnotatedFlatCurry
 
 -- |Generate FlatCurry
-genFlatCurry :: TFC.TProg -> FC.Prog
+genFlatCurry :: AFC.AProg FC.TypeExpr -> FC.Prog
 genFlatCurry = GFC.genFlatCurry
 
 -- |Generate a FlatCurry interface
