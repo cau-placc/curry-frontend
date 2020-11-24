@@ -346,22 +346,22 @@ matchInterface ifn i = do
 
 writeFlat :: Options -> CompilerEnv -> CS.Module Type -> IL.Module -> CYIO ()
 writeFlat opts env mdl il = do
-  (_, tfc) <- dumpWith opts show (pPrint . genFlatCurry) DumpTypedFlatCurry (env, tfcyProg)
-  when tfcyTarget  $ liftIO $ FC.writeFlatCurry (useSubDir tfcyName) tafcyProg
-  when tafcyTarget $ liftIO $ FC.writeFlatCurry (useSubDir tafcyName) tfc
+  (_, tafc) <- dumpWith opts show (pPrint . genFlatCurry) DumpTypedFlatCurry (env, tafcyProg)
+  when tafcyTarget $ liftIO $ FC.writeFlatCurry (useSubDir tafcyName) tafc
+  when tfcyTarget  $ liftIO $ FC.writeFlatCurry (useSubDir tfcyName)  tfcyProg
   when fcyTarget $ do
     (_, fc) <- dumpWith opts show pPrint DumpFlatCurry (env, fcyProg)
     liftIO $ FC.writeFlatCurry (useSubDir fcyName) fc
   writeFlatIntf opts env fcyProg
   where
-  tfcyName    = typedFlatName (filePath env)
-  tfcyProg    = genTypedFlatCurry env mdl il
-  tfcyTarget  = TypedFlatCurry `elem` optTargetTypes opts
   tafcyName   = typeAnnFlatName (filePath env)
   tafcyProg   = genTypeAnnotatedFlatCurry env mdl il
   tafcyTarget = TypeAnnotatedFlatCurry `elem` optTargetTypes opts
+  tfcyName    = typedFlatName (filePath env)
+  tfcyProg    = genTypedFlatCurry tafcyProg
+  tfcyTarget  = TypedFlatCurry `elem` optTargetTypes opts
   fcyName     = flatName (filePath env)
-  fcyProg     = genFlatCurry tfcyProg
+  fcyProg     = genFlatCurry tafcyProg
   fcyTarget   = FlatCurry `elem` optTargetTypes opts
   useSubDir   = addOutDirModule (optUseOutDir opts) (optOutDir opts) (moduleIdent env)
 
