@@ -422,7 +422,7 @@ trExpr _  env (Variable    _ ty v)
   | otherwise     = do
     tcEnv <- getTCEnv
     case Map.lookup (unqualify v) env of
-      Nothing -> fun tcEnv
+      Nothing -> error $ "unexpected variable" ++ show v --TODO: Replace case by fromJust?
       Just v' -> return $ IL.Variable (transType tcEnv ty) v' -- apply renaming
   where
     fun tcEnv = IL.Function (transType tcEnv ty) v <$> getArity v
