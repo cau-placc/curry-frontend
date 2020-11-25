@@ -211,6 +211,7 @@ enterInitialPredSet clsEnv (DeriveInfo spi tc pty _ clss) =
 
 -- Note: The methods and arities entered into the instance environment have
 -- to match methods and arities of the later generated instance declarations.
+-- TODO: Add remark about value environment entry
 
 bindDerivedInstance :: HasSpanInfo s => ClassEnv -> s -> QualIdent -> PredType -> QualIdent
                     -> INCM ()
