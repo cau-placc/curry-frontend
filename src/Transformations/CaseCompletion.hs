@@ -322,9 +322,10 @@ occursInBinding v (Binding w _) = v == w
 failedExpr :: Type -> Expression
 failedExpr ty = Function ty (qualifyWith preludeMIdent (mkIdent "failed")) 0
 
+--TODO: Add note about arity of 0 because of the predefined functions in the Prelude
 eqExpr :: Expression -> Expression -> Expression
-eqExpr e1 e2 = Apply (Apply (Function eqTy eq 2) e1) e2
-  where eq   = qImplMethodId preludeMIdent qEqId ty $ mkIdent "=="
+eqExpr e1 e2 = Apply (Apply (Function eqTy eq 0) e1) e2
+  where eq   = qImplMethodId preludeMIdent qDataId ty $ mkIdent "==="
         ty   = case e2 of
                  Literal _ l -> case l of
                                   Char  _ -> charType
