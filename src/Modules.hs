@@ -346,11 +346,11 @@ matchInterface ifn i = do
 
 writeFlat :: Options -> CompilerEnv -> CS.Module Type -> IL.Module -> CYIO ()
 writeFlat opts env mdl il = do
-  dumpWith opts show (pPrint . genFlatCurry) DumpTypedFlatCurry (env, afcy)
+  _ <- dumpWith opts show (pPrint . genFlatCurry) DumpTypedFlatCurry (env, afcy)
   when afcyTarget $ liftIO $ FC.writeFlatCurry (useSubDir afcyName) afcy
   when tfcyTarget  $ liftIO $ FC.writeFlatCurry (useSubDir tfcyName)  tfcy
   when fcyTarget $ do
-    dumpWith opts show pPrint DumpFlatCurry (env, fcy)
+    _ <- dumpWith opts show pPrint DumpFlatCurry (env, fcy)
     liftIO $ FC.writeFlatCurry (useSubDir fcyName) fcy
   writeFlatIntf opts env fcy
   where
