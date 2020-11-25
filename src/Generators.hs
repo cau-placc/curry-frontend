@@ -20,18 +20,18 @@ import qualified Curry.FlatCurry.Annotated.Type as AFC  (AProg)
 import qualified Curry.FlatCurry.Typed.Type     as TFC  (TProg)
 import qualified Curry.Syntax                   as CS   (Module)
 
-import qualified Generators.GenAbstractCurry    as GAC   (genAbstractCurry)
-import qualified Generators.GenFlatCurry        as GFC   ( genFlatCurry
-                                                           , genFlatInterface
-                                                           )
-import qualified Generators.GenTypeAnnotatedFlatCurry
-                                                as GTAFC (genTypeAnnotatedFlatCurry)
-import qualified Generators.GenTypedFlatCurry   as GTFC  (genTypedFlatCurry)
+import qualified Generators.GenAbstractCurry    as GAC  (genAbstractCurry)
+import qualified Generators.GenFlatCurry        as GFC  ( genFlatCurry
+                                                        , genFlatInterface
+                                                        )
+import qualified Generators.GenAnnotatedFlatCurry
+                                                as GAFC (genAnnotatedFlatCurry)
+import qualified Generators.GenTypedFlatCurry   as GTFC (genTypedFlatCurry)
 
-import           Base.Types                          (Type, PredType)
+import           Base.Types                             (Type, PredType)
 
-import           CompilerEnv                         (CompilerEnv (..))
-import qualified IL                                  (Module)
+import           CompilerEnv                            (CompilerEnv (..))
+import qualified IL                                     (Module)
 
 -- |Generate typed AbstractCurry
 genTypedAbstractCurry :: CompilerEnv -> CS.Module PredType -> AC.CurryProg
@@ -46,9 +46,9 @@ genTypedFlatCurry :: AFC.AProg FC.TypeExpr -> TFC.TProg
 genTypedFlatCurry = GTFC.genTypedFlatCurry
 
 -- |Generate type-annotated FlatCurry
-genTypeAnnotatedFlatCurry :: CompilerEnv -> CS.Module Type -> IL.Module
-                          -> AFC.AProg FC.TypeExpr
-genTypeAnnotatedFlatCurry = GTAFC.genTypeAnnotatedFlatCurry
+genAnnotatedFlatCurry :: CompilerEnv -> CS.Module Type -> IL.Module
+                      -> AFC.AProg FC.TypeExpr
+genAnnotatedFlatCurry = GAFC.genAnnotatedFlatCurry
 
 -- |Generate FlatCurry
 genFlatCurry :: AFC.AProg FC.TypeExpr -> FC.Prog

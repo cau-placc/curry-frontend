@@ -29,7 +29,7 @@ module Curry.Files.Filenames
   , curryExt, lcurryExt, icurryExt
 
     -- ** FlatCurry files
-  , typedFlatExt, flatExt, flatIntExt
+  , annotatedFlatExt, typedFlatExt, flatExt, flatIntExt
 
     -- ** AbstractCurry files
   , acyExt, uacyExt
@@ -38,7 +38,7 @@ module Curry.Files.Filenames
   , sourceRepExt, sourceExts, moduleExts
 
     -- * Functions for computing file names
-  , interfName, typedFlatName, typeAnnFlatName, flatName, flatIntName
+  , interfName, typedFlatName, annotatedFlatName, flatName, flatIntName
   , acyName, uacyName, sourceRepName, tokensName, commentsName
   , astName, shortASTName, htmlName
   ) where
@@ -156,8 +156,8 @@ typedFlatExt :: String
 typedFlatExt = ".tfcy"
 
 -- |Filename extension for type-annotated flat-curry files
-typeAnnFlatExt :: String
-typeAnnFlatExt = ".tafcy"
+annotatedFlatExt :: String
+annotatedFlatExt = ".tafcy"
 
 -- |Filename extension for flat-curry files
 flatExt :: String
@@ -208,8 +208,8 @@ typedFlatName :: FilePath -> FilePath
 typedFlatName = replaceExtensionWith typedFlatExt
 
 -- |Compute the filename of the typed flat curry file for a source file
-typeAnnFlatName :: FilePath -> FilePath
-typeAnnFlatName = replaceExtensionWith typeAnnFlatExt
+annotatedFlatName :: FilePath -> FilePath
+annotatedFlatName = replaceExtensionWith annotatedFlatExt
 
 -- |Compute the filename of the flat curry file for a source file
 flatName :: FilePath -> FilePath

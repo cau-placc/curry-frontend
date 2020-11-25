@@ -171,7 +171,7 @@ process opts idx m fn deps
     , (Parsed              , tgtDir . sourceRepName    )
     , (FlatCurry           , tgtDir . flatName         )
     , (TypedFlatCurry      , tgtDir . typedFlatName    )
-    , (TypeAnnotatedFlatCurry, tgtDir . typeAnnFlatName)
+    , (AnnotatedFlatCurry  , tgtDir . annotatedFlatName)
     , (AbstractCurry       , tgtDir . acyName          )
     , (UntypedAbstractCurry, tgtDir . uacyName         )
     , (AST                 , tgtDir . astName          )

@@ -13,7 +13,7 @@
     program term for a given module in the intermediate language.
 -}
 {-# LANGUAGE CPP #-}
-module Generators.GenTypeAnnotatedFlatCurry (genTypeAnnotatedFlatCurry) where
+module Generators.GenAnnotatedFlatCurry (genAnnotatedFlatCurry) where
 
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative        ((<$>), (<*>))
@@ -29,31 +29,24 @@ import qualified Data.Map            as Map (Map, empty, insert, lookup)
 import qualified Data.Set            as Set (Set, empty, insert, member)
 
 import           Curry.Base.Ident
-import           Curry.Base.SpanInfo
 import           Curry.FlatCurry.Annotated.Goodies (typeName)
 import           Curry.FlatCurry.Annotated.Type
 import qualified Curry.Syntax as CS
 
-import Base.CurryTypes     (toType)
-import qualified Base.Kinds as K
 import Base.Messages       (internalError)
 import Base.NestEnv        ( NestEnv, emptyEnv, bindNestEnv, lookupNestEnv
                            , nestEnv, unnestEnv )
-import Base.TypeExpansion
 import Base.Types
 
 import CompilerEnv
-import Env.OpPrec          (mkPrec)
-import Env.TypeConstructor (TCEnv, tcKind)
+import Env.TypeConstructor (TCEnv)
 
 import qualified IL
-import Transformations     (transType)
 
--- TODO: Translate from TypedFlatCurry
 -- transforms intermediate language code (IL) to type-annotated FlatCurry code
-genTypeAnnotatedFlatCurry :: CompilerEnv -> CS.Module Type -> IL.Module
+genAnnotatedFlatCurry :: CompilerEnv -> CS.Module Type -> IL.Module
                   -> AProg TypeExpr
-genTypeAnnotatedFlatCurry env mdl il = patchPrelude $ run env mdl (trModule il)
+genAnnotatedFlatCurry env mdl il = patchPrelude $ run env mdl (trModule il)
 
 -- -----------------------------------------------------------------------------
 -- Addition of primitive types for lists and tuples to the Prelude
@@ -108,7 +101,6 @@ data FlatEnv = FlatEnv
   , tyExports    :: Set.Set Ident    -- exported types
   , valExports   :: Set.Set Ident    -- exported values (functions + constructors)
   , tcEnv        :: TCEnv            -- type constructor environment
-  , fixities     :: [CS.IDecl]       -- fixity declarations
   , typeSynonyms :: [CS.Decl Type]   -- type synonyms
   , imports      :: [ModuleIdent]    -- module imports
   -- state for mapping identifiers to indexes
@@ -131,10 +123,6 @@ run env (CS.Module _ _ _ mid es is ds) act = S.evalState act env0
     , imports      = nub [ m | CS.ImportDecl _ m _ _ _ <- is ]
     -- Environment to retrieve the type of identifiers
     , tcEnv        = tyConsEnv env
-    -- Fixity declarations
-    , fixities     = [ CS.IInfixDecl (spanInfo2Pos p) fix (mkPrec mPrec) (qualifyWith mid o)
-                     | CS.InfixDecl p fix mPrec os <- ds, o <- os
-                     ]
     -- Type synonyms in the module
     , typeSynonyms = [ d | d@CS.TypeDecl{} <- ds ]
     , nextVar      = 0
@@ -157,13 +145,6 @@ buildValueExports _   _  = id
 
 getModuleIdent :: FlatState ModuleIdent
 getModuleIdent = S.gets modIdent
-
-getFixities :: FlatState [CS.IDecl]
-getFixities = S.gets fixities
-
--- The function 'typeSynonyms' returns the list of type synonyms.
-getTypeSynonyms :: FlatState [CS.Decl Type]
-getTypeSynonyms = S.gets typeSynonyms
 
 -- Retrieve imports
 getImports :: [ModuleIdent] -> FlatState [String]
@@ -200,45 +181,15 @@ getVarIndex i = S.gets varMap >>= \ varEnv -> case lookupNestEnv i varEnv of
   _   -> internalError $ "GenTypeAnnotatedFlatCurry.getVarIndex: " ++ escName i
 
 -- -----------------------------------------------------------------------------
--- Translation of an interface
--- -----------------------------------------------------------------------------
-
--- Translate an operator declaration
-trIOpDecl :: CS.IDecl -> FlatState [OpDecl]
-trIOpDecl (CS.IInfixDecl _ fix prec op)
-  = (\op' -> [Op op' (cvFixity fix) prec]) <$> trQualIdent op
-trIOpDecl _ = return []
-
--- -----------------------------------------------------------------------------
 -- Translation of a module
 -- -----------------------------------------------------------------------------
 
 trModule :: IL.Module -> FlatState (AProg TypeExpr)
 trModule (IL.Module mid is ds) = do
   is' <- getImports is
-  sns <- getTypeSynonyms >>= concatMapM trTypeSynonym
   tds <- concatMapM trTypeDecl ds
   fds <- concatMapM (return . map runNormalization <=< trAFuncDecl) ds
-  ops <- getFixities >>= concatMapM trIOpDecl
-  return $ AProg (moduleName mid) is' (sns ++ tds) fds ops
-
--- Translate a type synonym
-trTypeSynonym :: CS.Decl a -> FlatState [TypeDecl]
-trTypeSynonym (CS.TypeDecl _ t tvs ty) = do
-  m    <- getModuleIdent
-  qid  <- flip qualifyWith t <$> getModuleIdent
-  t'   <- trQualIdent qid
-  vis  <- getTypeVisibility qid
-  tEnv <- S.gets tcEnv
-  ty'  <- trType (transType tEnv $
-                  expandType m tEnv $
-                  toType tvs ty)
-  let ks = map trInternalKind $ K.kindArgs $ tcKind m qid tEnv
-  return [TypeSyn t' vis (zip [0..] ks) ty']
-  where trInternalKind :: K.Kind -> Kind
-        trInternalKind (K.KindArrow k1 k2) = KArrow (trInternalKind k1) (trInternalKind k2)
-        trInternalKind _                   = KStar
-trTypeSynonym _                        = return []
+  return $ AProg (moduleName mid) is' tds fds []
 
 -- Translate a data declaration
 -- For empty data declarations, an additional constructor is generated. This
@@ -306,12 +257,6 @@ trKind IL.KindStar          = KStar
 trKind (IL.KindVariable  _) = KStar
 trKind (IL.KindArrow k1 k2) = KArrow (trKind k1) (trKind k2)
 
--- Convert a fixity
-cvFixity :: CS.Infix -> Fixity
-cvFixity CS.InfixL = InfixlOp
-cvFixity CS.InfixR = InfixrOp
-cvFixity CS.Infix  = InfixOp
-
 -- -----------------------------------------------------------------------------
 -- Function declarations
 -- -----------------------------------------------------------------------------
@@ -328,7 +273,7 @@ trAFuncDecl (IL.ExternalDecl    f a ty) = do
   f'   <- trQualIdent f
   vis  <- getVisibility f
   ty'  <- trType ty
-  r'   <- trAExternal ty f
+  r'   <- trAExternal ty f --TODO: get arity from type?
   return [AFunc f' a vis ty' r']
 trAFuncDecl _                           = return []
 

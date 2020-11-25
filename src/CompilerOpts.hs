@@ -197,8 +197,8 @@ data TargetType
   | Comments             -- ^ Source code comments
   | Parsed               -- ^ Parsed source code
   | FlatCurry            -- ^ FlatCurry
+  | AnnotatedFlatCurry   -- ^ Annotated FlatCurry
   | TypedFlatCurry       -- ^ Typed FlatCurry
-  | TypeAnnotatedFlatCurry -- ^ Type-annotated FlatCurry
   | AbstractCurry          -- ^ AbstractCurry
   | UntypedAbstractCurry   -- ^ Untyped AbstractCurry
   | Html                   -- ^ HTML documentation
@@ -462,7 +462,7 @@ options =
       "generate FlatCurry code"
   , targetOption TypedFlatCurry         "typed-flat"
       "generate typed FlatCurry code"
-  , targetOption TypeAnnotatedFlatCurry "type-annotated-flat"
+  , targetOption AnnotatedFlatCurry     "type-annotated-flat"
       "generate type-annotated FlatCurry code"
   , targetOption AbstractCurry          "acy"
       "generate typed AbstractCurry"

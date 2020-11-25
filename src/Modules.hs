@@ -346,24 +346,24 @@ matchInterface ifn i = do
 
 writeFlat :: Options -> CompilerEnv -> CS.Module Type -> IL.Module -> CYIO ()
 writeFlat opts env mdl il = do
-  (_, tafc) <- dumpWith opts show (pPrint . genFlatCurry) DumpTypedFlatCurry (env, tafcyProg)
-  when tafcyTarget $ liftIO $ FC.writeFlatCurry (useSubDir tafcyName) tafc
+  (_, afcy) <- dumpWith opts show (pPrint . genFlatCurry) DumpTypedFlatCurry (env, afcyProg)
+  when afcyTarget $ liftIO $ FC.writeFlatCurry (useSubDir afcyName) afcy
   when tfcyTarget  $ liftIO $ FC.writeFlatCurry (useSubDir tfcyName)  tfcyProg
   when fcyTarget $ do
-    (_, fc) <- dumpWith opts show pPrint DumpFlatCurry (env, fcyProg)
-    liftIO $ FC.writeFlatCurry (useSubDir fcyName) fc
+    (_, fcy) <- dumpWith opts show pPrint DumpFlatCurry (env, fcyProg)
+    liftIO $ FC.writeFlatCurry (useSubDir fcyName) fcy
   writeFlatIntf opts env fcyProg
   where
-  tafcyName   = typeAnnFlatName (filePath env)
-  tafcyProg   = genTypeAnnotatedFlatCurry env mdl il
-  tafcyTarget = TypeAnnotatedFlatCurry `elem` optTargetTypes opts
-  tfcyName    = typedFlatName (filePath env)
-  tfcyProg    = genTypedFlatCurry tafcyProg
-  tfcyTarget  = TypedFlatCurry `elem` optTargetTypes opts
-  fcyName     = flatName (filePath env)
-  fcyProg     = genFlatCurry tafcyProg
-  fcyTarget   = FlatCurry `elem` optTargetTypes opts
-  useSubDir   = addOutDirModule (optUseOutDir opts) (optOutDir opts) (moduleIdent env)
+  afcyName   = annotatedFlatName (filePath env)
+  afcyProg   = genAnnotatedFlatCurry env mdl il
+  afcyTarget = AnnotatedFlatCurry `elem` optTargetTypes opts
+  tfcyName   = typedFlatName (filePath env)
+  tfcyProg   = genTypedFlatCurry afcyProg
+  tfcyTarget = TypedFlatCurry `elem` optTargetTypes opts
+  fcyName    = flatName (filePath env)
+  fcyProg    = genFlatCurry afcyProg
+  fcyTarget  = FlatCurry `elem` optTargetTypes opts
+  useSubDir  = addOutDirModule (optUseOutDir opts) (optOutDir opts) (moduleIdent env)
 
 writeFlatIntf :: Options -> CompilerEnv -> FC.Prog -> CYIO ()
 writeFlatIntf opts env prog
