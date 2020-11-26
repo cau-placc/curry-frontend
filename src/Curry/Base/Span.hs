@@ -88,7 +88,7 @@ ppSpanPreview (Span f (Position _ sl sc) (Position _ el ec))
       fileContents <- readFile f
 
       let lns = lines fileContents
-          lnContent | any (\l -> l <= 0 || l > length lns) [sl, el] = ""
+          lnContent | sl <= 0 || sl > length lns = ""
                     | otherwise = lns !! (sl - 1)
           lnNum = text <$> lPadStr lnNumWidth <$> (vPad ++ [show sl] ++ vPad)
           ec' = if isMultiline then length lnContent else ec
