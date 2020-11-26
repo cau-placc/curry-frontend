@@ -69,10 +69,9 @@ extensionCheck opts (env, mdl)
 -- * Environment:  remains unchanged
 typeSyntaxCheck :: Monad m => Check m (Module a)
 typeSyntaxCheck _ (env, mdl)
-  | null msgs = ok (env { extensions = exts }, mdl')
+  | null msgs = ok (env, mdl')
   | otherwise = failMessages msgs
-  where ((mdl', exts), msgs) = TSC.typeSyntaxCheck (extensions env)
-                                                   (tyConsEnv env) mdl
+  where (mdl', msgs) = TSC.typeSyntaxCheck (tyConsEnv env) mdl
 
 -- |Check the kinds of type definitions and signatures.
 --

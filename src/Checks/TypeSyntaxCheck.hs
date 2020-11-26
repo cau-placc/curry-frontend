@@ -55,20 +55,19 @@ import Env.Type
 -- type classes are added to this environment and the declarations are checked
 -- within this environment.
 
-typeSyntaxCheck :: [KnownExtension] -> TCEnv -> Module a
-                -> ((Module a, [KnownExtension]), [Message])
-typeSyntaxCheck exts tcEnv mdl@(Module _ _ _ m _ _ ds) =
+typeSyntaxCheck :: TCEnv -> Module a -> (Module a, [Message])
+typeSyntaxCheck tcEnv mdl@(Module _ _ _ m _ _ ds) =
   case findMultiples $ map getIdent tcds of
     [] -> if length dfds <= 1
             then runTSCM (checkModule mdl) state
-            else ((mdl, exts), [errMultipleDefaultDeclarations dfps])
-    tss -> ((mdl, exts), map errMultipleDeclarations tss)
+            else (mdl, [errMultipleDefaultDeclarations dfps])
+    tss -> (mdl, map errMultipleDeclarations tss)
   where
     tcds = filter isTypeOrClassDecl ds
     dfds = filter isDefaultDecl ds
     dfps = map (\(DefaultDecl p _) -> p) dfds
     tEnv = foldr (bindType m) (fmap toTypeKind tcEnv) tcds
-    state = TSCState m tEnv exts Map.empty 1 []
+    state = TSCState m tEnv Map.empty 1 []
 
 -- Type Syntax Check Monad
 type TSCM = S.State TSCState
@@ -77,7 +76,6 @@ type TSCM = S.State TSCState
 data TSCState = TSCState
   { moduleIdent :: ModuleIdent
   , typeEnv     :: TypeEnv
-  , extensions  :: [KnownExtension]
   , renameEnv   :: RenameEnv
   , nextId      :: Integer
   , errors      :: [Message]
@@ -91,15 +89,6 @@ getModuleIdent = S.gets moduleIdent
 
 getTypeEnv :: TSCM TypeEnv
 getTypeEnv = S.gets typeEnv
-
-hasExtension :: KnownExtension -> TSCM Bool
-hasExtension ext = S.gets (elem ext . extensions)
-
-enableExtension :: KnownExtension -> TSCM ()
-enableExtension e = S.modify $ \s -> s { extensions = e : extensions s }
-
-getExtensions :: TSCM [KnownExtension]
-getExtensions = S.gets extensions
 
 getRenameEnv :: TSCM RenameEnv
 getRenameEnv = S.gets renameEnv
@@ -319,12 +308,11 @@ lookupVar tv = Map.lookup tv <$> getRenameEnv
 -- the right hand side. Function and pattern declarations must be
 -- traversed because they can contain local type signatures.
 
-checkModule :: Module a -> TSCM (Module a, [KnownExtension])
+checkModule :: Module a -> TSCM (Module a)
 checkModule (Module spi li ps m es is ds) = do
   ds' <- mapM checkDecl ds
   ds'' <- rename ds'
-  exts <- getExtensions
-  return (Module spi li ps m es is ds'', exts)
+  return $ Module spi li ps m es is ds''
 
 checkDecl :: Decl a -> TSCM (Decl a)
 checkDecl (DataDecl p tc tvs cs clss)         = do
@@ -488,7 +476,6 @@ checkExpr (IfThenElse spi e1 e2 e3)     = IfThenElse spi <$> checkExpr e1
                                                          <*> checkExpr e3
 checkExpr (Case spi li ct e alts)       = Case spi li ct <$> checkExpr e
                                                          <*> mapM checkAlt alts
-checkExpr expr                          = return expr
 
 checkStmt :: Statement a -> TSCM (Statement a)
 checkStmt (StmtExpr spi e)     = StmtExpr spi    <$> checkExpr e
@@ -594,13 +581,6 @@ checkClosed tvs (ArrowType _ ty1 ty2) = mapM_ (checkClosed tvs) [ty1, ty2]
 checkClosed tvs (ParenType      _ ty) = checkClosed tvs ty
 checkClosed tvs (ForallType  _ vs ty) = checkClosed (tvs ++ vs) ty
 
-checkUsedExtension :: SpanInfo -> String -> KnownExtension -> TSCM ()
-checkUsedExtension spi msg ext = do
-  enabled <- hasExtension ext
-  unless enabled $ do
-    report $ errMissingLanguageExtension spi msg ext
-    enableExtension ext
-
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions
 -- ---------------------------------------------------------------------------
@@ -635,12 +615,6 @@ errMultipleDeclarations is = spanInfoMessage i $
     nest 2 (vcat $ map showPos is)
   where i = head is
         showPos = text . showLine . getPosition
-
-errMissingLanguageExtension :: SpanInfo -> String -> KnownExtension -> Message
-errMissingLanguageExtension spi what ext = spanInfoMessage spi $
-  text what <+> text "are not supported in standard Curry." $+$
-  nest 2 (text "Use flag -X" <+> text (show ext)
-          <+> text "to enable this extension.")
 
 errUndefined :: String -> QualIdent -> Message
 errUndefined what qident = spanInfoMessage qident $ hsep $ map text
