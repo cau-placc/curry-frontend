@@ -156,22 +156,53 @@ freshVar prefix t = do
 
 desugarModuleDecls :: [Decl PredType] -> DsM [Decl PredType]
 desugarModuleDecls ds = do
-  ds'   <- concatMapM dsRecordDecl ds
-  ds''  <- mapM dsClassAndInstanceDecl ds'
-  ds''' <- dsDeclGroup ds''
-  return $ filter (not . liftM2 (||) isValueDecl isTypeSig) ds'' ++ ds'''
+  ds'    <- concatMapM dsRecordDecl ds
+  ds''   <- concatMapM dsTypeDecl ds'
+  ds'''  <- mapM dsClassAndInstanceDecl ds''
+  ds'''' <- dsDeclGroup ds'''
+  return $ filter (not . liftM2 (||) isValueDecl isTypeSig) ds''' ++ ds''''
+
+-- -----------------------------------------------------------------------------
+-- Desugaring of type declarations
+-- -----------------------------------------------------------------------------
+
+dsTypeDecl :: Decl PredType -> DsM [Decl PredType]
+dsTypeDecl (DataDecl si tc tvs cs clss) = do
+  cs' <- mapM dsConstrDecl cs
+  return $ [DataDecl si tc tvs cs' clss]
+dsTypeDecl (NewtypeDecl si tc tvs nc clss) = do
+  nc' <- dsNewConstrDecl nc
+  return $ [NewtypeDecl si tc tvs nc' clss]
+dsTypeDecl (TypeDecl _ _ _ _) = return []
+dsTypeDecl d = return [d]
+
+dsConstrDecl :: ConstrDecl -> DsM ConstrDecl
+dsConstrDecl (ConstrDecl si c tys) = ConstrDecl si c <$> mapM dsTypeExpr tys
+dsConstrDecl (ConOpDecl si ty1 op ty2) =
+  ConstrDecl si op <$> mapM dsTypeExpr [ty1, ty2]
+dsConstrDecl cd = internalError $ "Desugar.dsConstrDecl: " ++ show cd
+
+dsNewConstrDecl :: NewConstrDecl -> DsM NewConstrDecl
+dsNewConstrDecl (NewConstrDecl si c ty) = NewConstrDecl si c <$> dsTypeExpr ty
+dsNewConstrDecl nc = internalError $ "Desugar.dsNewConstrDecl: " ++ show nc
 
 -- -----------------------------------------------------------------------------
 -- Desugaring of class and instance declarations
 -- -----------------------------------------------------------------------------
 
 dsClassAndInstanceDecl :: Decl PredType -> DsM (Decl PredType)
-dsClassAndInstanceDecl (ClassDecl p li cx cls tv ds) =
-  ClassDecl p li cx cls tv . (tds ++) <$> dsDeclGroup vds
+dsClassAndInstanceDecl (ClassDecl p li cx cls tv ds) = do
+  tds' <- mapM dsTypeSig tds
+  vds' <- dsDeclGroup vds
+  return $ ClassDecl p li cx cls tv $ tds' ++ vds'
   where (tds, vds) = partition isTypeSig ds
 dsClassAndInstanceDecl (InstanceDecl p li cx cls ty ds) =
   InstanceDecl p li cx cls ty <$> dsDeclGroup ds
 dsClassAndInstanceDecl d = return d
+
+dsTypeSig :: Decl PredType -> DsM (Decl PredType)
+dsTypeSig (TypeSig s fs qty) = TypeSig s fs <$> dsQualTypeExpr qty
+dsTypeSig d                  = internalError $ "Desugar.dsTypeSig: " ++ show d
 
 -- -----------------------------------------------------------------------------
 -- Desugaring of type declarations: records
@@ -760,7 +791,8 @@ dsTypeExpr :: TypeExpr -> DsM TypeExpr
 dsTypeExpr ty = do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv
-  return $ fromType (typeVariables ty) (expandType m tcEnv (toType [] ty))
+  let tvs = typeVariables ty
+  return $ fromType tvs $ expandType m tcEnv $ toType tvs ty
 
 -- -----------------------------------------------------------------------------
 -- Desugaring of case expressions
