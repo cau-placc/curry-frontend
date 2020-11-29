@@ -66,7 +66,7 @@ typeSyntaxCheck tcEnv mdl@(Module _ _ _ m _ _ ds) =
     dfds = filter isDefaultDecl ds
     dfps = map (\(DefaultDecl p _) -> p) dfds
     tEnv = foldr (bindType m) (fmap toTypeKind tcEnv) tcds
-    state = TSCState m tEnv []
+    state = TSCState m tEnv 1 []
 
 -- Type Syntax Check Monad
 type TSCM = S.State TSCState
@@ -75,6 +75,7 @@ type TSCM = S.State TSCState
 data TSCState = TSCState
   { moduleIdent :: ModuleIdent
   , typeEnv     :: TypeEnv
+  , nextId      :: Integer
   , errors      :: [Message]
   }
 
@@ -86,6 +87,12 @@ getModuleIdent = S.gets moduleIdent
 
 getTypeEnv :: TSCM TypeEnv
 getTypeEnv = S.gets typeEnv
+
+newId :: TSCM Integer
+newId = do
+  curId <- S.gets nextId
+  S.modify $ \s -> s { nextId = succ curId }
+  return curId
 
 report :: Message -> TSCM ()
 report err = S.modify (\s -> s { errors = err : errors s })
@@ -370,9 +377,9 @@ checkType c@(ConstructorType spi tc) = do
       _ -> report (errAmbiguousIdent tc $ map origName tks) >> return c
 checkType (ApplyType spi ty1 ty2) = ApplyType spi <$> checkType ty1
                                                   <*> checkType ty2
-checkType v@(VariableType spi tv)
-  | isAnonId tv = return v
-  | otherwise   = checkType $ ConstructorType  spi (qualify tv)
+checkType (VariableType spi tv)
+  | isAnonId tv = (VariableType spi . renameIdent tv) <$> newId
+  | otherwise   = checkType $ ConstructorType spi (qualify tv)
 checkType (TupleType     spi tys) = TupleType  spi    <$> mapM checkType tys
 checkType (ListType       spi ty) = ListType   spi    <$> checkType ty
 checkType (ArrowType spi ty1 ty2) = ArrowType  spi    <$> checkType ty1
