@@ -216,8 +216,13 @@ data Pred = Pred QualIdent Type
   deriving (Eq, Show)
 
 -- We provide a custom 'Ord' instance for predicates here where we consider
--- the type component of the predicate before the class component (see predicate
--- sets below for more information).
+-- the type component of the predicate before the class component. This way,
+-- we ensure that a class method's implicit class constraint is always the
+-- minimum w.r.t. this order, because the type expression for that constraint
+-- is a type variable with index 0 and there are no other class constraints
+-- in a predicate set that constraint the same type variable as restrictions
+-- on class variables are not allowed (see predicate sets below for more
+-- information why this order is relevant).
 
 instance Ord Pred where
   Pred qcls1 ty1 `compare` Pred qcls2 ty2 = case ty1 `compare` ty2 of
