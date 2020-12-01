@@ -981,10 +981,6 @@ checkShadowing :: Ident -> WCM ()
 checkShadowing x = warnFor WarnNameShadowing $
   shadowsVar x >>= maybe ok (report . warnShadowing x)
 
-checkTypeShadowing :: Ident -> WCM ()
-checkTypeShadowing x = warnFor WarnNameShadowing $
-  shadowsTypeVar x >>= maybe ok (report . warnTypeShadowing x)
-
 reportUnusedVars :: WCM ()
 reportUnusedVars = reportAllUnusedVars WarnUnusedBindings
 
@@ -1146,9 +1142,6 @@ shadows qid s = do
 shadowsVar :: Ident -> WCM (Maybe Ident)
 shadowsVar v = gets (shadows $ commonId v)
 
-shadowsTypeVar :: Ident -> WCM (Maybe Ident)
-shadowsTypeVar v = gets (shadows $ typeId v)
-
 visitId :: Ident -> WCM ()
 visitId v = modifyScope (qualModifyNestEnv visitVariable (commonId v))
 
@@ -1193,7 +1186,7 @@ isKnown s qid = qualInLocalNestEnv qid (scope s)
 
 isUnref :: WcState -> QualIdent -> Bool
 isUnref s qid = let sc = scope s
-                in  (any (not . variableVisited) (qualLookupNestEnv qid sc))
+                in  any (not . variableVisited) (qualLookupNestEnv qid sc)
                     && qualInLocalNestEnv qid sc
 
 isVar :: QualIdent -> WcState -> Bool
@@ -1645,9 +1638,4 @@ warnUnrefVar v = spanInfoMessage v $ hsep $ map text
 warnShadowing :: Ident -> Ident -> Message
 warnShadowing x v = spanInfoMessage x $
   text "Shadowing symbol" <+> text (escName x)
-  <> comma <+> text "bound at:" <+> ppPosition (getPosition v)
-
-warnTypeShadowing :: Ident -> Ident -> Message
-warnTypeShadowing x v = spanInfoMessage x $
-  text "Shadowing type variable" <+> text (escName x)
   <> comma <+> text "bound at:" <+> ppPosition (getPosition v)
