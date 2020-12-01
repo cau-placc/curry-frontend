@@ -62,7 +62,6 @@ data DTState = DTState
   , classEnv    :: ClassEnv
   , instEnv     :: InstEnv
   , opPrecEnv   :: OpPrecEnv
-  , augmentEnv  :: AugmentEnv -- for augmenting nullary class methods
   , dictEnv     :: DictEnv    -- for dictionary insertion
   , specEnv     :: SpecEnv    -- for dictionary specialization
   , nextId      :: Integer
@@ -76,9 +75,9 @@ insertDicts :: Bool -> InterfaceEnv -> TCEnv -> ValueEnv -> ClassEnv
 insertDicts inlDi intfEnv tcEnv vEnv clsEnv inEnv pEnv mdl@(Module _ _ _ m _ _ _) =
   (mdl', intfEnv', tcEnv', vEnv', pEnv')
   where initState =
-          DTState m tcEnv vEnv clsEnv inEnv pEnv emptyAugEnv emptyDictEnv emptySpEnv 1
+          DTState m tcEnv vEnv clsEnv inEnv pEnv emptyDictEnv emptySpEnv 1
         (mdl', tcEnv', vEnv', pEnv') =
-          runDTM (augment mdl >>= dictTrans >>= (if inlDi then specialize else return) >>= cleanup) initState
+          runDTM (dictTrans mdl >>= (if {-inlDi-} False then specialize else return) >>= cleanup) initState
         intfEnv' = dictTransInterfaces vEnv' clsEnv intfEnv
 
 runDTM :: DTM a -> DTState -> (a, TCEnv, ValueEnv, OpPrecEnv)
@@ -122,12 +121,6 @@ getPrecEnv = S.gets opPrecEnv
 modifyPrecEnv :: (OpPrecEnv -> OpPrecEnv) -> DTM ()
 modifyPrecEnv f = S.modify $ \s -> s { opPrecEnv = f $ opPrecEnv s }
 
-getAugEnv :: DTM AugmentEnv
-getAugEnv = S.gets augmentEnv
-
-setAugEnv :: AugmentEnv -> DTM ()
-setAugEnv augEnv = S.modify $ \s -> s { augmentEnv = augEnv }
-
 getDictEnv :: DTM DictEnv
 getDictEnv = S.gets dictEnv
 
@@ -152,167 +145,6 @@ getNextId = do
   nid <- S.gets nextId
   S.modify $ \s -> s { nextId = succ nid }
   return nid
-
--- -----------------------------------------------------------------------------
--- Augmenting nullary class methods
--- -----------------------------------------------------------------------------
-
--- To prevent unwanted sharing of non-determinism for nullary class methods
--- we augment them with an additional unit argument.
-
-type AugmentEnv = [QualIdent]
-
-emptyAugEnv :: AugmentEnv
-emptyAugEnv = []
-
-initAugEnv :: ValueEnv -> AugmentEnv
-initAugEnv = foldr (bindValue . snd) emptyAugEnv . allBindings
-  where bindValue (Value f (Just _) _ (ForAll _ (PredType _ ty)))
-          | arrowArity ty == 0 = (f :)
-        bindValue _ = id
-
-isAugmented :: AugmentEnv -> QualIdent -> Bool
-isAugmented = flip elem
-
-augmentValues :: ValueEnv -> ValueEnv
-augmentValues = fmap augmentValueInfo
-
-augmentValueInfo :: ValueInfo -> ValueInfo
-augmentValueInfo (Value f (Just cls) a (ForAll n (PredType ps ty)))
-  | arrowArity ty == 0
-    = Value f (Just cls) a $ ForAll n $ PredType ps $ augmentType ty
-augmentValueInfo vi = vi
-
-augmentTypes :: TCEnv -> TCEnv
-augmentTypes = fmap augmentTypeInfo
-
-augmentTypeInfo :: TypeInfo -> TypeInfo
-augmentTypeInfo (TypeClass cls k ms) =
-  TypeClass cls k $ map augmentClassMethod ms
-augmentTypeInfo ti = ti
-
-augmentClassMethod :: ClassMethod -> ClassMethod
-augmentClassMethod mthd@(ClassMethod f a (PredType ps ty))
-  | arrowArity ty == 0 =
-    ClassMethod f (Just $ fromMaybe 0 a + 1) $ PredType ps $ augmentType ty
-  | otherwise = mthd
-
-augmentInstances :: AugmentEnv -> InstEnv -> InstEnv
-augmentInstances = Map.mapWithKey . augmentInstInfo
-
-augmentInstInfo :: AugmentEnv -> InstIdent -> InstInfo -> InstInfo
-augmentInstInfo augEnv (cls, _) (m, ps, is) =
-  (m, ps, map (augmentInstImpl augEnv cls) is)
-
-augmentInstImpl :: AugmentEnv -> QualIdent -> (Ident, Int) -> (Ident, Int)
-augmentInstImpl augEnv cls (f, a)
-  | isAugmented augEnv (qualifyLike cls f) = (f, a + 1)
-  | otherwise = (f, a)
-
-class Augment a where
-  augment :: a PredType -> DTM (a PredType)
-
-instance Augment Module where
-  augment (Module spi li ps m es is ds) = do
-    augEnv <- initAugEnv <$> getValueEnv
-    setAugEnv augEnv
-    modifyValueEnv $ augmentValues
-    modifyTyConsEnv $ augmentTypes
-    modifyInstEnv $ augmentInstances augEnv
-    Module spi li ps m es is <$> mapM (augmentDecl Nothing) ds
-
--- The first parameter of the functions 'augmentDecl', 'augmentEquation' and
--- 'augmentLhs' determines whether we have to unrename the function identifiers
--- before checking if the function has to augmented or not. Furthermore, it
--- specifies the module unqualified identifiers have to be qualified with.
--- The unrenaming is necessary for both class and instance declarations as all
--- identifiers within these have been renamed during the syntax check, while the
--- qualifying is needed for function declarations within instance declarations
--- as the implemented class methods can originate from another module. If not
--- qualified properly, the lookup in the augmentation environment would fail.
-
--- Since type signatures remain only in class declarations due to desugaring,
--- we can always perform the unrenaming and it is safe to assume that all other
--- functions mentioned in a type signature have to be augmented as well if the
--- first one is affected.
-
-augmentDecl :: Maybe ModuleIdent -> Decl PredType -> DTM (Decl PredType)
-augmentDecl _  d@(TypeSig            p fs qty) = do
-  m <- getModuleIdent
-  augEnv <- getAugEnv
-  return $ if isAugmented augEnv (qualifyWith m $ unRenameIdent $ head fs)
-              then TypeSig p fs $ augmentQualTypeExpr qty
-              else d
-augmentDecl mm (FunctionDecl      p pty f eqs) = do
-    eqs' <- mapM (augmentEquation mm) eqs
-    m <- maybe getModuleIdent return mm
-    augEnv <- getAugEnv
-    if isAugmented augEnv (qualifyWith m $ unRenameIdentIf (isJust mm) f)
-      then return $ FunctionDecl p (augmentPredType pty) f eqs'
-      else return $ FunctionDecl p pty f eqs'
-augmentDecl _  (PatternDecl         p t rhs) = PatternDecl p t <$> augment rhs
-augmentDecl _  (ClassDecl    p li cx cls tv ds) = do
-  m <- getModuleIdent
-  ClassDecl p li cx cls tv <$> mapM (augmentDecl $ Just m) ds
-augmentDecl _  (InstanceDecl p li cx cls ty ds) =
-  InstanceDecl p li cx cls ty <$> mapM (augmentDecl $ qidModule cls) ds
-augmentDecl _ d                             = return d
-
-augmentEquation :: Maybe ModuleIdent -> Equation PredType
-                -> DTM (Equation PredType)
-augmentEquation mm (Equation p lhs rhs) =
-  Equation p <$> augmentLhs mm lhs <*> augment rhs
-
-augmentLhs :: Maybe ModuleIdent -> Lhs PredType -> DTM (Lhs PredType)
-augmentLhs mm lhs@(FunLhs spi f ts) = do
-    m <- maybe getModuleIdent return mm
-    augEnv <- getAugEnv
-    if isAugmented augEnv (qualifyWith m $ unRenameIdentIf (isJust mm) f)
-      then return $ FunLhs spi f
-                  $ ConstructorPattern NoSpanInfo predUnitType qUnitId [] : ts
-      else return lhs
-augmentLhs _ lhs               =
-  internalError $ "Dictionary.augmentLhs" ++ show lhs
-
-instance Augment Rhs where
-  augment (SimpleRhs p _ e []) = simpleRhs p <$> augment e
-  augment rhs                  =
-    internalError $ "Dictionary.augment: " ++ show rhs
-
-instance Augment Expression where
-  augment l@(Literal     _ _ _) = return l
-  augment v@(Variable _ pty v') = do
-    augEnv <- getAugEnv
-    return $ if isAugmented augEnv v'
-               then apply (Variable NoSpanInfo (augmentPredType pty) v')
-                      [Constructor NoSpanInfo predUnitType qUnitId]
-               else v
-  augment c@(Constructor _ _ _) = return c
-  augment (Typed       spi e qty) = flip (Typed spi) qty <$> augment e
-  augment (Apply       spi e1 e2) = Apply spi <$> augment e1 <*> augment e2
-  augment (Lambda       spi ts e) = Lambda spi ts <$> augment e
-  augment (Let       spi li ds e) =
-    Let spi li <$> mapM (augmentDecl Nothing) ds <*> augment e
-  augment (Case   spi li ct e as) =
-    Case spi li ct <$> augment e <*> mapM augment as
-  augment e                     =
-    internalError $ "Dictionary.augment: " ++ show e
-
-instance Augment Alt where
-  augment (Alt p t rhs) = Alt p t <$> augment rhs
-
-augmentPredType :: PredType -> PredType
-augmentPredType (PredType ps ty) = PredType ps $ augmentType ty
-
-augmentType :: Type -> Type
-augmentType = TypeArrow unitType
-
-augmentQualTypeExpr :: QualTypeExpr -> QualTypeExpr
-augmentQualTypeExpr (QualTypeExpr spi cx ty) =
-  QualTypeExpr spi cx $ augmentTypeExpr ty
-
-augmentTypeExpr :: TypeExpr -> TypeExpr
-augmentTypeExpr = ArrowType NoSpanInfo $ ConstructorType NoSpanInfo qUnitId
 
 -- -----------------------------------------------------------------------------
 -- Lifting class and instance declarations
@@ -390,7 +222,7 @@ classDictConstrPredType vEnv clsEnv cls = PredType ps $ foldr TypeArrow ty mtys
 createInstDictDecl :: PredSet -> QualIdent -> Type -> DTM (Decl PredType)
 createInstDictDecl ps cls ty = do
   pty <- PredType ps . arrowBase <$> getInstDictConstrType cls ty
-  funDecl NoSpanInfo pty (instFunId cls ty) [] <$> createInstDictExpr cls ty
+  funDecl NoSpanInfo pty (instFunId cls ty) [ConstructorPattern NoSpanInfo predUnitType qUnitId []] <$> createInstDictExpr cls ty
 
 createInstDictExpr :: QualIdent -> Type -> DTM (Expression PredType)
 createInstDictExpr cls ty = do
@@ -414,13 +246,7 @@ createClassMethodDecl cls =
 defaultClassMethodDecl :: QualIdent -> Ident -> DTM (Decl PredType)
 defaultClassMethodDecl cls f = do
   pty@(PredType _ ty) <- getClassMethodType cls f
-  augEnv <- getAugEnv
-  let augmented = isAugmented augEnv (qualifyLike cls f)
-      pats = if augmented
-               then [ConstructorPattern NoSpanInfo predUnitType qUnitId []]
-               else []
-      ty' = if augmented then arrowBase ty else ty
-  return $ funDecl NoSpanInfo pty f pats $ preludeError (instType ty') $
+  return $ funDecl NoSpanInfo pty f [] $ preludeError (instType ty) $
     "No instance or default method for class operation " ++ escName f
 
 getClassMethodType :: QualIdent -> Ident -> DTM PredType
@@ -498,52 +324,42 @@ createStubs (ClassDecl _ _ _ cls _ _) = do
         splitAt (length sclss) $ map (TypeArrow dictTy) superDictAndMethodTys
   superDictVs <- mapM (freshVar "_#super" . instType) superDictTys
   methodVs <- mapM (freshVar "_#meth" . instType) methodTys
-  methodDictTyss <- zipWithM (computeMethodDictTypes ocls) fs methodTys
-  methodDictVss <- mapM (mapM $ freshVar "_#dict" . instType) methodDictTyss
   let patternVs   = superDictVs ++ methodVs
       pattern     = createDictPattern (instType dictTy) ocls patternVs
       superStubs  = zipWith3 (createSuperDictStubDecl pattern ocls)
                       superStubTys sclss superDictVs
-      methodStubs = zipWith4 (createMethodStubDecl pattern)
-                      methodStubTys fs methodVs methodDictVss
+      methodStubs = zipWith3 (createMethodStubDecl pattern)
+                      methodStubTys fs methodVs
   return $ superStubs ++ methodStubs
 createStubs _ = return []
 
--- Computes the additional dictionary arguments of a transformed method type
--- which correspond to the constraints of the original class method's type.
-
-computeMethodDictTypes :: QualIdent -> Ident -> Type -> DTM [Type]
-computeMethodDictTypes cls f ty = do
-  PredType _ ty' <- getClassMethodType cls f
-  return $ take (length tys - arrowArity ty') tys
-  where tys = arrowArgs ty
-
-createDictPattern :: a -> QualIdent -> [(a, Ident)] -> Pattern a
+createDictPattern :: Type -> QualIdent -> [(Type, Ident)] -> Pattern Type
 createDictPattern a cls = constrPattern a (qDictConstrId cls)
 
-createSuperDictStubDecl :: Pattern a -> QualIdent -> a -> QualIdent
-                        -> (a, Ident) -> Decl a
+createSuperDictStubDecl :: Pattern Type -> QualIdent -> Type -> QualIdent
+                        -> (Type, Ident) -> Decl Type
 createSuperDictStubDecl t cls a super v =
-  createStubDecl t a (superDictStubId cls super) v []
+  createStubDecl t a (superDictStubId cls super) v
 
-createMethodStubDecl :: Pattern a -> a -> Ident -> (a, Ident) -> [(a, Ident)]
-                     -> Decl a
+createMethodStubDecl :: Pattern Type -> Type -> Ident -> (Type, Ident) -> Decl Type
 createMethodStubDecl = createStubDecl
 
-createStubDecl :: Pattern a -> a -> Ident -> (a, Ident) -> [(a, Ident)]
-               -> Decl a
-createStubDecl t a f v us =
-  FunctionDecl NoSpanInfo a f [createStubEquation t f v us]
+createStubDecl :: Pattern Type -> Type -> Ident -> (Type, Ident) -> Decl Type
+createStubDecl t a f v =
+  FunctionDecl NoSpanInfo a f [createStubEquation t f v]
 
-createStubEquation :: Pattern a -> Ident -> (a, Ident) -> [(a, Ident)]
-                   -> Equation a
-createStubEquation t f v us =
-  mkEquation NoSpanInfo f (t : map (uncurry (VariablePattern NoSpanInfo)) us) $
-    apply (uncurry mkVar v) (map (uncurry mkVar) us)
+createStubEquation :: Pattern Type -> Ident -> (Type, Ident) -> Equation Type
+createStubEquation t f v = 
+  mkEquation NoSpanInfo f [VariablePattern NoSpanInfo (TypeArrow unitType (typeOf t)) (mkIdent "_#temp")] $
+    mkLet [FunctionDecl NoSpanInfo (TypeArrow (typeOf t) (fst v)) (mkIdent "_#lambda")
+      [mkEquation NoSpanInfo (mkIdent "_#lambda") [t] $ uncurry mkVar v]]
+      (apply (Variable NoSpanInfo (TypeArrow (typeOf t) (fst v)) (qualify $ mkIdent "_#lambda"))
+        [apply (Variable NoSpanInfo (TypeArrow unitType (typeOf t)) (qualify $ mkIdent "_#temp"))
+          [Constructor NoSpanInfo unitType qUnitId]])
 
 superDictStubType :: QualIdent -> QualIdent -> Type -> Type
 superDictStubType cls super ty =
-  TypeArrow (dictType $ Pred cls ty) (dictType $ Pred super ty)
+  TypeArrow (rtDictType $ Pred cls ty) (rtDictType $ Pred super ty)
 
 -- -----------------------------------------------------------------------------
 -- Entering new bindings into the environments
@@ -557,7 +373,7 @@ bindDictType :: ModuleIdent -> ClassEnv -> TypeInfo -> TCEnv -> TCEnv
 bindDictType m clsEnv (TypeClass cls k ms) = bindEntity m tc ti
   where ti    = DataType tc (KindArrow k KindStar) [c]
         tc    = qDictTypeId cls
-        c     = DataConstr (dictConstrId cls) (map dictType (Set.toAscList ps) ++ tys)
+        c     = DataConstr (dictConstrId cls) (map rtDictType (Set.toAscList ps) ++ tys)
         sclss = superClasses cls clsEnv
         ps    = Set.fromList [Pred scls (TypeVariable 0) | scls <- sclss]
         tys   = map (generalizeMethodType . transformMethodPredType . methodType) ms
@@ -622,7 +438,7 @@ bindInstFuns m tcEnv clsEnv ((cls, tc), (m', ps, is)) =
 bindInstDict :: ModuleIdent -> QualIdent -> Type -> ModuleIdent -> PredSet
              -> ValueEnv -> ValueEnv
 bindInstDict m cls ty m' ps =
-  bindMethod m (qInstFunId m' cls ty) 0 $ PredType ps $ dictType $ Pred cls ty
+  bindMethod m (qInstFunId m' cls ty) 1 $ PredType ps $ rtDictType $ Pred cls ty
 
 bindInstMethods :: ModuleIdent -> ClassEnv -> QualIdent -> Type -> ModuleIdent
                 -> PredSet -> [(Ident, Int)] -> ValueEnv -> ValueEnv
@@ -875,7 +691,7 @@ instance DictTrans Alt where
 
 addDictArgs :: [Pred] -> [Pattern PredType] -> DTM [Pattern Type]
 addDictArgs pls ts = do
-  dictVars <- mapM (freshVar "_#dict" . dictType) pls
+  dictVars <- mapM (freshVar "_#dict" . rtDictType) pls
   clsEnv <- getClassEnv
   modifyDictEnv $ (++) $ dicts clsEnv $ zip pls (map (uncurry mkVar) dictVars)
   (++) (map (uncurry (VariablePattern NoSpanInfo )) dictVars)
@@ -911,7 +727,7 @@ instFunApp :: ModuleIdent -> [Pred] -> Pred -> DTM (Expression Type)
 instFunApp m pls p@(Pred cls ty) = apply (Variable NoSpanInfo ty' f)
   <$> mapM dictArg pls
   where f   = qInstFunId m cls ty
-        ty' = foldr1 TypeArrow $ map dictType $ pls ++ [p]
+        ty' = foldr1 TypeArrow $ map rtDictType $ pls ++ [p]
 
 instPredList :: Pred -> DTM (ModuleIdent, [Pred])
 instPredList (Pred cls ty) = case unapplyType True ty of
@@ -954,7 +770,7 @@ predListMatch :: [Pred] -> Type -> Maybe Type
 predListMatch []     ty = Just ty
 predListMatch (p:ps) ty = case ty of
   TypeForall _ ty'                                 -> predListMatch (p : ps) ty'
-  TypeArrow ty1 ty2 | ty1 == dictType (instPred p) -> predListMatch ps ty2
+  TypeArrow ty1 ty2 | ty1 == rtDictType (instPred p) -> predListMatch ps ty2
   _                                                -> Nothing
 
 splits :: [a] -> [([a], [a])]
@@ -1229,6 +1045,9 @@ freshVar name ty = ((,) ty) . mkIdent . (name ++) .  show <$> getNextId
 -- The function 'dictType' returns the type of the dictionary corresponding to
 -- a particular C-T instance.
 
+rtDictType :: Pred -> Type
+rtDictType = TypeArrow unitType . dictType
+
 dictType :: Pred -> Type
 dictType (Pred cls ty) = TypeApply (TypeConstructor $ qDictTypeId cls) ty
 
@@ -1237,7 +1056,7 @@ dictType (Pred cls ty) = TypeApply (TypeConstructor $ qDictTypeId cls) ty
 
 transformPredType :: PredType -> Type
 transformPredType (PredType ps ty) =
-  foldr (TypeArrow . dictType) ty $ Set.toList ps
+  foldr (TypeArrow . rtDictType) ty $ Set.toList ps
 
 -- The function 'transformMethodPredType' first deletes the implicit class
 -- constraint and then transforms the resulting predicated type as above.
