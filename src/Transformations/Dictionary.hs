@@ -77,7 +77,7 @@ insertDicts inlDi intfEnv tcEnv vEnv clsEnv inEnv pEnv mdl@(Module _ _ _ m _ _ _
   where initState =
           DTState m tcEnv vEnv clsEnv inEnv pEnv emptyDictEnv emptySpEnv 1
         (mdl', tcEnv', vEnv', pEnv') =
-          runDTM (dictTrans mdl >>= (if {-inlDi-} False then specialize else return) >>= cleanup) initState
+          runDTM (dictTrans mdl >>= (if inlDi then specialize else return) >>= cleanup) initState
         intfEnv' = dictTransInterfaces vEnv' clsEnv intfEnv
 
 runDTM :: DTM a -> DTState -> (a, TCEnv, ValueEnv, OpPrecEnv)
