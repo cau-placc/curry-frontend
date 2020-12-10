@@ -1067,10 +1067,13 @@ tcPatternHelper p t@(ListPattern spi _ ts) = do
 tcPatternHelper p t@(AsPattern spi v t') = do
   vEnv <- lift getValueEnv
   (_, ty) <- lift $ inst (varType v vEnv)
-  (ps, t'') <- tcPatternHelper p t' >>-
-    (\ps' ty' -> lift $
-      unify p "pattern" (pPrintPrec 0 t) emptyPredSet ty ps' ty')
-  return (ps, ty, AsPattern spi v t'')
+  used <- S.get
+  ps <- if Set.member v used
+          then return (Set.singleton (Pred qDataId ty))
+          else S.put (Set.insert v used) >> return Set.empty
+  (ps'', t'') <- tcPatternHelper p t' >>-
+    (\ps' ty' -> lift $ unify p "pattern" (pPrintPrec 0 t) ps ty ps' ty')
+  return (ps'', ty, AsPattern spi v t'')
 tcPatternHelper p (LazyPattern spi t) = do
   (ps, ty, t') <- tcPatternHelper p t
   return (ps, ty, LazyPattern spi t')
