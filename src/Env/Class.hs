@@ -1,20 +1,19 @@
 {- |
     Module      :  $Header$
     Description :  Environment of classes
-    Copyright   :  (c) 2016        Finn Teegen
+    Copyright   :  (c) 2016 - 2020 Finn Teegen
     License     :  BSD-3-clause
 
-    Maintainer  :  bjp@informatik.uni-kiel.de
+    Maintainer  :  fte@informatik.uni-kiel.de
     Stability   :  experimental
     Portability :  portable
 
     The compiler maintains information about all type classes in an
-    environment that maps type classes to a list of their direct
-    superclasses and all their associated class methods with an
-    additional boolean flag stating whether an default implementation
-    has been provided or not. For both the type class identifier and
-    the list of super classes original names are used. Thus, the use
-    of a flat environment is sufficient.
+    environment that maps type classes to a sorted list of their direct
+    superclasses and all their associated class methods with an additional
+    flag stating whether an default implementation has been provided or not.
+    For both the type class identifier and the list of super classes original
+    names are used. Thus, the use of a flat environment is sufficient.
 -}
 
 module Env.Class

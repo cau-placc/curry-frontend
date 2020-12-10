@@ -1,10 +1,10 @@
 {- |
     Module      :  $Header$
     Description :  Environment of instances
-    Copyright   :  (c) 2016        Finn Teegen
+    Copyright   :  (c) 2016 - 2020 Finn Teegen
     License     :  BSD-3-clause
 
-    Maintainer  :  bjp@informatik.uni-kiel.de
+    Maintainer  :  fte@informatik.uni-kiel.de
     Stability   :  experimental
     Portability :  portable
 
@@ -15,7 +15,8 @@
     implemented in the specific instance along with their arity. A flat
     environment is sufficient because instances are visible globally and
     cannot be hidden. Instances are recorded only with the original names
-    of the type class and type constructor involved.
+    of the type class and type constructor involved. The context also uses
+    original names and is already minimized.
 -}
 
 module Env.Instance
