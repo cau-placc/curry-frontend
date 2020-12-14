@@ -199,9 +199,9 @@ data TargetType
   | FlatCurry            -- ^ FlatCurry
   | AnnotatedFlatCurry   -- ^ Annotated FlatCurry
   | TypedFlatCurry       -- ^ Typed FlatCurry
-  | AbstractCurry          -- ^ AbstractCurry
-  | UntypedAbstractCurry   -- ^ Untyped AbstractCurry
-  | Html                   -- ^ HTML documentation
+  | AbstractCurry        -- ^ AbstractCurry
+  | UntypedAbstractCurry -- ^ Untyped AbstractCurry
+  | Html                 -- ^ HTML documentation
   | AST                  -- ^ Abstract-Syntax-Tree after checks
   | ShortAST             -- ^ Abstract-Syntax-Tree with shortened decls
     deriving (Eq, Show)

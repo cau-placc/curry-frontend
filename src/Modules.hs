@@ -105,7 +105,10 @@ compileModule opts m fn = do
     ((env, il), mdl'') <- transModule opts qmdl'
     writeFlat opts env (snd mdl'') il
   where
-  withFlat = any (`elem` optTargetTypes opts) [TypedFlatCurry, FlatCurry]
+  withFlat = any (`elem` optTargetTypes opts) [ AnnotatedFlatCurry
+                                              , TypedFlatCurry
+                                              , FlatCurry
+                                              ]
 
 loadAndCheckModule :: Options -> ModuleIdent -> FilePath
                    -> CYIO (CompEnv (CS.Module PredType))
