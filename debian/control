@@ -31,6 +31,8 @@ Build-Depends: debhelper (>= 10),
  libghc-set-extra-prof,
  libghc-syb-dev,
  libghc-syb-prof,
+ libghc-time-dev,
+ libghc-time-prof,
  libghc-transformers-dev,
  libghc-transformers-prof,
 Build-Depends-Indep: ghc-doc,
@@ -47,6 +49,7 @@ Build-Depends-Indep: ghc-doc,
  libghc-syb-doc,
  libghc-transformers-doc,
 Standards-Version: 4.3.0
+Rules-Requires-Root: no
 Homepage: http://curry-language.org
 Vcs-Browser: https://git.ps.informatik.uni-kiel.de/curry/curry-frontend
 Vcs-Git: https://git.ps.informatik.uni-kiel.de/curry/curry-frontend.git
