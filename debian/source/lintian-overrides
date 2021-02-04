@@ -1,3 +1,0 @@
-# debian/control consists of various ${haskell:xxx} variables, ignore duplicate LONG_DESCRIPTIONs
-curry-frontend source: duplicate-short-description libghc-curry-frontend-dev libghc-curry-frontend-prof libghc-curry-frontend-doc
-curry-frontend source: duplicate-long-description libghc-curry-frontend-dev libghc-curry-frontend-prof libghc-curry-frontend-doc curry-frontend

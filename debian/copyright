@@ -316,14 +316,9 @@ Copyright: 2003, Wolfgang Lux
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Generators/GenTypeAnnotatedFlatCurry.hs
+Files: src/Generators/GenAnnotatedFlatCurry.hs
 Copyright: 2017, Finn Teegen
            2018, Kai-Oliver Prott
-License: BSD-3-clause
-
-Files: src/cymake.hs
-Copyright: 2005, Martin Engelke
-  2011 - 2016, Björn Peemöller
 License: BSD-3-clause
 
 Files: src/Base/AnnotExpr.hs
@@ -357,9 +352,216 @@ Copyright: 2000-2007, Wolfgang Lux
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: data/currysource.css
+Files: src/Curry/Base/Monad.hs
+Copyright: 2014 - 2016, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Curry/FlatCurry/Goodies.hs
+Copyright: 2006, Sebastian Fischer
+  2011, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Curry/Base/Ident.hs
+Copyright: 1999 - 2004, Wolfgang Lux
+  2011 - 2013, Björn Peemöller
+  2016, Finn Teegen
+License: BSD-3-clause
+
+Files: src/Curry/FlatCurry.hs
+Copyright: 2014, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Curry/Syntax/Utils.hs
+Copyright: 1999 - 2004, Wolfgang Lux
+  2005, Martin Engelke
+  2011 - 2014, Björn Peemöller
+  2015, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Curry/Base/Message.hs
+Copyright: 2009, Holger Siegel
+  2012 - 2015, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Curry/AbstractCurry/Type.hs
+Copyright: 2004, Michael Hanus
+  2005, Martin Engelke
+  2015, Björn Peemöller
+  2016, Finn Teegen
+License: BSD-3-clause
+
+Files: src/Curry/AbstractCurry/Files.hs
+Copyright: 2004, Michael Hanus
+  2005, Martin Engelke
+  2014, Björn Peemöller
+  2016, Finn Teegen
+License: BSD-3-clause
+
+Files: src/Curry/Files/Filenames.hs
+Copyright: 2009, Holger Siegel
+  2013 - 2014, Björn Peemöller
+  2018, Kai-Oliver Prott
+License: BSD-3-clause
+
+Files: src/Curry/Base/Position.hs
+Copyright: , Wolfgang Lux
+License: BSD-3-clause
+
+Files: src/Curry/FlatCurry/Files.hs
+Copyright: 2014, Björn Peemöller
+  2017, Finn Teegen
+License: BSD-3-clause
+
+Files: src/Curry/Base/LLParseComb.hs
+Copyright: 1999-2004, Wolfgang Lux
+  2016, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Curry/AbstractCurry.hs
+Copyright: 2004, Michael Hanus
+  2005, Martin Engelke
+  2013, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Curry/Base/Span.hs
+Copyright: 2016, Jan Tikovsky
+  2016, Finn Teegen
+License: BSD-3-clause
+
+Files: src/Curry/Syntax/ShowModule.hs
+Copyright: 2008, Sebastian Fischer
+  2011 - 2015, Björn Peemöller
+  2016, Finn Teegen
+License: BSD-3-clause
+
+Files: src/Curry/Syntax/Lexer.hs
+Copyright: 1999 - 2004, Wolfgang Lux
+  2005, Martin Engelke
+  2011 - 2013, Björn Peemöller
+  2016, Jan Tikovsky
+  2016, Finn Teegen
+License: BSD-3-clause
+
+Files: src/Curry/Syntax/Parser.hs
+Copyright: 1999 - 2004, Wolfgang Lux
+  2005, Martin Engelke
+  2011 - 2015, Björn Peemöller
+  2016 - 2017, Finn Teegen
+License: BSD-3-clause
+
+Files: src/Curry/Syntax/Pretty.hs
+Copyright: 1999 - 2004, Wolfgang Lux
+  2005, Martin Engelke
+  2011 - 2015, Björn Peemöller
+  2016, Finn Teegen
+License: BSD-3-clause
+
+Files: src/Curry/Syntax/Type.hs
+Copyright: 1999 - 2004, Wolfgang Lux
+  2005, Martin Engelke
+  2011 - 2015, Björn Peemöller
+  2014, Jan Rasmus Tikovsky
+License: BSD-3-clause
+
+Files: src/Curry/Base/LexComb.hs
+Copyright: 1999 - 2004, Wolfgang Lux
+  2012 - 2013, Björn Peemöller
+  2016, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Curry/Syntax.hs
+Copyright: 2009, Holger Siegel
+  2011 - 2013, Björn Peemöller
+  2016, Finn Teegen
+  2016, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Curry/FlatCurry/Pretty.hs
+Copyright: 2015, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Curry/Files/Unlit.hs
+Copyright: 2009, Holger Siegel
+  2012  - 2014, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Curry/Syntax/InterfaceEquivalence.hs
+Copyright: 2000 - 2007, Wolfgang Lux
+  2014 - 2015, Björn Peemöller
+  2014, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Curry/Syntax/Extension.hs
+Copyright: 2013 - 2014, Björn Peemöller
+  2016, Finn Teegen
+License: BSD-3-clause
+
+Files: src/Curry/FlatCurry/Type.hs
+Copyright: 2003, Michael Hanus
+  2004, Martin Engelke
+  2005, Bernd Brassel
+License: BSD-3-clause
+
+Files: src/Curry/Files/PathUtils.hs
+Copyright: 1999 - 2003, Wolfgang Lux
+  2011 - 2014, Björn Peemöller <bjp@informatik.uni-kiel.de>
+  2017, Finn teegen <fte@informatik.uni-kiel.de>
+License: BSD-3-clause
+
+Files: src/Curry/Base/Pretty.hs
+Copyright: 2013 - 2014, Björn Peemöller
+License: BSD-3-clause
+
+Files: util/canonfint.hs
+Copyright: 2016, Björn Peemöller
+License: BSD-3-clause
+
+Files: src/Curry/CondCompile/Parser.hs
+ src/Curry/CondCompile/Transform.hs
+ src/Curry/CondCompile/Type.hs
+Copyright: 2017, Kai-Oliver Prott
+  2017, Finn Teegen
+License: BSD-3-clause
+
+Files: src/Curry/FlatCurry/Annotated/Goodies.hs
+ src/Curry/FlatCurry/Annotated/Type.hs
+Copyright: 2016-2017, Finn Teegen
+  2017, Finn Teegen
+License: BSD-3-clause
+
+Files: src/Curry/FlatCurry/InterfaceEquivalence.hs
+Copyright: 2006, Martin Engelke
+  2011-2014, Björn Peemöller
+  2014, Jan Tikovsky
+License: BSD-3-clause
+
+Files: src/Curry/FlatCurry/Typed/Goodies.hs
+ src/Curry/FlatCurry/Typed/Type.hs
+Copyright: 2016-2017, Finn Teegen
+  2018, Kai-Oliver Prott
+License: BSD-3-clause
+
+Files: src/Curry/Base/SpanInfo.hs
+ src/Curry/FlatCurry/Typeable.hs
+Copyright: 2017, Kai-Oliver Prott
+  2018, Kai-Oliver Prott
+License: BSD-3-clause
+
+Files: app/cymake.hs
+Copyright:  2005, Martin Engelke
+  2011-2016, Björn Peemöller
+License: BSD-3-clause
+
+Files: Makefile
+ README.md
+ data/currysource.css
+ stack.yaml
+ stack.yaml.lock
  test/TestFrontend.hs
  test/fail/Bool.curry
+ test/fail/ClassHiddenExport.curry
+ test/fail/ClassHiddenFail.curry
+ test/fail/DataFail.curry
  test/fail/ErrorMultipleSignature.curry
  test/fail/ExportCheck/AmbiguousName.curry
  test/fail/ExportCheck/AmbiguousType.curry
@@ -375,8 +577,11 @@ Files: data/currysource.css
  test/fail/FP_Cyclic.curry
  test/fail/FP_NonGlobal.curry
  test/fail/FP_Restrictions.curry
+ test/fail/HaskellRecordsFail.curry
  test/fail/ImportError.curry
  test/fail/KindCheck.curry
+ test/fail/MissingLabelInUpdate.curry
+ test/fail/MissingLabelInUpdateExport.curry
  test/fail/MultipleArities.curry
  test/fail/MultipleDefinitions.curry
  test/fail/MultiplePrecedence.curry
@@ -389,14 +594,20 @@ Files: data/currysource.css
  test/fail/SyntaxError.curry
  test/fail/TypeError1.curry
  test/fail/TypeError2.curry
+ test/fail/TypeSigTooGeneral.curry
  test/fail/TypedFreeVariables.curry
+ test/fail/UnboundTypeVariable.curry
  test/pass/ACVisibility.curry
  test/pass/AbstractCurryBug.curry
  test/pass/AnonymVar.curry
  test/pass/B/C.curry
  test/pass/CaseComplete.curry
+ test/pass/ClassHiddenExport.curry
+ test/pass/ClassHiddenPass.curry
+ test/pass/DataPass.curry
  test/pass/DefaultPrecedence.curry
  test/pass/Dequeue.curry
+ test/pass/EmptyWhere.curry
  test/pass/ExplicitLayout.curry
  test/pass/FCase.curry
  test/pass/FP_Lifting.curry
@@ -404,6 +615,10 @@ Files: data/currysource.css
  test/pass/FP_NonLinearity.curry
  test/pass/FunctionalPatterns.curry
  test/pass/HaskellRecords.curry
+ test/pass/HaskellRecordsPass.curry
+ test/pass/ImportRestricted.curry
+ test/pass/ImportRestricted2.curry
+ test/pass/ImportRestrictedExport.curry
  test/pass/Hierarchical.curry
  test/pass/Infix.curry
  test/pass/Inline.curry
@@ -416,6 +631,7 @@ Files: data/currysource.css
  test/pass/NonLinearLHS.curry
  test/pass/OperatorDefinition.curry
  test/pass/PatDecl.curry
+ test/pass/Pragmas.curry
  test/pass/Prelude.curry
  test/pass/Pretty.curry
  test/pass/RecordTest1.curry
@@ -431,6 +647,7 @@ Files: data/currysource.css
  test/pass/TypedExpr.curry
  test/pass/UntypedAcy.curry
  test/pass/Unzip.curry
+ test/pass/WhereAfterDo.curry
  test/warning/AliasClash.curry
  test/warning/Case1.curry
  test/warning/Case2.curry
@@ -439,15 +656,19 @@ Files: data/currysource.css
  test/warning/CheckSignature.curry
  test/warning/List.curry
  test/warning/Maybe.curry
+ test/warning/NoRedundant.curry
  test/warning/NonExhaustivePattern.curry
  test/warning/OverlappingPatterns.curry
  test/warning/Prelude.curry
+ test/warning/QualRedundant.curry
  test/warning/ShadowingSymbols.curry
  test/warning/TabCharacter.curry
+ test/warning/Redundant.curry
  test/warning/UnexportedFunction.curry
+ util/lex.hs
+ util/parse.hs
  .gitignore
  CHANGELOG.md
- LIESMICH
  Setup.hs
  curry-frontend.cabal
  overview.md
