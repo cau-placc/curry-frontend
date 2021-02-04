@@ -48,7 +48,7 @@ Build-Depends-Indep: ghc-doc,
  libghc-set-extra-doc,
  libghc-syb-doc,
  libghc-transformers-doc,
-Standards-Version: 4.3.0
+Standards-Version: 4.5.1
 Rules-Requires-Root: no
 Homepage: http://curry-language.org
 Vcs-Browser: https://git.ps.informatik.uni-kiel.de/curry/curry-frontend
