@@ -130,8 +130,8 @@ data IDecl
   | INewtypeDecl    Position QualIdent (Maybe KindExpr) [Ident] NewConstrDecl [Ident]
   | ITypeDecl       Position QualIdent (Maybe KindExpr) [Ident] TypeExpr
   | IFunctionDecl   Position QualIdent (Maybe Ident) Arity QualTypeExpr
-  | HidingClassDecl Position Context QualIdent (Maybe KindExpr) Ident
-  | IClassDecl      Position Context QualIdent (Maybe KindExpr) Ident [IMethodDecl] [Ident]
+  | HidingClassDecl Position Context QualIdent (Maybe KindExpr) [Ident]
+  | IClassDecl      Position Context QualIdent (Maybe KindExpr) [Ident] [IMethodDecl] [Ident]
   | IInstanceDecl   Position Context QualIdent InstanceType [IMethodImpl] (Maybe ModuleIdent)
     deriving (Eq, Read, Show)
 
@@ -165,7 +165,7 @@ data Decl a
   | PatternDecl      SpanInfo (Pattern a) (Rhs a)                                -- Just x = ...
   | FreeDecl         SpanInfo [Var a]                                            -- x, y free
   | DefaultDecl      SpanInfo [TypeExpr]                                         -- default (Int, Float)
-  | ClassDecl        SpanInfo LayoutInfo Context Ident Ident [Decl a]            -- class C a => D a where {TypeSig|InfixDecl|FunctionDecl}
+  | ClassDecl        SpanInfo LayoutInfo Context Ident [Ident] [Decl a]          -- class C a => D a where {TypeSig|InfixDecl|FunctionDecl}
   | InstanceDecl     SpanInfo LayoutInfo Context QualIdent InstanceType [Decl a] -- instance C a => M.D (N.T a b c) where {FunctionDecl}
     deriving (Eq, Read, Show)
 
@@ -222,10 +222,10 @@ data QualTypeExpr = QualTypeExpr SpanInfo Context TypeExpr
 
 type Context = [Constraint]
 
-data Constraint = Constraint SpanInfo QualIdent TypeExpr
+data Constraint = Constraint SpanInfo QualIdent [TypeExpr]
     deriving (Eq, Read, Show)
 
-type InstanceType = TypeExpr
+type InstanceType = [TypeExpr]
 
 -- ---------------------------------------------------------------------------
 -- Functions
@@ -363,8 +363,8 @@ instance Functor Decl where
   fmap f (PatternDecl sp t rhs) = PatternDecl sp (fmap f t) (fmap f rhs)
   fmap f (FreeDecl sp vs) = FreeDecl sp (map (fmap f) vs)
   fmap _ (DefaultDecl sp tys) = DefaultDecl sp tys
-  fmap f (ClassDecl sp li cx cls clsvar ds) =
-    ClassDecl sp li cx cls clsvar (map (fmap f) ds)
+  fmap f (ClassDecl sp li cx cls clsvars ds) =
+    ClassDecl sp li cx cls clsvars (map (fmap f) ds)
   fmap f (InstanceDecl sp li cx qcls inst ds) =
     InstanceDecl sp li cx qcls inst (map (fmap f) ds)
 
@@ -501,7 +501,7 @@ instance HasSpanInfo (Decl a) where
   setSpanInfo sp (PatternDecl _ t rhs) = PatternDecl sp t rhs
   setSpanInfo sp (FreeDecl _ vs) = FreeDecl sp vs
   setSpanInfo sp (DefaultDecl _ tys) = DefaultDecl sp tys
-  setSpanInfo sp (ClassDecl _ li cx cls clsvar ds) = ClassDecl sp li cx cls clsvar ds
+  setSpanInfo sp (ClassDecl _ li cx cls clsvars ds) = ClassDecl sp li cx cls clsvars ds
   setSpanInfo sp (InstanceDecl _ li cx qcls inst ds) = InstanceDecl sp li cx qcls inst ds
 
   updateEndPos d@(InfixDecl _ _ _ ops) =
@@ -735,11 +735,13 @@ instance HasSpanInfo QualTypeExpr where
 
 instance HasSpanInfo Constraint where
   getSpanInfo (Constraint sp _ _) = sp
-  setSpanInfo sp (Constraint _ qid ty) = Constraint sp qid ty
+  setSpanInfo sp (Constraint _ qid tys) = Constraint sp qid tys
   updateEndPos c@(Constraint (SpanInfo _ (s:ss)) _ _) =
     setEndPosition (end (last (s:ss))) c
-  updateEndPos c@(Constraint _ _ ty) =
-    setEndPosition (getSrcSpanEnd ty) c
+  updateEndPos c@(Constraint _ _ (t:ts)) =
+    setEndPosition (getSrcSpanEnd (last (t:ts))) c
+  updateEndPos c@(Constraint _ qid _) =
+    setEndPosition (incr (getPosition qid) (qIdentLength qid - 1)) c
 
 instance HasSpanInfo (Lhs a) where
   getSpanInfo (FunLhs sp _ _)   = sp
@@ -1205,10 +1207,10 @@ instance Binary a => Binary (Decl a) where
     putWord8 9 >> put spi >> put vs
   put (DefaultDecl spi tys) =
     putWord8 10 >> put spi >> put tys
-  put (ClassDecl spi li cx cls v ds) =
-    putWord8 11 >> put spi >> put li >> put cx >> put cls >> put v >> put ds
-  put (InstanceDecl spi li cx cls ty ds) =
-    putWord8 12 >> put spi >> put li >> put cx >> put cls >> put ty >> put ds
+  put (ClassDecl spi li cx cls vs ds) =
+    putWord8 11 >> put spi >> put li >> put cx >> put cls >> put vs >> put ds
+  put (InstanceDecl spi li cx cls tys ds) =
+    putWord8 12 >> put spi >> put li >> put cx >> put cls >> put tys >> put ds
 
   get = do
     x <- getWord8
@@ -1310,7 +1312,7 @@ instance Binary TypeExpr where
       _ -> fail "Invalid encoding for TypeExpr"
 
 instance Binary Constraint where
-  put (Constraint spi cls ty) = put spi >> put cls >> put ty
+  put (Constraint spi cls tys) = put spi >> put cls >> put tys
   get = liftM3 Constraint get get get
 
 instance Binary a => Binary (Equation a) where
