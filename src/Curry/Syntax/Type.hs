@@ -1187,12 +1187,12 @@ instance Binary Import where
 instance Binary a => Binary (Decl a) where
   put (InfixDecl spi i pr is) =
     putWord8 0 >> put spi >> put i >> put pr >> put is
-  put (DataDecl spi idt vs cns cls) =
-    putWord8 1 >> put spi >> put idt >> put vs >> put cns >> put cls
+  put (DataDecl spi idt vs cns clss) =
+    putWord8 1 >> put spi >> put idt >> put vs >> put cns >> put clss
   put (ExternalDataDecl spi idt vs) =
     putWord8 2 >> put spi >> put idt >> put vs
-  put (NewtypeDecl spi idt vs cn cls) =
-    putWord8 3 >> put spi >> put idt >> put vs  >> put cn >> put cls >> put cls
+  put (NewtypeDecl spi idt vs cn clss) =
+    putWord8 3 >> put spi >> put idt >> put vs  >> put cn >> put clss
   put (TypeDecl spi idt vs ty) =
     putWord8 4 >> put spi >> put idt >> put vs  >> put ty
   put (TypeSig spi fs ty) =
