@@ -213,9 +213,9 @@ iHidingDecl :: Parser a Token IDecl
 iHidingDecl = tokenPos Id_hiding <**> (hDataDecl <|> hClassDecl)
   where
   hDataDecl = hiddenData <$-> token KW_data <*> withKind qtycon <*> many tyvar
-  hClassDecl = hiddenClass <$> classInstHead KW_class (withKind qtycls) clsvar
+  hClassDecl = hiddenClass <$> classInstHead KW_class (withKind qtycls) (many clsvar)
   hiddenData (tc, k) tvs p = HidingDataDecl p tc k tvs
-  hiddenClass (_, _, cx, (qcls, k), tv) p = HidingClassDecl p cx qcls k tv
+  hiddenClass (_, _, cx, (qcls, k), tvs) p = HidingClassDecl p cx qcls k tvs
 
 -- |Parser for an interface data declaration
 iDataDecl :: Parser a Token IDecl
@@ -259,9 +259,9 @@ iTypeDeclLhs f kw = f' <$> tokenPos kw <*> withKind qtycon <*> many tyvar
 
 -- |Parser for an interface class declaration
 iClassDecl :: Parser a Token IDecl
-iClassDecl = (\(sp, _, cx, (qcls, k), tv) ->
-               IClassDecl (span2Pos sp) cx qcls k tv)
-        <$> classInstHead KW_class (withKind qtycls) clsvar
+iClassDecl = (\(sp, _, cx, (qcls, k), tvs) ->
+               IClassDecl (span2Pos sp) cx qcls k tvs)
+        <$> classInstHead KW_class (withKind qtycls) (many clsvar)
         <*> braces (iMethod `sepBy` semicolon)
         <*> iClassHidden
 
@@ -281,7 +281,7 @@ iClassHidden = token PragmaHiding
 iInstanceDecl :: Parser a Token IDecl
 iInstanceDecl = (\(sp, _, cx, qcls, inst) ->
                    IInstanceDecl (span2Pos sp) cx qcls inst)
-           <$> classInstHead KW_instance qtycls type2
+           <$> classInstHead KW_instance qtycls (many type2)
            <*> braces (iImpl `sepBy` semicolon)
            <*> option iModulePragma
 
@@ -540,7 +540,7 @@ classInstHead kw cls ty = f <$> tokenSpan kw
 
 classDecl :: Parser a Token (Decl ())
 classDecl = mkClass
-        <$> classInstHead KW_class tycls clsvar
+        <$> classInstHead KW_class tycls (many clsvar)
         <*> whereClause innerDecl
   where
     --TODO: Refactor by left-factorization
@@ -549,14 +549,14 @@ classDecl = mkClass
       [ spanPosition <**> (fun `sepBy1Sp` comma <**> typeSig)
       , spanPosition <**> funRule
       {-, infixDecl-} ]
-    mkClass (sp1, ss, cx, cls, tv) (Just sp2, ds, li) = updateEndPos $
-      ClassDecl (SpanInfo sp1 (sp1 : (ss ++ [sp2]))) li cx cls tv ds
-    mkClass (sp1, ss, cx, cls, tv) (Nothing, ds, li) = updateEndPos $
-      ClassDecl (SpanInfo sp1 (sp1 : ss)) li cx cls tv ds
+    mkClass (sp1, ss, cx, cls, tvs) (Just sp2, ds, li) = updateEndPos $
+      ClassDecl (SpanInfo sp1 (sp1 : (ss ++ [sp2]))) li cx cls tvs ds
+    mkClass (sp1, ss, cx, cls, tvs) (Nothing, ds, li) = updateEndPos $
+      ClassDecl (SpanInfo sp1 (sp1 : ss)) li cx cls tvs ds
 
 instanceDecl :: Parser a Token (Decl ())
 instanceDecl = mkInstance
-           <$> classInstHead KW_instance qtycls type2
+           <$> classInstHead KW_instance qtycls (many type2)
            <*> whereClause innerDecl
   where
     innerDecl = spanPosition <**> funRule
@@ -582,18 +582,21 @@ context = (\c -> ([c], [])) <$> constraint
 
 constraint :: Parser a Token Constraint
 constraint = mkConstraint <$> spanPosition <*> qtycls <*> conType
-  where varType = mkVariableType <$> spanPosition <*> clsvar
-        conType = fmap ((,) []) varType
-               <|> mk <$> parensSp
-                            (foldl mkApplyType <$> varType <*> many1 type2)
-        mkConstraint sp qtc (ss, ty) = updateEndPos $
-          Constraint (spanInfo sp ss) qtc ty
+  where mkConstraint sp qtc tys = updateEndPos $
+          Constraint (fromSrcSpan sp) qtc tys
+        conType = many (varType <|> aplType)
+
+        varType = mkVariableType <$> spanPosition <*> clsvar
         mkVariableType sp = VariableType (fromSrcSpan sp)
+
+        aplType = mkParensType <$>
+          parensSp (foldl mkApplyType <$> varType <*> many1 type2)
+        mkParensType (apl, sp1, sp2) =
+          ParenType (spanInfo (combineSpans sp1 sp2) [sp1, sp2]) apl
         mkApplyType t1 t2 =
           ApplyType (fromSrcSpan (combineSpans (getSrcSpan t1)
                                                (getSrcSpan t2)))
                     t1 t2
-        mk (a, sp1, sp2) = ([sp1, sp2], a)
 
 -- ---------------------------------------------------------------------------
 -- Kinds
