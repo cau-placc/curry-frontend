@@ -177,7 +177,7 @@ instance QualExpr (Pattern a) where
     = maybe [] return (localIdent m op) ++ qfv m [t1, t2]
 
 instance Expr Constraint where
-  fv (Constraint _ _ ty) = fv ty
+  fv (Constraint _ _ tys) = fv tys
 
 instance QuantExpr Constraint where
   bv _ = []
