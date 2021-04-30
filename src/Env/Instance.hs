@@ -9,13 +9,13 @@
     Portability :  portable
 
     The compiler maintains information about defined instances in an
-    environment that maps pairs of type classes and type constructors
+    environment that maps pairs of type classes and lists of type constructors
     to the name of the module where the instance is declared, the context
     as given in the instance declaration, and a list of the class methods
     implemented in the specific instance along with their arity. A flat
     environment is sufficient because instances are visible globally and
     cannot be hidden. Instances are recorded only with the original names
-    of the type class and type constructor involved. The context also uses
+    of the type class and type constructors involved. The context also uses
     original names and is already minimized.
 -}
 
@@ -32,10 +32,10 @@ import Curry.Syntax.Pretty
 
 import Base.Types
 
-type InstIdent = (QualIdent, QualIdent)
+type InstIdent = (QualIdent, [QualIdent])
 
 ppInstIdent :: InstIdent -> Doc
-ppInstIdent (qcls, qtc) = ppQIdent qcls <+> ppQIdent qtc
+ppInstIdent (qcls, qtcs) = ppQIdent qcls <+> hsep (map ppQIdent qtc)
 
 type InstInfo = (ModuleIdent, PredSet, [(Ident, Int)])
 
