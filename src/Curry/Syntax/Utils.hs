@@ -241,7 +241,7 @@ methods :: Decl a -> [Ident]
 methods (TypeSig _ fs _) = fs
 methods _                = []
 
--- | Get the method identifiers of a type class method implementations
+-- | Get the method identifiers of a type class method implementation
 impls :: Decl a -> [Ident]
 impls (FunctionDecl _ _ f _) = [f]
 impls _                      = []
@@ -318,8 +318,8 @@ instance ShortenAST (Module a) where
 instance ShortenAST (Decl a) where
   shortenAST (FunctionDecl spi a idt _) =
     FunctionDecl spi a idt []
-  shortenAST (ClassDecl spi li cx cls tyv ds) =
-    ClassDecl spi li cx cls tyv (map shortenAST ds)
-  shortenAST (InstanceDecl spi li cx cls tyv ds) =
-    InstanceDecl spi li cx cls tyv (map shortenAST ds)
+  shortenAST (ClassDecl spi li cx cls tvs ds) =
+    ClassDecl spi li cx cls tvs (map shortenAST ds)
+  shortenAST (InstanceDecl spi li cx cls tvs ds) =
+    InstanceDecl spi li cx cls tvs (map shortenAST ds)
   shortenAST d = d
