@@ -93,40 +93,43 @@ toQualType m tvs = qualifyType m . toType tvs
 toQualTypes :: ModuleIdent -> [Ident] -> [CS.TypeExpr] -> [Type]
 toQualTypes m tvs = map (qualifyType m) . toTypes tvs
 
-toPred :: [Ident] -> CS.Constraint -> Pred
-toPred tvs c = toPred' (enumTypeVars tvs c) c
+toPred :: [Ident] -> PredIsICC -> CS.Constraint -> Pred
+toPred tvs isIcc c = toPred' (enumTypeVars tvs c) isIcc c
 
-toPred' :: Map.Map Ident Int -> CS.Constraint -> Pred
-toPred' tvs (CS.Constraint _ qcls ty) = Pred qcls (toType' tvs ty [])
+toPred' :: Map.Map Ident Int -> PredIsICC -> CS.Constraint -> Pred
+toPred' tvs isIcc (CS.Constraint _ qcls tys) =
+  Pred isIcc qcls (map (flip (toType' tvs) []) tys)
 
-toQualPred :: ModuleIdent -> [Ident] -> CS.Constraint -> Pred
-toQualPred m tvs = qualifyPred m . toPred tvs
+toQualPred :: ModuleIdent -> [Ident] -> PredIsICC -> CS.Constraint -> Pred
+toQualPred m tvs fstIcc = qualifyPred m . toPred tvs fstIcc
 
-toPredSet :: [Ident] -> CS.Context -> PredSet
-toPredSet tvs cx = toPredSet' (enumTypeVars tvs cx) cx
+toPredSet :: [Ident] -> PredIsICC -> CS.Context -> PredSet
+toPredSet tvs fstIcc cx = toPredSet' (enumTypeVars tvs cx) fstIcc cx
 
-toPredSet' :: Map.Map Ident Int -> CS.Context -> PredSet
-toPredSet' tvs = Set.fromList . map (toPred' tvs)
+toPredSet' :: Map.Map Ident Int -> PredIsICC -> CS.Context -> PredSet
+toPredSet' tvs fstIcc =
+  Set.fromList . zipWith (toPred' tvs) (fstIcc : repeat OPred)
 
-toQualPredSet :: ModuleIdent -> [Ident] -> CS.Context -> PredSet
-toQualPredSet m tvs = qualifyPredSet m . toPredSet tvs
+toQualPredSet :: ModuleIdent -> [Ident] -> PredIsICC -> CS.Context -> PredSet
+toQualPredSet m tvs fstIcc = qualifyPredSet m . toPredSet tvs fstIcc
 
-toPredType :: [Ident] -> CS.QualTypeExpr -> PredType
-toPredType tvs qty = toPredType' (enumTypeVars tvs qty) qty
+toPredType :: [Ident] -> PredIsICC -> CS.QualTypeExpr -> PredType
+toPredType tvs fstIcc qty = toPredType' (enumTypeVars tvs qty) fstIcc qty
 
-toPredType' :: Map.Map Ident Int -> CS.QualTypeExpr -> PredType
-toPredType' tvs (CS.QualTypeExpr _ cx ty) =
-  PredType (toPredSet' tvs cx) (toType' tvs ty [])
+toPredType' :: Map.Map Ident Int -> PredIsICC -> CS.QualTypeExpr -> PredType
+toPredType' tvs fstIcc (CS.QualTypeExpr _ cx ty) =
+  PredType (toPredSet' tvs fstIcc cx) (toType' tvs ty [])
 
-toQualPredType :: ModuleIdent -> [Ident] -> CS.QualTypeExpr -> PredType
-toQualPredType m tvs = qualifyPredType m . toPredType tvs
+toQualPredType ::
+  ModuleIdent -> [Ident] -> PredIsICC -> CS.QualTypeExpr -> PredType
+toQualPredType m tvs fstIcc = qualifyPredType m . toPredType tvs fstIcc
 
 -- The function 'toConstrType' returns the type of a data or newtype
 -- constructor. Hereby, it restricts the context to those type variables
 -- which are free in the argument types.
 
 toConstrType :: QualIdent -> [Ident] -> [CS.TypeExpr] -> PredType
-toConstrType tc tvs tys = toPredType tvs $
+toConstrType tc tvs tys = toPredType tvs OPred $
   CS.QualTypeExpr NoSpanInfo [] ty'
   where ty'  = foldr (CS.ArrowType NoSpanInfo) ty0 tys
         ty0  = foldl (CS.ApplyType NoSpanInfo)
@@ -137,11 +140,11 @@ toConstrType tc tvs tys = toPredType tvs $
 -- It adds the implicit type class constraint to the method's type signature
 -- and ensures that the class' type variable is always assigned index 0.
 
-toMethodType :: QualIdent -> Ident -> CS.QualTypeExpr -> PredType
-toMethodType qcls clsvar (CS.QualTypeExpr spi cx ty) =
-  toPredType [clsvar] (CS.QualTypeExpr spi cx' ty)
+toMethodType :: QualIdent -> [Ident] -> CS.QualTypeExpr -> PredType
+toMethodType qcls clsvars (CS.QualTypeExpr spi cx ty) =
+  toPredType clsvars ICC (CS.QualTypeExpr spi cx' ty)
   where cx' = CS.Constraint NoSpanInfo qcls
-                (CS.VariableType NoSpanInfo clsvar) : cx
+                (map (CS.VariableType NoSpanInfo) clsvars) : cx
 
 fromType :: [Ident] -> Type -> CS.TypeExpr
 fromType tvs ty = fromType' tvs ty []
@@ -177,10 +180,11 @@ fromQualType :: ModuleIdent -> [Ident] -> Type -> CS.TypeExpr
 fromQualType m tvs = fromType tvs . unqualifyType m
 
 fromPred :: [Ident] -> Pred -> CS.Constraint
-fromPred tvs (Pred qcls ty) = CS.Constraint NoSpanInfo qcls (fromType tvs ty)
+fromPred tvs (Pred _ qcls tys) =
+  CS.Constraint NoSpanInfo qcls (map (fromType tvs) tys)
 
 fromQualPred :: ModuleIdent -> [Ident] -> Pred -> CS.Constraint
-fromQualPred m tvs = fromPred tvs .  unqualifyPred m
+fromQualPred m tvs = fromPred tvs . unqualifyPred m
 
 -- Due to the sorting of the predicate set, the list of constraints is sorted
 -- as well.
