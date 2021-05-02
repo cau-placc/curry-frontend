@@ -35,7 +35,7 @@ import Base.Types
 type InstIdent = (QualIdent, [QualIdent])
 
 ppInstIdent :: InstIdent -> Doc
-ppInstIdent (qcls, qtcs) = ppQIdent qcls <+> hsep (map ppQIdent qtc)
+ppInstIdent (qcls, qtcs) = ppQIdent qcls <+> hsep (map ppQIdent qtcs)
 
 type InstInfo = (ModuleIdent, PredSet, [(Ident, Int)])
 

@@ -24,7 +24,7 @@ module Base.Types
   , IsType (..), typeConstrs
   , qualifyType, unqualifyType, qualifyTC
     -- * Representation of predicate, predicate sets and predicated types
-  , Pred (..), qualifyPred, unqualifyPred
+  , Pred (..), PredIsICC (..), qualifyPred, unqualifyPred
   , PredSet, emptyPredSet, partitionPredSet, minPredSet, maxPredSet
   , qualifyPredSet, unqualifyPredSet
   , PredType (..), predType, unpredType, qualifyPredType, unqualifyPredType
