@@ -219,7 +219,7 @@ showsDecl (InstanceDecl spi li context qcls inst decls)
   . showsLayoutInfo li . space
   . showsContext context . space
   . showsQualIdent qcls . space
-  . showsInstanceType inst . space
+  . showsList showsInstanceType inst . space
   . showsList showsDecl decls
   . showsString ")"
 
@@ -235,7 +235,7 @@ showsConstraint (Constraint spi qcls tys)
   . showsString ")"
 
 showsInstanceType :: InstanceType -> ShowS
-showsInstanceType = showsList showsTypeExpr
+showsInstanceType = showsTypeExpr
 
 showsConsDecl :: ConstrDecl -> ShowS
 showsConsDecl (ConstrDecl spi ident types)

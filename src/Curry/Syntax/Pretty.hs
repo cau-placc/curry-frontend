@@ -115,7 +115,7 @@ instance Pretty (Decl a) where
       ppIf (not $ null ds) (text "where") $$
       ppIf (not $ null ds) (indent $ ppBlock ds)
   pPrint (InstanceDecl _ _ cx qcls inst ds) =
-    ppClassInstHead "instance" cx (ppQIdent qcls) (ppInstanceType inst) <+>
+    ppClassInstHead "instance" cx (ppQIdent qcls) (map ppInstanceType inst) <+>
       ppIf (not $ null ds) (text "where") $$
       ppIf (not $ null ds) (indent $ ppBlock ds)
 
@@ -131,8 +131,8 @@ instance Pretty Constraint where
   pPrint (Constraint _ qcls tys) = ppQIdent qcls <+>
     hsep (map (pPrintPrec 0) tys)
 
-ppInstanceType :: InstanceType -> [Doc]
-ppInstanceType = map (pPrintPrec 0)
+ppInstanceType :: InstanceType -> Doc
+ppInstanceType = pPrintPrec 0
 
 ppDeriving :: [QualIdent] -> Doc
 ppDeriving []     = empty
@@ -231,7 +231,7 @@ instance Pretty IDecl where
         vcat (punctuate semi $ map (indent . pPrint) ms) $$
         rbrace <+> ppHiding hs
   pPrint (IInstanceDecl _ cx qcls inst impls m) =
-    ppClassInstHead "instance" cx (ppQIdent qcls) (ppInstanceType inst) <+>
+    ppClassInstHead "instance" cx (ppQIdent qcls) (map ppInstanceType inst) <+>
       lbrace $$
       vcat (punctuate semi $ map (indent . ppIMethodImpl) impls) $$
       rbrace <+> maybePP (ppPragma "MODULE" . ppMIdent) m

@@ -132,7 +132,7 @@ data IDecl
   | IFunctionDecl   Position QualIdent (Maybe Ident) Arity QualTypeExpr
   | HidingClassDecl Position Context QualIdent (Maybe KindExpr) [Ident]
   | IClassDecl      Position Context QualIdent (Maybe KindExpr) [Ident] [IMethodDecl] [Ident]
-  | IInstanceDecl   Position Context QualIdent InstanceType [IMethodImpl] (Maybe ModuleIdent)
+  | IInstanceDecl   Position Context QualIdent [InstanceType] [IMethodImpl] (Maybe ModuleIdent)
     deriving (Eq, Read, Show)
 
 -- |Class methods
@@ -154,19 +154,19 @@ data KindExpr
 
 -- |Declaration in a module
 data Decl a
-  = InfixDecl        SpanInfo Infix (Maybe Precedence) [Ident]                   -- infixl 5 (op), `fun`
-  | DataDecl         SpanInfo Ident [Ident] [ConstrDecl] [QualIdent]             -- data C a b = C1 a | C2 b deriving (D, ...)
-  | ExternalDataDecl SpanInfo Ident [Ident]                                      -- external data C a b
-  | NewtypeDecl      SpanInfo Ident [Ident] NewConstrDecl [QualIdent]            -- newtype C a b = C a b deriving (D, ...)
-  | TypeDecl         SpanInfo Ident [Ident] TypeExpr                             -- type C a b = D a b
-  | TypeSig          SpanInfo [Ident] QualTypeExpr                               -- f, g :: Bool
-  | FunctionDecl     SpanInfo a Ident [Equation a]                               -- f True = 1 ; f False = 0
-  | ExternalDecl     SpanInfo [Var a]                                            -- f, g external
-  | PatternDecl      SpanInfo (Pattern a) (Rhs a)                                -- Just x = ...
-  | FreeDecl         SpanInfo [Var a]                                            -- x, y free
-  | DefaultDecl      SpanInfo [TypeExpr]                                         -- default (Int, Float)
-  | ClassDecl        SpanInfo LayoutInfo Context Ident [Ident] [Decl a]          -- class C a => D a where {TypeSig|InfixDecl|FunctionDecl}
-  | InstanceDecl     SpanInfo LayoutInfo Context QualIdent InstanceType [Decl a] -- instance C a => M.D (N.T a b c) where {FunctionDecl}
+  = InfixDecl        SpanInfo Infix (Maybe Precedence) [Ident]                     -- infixl 5 (op), `fun`
+  | DataDecl         SpanInfo Ident [Ident] [ConstrDecl] [QualIdent]               -- data C a b = C1 a | C2 b deriving (D, ...)
+  | ExternalDataDecl SpanInfo Ident [Ident]                                        -- external data C a b
+  | NewtypeDecl      SpanInfo Ident [Ident] NewConstrDecl [QualIdent]              -- newtype C a b = C a b deriving (D, ...)
+  | TypeDecl         SpanInfo Ident [Ident] TypeExpr                               -- type C a b = D a b
+  | TypeSig          SpanInfo [Ident] QualTypeExpr                                 -- f, g :: Bool
+  | FunctionDecl     SpanInfo a Ident [Equation a]                                 -- f True = 1 ; f False = 0
+  | ExternalDecl     SpanInfo [Var a]                                              -- f, g external
+  | PatternDecl      SpanInfo (Pattern a) (Rhs a)                                  -- Just x = ...
+  | FreeDecl         SpanInfo [Var a]                                              -- x, y free
+  | DefaultDecl      SpanInfo [TypeExpr]                                           -- default (Int, Float)
+  | ClassDecl        SpanInfo LayoutInfo Context Ident [Ident] [Decl a]            -- class C a => D a where {TypeSig|InfixDecl|FunctionDecl}
+  | InstanceDecl     SpanInfo LayoutInfo Context QualIdent [InstanceType] [Decl a] -- instance C a => M.D (N.T a b c) where {FunctionDecl}
     deriving (Eq, Read, Show)
 
 -- ---------------------------------------------------------------------------
@@ -225,7 +225,7 @@ type Context = [Constraint]
 data Constraint = Constraint SpanInfo QualIdent [TypeExpr]
     deriving (Eq, Read, Show)
 
-type InstanceType = [TypeExpr]
+type InstanceType = TypeExpr
 
 -- ---------------------------------------------------------------------------
 -- Functions
