@@ -213,9 +213,10 @@ iHidingDecl :: Parser a Token IDecl
 iHidingDecl = tokenPos Id_hiding <**> (hDataDecl <|> hClassDecl)
   where
   hDataDecl = hiddenData <$-> token KW_data <*> withKind qtycon <*> many tyvar
-  hClassDecl = hiddenClass <$> classInstHead KW_class (withKind qtycls) (many clsvar)
+  hClassDecl = hiddenClass <$>
+    classInstHead KW_class qtycls (many (withKind clsvar))
   hiddenData (tc, k) tvs p = HidingDataDecl p tc k tvs
-  hiddenClass (_, _, cx, (qcls, k), tvs) p = HidingClassDecl p cx qcls k tvs
+  hiddenClass (_, _, cx, qcls, kclsvars) p = HidingClassDecl p cx qcls kclsvars
 
 -- |Parser for an interface data declaration
 iDataDecl :: Parser a Token IDecl
@@ -259,9 +260,9 @@ iTypeDeclLhs f kw = f' <$> tokenPos kw <*> withKind qtycon <*> many tyvar
 
 -- |Parser for an interface class declaration
 iClassDecl :: Parser a Token IDecl
-iClassDecl = (\(sp, _, cx, (qcls, k), tvs) ->
-               IClassDecl (span2Pos sp) cx qcls k tvs)
-        <$> classInstHead KW_class (withKind qtycls) (many clsvar)
+iClassDecl = (\(sp, _, cx, qcls, kclsvars) ->
+               IClassDecl (span2Pos sp) cx qcls kclsvars)
+        <$> classInstHead KW_class qtycls (many (withKind clsvar))
         <*> braces (iMethod `sepBy` semicolon)
         <*> iClassHidden
 
