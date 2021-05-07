@@ -257,24 +257,24 @@ warnDisjoinedFunctionRules ident pos = spanInfoMessage ident $ hsep (map text
   <+> parens (text "first occurrence at" <+> text (showLine pos))
 
 checkDecl :: Decl () -> WCM ()
-checkDecl (DataDecl          _ _ vs cs _) = inNestedScope $ do
+checkDecl (DataDecl           _ _ vs cs _) = inNestedScope $ do
   mapM_ insertTypeVar   vs
   mapM_ checkConstrDecl cs
   reportUnusedTypeVars  vs
-checkDecl (NewtypeDecl       _ _ vs nc _) = inNestedScope $ do
+checkDecl (NewtypeDecl        _ _ vs nc _) = inNestedScope $ do
   mapM_ insertTypeVar   vs
   checkNewConstrDecl nc
   reportUnusedTypeVars vs
-checkDecl (TypeDecl            _ _ vs ty) = inNestedScope $ do
+checkDecl (TypeDecl             _ _ vs ty) = inNestedScope $ do
   mapM_ insertTypeVar  vs
   checkTypeExpr ty
   reportUnusedTypeVars vs
-checkDecl (FunctionDecl        p _ f eqs) = checkFunctionDecl p f eqs
-checkDecl (PatternDecl           _ p rhs) = checkPattern p >> checkRhs rhs
-checkDecl (DefaultDecl             _ tys) = mapM_ checkTypeExpr tys
-checkDecl (ClassDecl        _ _ _ _ _ ds) = mapM_ checkDecl ds
-checkDecl (InstanceDecl p _ cx cls ty ds) = do
-  checkOrphanInstance p cx cls ty
+checkDecl (FunctionDecl         p _ f eqs) = checkFunctionDecl p f eqs
+checkDecl (PatternDecl            _ p rhs) = checkPattern p >> checkRhs rhs
+checkDecl (DefaultDecl              _ tys) = mapM_ checkTypeExpr tys
+checkDecl (ClassDecl         _ _ _ _ _ ds) = mapM_ checkDecl ds
+checkDecl (InstanceDecl p _ cx cls tys ds) = do
+  checkOrphanInstance p cx cls tys
   checkMissingMethodImplementations p cls ds
   mapM_ checkDecl ds
 checkDecl _                             = ok
@@ -456,16 +456,15 @@ checkField check (Field _ _ x) = check x
 -- Check for orphan instances
 -- -----------------------------------------------------------------------------
 
-checkOrphanInstance :: SpanInfo -> Context -> QualIdent -> TypeExpr -> WCM ()
-checkOrphanInstance p cx cls ty = warnFor WarnOrphanInstances $ do
+checkOrphanInstance :: SpanInfo -> Context -> QualIdent -> [TypeExpr] -> WCM ()
+checkOrphanInstance p cx cls tys = warnFor WarnOrphanInstances $ do
   m <- getModuleIdent
   tcEnv <- gets tyConsEnv
   let ocls = getOrigName m cls tcEnv
-      otc  = getOrigName m tc  tcEnv
-  unless (isLocalIdent m ocls || isLocalIdent m otc) $ report $
+      otcs = map (flip (getOrigName m) tcEnv . typeConstr) tys
+  unless (isLocalIdent m ocls || any (isLocalIdent m) otcs) $ report $
     warnOrphanInstance p $ pPrint $
-    InstanceDecl p WhitespaceLayout cx cls ty []
-  where tc = typeConstr ty
+    InstanceDecl p WhitespaceLayout cx cls tys []
 
 warnOrphanInstance :: SpanInfo -> Doc -> Message
 warnOrphanInstance spi doc = spanInfoMessage spi $ text "Orphan instance:" <+> doc
@@ -1252,14 +1251,14 @@ checkCaseModeDecl (PatternDecl _ t rhs) = do
 checkCaseModeDecl (FreeDecl  _ vs) =
   mapM_ (checkCaseModeID isVarName . varIdent) vs
 checkCaseModeDecl (DefaultDecl _ tys) = mapM_ checkTypeExpr tys
-checkCaseModeDecl (ClassDecl _ _ cx cls tv ds) = do
+checkCaseModeDecl (ClassDecl _ _ cx cls tvs ds) = do
   checkCaseModeContext cx
   checkCaseModeID isClassDeclName cls
-  checkCaseModeID isVarName tv
+  mapM_ (checkCaseModeID isVarName) tvs
   mapM_ checkCaseModeDecl ds
 checkCaseModeDecl (InstanceDecl _ _ cx _ inst ds) = do
   checkCaseModeContext cx
-  checkCaseModeTypeExpr inst
+  mapM_ checkCaseModeTypeExpr inst
   mapM_ checkCaseModeDecl ds
 checkCaseModeDecl _ = ok
 
@@ -1293,7 +1292,7 @@ checkCaseModeContext :: Context -> WCM ()
 checkCaseModeContext = mapM_ checkCaseModeConstraint
 
 checkCaseModeConstraint :: Constraint -> WCM ()
-checkCaseModeConstraint (Constraint _ _ ty) = checkCaseModeTypeExpr ty
+checkCaseModeConstraint (Constraint _ _ tys) = mapM_ checkCaseModeTypeExpr tys
 
 checkCaseModeTypeExpr :: TypeExpr -> WCM ()
 checkCaseModeTypeExpr (ApplyType _ ty1 ty2) = do
@@ -1469,6 +1468,9 @@ isDataDeclName _               _     = True
 -- Warn for redundant context
 -- ---------------------------------------------------------------------------
 
+-- TODO: Retain and display entire span info for redundant constraints
+--       (currently, only the span info for the class name part can be used)
+
 --traverse the AST for QualTypeExpr/Context and check for redundancy
 checkRedContext :: [Decl a] -> WCM ()
 checkRedContext = warnFor WarnRedundantContext . mapM_ checkRedContextDecl
@@ -1477,14 +1479,14 @@ getRedPredSet :: ModuleIdent -> ClassEnv -> TCEnv -> PredSet -> PredSet
 getRedPredSet m cenv tcEnv ps =
   Set.map (pm Map.!) $ Set.difference qps $ minPredSet cenv qps --or fromJust $ Map.lookup
   where (qps, pm) = Set.foldr qualifyAndAddPred (Set.empty, Map.empty) ps
-        qualifyAndAddPred p@(Pred qid ty) (ps', pm') =
-          let qp = Pred (getOrigName m qid tcEnv) ty
+        qualifyAndAddPred p@(Pred isIcc qid tys) (ps', pm') =
+          let qp = Pred isIcc (getOrigName m qid tcEnv) tys
           in (Set.insert qp ps', Map.insert qp p pm')
 
 getPredFromContext :: Context -> ([Ident], PredSet)
 getPredFromContext cx =
-  let vs = concatMap (\(Constraint _ _ ty) -> typeVariables ty) cx
-  in (vs, toPredSet vs cx)
+  let vs = [v | Constraint _ _ tys <- cx, ty <- tys, v <- typeVariables ty]
+  in (vs, toPredSet vs OPred cx)
 
 checkRedContext' :: (Pred -> Message) -> PredSet -> WCM ()
 checkRedContext' f ps = do
@@ -1599,7 +1601,7 @@ warnRedFuncString is = text "type signature for function" <>
 
 -- Doc description -> TypeVars -> Pred -> Warning
 warnRedContext :: Doc -> [Ident] -> Pred -> Message
-warnRedContext d vs p@(Pred qid _) = spanInfoMessage qid $
+warnRedContext d vs p@(Pred _ qid _) = spanInfoMessage qid $
   text "Redundant context in" <+> d <> colon <+>
   quotes (pPrint $ fromPred vs p) -- idents use ` ' as quotes not ' '
 
