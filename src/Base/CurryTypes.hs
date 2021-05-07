@@ -25,8 +25,8 @@
 
 module Base.CurryTypes
   ( toType, toTypes, toQualType, toQualTypes
-  , toPred, toQualPred, toPredSet, toQualPredSet, toPredType, toQualPredType
-  , toConstrType, toMethodType
+  , toPred, toQualPred, toPredSet, toQualPredSet, toInstPredSet
+  , toPredType, toQualPredType, toConstrType, toMethodType
   , fromType, fromQualType
   , fromPred, fromQualPred, fromPredSet, fromQualPredSet, fromPredType
   , fromQualPredType
@@ -112,6 +112,11 @@ toPredSet' tvs fstIcc =
 
 toQualPredSet :: ModuleIdent -> [Ident] -> PredIsICC -> CS.Context -> PredSet
 toQualPredSet m tvs fstIcc = qualifyPredSet m . toPredSet tvs fstIcc
+
+-- Like 'toPredSet', but uses the given list of instance types to enumerate the
+-- type variables.
+toInstPredSet :: [Ident] -> [CS.TypeExpr] -> CS.Context -> PredSet
+toInstPredSet tvs tys = toPredSet' (enumTypeVars tvs tys) OPred
 
 toPredType :: [Ident] -> PredIsICC -> CS.QualTypeExpr -> PredType
 toPredType tvs fstIcc qty = toPredType' (enumTypeVars tvs qty) fstIcc qty

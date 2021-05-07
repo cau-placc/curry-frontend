@@ -152,37 +152,39 @@ checkImport (IFunctionDecl _ f (Just tv) n ty) = do
   m <- getModuleIdent
   let check (Value f' cm' n' (ForAll _ ty')) =
         f == f' && isJust cm' && n' == n &&
-        toQualPredType m [tv] ty == ty'
+        toQualPredType m [tv] OPred ty == ty'
       check _ = False
   checkValueInfo "method" check f f
 checkImport (IFunctionDecl _ f Nothing n ty) = do
   m <- getModuleIdent
   let check (Value f' cm' n' (ForAll _ ty')) =
         f == f' && isNothing cm' && n' == n &&
-        toQualPredType m [] ty == ty'
+        toQualPredType m [] OPred ty == ty'
       check _ = False
   checkValueInfo "function" check f f
-checkImport (HidingClassDecl _ cx cls k _) = do
+checkImport (HidingClassDecl _ cx cls kclsvars) = do
   clsEnv <- getClassEnv
-  let check (TypeClass cls' k' _)
-        | cls == cls' && toKind' k 0 == k' &&
-          [cls'' | Constraint _ cls'' _ <- cx] == superClasses cls' clsEnv
+  let (clsvars, ks) = unzip kclsvars
+      check (TypeClass cls' ks' _)
+        | cls == cls' && map (flip toKind' 0) ks == ks' &&
+          map (constraintToSuperClass clsvars) cx == superClasses cls' clsEnv
         = Just ok
       check _ = Nothing
   checkTypeInfo "hidden type class" check cls cls
-checkImport (IClassDecl _ cx cls k clsvar ms _) = do
+checkImport (IClassDecl _ cx cls kclsvars ms _) = do
   clsEnv <- getClassEnv
-  let check (TypeClass cls' k' fs)
-        | cls == cls' && toKind' k 0 == k' &&
-          [cls'' | Constraint _ cls'' _ <- cx] == superClasses cls' clsEnv &&
+  let (clsvars, ks) = unzip kclsvars
+      check (TypeClass cls' ks' fs)
+        | cls == cls' && map (flip toKind' 0) ks == ks' &&
+          map (constraintToSuperClass clsvars) cx == superClasses cls' clsEnv &&
           map (\m -> (imethod m, imethodArity m)) ms ==
             map (\f -> (methodName f, methodArity f)) fs
-        = Just $ mapM_ (checkMethodImport cls clsvar) ms
+        = Just $ mapM_ (checkMethodImport cls clsvars) ms
       check _ = Nothing
   checkTypeInfo "type class" check cls cls
-checkImport (IInstanceDecl _ cx cls ty is m) =
-  checkInstInfo check cls (cls, typeConstr ty) m
-  where PredType ps _ = toPredType [] $ QualTypeExpr NoSpanInfo cx ty
+checkImport (IInstanceDecl _ cx cls tys is m) =
+  checkInstInfo check cls (cls, map typeConstr tys) m
+  where ps = toInstPredSet [] tys cx
         check ps' is' = ps == ps' && sort is == sort is'
 
 checkConstrImport :: QualIdent -> [Ident] -> ConstrDecl -> IC ()
@@ -229,13 +231,13 @@ checkNewConstrImport tc tvs (NewRecordDecl _ c (l, ty)) = do
       check _ = False
   checkValueInfo "newtype constructor" check c qc
 
-checkMethodImport :: QualIdent -> Ident -> IMethodDecl -> IC ()
-checkMethodImport qcls clsvar (IMethodDecl _ f _ qty) =
+checkMethodImport :: QualIdent -> [Ident] -> IMethodDecl -> IC ()
+checkMethodImport qcls clsvars (IMethodDecl _ f _ qty) =
   checkValueInfo "method" check f qf
   where qf = qualifyLike qcls f
         check (Value f' cm' _ (ForAll _ pty)) =
           qf == f' && isJust cm' &&
-          toMethodType qcls clsvar qty == pty
+          toMethodType qcls clsvars qty == pty
         check _ = False
 
 checkPrecInfo :: HasSpanInfo s => (PrecInfo -> Bool) -> s -> QualIdent -> IC ()
