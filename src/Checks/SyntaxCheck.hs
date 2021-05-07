@@ -492,14 +492,14 @@ checkTopDecls ds = do
   checkDeclGroup (bindFuncDecl tcc m) ds
 
 checkClassDecl :: Decl () -> SCM (Decl ())
-checkClassDecl (ClassDecl p li cx cls tv ds) = do
+checkClassDecl (ClassDecl p li cx cls tvs ds) = do
   checkMethods (qualify cls) (concatMap methods ds) ds
-  ClassDecl p li cx cls tv <$> checkTopDecls ds
+  ClassDecl p li cx cls tvs <$> checkTopDecls ds
 checkClassDecl _ =
   internalError "SyntaxCheck.checkClassDecl: no class declaration"
 
 checkInstanceDecl :: Decl () -> SCM (Decl ())
-checkInstanceDecl (InstanceDecl p li cx qcls ty ds) = do
+checkInstanceDecl (InstanceDecl p li cx qcls tys ds) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   tcEnv <- getTyConsEnv
@@ -511,7 +511,7 @@ checkInstanceDecl (InstanceDecl p li cx qcls ty ds) = do
           else filter (isFromCls orig m vEnv) clsMthds
   checkMethods qcls mthds ds
   mapM_ checkAmbiguousMethod ds
-  InstanceDecl p li cx qcls ty <$> checkTopDecls ds
+  InstanceDecl p li cx qcls tys <$> checkTopDecls ds
   where
     isFromCls orig m vEnv f = case qualLookupValueUnique m (qualify f) vEnv of
       [Value _ (Just cls) _ _]
