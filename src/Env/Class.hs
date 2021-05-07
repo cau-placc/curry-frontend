@@ -18,16 +18,18 @@
 
 module Env.Class
   ( ClassEnv, initClassEnv
-  , ClassInfo, bindClassInfo, mergeClassInfo, lookupClassInfo
-  , superClasses, classMethods, hasDefaultImpl, applySuperClass
-  , allSuperClasses, applyAllSuperClasses
+  , ClassInfo, bindClassInfo, mergeClassInfo, constraintToSuperClass
+  , lookupClassInfo, superClasses, classMethods, hasDefaultImpl
+  , applySuperClass, allSuperClasses, applyAllSuperClasses
   ) where
 
-import           Data.List                 (sort)
 import           Data.Containers.ListUtils (nubOrd)
+import           Data.List                 (elemIndex, sort)
 import qualified Data.Map as Map           (Map, empty, insertWith, lookup)
+import           Data.Maybe                (fromMaybe)
 
 import Curry.Base.Ident
+import Curry.Syntax.Type (Constraint (Constraint), TypeExpr (VariableType))
 
 import Base.Messages (internalError)
 
@@ -69,6 +71,22 @@ bindClassInfo cls (arity, sclss, ms) =
 mergeClassInfo :: ClassInfo -> ClassInfo -> ClassInfo
 mergeClassInfo (arity, sclss1, ms1) (_, _, ms2) =
   (arity, sclss1, if null ms1 then ms2 else ms1)
+
+-- Transforms a list of class variables and a super class constraint into super
+-- class information.
+-- TODO: Check if un-qualification of the class is necessary.
+constraintToSuperClass :: [Ident] -> Constraint -> SuperClassInfo
+constraintToSuperClass clsvars (Constraint _ cls tys) = (cls, map getIndex tys)
+ where
+  getIndex :: TypeExpr -> Int
+  getIndex (VariableType _ idt) =
+    fromMaybe (internalError $ errMsg1 idt) (elemIndex idt clsvars)
+  getIndex _                    = internalError errMsg2
+  
+  errMsgLoc   = "Env.Classes.constraintToSuperClass: "
+  errMsg1 idt = errMsgLoc ++ "Variable " ++ show idt ++
+                " missing in class variables of " ++ show cls
+  errMsg2     = errMsgLoc ++ "Non-variable type in context of " ++ show cls
 
 -- ---------------------------------------------------------------------------
 -- Simple Lookup Functions
