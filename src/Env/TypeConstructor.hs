@@ -27,9 +27,11 @@
     of the argument types. Note that renaming type constructors have only
     one type argument.
 
-    For type classes the all their methods are saved. Type classes are
-    recorded in the type constructor environment because type constructors
-    and type classes share a common name space.
+    For type classes, a list of kinds is stored, since each parameter of a
+    multi-parameter type class has a distinct kind. The length of this list is
+    the arity of the type class. Additionally, all class methods are saved.
+    Type classes are recorded in the type constructor environment because type
+    constructors and type classes share a common name space.
 
     For type variables only their kind is recorded in the environment.
 
@@ -47,7 +49,7 @@
 -}
 {-# LANGUAGE CPP #-}
 module Env.TypeConstructor
-  ( TypeInfo (..), tcKind, clsKind, varKind, clsMethods
+  ( TypeInfo (..), tcKind, clsKinds, varKind, clsMethods
   , TCEnv, initTCEnv, bindTypeInfo, rebindTypeInfo
   , lookupTypeInfo, qualLookupTypeInfo, qualLookupTypeInfoUnique
   , getOrigName, reverseLookupByOrigName
@@ -74,7 +76,7 @@ data TypeInfo
   = DataType     QualIdent Kind [DataConstr]
   | RenamingType QualIdent Kind DataConstr
   | AliasType    QualIdent Kind Int Type
-  | TypeClass    QualIdent Kind [ClassMethod]
+  | TypeClass    QualIdent [Kind] [ClassMethod]
   | TypeVar      Kind
     deriving Show
 
@@ -97,24 +99,24 @@ instance Entity TypeInfo where
     | tc == tc' && k == k' = Just l
   merge l@(AliasType tc k _ _) (AliasType tc' k' _ _)
     | tc == tc' && k == k' = Just l
-  merge (TypeClass cls k ms) (TypeClass cls' k' ms')
-    | cls == cls' && k == k' && (null ms || null ms' || ms == ms') =
-    Just $ TypeClass cls k $ if null ms then ms' else ms
+  merge (TypeClass cls ks ms) (TypeClass cls' ks' ms')
+    | cls == cls' && ks == ks' && (null ms || null ms' || ms == ms') =
+    Just $ TypeClass cls ks $ if null ms then ms' else ms
   merge _ _ = Nothing
 
 instance Pretty TypeInfo where
-  pPrint (DataType qid k cs)    =      text "data" <+> pPrint qid
+  pPrint (DataType qid k cs)     =     text "data" <+> pPrint qid
                                    <>  text "/" <> pPrint k
                                    <+> equals
                                    <+> hsep (punctuate (text "|") (map pPrint cs))
-  pPrint (RenamingType qid k c) =      text "newtype" <+> pPrint qid
+  pPrint (RenamingType qid k c)  =     text "newtype" <+> pPrint qid
                                    <>  text "/" <> pPrint k
                                    <+> equals <+> pPrint c
-  pPrint (AliasType qid k ar ty)=      text "type" <+> pPrint qid
+  pPrint (AliasType qid k ar ty) =     text "type" <+> pPrint qid
                                    <>  text "/" <> pPrint k <> text "/" <> int ar
                                    <+> equals <+> pPrint ty
-  pPrint (TypeClass qid k ms)   =      text "class" <+> pPrint qid
-                                   <>  text "/" <> pPrint k
+  pPrint (TypeClass qid ks ms)   =     text "class" <+> pPrint qid
+                                   <>  text "/" <> pPrint ks
                                    <+> equals
                                    <+> vcat (blankLine : map pPrint ms)
   pPrint (TypeVar _)            =
@@ -132,11 +134,11 @@ tcKind m tc tcEnv = case qualLookupTypeInfo tc tcEnv of
     _ -> internalError $
            "Env.TypeConstructor.tcKind: no type constructor: " ++ show tc
 
-clsKind :: ModuleIdent -> QualIdent -> TCEnv -> Kind
-clsKind m cls tcEnv = case qualLookupTypeInfo cls tcEnv of
-  [TypeClass _ k _] -> k
+clsKinds :: ModuleIdent -> QualIdent -> TCEnv -> [Kind]
+clsKinds m cls tcEnv = case qualLookupTypeInfo cls tcEnv of
+  [TypeClass _ ks _] -> ks
   _ -> case qualLookupTypeInfo (qualQualify m cls) tcEnv of
-    [TypeClass _ k _] -> k
+    [TypeClass _ ks _] -> ks
     _ -> internalError $
            "Env.TypeConstructor.clsKind: no type class: " ++ show cls
 
