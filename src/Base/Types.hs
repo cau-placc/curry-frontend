@@ -23,11 +23,12 @@ module Base.Types
   , isArrowType, arrowArity, arrowArgs, arrowBase, arrowUnapply
   , IsType (..), typeConstrs
   , qualifyType, unqualifyType, qualifyTC
-    -- * Representation of predicate, predicate sets and predicated types
+    -- * Representation of predicates, predicate sets and predicated types
   , Pred (..), PredIsICC (..), qualifyPred, unqualifyPred
   , PredSet, emptyPredSet, partitionPredSet, minPredSet, maxPredSet
   , qualifyPredSet, unqualifyPredSet
   , PredType (..), predType, unpredType, qualifyPredType, unqualifyPredType
+  , PredTypes (..)
     -- * Representation of data constructors
   , DataConstr (..), constrIdent, constrTypes, recLabels, recLabelTypes
   , tupleData
@@ -239,7 +240,10 @@ data PredIsICC = ICC | OPred
 --    GT -> GT
 
 instance IsType Pred where
-  typeVars (Pred _ _ tys) = concatMap typeVars tys
+  typeVars (Pred _ _ tys) = typeVars tys
+
+instance IsType a => IsType [a] where
+  typeVars = concatMap typeVars
 
 qualifyPred :: ModuleIdent -> Pred -> Pred
 qualifyPred m (Pred isIcc qcls tys) =
@@ -330,6 +334,14 @@ qualifyPredType m (PredType ps ty) =
 unqualifyPredType :: ModuleIdent -> PredType -> PredType
 unqualifyPredType m (PredType ps ty) =
   PredType (unqualifyPredSet m ps) (unqualifyType m ty)
+
+-- The 'PredTypes' data type stores a predicate set and a list of types all
+-- constrained by this predicate set. It can be used to represent the context
+-- and the instance types of an instance declaration.
+data PredTypes = PredTypes PredSet [Type]
+
+instance IsType PredTypes where
+  typeVars (PredTypes ps tys) = typeVars tys ++ typeVars ps
 
 -- ---------------------------------------------------------------------------
 -- Data constructors

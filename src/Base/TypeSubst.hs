@@ -113,6 +113,10 @@ instance ExpandAliasType PredType where
   expandAliasType tys (PredType ps ty) =
     PredType (expandAliasType tys ps) (expandAliasType tys ty)
 
+instance ExpandAliasType PredTypes where
+  expandAliasType tys (PredTypes ps tys') =
+    PredTypes (expandAliasType tys ps) (expandAliasType tys tys')
+
 -- After the expansion we have to reassign the type indices for all type
 -- variables. Otherwise, expanding a type synonym like type 'Pair a b = (b,a)'
 -- could break the invariant that the universally quantified type variables
@@ -122,7 +126,7 @@ instance ExpandAliasType PredType where
 -- of a type declaration and in the head of a type class declaration,
 -- respectively.
 
-normalize :: Int -> PredType -> PredType
+normalize :: (IsType a, ExpandAliasType a) => Int -> a -> a
 normalize n ty = expandAliasType [TypeVariable (occur tv) | tv <- [0..]] ty
   where tvs = zip (nub (filter (>= n) (typeVars ty))) [n..]
         occur tv = fromMaybe tv (lookup tv tvs)

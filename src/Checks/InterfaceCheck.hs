@@ -184,7 +184,7 @@ checkImport (IClassDecl _ cx cls kclsvars ms _) = do
   checkTypeInfo "type class" check cls cls
 checkImport (IInstanceDecl _ cx cls tys is m) =
   checkInstInfo check cls (cls, map typeConstr tys) m
-  where ps = toInstPredSet [] tys cx
+  where PredTypes ps _ = toPredTypes [] OPred cx tys
         check ps' is' = ps == ps' && sort is == sort is'
 
 checkConstrImport :: QualIdent -> [Ident] -> ConstrDecl -> IC ()
