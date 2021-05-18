@@ -61,10 +61,10 @@ expandType' m tcEnv (TypeForall      tvs ty) tys =
   applyType (TypeForall tvs (expandType m tcEnv ty)) tys
 
 expandPred :: ModuleIdent -> TCEnv -> Pred -> Pred
-expandPred m tcEnv (Pred qcls ty) = case qualLookupTypeInfo qcls tcEnv of
-  [TypeClass ocls _ _] -> Pred ocls (expandType m tcEnv ty)
+expandPred m tcEnv (Pred isIcc qcls tys) = case qualLookupTypeInfo qcls tcEnv of
+  [TypeClass ocls _ _] -> Pred isIcc ocls (map (expandType m tcEnv) tys)
   _ -> case qualLookupTypeInfo (qualQualify m qcls) tcEnv of
-    [TypeClass ocls _ _] -> Pred ocls (expandType m tcEnv ty)
+    [TypeClass ocls _ _] -> Pred isIcc ocls (map (expandType m tcEnv) tys)
     _ -> internalError $ "Base.TypeExpansion.expandPred: " ++ show qcls
 
 expandPredSet :: ModuleIdent -> TCEnv -> ClassEnv -> PredSet -> PredSet
@@ -74,16 +74,27 @@ expandPredType :: ModuleIdent -> TCEnv -> ClassEnv -> PredType -> PredType
 expandPredType m tcEnv clsEnv (PredType ps ty) =
   PredType (expandPredSet m tcEnv clsEnv ps) (expandType m tcEnv ty)
 
--- The functions 'expandMonoType' and 'expandPolyType' convert (qualified)
--- type expressions into (predicated) types and also expand all type synonyms
+expandPredTypes :: ModuleIdent -> TCEnv -> ClassEnv -> PredTypes -> PredTypes
+expandPredTypes m tcEnv clsEnv (PredTypes ps tys) =
+  PredTypes (expandPredSet m tcEnv clsEnv ps) (map (expandType m tcEnv) tys)
+
+-- The functions 'expandMonoType', 'expandPolyType' and 'expandInst' convert
+-- type expressions, qualified type expressions and instance contexts with lists
+-- of instance types into (predicated) types and also expand all type synonyms
 -- and qualify all type constructors during the conversion.
 
 expandMonoType :: ModuleIdent -> TCEnv -> [Ident] -> TypeExpr -> Type
 expandMonoType m tcEnv tvs = expandType m tcEnv . toType tvs
 
+-- TODO: Check if a 'PredIsICC' parameter is necessary here.
 expandPolyType :: ModuleIdent -> TCEnv -> ClassEnv -> QualTypeExpr -> PredType
 expandPolyType m tcEnv clsEnv =
-  normalize 0 . expandPredType m tcEnv clsEnv . toPredType []
+  normalize 0 . expandPredType m tcEnv clsEnv . toPredType [] OPred
+
+expandInst
+  :: ModuleIdent -> TCEnv -> ClassEnv -> Context -> [InstanceType] -> PredTypes
+expandInst m tcEnv clsEnv cx =
+  normalize 0 . expandPredTypes m tcEnv clsEnv . toPredTypes [] OPred cx
 
 -- The function 'expandConstrType' computes the predicated type for a data
 -- or newtype constructor. Similar to 'toConstrType' from 'CurryTypes', the
@@ -99,14 +110,14 @@ expandConstrType m tcEnv clsEnv tc tvs tys =
   where n = length tvs
         pty = toConstrType tc tvs tys
 
--- The function 'expandMethodType' converts the type of a type class method
+-- The function 'expandMethodType' converts the type of a type class method.
 -- Similar to function 'toMethodType' from 'CurryTypes', the implicit class
 -- constraint is added to the method's type and the class' type variable is
 -- assigned index 0. However, type synonyms are expanded and type constructors
 -- and type classes are qualified with the name of the module containing their
 -- definition.
 
-expandMethodType :: ModuleIdent -> TCEnv -> ClassEnv -> QualIdent -> Ident
+expandMethodType :: ModuleIdent -> TCEnv -> ClassEnv -> QualIdent -> [Ident]
                  -> QualTypeExpr -> PredType
-expandMethodType m tcEnv clsEnv qcls tv =
-  normalize 1 . expandPredType m tcEnv clsEnv . toMethodType qcls tv
+expandMethodType m tcEnv clsEnv qcls tvs =
+  normalize 1 . expandPredType m tcEnv clsEnv . toMethodType qcls tvs
