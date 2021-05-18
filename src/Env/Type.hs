@@ -32,27 +32,27 @@ import Data.List (union)
 data TypeKind
   = Data  QualIdent [Ident]
   | Alias QualIdent
-  | Class QualIdent [Ident]
+  | Class QualIdent Int [Ident]
   deriving (Eq, Show)
 
 instance Entity TypeKind where
-  origName (Data  tc  _) = tc
-  origName (Alias tc   ) = tc
-  origName (Class cls _) = cls
+  origName (Data  tc    _) = tc
+  origName (Alias tc     ) = tc
+  origName (Class cls _ _) = cls
 
   merge (Data tc cs) (Data tc' cs')
     | tc == tc' = Just $ Data tc $ cs `union` cs'
   merge (Alias tc) (Alias tc')
     | tc == tc' = Just $ Alias tc
-  merge (Class cls ms) (Class cls' ms')
-    | cls == cls' = Just $Class cls $ ms `union` ms'
+  merge (Class cls ar ms) (Class cls' ar' ms')
+    | cls == cls' && ar == ar' = Just $ Class cls ar $ ms `union` ms'
   merge _ _ = Nothing
 
 toTypeKind :: TypeInfo -> TypeKind
 toTypeKind (DataType     tc    _ cs) = Data tc (map constrIdent cs)
 toTypeKind (RenamingType tc    _ nc) = Data tc [constrIdent nc]
 toTypeKind (AliasType    tc  _ _  _) = Alias tc
-toTypeKind (TypeClass    cls   _ ms) = Class cls (map methodName ms)
+toTypeKind (TypeClass    cls  ks ms) = Class cls (length ks) (map methodName ms)
 toTypeKind (TypeVar               _) =
   internalError "Env.Type.toTypeKind: type variable"
 
