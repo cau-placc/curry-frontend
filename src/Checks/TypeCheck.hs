@@ -73,12 +73,15 @@ import Base.TopEnv
 import Base.TypeExpansion
 import Base.Types
 import Base.TypeSubst
-import Base.Utils (foldr2, fst3, snd3, thd3, uncurry3, mapAccumM)
+import Base.Utils (foldr2, fst3, thd3, uncurry3, mapAccumM)
 
 import Env.Class
 import Env.Instance
 import Env.TypeConstructor
 import Env.Value
+
+-- TODO: Check if the set operations on predicate sets (like union) could be
+--         problematic with the 'PredIsICC' field.
 
 -- Type checking proceeds as follows. First, the types of all data
 -- constructors, field labels and class methods are entered into the
@@ -117,7 +120,7 @@ checkDecls ds = do
 
 type TCM = S.State TcState
 
-type InstEnv' = (InstEnv, Map.Map QualIdent [Type])
+type InstEnv' = (InstEnv, Map.Map QualIdent [[Type]])
 
 data TcState = TcState
   { moduleIdent  :: ModuleIdent -- read only
@@ -676,9 +679,9 @@ checkTypeSig (PredType sigPs sigTy) (ForAll _ (PredType ps ty)) = do
   clsEnv <- getClassEnv
   return $
     ty `eqTypes` sigTy &&
-    all (`Set.member` maxPredSet clsEnv sigPs) (Set.toList ps)
+    all (`psMember` maxPredSet clsEnv sigPs) (Set.toList ps)
 
--- The function 'equTypes' computes whether two types are equal modulo
+-- The function 'eqTypes' computes whether two types are equal modulo
 -- renaming of type variables.
 -- WARNING: This operation is not reflexive and expects the second type to be
 -- the type signature provided by the programmer.
@@ -825,7 +828,7 @@ bindDeclArity _ _     _      _    (FunctionDecl   _ _ f eqs) =
   bindArity f (eqnArity $ head eqs)
 bindDeclArity m tcEnv clsEnv sigs (ExternalDecl        _ fs) =
   flip (foldr $ \(Var _ f) -> bindArity f $ arrowArity $ ty f) fs
-  where ty = unpredType . expandPolyType m tcEnv clsEnv . fromJust .
+  where ty = unpredType . expandPolyType OPred m tcEnv clsEnv . fromJust .
                flip lookupTypeSig sigs
 bindDeclArity _ _     _      _    (PatternDecl        _ t _) =
   flip (foldr bindVarArity) (bv t)
@@ -852,15 +855,15 @@ bindArity v n = bindTopEnv v (Value (qualify v) Nothing n undefined)
 -- for the type variable used in the type class declaration.
 --
 -- When checking inferred method types against their expected types, we have to
--- be careful because the class' type variable is always assigned index 0 in
--- the method types recorded in the value environment. However, in the inferred
--- type scheme returned from 'tcMethodDecl', type variables are assigned
--- indices in the order of their occurrence. In order to avoid incorrectly
--- reporting errors when the type class variable is not the first variable that
--- appears in a method's type, 'tcInstanceMethodPDecl' normalizes the expected
--- method type before applying 'checkInstMethodType' to it. Unfortunately, this
--- means that the compiler has to add the class constraint explicitly to the
--- type signature.
+-- be careful because the class' n type variables are always assigned indices 0
+-- to n-1 in the method types recorded in the value environment. However, in the
+-- inferred type scheme returned from 'tcMethodDecl', type variables are
+-- assigned indices in the order of their occurrence. In order to avoid
+-- incorrectly reporting errors when the type class variables do not appear in
+-- the correct order and before other type variables in a method's type,
+-- 'tcInstanceMethodPDecl' normalizes the expected method type before applying
+-- 'checkInstMethodType' to it. Unfortunately, this means that the compiler has
+-- to add the class constraint explicitly to the type signature.
 
 tcTopPDecl :: PDecl a -> TCM (PDecl PredType)
 tcTopPDecl (i, DataDecl p tc tvs cs clss)
@@ -873,38 +876,38 @@ tcTopPDecl (i, TypeDecl p tc tvs ty)
   = return (i, TypeDecl p tc tvs ty)
 tcTopPDecl (i, DefaultDecl p tys)
   = return (i, DefaultDecl p tys)
-tcTopPDecl (i, ClassDecl p li cx cls tv ds)     = withLocalSigEnv $ do
+tcTopPDecl (i, ClassDecl p li cx cls tvs ds)     = withLocalSigEnv $ do
   let (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
   setSigEnv $ foldr (bindTypeSigs . snd) emptySigEnv opds
-  vpds' <- mapM (tcClassMethodPDecl (qualify cls) tv) vpds
-  return (i, ClassDecl p li cx cls tv $ fromPDecls $ map untyped opds ++ vpds')
-tcTopPDecl (i, InstanceDecl p li cx qcls ty ds) = do
+  vpds' <- mapM (tcClassMethodPDecl (qualify cls) tvs) vpds
+  return (i, ClassDecl p li cx cls tvs $ fromPDecls $ map untyped opds ++ vpds')
+tcTopPDecl (i, InstanceDecl p li cx qcls tys ds) = do
   tcEnv <- getTyConsEnv
-  pty <- expandPoly $ QualTypeExpr NoSpanInfo cx ty
   mid <- getModuleIdent
+  ptys <- expandInst mid tcEnv <$> getClassEnv <*> return cx <*> return tys
   let origCls = getOrigName mid qcls tcEnv
       clsQual = head $ filter isQualified $ reverseLookupByOrigName origCls tcEnv
       qQualCls = qualQualify (fromJust $ qidModule clsQual) qcls
-  vpds' <- mapM (tcInstanceMethodPDecl qQualCls pty) vpds
-  return (i,InstanceDecl p li cx qcls ty $ fromPDecls $ map untyped opds++vpds')
+  vpds' <- mapM (tcInstanceMethodPDecl qQualCls ptys) vpds
+  return (i,InstanceDecl p li cx qcls tys $ fromPDecls $ map untyped opds++vpds')
   where (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
 tcTopPDecl _ = internalError "TypeCheck.tcTopDecl"
 
-tcClassMethodPDecl :: QualIdent -> Ident -> PDecl a -> TCM (PDecl PredType)
-tcClassMethodPDecl qcls tv pd@(_, FunctionDecl _ _ f _) = do
+tcClassMethodPDecl :: QualIdent -> [Ident] -> PDecl a -> TCM (PDecl PredType)
+tcClassMethodPDecl qcls tvs pd@(_, FunctionDecl _ _ f _) = do
   methTy <- classMethodType qualify f
   (tySc, pd') <- tcMethodPDecl qcls methTy pd
   sigs <- getSigEnv
   let QualTypeExpr spi cx ty = fromJust $ lookupTypeSig f sigs
-      qty = QualTypeExpr spi
-              (Constraint NoSpanInfo qcls (VariableType NoSpanInfo tv) : cx) ty
+      icc = Constraint NoSpanInfo qcls (map (VariableType NoSpanInfo) tvs)
+      qty = QualTypeExpr spi (icc : cx) ty
   checkClassMethodType qty tySc pd'
 tcClassMethodPDecl _ _ _ = internalError "TypeCheck.tcClassMethodPDecl"
 
-tcInstanceMethodPDecl :: QualIdent -> PredType -> PDecl a
+tcInstanceMethodPDecl :: QualIdent -> PredTypes -> PDecl a
                       -> TCM (PDecl PredType)
-tcInstanceMethodPDecl qcls pty pd@(_, FunctionDecl _ _ f _) = do
-  methTy <- instMethodType (qualifyLike qcls) pty f
+tcInstanceMethodPDecl qcls ptys pd@(_, FunctionDecl _ _ f _) = do
+  methTy <- instMethodType (qualifyLike qcls) ptys f
   (tySc, pd') <- tcMethodPDecl qcls (typeScheme methTy) pd
   checkInstMethodType (normalize 0 methTy) tySc pd'
 tcInstanceMethodPDecl _ _ _ = internalError "TypeCheck.tcInstanceMethodPDecl"
@@ -921,7 +924,7 @@ tcMethodPDecl _ _ _ = internalError "TypeCheck.tcMethodPDecl"
 checkClassMethodType :: QualTypeExpr -> TypeScheme -> PDecl PredType
                      -> TCM (PDecl PredType)
 checkClassMethodType qty tySc pd@(_, FunctionDecl _ _ f _) = do
-  pty <- expandPoly qty
+  pty <- expandPolyICC ICC qty
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
     report $ errTypeSigTooGeneral m (text "Method:" <+> ppIdent f) qty tySc
@@ -948,11 +951,11 @@ classMethodType qual f = do
 -- element as this is guaranteed to be the class constraint (see module 'Types'
 -- for more information).
 
-instMethodType :: (Ident -> QualIdent) -> PredType -> Ident -> TCM PredType
-instMethodType qual (PredType ps ty) f = do
-  ForAll _ (PredType ps' ty') <- classMethodType qual f
-  let PredType ps'' ty'' = instanceType ty (PredType (Set.deleteMin ps') ty')
-  return $ PredType (ps `Set.union` ps'') ty''
+instMethodType :: (Ident -> QualIdent) -> PredTypes -> Ident -> TCM PredType
+instMethodType qual (PredTypes ps tys) f = do
+  ForAll _ (PredType ps' ty) <- classMethodType qual f
+  let PredType ps'' ty' = instanceTypes tys (PredType (Set.deleteMin ps') ty)
+  return $ PredType (ps `Set.union` ps'') ty'
 
 -- External functions:
 
@@ -1029,7 +1032,7 @@ tcPatternHelper _ (VariablePattern spi _ v) = do
   (_, ty) <- lift $ inst (varType v vEnv)
   used <- S.get
   ps <- if Set.member v used
-          then return (Set.singleton (Pred qDataId ty))
+          then return (Set.singleton (dataPred ty))
           else S.put (Set.insert v used) >> return Set.empty
   return (ps, ty, VariablePattern spi (predType ty) v)
 tcPatternHelper p t@(ConstructorPattern spi _ c ts) = do
@@ -1069,7 +1072,7 @@ tcPatternHelper p t@(AsPattern spi v t') = do
   (_, ty) <- lift $ inst (varType v vEnv)
   used <- S.get
   ps <- if Set.member v used
-          then return (Set.singleton (Pred qDataId ty))
+          then return (Set.singleton (dataPred ty))
           else S.put (Set.insert v used) >> return Set.empty
   (ps'', t'') <- tcPatternHelper p t' >>-
     (\ps' ty' -> lift $ unify p "pattern" (pPrintPrec 0 t) ps ty ps' ty')
@@ -1094,7 +1097,7 @@ tcFuncPattern :: HasSpanInfo p => p -> SpanInfo -> Doc -> QualIdent
               -> PredSet -> Type -> [Pattern a]
               -> PTCM (PredSet, Type, Pattern PredType)
 tcFuncPattern _ spi _ f ts ps ty [] =
-  return (Set.insert (Pred qDataId ty) ps, ty, FunctionPattern spi (predType ty) f (ts []))
+  return (Set.insert (dataPred ty) ps, ty, FunctionPattern spi (predType ty) f (ts []))
 tcFuncPattern p spi doc f ts ps ty (t':ts') = do
   (alpha, beta) <- lift $
     tcArrow p "functional pattern" (doc $-$ text "Term:" <+> pPrintPrec 0 t) ty
@@ -1142,7 +1145,7 @@ tcExpr (Literal spi _ l) = do
 tcExpr (Variable spi _ v) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  (ps, ty) <- if isAnonId (unqualify v) then freshPredType [qDataId]
+  (ps, ty) <- if isAnonId (unqualify v) then freshDataType
                                         else inst (funType m v vEnv)
   return (ps, ty, Variable spi (predType ty) v)
 tcExpr (Constructor spi _ c) = do
@@ -1407,7 +1410,7 @@ tcMissingField p ty l = do
   vEnv <- getValueEnv
   (ps, ty') <- inst (labelType m l vEnv)
   let TypeArrow _ ty2 = ty'
-  let ps' = Set.singleton (Pred qDataId ty2)
+  let ps' = Set.singleton (dataPred ty2)
   unify p "field label" empty ps ty' ps' (TypeArrow ty ty2)
 
 -- | Checks that it's argument can be used as an arrow type @a -> b@ and returns
@@ -1532,38 +1535,65 @@ reducePredSet p what doc ps = do
   return ps1
   where
     reducePreds inEnv = Set.concatMap $ reducePred inEnv
-    reducePred inEnv pr@(Pred qcls ty) =
-      maybe (Set.singleton pr) (reducePreds inEnv) (instPredSet inEnv qcls ty)
+    reducePred inEnv pr@(Pred OPred qcls tys) =
+      maybe (Set.singleton pr) (reducePreds inEnv) (instPredSet inEnv qcls tys)
+    -- TODO: Check if there is any possibility of this method being applied to
+    --         an implicit class constraint. (With FlexibleInstances or nullary
+    --         type classes, instances for reducing ICCs could exist.)
+    reducePred _ pr@(Pred ICC _ _) =
+      internalError $ "TypeCheck.reducePredSet: " ++
+        "tried to reduce the implicit class constraint " ++ show pr
 
-instPredSet :: InstEnv' -> QualIdent -> Type -> Maybe PredSet
-instPredSet inEnv qcls ty = case Map.lookup qcls $ snd inEnv of
-  Just tys | ty `elem` tys -> Just emptyPredSet
-  _ -> case unapplyType False ty of
-    (TypeConstructor tc, tys) ->
-      fmap (expandAliasType tys . snd3) (lookupInstInfo (qcls, tc) $ fst inEnv)
-    _ -> Nothing
+-- TODO: With FunctionalDependencies, it might be possible to find an instance
+--         even if some of the instance types are type variables.
+--         Example: class C a b | a -> b
+--                  instance C [a] Int
+--                  Then, a constraint like C [a] b can be reduced.
+instPredSet :: InstEnv' -> QualIdent -> [Type] -> Maybe PredSet
+instPredSet inEnv qcls tys = case Map.lookup qcls $ snd inEnv of
+  Just tyss | tys `elem` tyss -> Just emptyPredSet
+  -- TODO: The following requires a rework if repeating type variables in
+  --         instance heads are allowed.
+  _ -> do let (tcTys, argTys) = unzip $ map (unapplyType False) tys
+          tcs <- mapM getTc tcTys
+          (_, ps, _) <- lookupInstInfo (qcls, tcs) $ fst inEnv
+          return $ expandAliasType (concat argTys) ps
+ where
+  getTc :: Type -> Maybe QualIdent
+  getTc (TypeConstructor tc) = Just tc
+  getTc _                    = Nothing
 
+-- TODO: If FlexibleContexts is implemented, this method should suggest
+--         activating that extension if there is an instance missing.
 reportMissingInstance :: HasSpanInfo p => ModuleIdent -> p -> String -> Doc
                       -> InstEnv' -> TypeSubst -> Pred -> TCM TypeSubst
-reportMissingInstance m p what doc inEnv theta (Pred qcls ty) =
-  case subst theta ty of
-    ty'@(TypeConstrained tys tv) ->
-      case filter (hasInstance inEnv qcls) tys of
+reportMissingInstance m p what doc inEnv theta (Pred _ qcls tys) =
+  case subst theta tys of
+    -- TODO: Here, only unary constraints are taken into account. Reworking this
+    --         to work with n-ary constraints would be difficult, but it also
+    --         probably isn't necessary since Haskell doesn't take into account
+    --         these constraints either. Actually, Haskell checks if all
+    --         constraints are of the form C v with C being a Prelude class and
+    --         v being an ambiguous type variable and if one of these classes is
+    --         'Num' or a subclass of it. This test could be implemented in
+    --         Curry. 
+    tys'@[TypeConstrained tyOpts tv] ->
+      case concat (filter (hasInstance inEnv qcls) (map (: []) tyOpts)) of
         [] -> do
-          report $ errMissingInstance m p what doc (Pred qcls ty')
+          report $ errMissingInstance m p what doc (Pred OPred qcls tys')
           return theta
-        [ty''] -> return (bindSubst tv ty'' theta)
-        tys'
-          | length tys == length tys' -> return theta
+        [ty] -> return (bindSubst tv ty theta)
+        tyOpts'
+          | length tyOpts == length tyOpts' -> return theta
           | otherwise ->
-              liftM (flip (bindSubst tv) theta) (freshConstrained tys')
-    ty'
-      | hasInstance inEnv qcls ty' -> return theta
+              liftM (flip (bindSubst tv) theta) (freshConstrained tyOpts')
+    tys'
+      | hasInstance inEnv qcls tys' -> return theta
       | otherwise -> do
-        report $ errMissingInstance m p what doc (Pred qcls ty')
+        report $ errMissingInstance m p what doc (Pred OPred qcls tys')
         return theta
 
-hasInstance :: InstEnv' -> QualIdent -> Type -> Bool
+hasInstance :: InstEnv' -> QualIdent -> [Type] -> Bool
 hasInstance inEnv qcls = isJust . instPredSet inEnv qcls
 
 -- When a constrained type variable that is not free in the type environment
@@ -1594,8 +1624,8 @@ applyDefaults p what doc fvs ps ty = do
   inEnv <- getInstEnv
   defs <- getDefaultTypes
   let theta = foldr (bindDefault defs inEnv ps) idSubst $ nub
-                [ tv | Pred qcls (TypeVariable tv) <- Set.toList ps
-                     , tv `Set.notMember` fvs, isNumClass clsEnv qcls ]
+                [ tv | Pred _ qcls [TypeVariable tv] <- Set.toList ps
+                     , tv `Set.notMember` fvs, isSimpleNumClass clsEnv qcls ]
       ps'   = fst (partitionPredSet (subst theta ps))
       ty'   = subst theta ty
       tvs'  = nub $ filter (`Set.notMember` fvs) (typeVars ps')
@@ -1609,14 +1639,19 @@ bindDefault defs inEnv ps tv =
     [] -> id
     ty:_ -> bindSubst tv ty
 
+-- TODO: The second TODO comment of 'reportMissingInstance' applies here too.
 defaultType :: InstEnv' -> Int -> Pred -> [Type] -> [Type]
-defaultType inEnv tv (Pred qcls (TypeVariable tv'))
-  | tv == tv' = filter (hasInstance inEnv qcls)
+defaultType inEnv tv (Pred _ qcls [TypeVariable tv'])
+  | tv == tv' = concat . filter (hasInstance inEnv qcls) . map (: [])
   | otherwise = id
 defaultType _ _ _ = id
 
-isNumClass :: ClassEnv -> QualIdent -> Bool
-isNumClass = (elem qNumId .) . flip allSuperClasses
+-- TODO: Check if a more generalized version of this working with
+--         multi-parameter type classes would be useful.
+--       In the other direction, restricting this to Prelude subclasses of 'Num'
+--         might be useful.
+isSimpleNumClass :: ClassEnv -> QualIdent -> Bool
+isSimpleNumClass = (elem (qNumId, [0]) .) . flip allSuperClasses
 
 -- Instantiation and Generalization:
 -- We use negative offsets for fresh type variables.
@@ -1630,10 +1665,13 @@ freshVar f = fresh $ \n -> f (- n)
 freshTypeVar :: TCM Type
 freshTypeVar = freshVar TypeVariable
 
+-- Returns a fresh type predicated by each type class in the given list.
+-- Note that this method only works with unary type classes.
 freshPredType :: [QualIdent] -> TCM (PredSet, Type)
 freshPredType qclss = do
   ty <- freshTypeVar
-  return (foldr (\qcls -> Set.insert $ Pred qcls ty) emptyPredSet qclss, ty)
+  return
+    (foldr (\qcls -> Set.insert $ Pred OPred qcls [ty]) emptyPredSet qclss, ty)
 
 freshEnumType :: TCM (PredSet, Type)
 freshEnumType = freshPredType [qEnumId]
@@ -1656,6 +1694,11 @@ freshDataType = freshPredType [qDataId]
 freshConstrained :: [Type] -> TCM Type
 freshConstrained = freshVar . TypeConstrained
 
+dataPred :: Type -> Pred
+dataPred ty = Pred OPred qDataId [ty]
+
+-- TODO: Are there any changes necessary for this function to work with multi-
+--         parameter type classes?
 inst :: TypeScheme -> TCM (PredSet, Type)
 inst (ForAll n (PredType ps ty)) = do
   tys <- replicateM n freshTypeVar
@@ -1677,8 +1720,8 @@ skol (ForAll n (PredType ps ty)) = do
     fmap $ bindSkolemInsts $ expandAliasType tys $ maxPredSet clsEnv ps
   return (emptyPredSet, expandAliasType tys ty)
   where bindSkolemInsts = flip (foldr bindSkolemInst) . Set.toList
-        bindSkolemInst (Pred qcls ty') dInEnv =
-          Map.insert qcls (ty' : fromMaybe [] (Map.lookup qcls dInEnv)) dInEnv
+        bindSkolemInst (Pred _ qcls tys) dInEnv =
+          Map.insert qcls (tys : fromMaybe [] (Map.lookup qcls dInEnv)) dInEnv
 
 -- The function 'gen' generalizes a predicate set ps and a type tau into
 -- a type scheme forall alpha . ps -> tau by universally quantifying all
@@ -1752,17 +1795,25 @@ labelType m l vEnv = case qualLookupValue l vEnv of
     [Label _ _ tySc] -> tySc
     _ -> internalError $ "TypeCheck.labelType: " ++ show l
 
--- The function 'expandPoly' handles the expansion of type aliases.
+-- The function 'expandPoly' handles the expansion of type aliases. It expects
+-- none of the type constraints in its argument to be an implicit class
+-- constraint.
 
 expandPoly :: QualTypeExpr -> TCM PredType
-expandPoly qty = do
+expandPoly = expandPolyICC OPred
+
+-- Like 'expandPoly' but with an additional parameter marking whether the first
+-- type constraint in the qualified type expression given is an implicit class
+-- constraint.
+expandPolyICC :: PredIsICC -> QualTypeExpr -> TCM PredType
+expandPolyICC fstIcc qty = do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv
   clsEnv <- getClassEnv
-  return $ expandPolyType m tcEnv clsEnv qty
+  return $ expandPolyType fstIcc m tcEnv clsEnv qty
 
 -- The function 'splitPredSet' splits a predicate set into a pair of predicate
--- set such that all type variables that appear in the types of the predicates
+-- sets such that all type variables that appear in the types of the predicates
 -- in the first predicate set are elements of a given set of type variables.
 
 splitPredSet :: Set.Set Int -> PredSet -> (PredSet, PredSet)
