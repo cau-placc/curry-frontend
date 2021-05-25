@@ -141,8 +141,9 @@ toConstrType tc tvs tys = toPredType tvs OPred $
                      (map (CS.VariableType NoSpanInfo) tvs)
 
 -- The function 'toMethodType' returns the type of a type class method.
--- It adds the implicit type class constraint to the method's type signature
--- and ensures that the class' type variable is always assigned index 0.
+-- It adds the implicit type class constraint to the method's type signature and
+-- ensures that the class' n type variables are always assigned indices 0 to
+-- n-1.
 
 toMethodType :: QualIdent -> [Ident] -> CS.QualTypeExpr -> PredType
 toMethodType qcls clsvars (CS.QualTypeExpr spi cx ty) =

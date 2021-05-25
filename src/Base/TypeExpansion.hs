@@ -112,12 +112,12 @@ expandConstrType m tcEnv clsEnv tc tvs tys =
 
 -- The function 'expandMethodType' converts the type of a type class method.
 -- Similar to function 'toMethodType' from 'CurryTypes', the implicit class
--- constraint is added to the method's type and the class' type variable is
--- assigned index 0. However, type synonyms are expanded and type constructors
--- and type classes are qualified with the name of the module containing their
--- definition.
+-- constraint is added to the method's type and the class' n type variables are
+-- assigned indices 0 to n-1. However, type synonyms are expanded and type
+-- constructors and type classes are qualified with the name of the module
+-- containing their definition.
 
 expandMethodType :: ModuleIdent -> TCEnv -> ClassEnv -> QualIdent -> [Ident]
                  -> QualTypeExpr -> PredType
 expandMethodType m tcEnv clsEnv qcls tvs =
-  normalize 1 . expandPredType m tcEnv clsEnv . toMethodType qcls tvs
+  normalize (length tvs) . expandPredType m tcEnv clsEnv . toMethodType qcls tvs
