@@ -51,8 +51,8 @@ import Env.Type
 
 -- TODO: If we decide to not allow repeating type variables in MPTC instance
 --         heads, this can be checked here.
---       Which of the above checks would have to be "copied" to the type syntax
---         check?
+--       Could some functions which are almost identical in the type interface
+--         check and the interface syntax check be unified?
 
 -- In order to check type constructor applications, the compiler
 -- maintains an environment containing all known type constructors and
@@ -441,7 +441,7 @@ checkMPTCExt errFunc params = do
 -- types and context follows the instance termination rules.
 -- TODO: Check if using the constraint span info in the error messages is better
 --       If flexible instances / contexts are implemented, type synonyms have to
---       be expanded for both Paterson conditions
+--         be expanded for both Paterson conditions
 checkInstanceTermination
   :: SpanInfo -> QualIdent -> [InstanceType] -> Context -> TSCM ()
 checkInstanceTermination iSpi qcls iTys = mapM_ checkInstanceTermination'

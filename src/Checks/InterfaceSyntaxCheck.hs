@@ -20,10 +20,12 @@
    modules -- the compiler can perform this check without reference to
    the global environments.
 -}
-
--- TODO: Add instance termination checks and class arity checks.
-
+{-# LANGUAGE CPP #-}
 module Checks.InterfaceSyntaxCheck (intfSyntaxCheck) where
+
+#if __GLASGOW_HASKELL__ >= 804
+import Prelude hiding ((<>))
+#endif
 
 import           Control.Monad            (liftM, liftM2, unless, when)
 import qualified Control.Monad.State as S
@@ -42,6 +44,7 @@ import Curry.Base.Ident
 import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
+import Curry.Syntax.Pretty
 
 data ISCState = ISCState
   { typeEnv :: TypeEnv
@@ -68,18 +71,19 @@ intfSyntaxCheck (Interface n is ds) = (Interface n is ds', reverse $ errors s')
 -- The latter must not occur in type expressions in interfaces.
 
 bindType :: IDecl -> TypeEnv -> TypeEnv
-bindType (IInfixDecl         _ _ _ _) = id
-bindType (HidingDataDecl    _ tc _ _) = qualBindTopEnv tc (Data tc [])
-bindType (IDataDecl    _ tc _ _ cs _) =
-  qualBindTopEnv tc (Data tc (map constrId cs))
-bindType (INewtypeDecl _ tc _ _ nc _) =
-  qualBindTopEnv tc (Data tc [nconstrId nc])
-bindType (ITypeDecl       _ tc _ _ _) = qualBindTopEnv tc (Alias tc)
-bindType (IFunctionDecl    _ _ _ _ _) = id
-bindType (HidingClassDecl  _ _ cls _) = qualBindTopEnv cls (Class cls [])
-bindType (IClassDecl _ _ cls _ ms hs) =
-  qualBindTopEnv cls (Class cls (filter (`notElem` hs) (map imethod ms)))
-bindType (IInstanceDecl  _ _ _ _ _ _) = id
+bindType (IInfixDecl                _ _ _ _) = id
+bindType (HidingDataDecl           _ tc _ _) = qualBindTopEnv tc (Data tc [])
+bindType (IDataDecl           _ tc _ _ cs _) = qualBindTopEnv tc $
+  Data tc (map constrId cs)
+bindType (INewtypeDecl        _ tc _ _ nc _) = qualBindTopEnv tc $
+  Data tc [nconstrId nc]
+bindType (ITypeDecl              _ tc _ _ _) = qualBindTopEnv tc (Alias tc)
+bindType (IFunctionDecl           _ _ _ _ _) = id
+bindType (HidingClassDecl  _ _ cls kclsvars) = qualBindTopEnv cls $
+  Class cls (length kclsvars) []
+bindType (IClassDecl _ _ cls kclsvars ms hs) = qualBindTopEnv cls $
+  Class cls (length kclsvars) (filter (`notElem` hs) (map imethod ms))
+bindType (IInstanceDecl         _ _ _ _ _ _) = id
 
 -- The checks applied to the interface are similar to those performed
 -- during syntax checking of type expressions.
@@ -123,11 +127,12 @@ checkIDecl (IClassDecl p cx qcls kclsvars ms hs) = do
   checkHidden (errNoElement "method" "class") qcls (map imethod ms') hs
   return $ IClassDecl p cx' qcls kclsvars ms' hs
 checkIDecl (IInstanceDecl p cx qcls inst is m) = do
-  checkClass qcls
+  checkClass (length inst) qcls
   (cx', inst') <- checkQualTypes cx inst
   checkSimpleContext cx'
   mapM_ checkInstanceType inst'
   mapM_ (report . errMultipleImplementation . head) $ findMultiples $ map fst is
+  checkInstanceTermination qcls inst' cx'
   return $ IInstanceDecl p cx' qcls inst' is m
 
 checkHiddenType :: QualIdent -> [Ident] -> [Ident] -> ISC ()
@@ -215,15 +220,16 @@ checkClosedConstraint tvs c@(Constraint _ _ tys) = do
 
 checkConstraint :: Constraint -> ISC Constraint
 checkConstraint (Constraint spi qcls tys) = do
-  checkClass qcls
+  checkClass (length tys) qcls
   Constraint spi qcls `liftM` (mapM checkType tys)
 
-checkClass :: QualIdent -> ISC ()
-checkClass qcls = do
+checkClass :: Int -> QualIdent -> ISC ()
+checkClass ar qcls = do
   tEnv <- getTypeEnv
   case qualLookupTypeKind qcls tEnv of
     [] -> report $ errUndefinedClass qcls
-    [Class _ _] -> return ()
+    [Class _ clsAr _] ->
+      when (ar /= clsAr) $ report $ errWrongClassArity qcls ar clsAr
     [_] -> report $ errUndefinedClass qcls
     _ -> internalError $ "Checks.InterfaceSyntaxCheck.checkClass: " ++
            "ambiguous identifier " ++ show qcls
@@ -272,6 +278,64 @@ checkTypeConstructor spi tc = do
                   return $ ConstructorType spi tc
     _          ->
       internalError "Checks.InterfaceSyntaxCheck.checkTypeConstructor"
+
+-- Checks if the type class given by its span info, class identifier, instance
+-- types and context follows the instance termination rules.
+-- TODO: Check if using the constraint span info in the error messages is better
+--         (had to be done here since there is no span for the entire instance)
+--       If flexible instances / contexts are implemented, type synonyms have to
+--         be expanded for both Paterson conditions
+checkInstanceTermination :: QualIdent -> [InstanceType] -> Context -> ISC ()
+checkInstanceTermination qcls iTys = mapM_ checkInstanceTermination'
+ where
+  iVars = fv iTys
+  iSize = sum (map typeSize iTys)
+
+  -- Checks if a constraint of the instance context follows the Paterson
+  -- conditions. Only the first two of the three Paterson conditions are tested
+  -- since Curry does not yet support type functions (like type families).
+  checkInstanceTermination' :: Constraint -> ISC ()
+  checkInstanceTermination' c@(Constraint cSpi _ cTys) = do
+    -- The free variables of the constraint are filtered here to avoid reporting
+    -- unbound type variables twice (see 'checkQualTypes').
+    _ <- checkTypeVarQuantity (filter (`elem` iVars) (fv cTys)) iVars
+    checkConstraintSize
+   where
+    -- Checks if all type variables in the constraint occur at least as often
+    -- in the instance head (the first Paterson condition).
+    checkTypeVarQuantity :: [Ident] -> [Ident] -> ISC [Ident]
+    checkTypeVarQuantity (cVar : cVars) iVars' =
+      checkTypeVarQuantity cVars =<< deleteOrReportTypeVar cVar iVars'
+    checkTypeVarQuantity []             _      = return []
+
+    -- Deletes a constraint type variable from the list of instance head type
+    -- variables or reports an error if the variable couldn't be found.
+    deleteOrReportTypeVar :: Ident -> [Ident] -> ISC [Ident]
+    deleteOrReportTypeVar cVar (iVar : iVars') =
+      if cVar == iVar then return iVars'
+                      else (iVar :) <$> deleteOrReportTypeVar cVar iVars'
+    deleteOrReportTypeVar cVar []             = do
+      report $ errVarQuantityInstanceConstraint cSpi cVar c qcls iTys
+      return []
+
+    -- Checks if the constraint is smaller than the instance head (the second
+    -- Paterson condition).
+    checkConstraintSize :: ISC ()
+    checkConstraintSize = when (sum (map typeSize cTys) >= iSize) $ report $
+      errNonDecreasingInstanceConstraint cSpi c qcls iTys
+
+-- Returns the size of the given type expression.
+-- The size of a type expression is the number of all data type constructors and
+-- type variables (counting repititions) taken together.
+typeSize :: TypeExpr -> Int
+typeSize (ConstructorType _ _) = 1
+typeSize (ApplyType _ ty1 ty2) = typeSize ty1 + typeSize ty2
+typeSize (VariableType    _ _) = 1
+typeSize (TupleType     _ tys) = 1 + sum (map typeSize tys)
+typeSize (ListType       _ ty) = 1 + typeSize ty
+typeSize (ArrowType _ ty1 ty2) = 1 + typeSize ty1 + typeSize ty2
+typeSize (ParenType      _ ty) = typeSize ty
+typeSize (ForallType   _ _ ty) = typeSize ty
 
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions
@@ -353,3 +417,32 @@ errIllegalInstanceType p inst = spanInfoMessage p $ vcat
   , text "where T is not a type synonym and u_1, ..., u_n are"
   , text "mutually distinct, non-anonymous type variables."
   ]
+
+errVarQuantityInstanceConstraint
+  :: SpanInfo -> Ident -> Constraint -> QualIdent -> [InstanceType] -> Message
+errVarQuantityInstanceConstraint spi varId c qcls inst =
+  spanInfoMessage spi $ vcat
+    [ text "The type variable" <+> text (escName varId)
+      <+> text "occurs more often"
+    , text "in the constraint" <+> pPrint c
+    , text "than in the instance head"
+      <+> hsep (pPrint qcls : map ppInstanceType inst)
+    ]
+
+errNonDecreasingInstanceConstraint
+  :: SpanInfo -> Constraint -> QualIdent -> [InstanceType] -> Message
+errNonDecreasingInstanceConstraint spi c qcls inst = spanInfoMessage spi $ vcat
+  [ text "The type constraint" <+> pPrint c <+> text "is not smaller"
+  , text "than the instance head"
+    <+> hsep (pPrint qcls : map ppInstanceType inst)
+  ]
+
+errWrongClassArity :: QualIdent -> Int -> Int -> Message
+errWrongClassArity qcls wrongAr clsAr =
+  let aplTyText  = text $ "type"           ++ if wrongAr == 1 then "" else "s"
+      clsParText = text $ "type parameter" ++ if clsAr   == 1 then "" else "s"
+  in spanInfoMessage qcls $ vcat
+     [ text "The type class" <+> text (escQualName qcls)
+       <+> text "has been applied to" <+> pPrint wrongAr <+> aplTyText <> comma
+     , text "but it has" <+> pPrint clsAr <+> clsParText <> dot
+     ]
