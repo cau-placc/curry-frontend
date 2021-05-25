@@ -25,7 +25,7 @@ module Base.Types
   , qualifyType, unqualifyType, qualifyTC
     -- * Representation of predicates, predicate sets and predicated types
   , Pred (..), PredIsICC (..), qualifyPred, unqualifyPred
-  , PredSet, emptyPredSet, partitionPredSet, minPredSet, maxPredSet
+  , PredSet, emptyPredSet, psMember, partitionPredSet, minPredSet, maxPredSet
   , qualifyPredSet, unqualifyPredSet
   , PredType (..), predType, unpredType, qualifyPredType, unqualifyPredType
   , PredTypes (..)
@@ -271,6 +271,23 @@ instance (IsType a, Ord a) => IsType (Set.Set a) where
 
 emptyPredSet :: PredSet
 emptyPredSet = Set.empty
+
+-- Checks if a predicate is a member of a predicate set ignoring the 'PredIsICC'
+-- flag.
+psMember :: Pred -> PredSet -> Bool
+psMember (Pred _ qcls tys) ps =
+  Pred OPred qcls tys `Set.member` ps || Pred ICC qcls tys `Set.member` ps
+
+-- TODO: Is the following function actually useful? Reducing a predicate set
+--         might only be needed where types need to be inferred (and not just
+--         checked) and implicit class constraints might not be able to appear
+--         in these cases.
+-- Deletes duplicates of implicit class constraints from predicate sets.
+deleteDoubleICC :: PredSet -> PredSet
+deleteDoubleICC ps =
+  case Set.lookupMin ps of
+    Just (Pred ICC qcls tys) -> Set.delete (Pred OPred qcls tys) ps
+    _                        -> ps
 
 -- TODO: Is this partition sensible for our purposes? Or does this have to be
 --       reworked?

@@ -131,12 +131,16 @@ normalize n ty = expandAliasType [TypeVariable (occur tv) | tv <- [0..]] ty
   where tvs = zip (nub (filter (>= n) (typeVars ty))) [n..]
         occur tv = fromMaybe tv (lookup tv tvs)
 
--- The function 'instanceType' computes an instance of a polymorphic type by
--- substituting the first type argument for all occurrences of the type
--- variable with index 0 in the second argument. The function carefully
--- assigns new indices to all other type variables of the second argument
--- so that they do not conflict with the type variables of the first argument.
+-- The function 'instanceTypes' computes an instance of a polymorphic type by
+-- substituting the n types in the first argument for all occurrences of the
+-- type variables with indices 0 to n-1 in the second argument. The function
+-- carefully assigns new indices to all other type variables of the second
+-- argument so that they do not conflict with the type variables of the first
+-- argument.
 
-instanceType :: ExpandAliasType a => Type -> a -> a
-instanceType ty = expandAliasType (ty : map TypeVariable [n ..])
-  where ForAll n _ = polyType ty
+-- TODO: Implement 'polyTypes' or at least update the comment of the 'polyType'
+--         function as the type variables of each type don't necessarily start
+--         with 0 anymore.
+instanceTypes :: ExpandAliasType a => [Type] -> a -> a
+instanceTypes tys = expandAliasType (tys ++ map TypeVariable [nMax ..])
+  where nMax = maximum [n | ForAll n _ <- map polyType tys]

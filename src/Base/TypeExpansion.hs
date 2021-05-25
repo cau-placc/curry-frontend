@@ -86,10 +86,10 @@ expandPredTypes m tcEnv clsEnv (PredTypes ps tys) =
 expandMonoType :: ModuleIdent -> TCEnv -> [Ident] -> TypeExpr -> Type
 expandMonoType m tcEnv tvs = expandType m tcEnv . toType tvs
 
--- TODO: Check if a 'PredIsICC' parameter is necessary here.
-expandPolyType :: ModuleIdent -> TCEnv -> ClassEnv -> QualTypeExpr -> PredType
-expandPolyType m tcEnv clsEnv =
-  normalize 0 . expandPredType m tcEnv clsEnv . toPredType [] OPred
+expandPolyType
+  :: PredIsICC -> ModuleIdent -> TCEnv -> ClassEnv -> QualTypeExpr -> PredType
+expandPolyType fstIcc m tcEnv clsEnv =
+  normalize 0 . expandPredType m tcEnv clsEnv . toPredType [] fstIcc
 
 expandInst
   :: ModuleIdent -> TCEnv -> ClassEnv -> Context -> [InstanceType] -> PredTypes
