@@ -23,7 +23,7 @@ import Prelude hiding ((<>))
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative      ((<$>), (<*>))
 #endif
-import           Control.Monad            (when, foldM)
+import           Control.Monad            (when, foldM, replicateM, zipWithM_)
 import           Control.Monad.Fix        (mfix)
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 import           Data.List                (partition, nub)
@@ -166,6 +166,7 @@ instance HasType NewConstrDecl where
   fts m (NewConstrDecl      _ _ ty) = fts m ty
   fts m (NewRecordDecl _ _ (_, ty)) = fts m ty
 
+-- TODO: Has to be changed for the FlexibleContexts extension
 instance HasType Constraint where
   fts m (Constraint _ qcls _) = fts m qcls
 
@@ -290,19 +291,22 @@ checkClassDecl (ClassDecl _ _ _ cls _ _ : ds) =
 checkClassDecl _ =
   internalError "Checks.KindCheck.checkClassDecl: no class declaration"
 
+-- TODO: Update comment below for Constraint kinds!
+
 -- For each declaration group, the kind checker first enters new
 -- assumptions into the type constructor environment. For a type
 -- constructor with arity n, we enter kind k_1 -> ... -> k_n -> k,
 -- where k_i are fresh kind variables and k is * for data and newtype
 -- type constructors and a fresh kind variable for type synonym type
--- constructors. For a type class we enter kind k, where k is a fresh
--- kind variable. We also add a type class to the class environment.
+-- constructors. For a type class of arity n we enter a list of kinds
+-- [k_1, ..., k_n] where k_i are fresh kind variables. We also add a
+-- type class to the class environment.
 -- Next, the kind checker checks the declarations of the group within
 -- the extended environment, and finally the kind checker instantiates
 -- all remaining free kind variables to *.
 
 -- As noted above, type synonyms are fully expanded while types are
--- entered into the type constructor environment. Furthermore, we uses
+-- entered into the type constructor environment. Furthermore, we use
 -- original names for classes and super classes in the class environment.
 -- Unfortunately, both of this requires either sorting type declarations
 -- properly or using the final type constructor environment for the expansion
@@ -342,13 +346,13 @@ bindKind m tcEnv' _      tcEnv (TypeDecl _ tc tvs ty) =
   where
     aliasType tc' k = AliasType tc' k $ length tvs
     ty' = expandMonoType m tcEnv' tvs ty
-bindKind m tcEnv' clsEnv tcEnv (ClassDecl _ _ _ cls tv ds) =
-  bindTypeClass cls (concatMap mkMethods ds) tcEnv
+bindKind m tcEnv' clsEnv tcEnv (ClassDecl _ _ _ cls tvs ds) =
+  bindTypeClass cls (length tvs) (concatMap mkMethods ds) tcEnv
   where
     mkMethods (TypeSig _ fs qty) = map (mkMethod qty) fs
     mkMethods _                  = []
     mkMethod qty f = ClassMethod f (findArity f ds) $
-                       expandMethodType m tcEnv' clsEnv (qualify cls) tv qty
+                       expandMethodType m tcEnv' clsEnv (qualify cls) tvs qty
     findArity _ []                                    = Nothing
     findArity f (FunctionDecl _ _ f' eqs:_) | f == f' =
       Just $ eqnArity $ head eqs
@@ -365,12 +369,12 @@ bindTypeConstructor f tc tvs k x tcEnv = do
       ti = f qtc (foldr KindArrow k' ks) x
   return $ bindTypeInfo m tc ti tcEnv
 
-bindTypeClass :: Ident -> [ClassMethod] -> TCEnv -> KCM TCEnv
-bindTypeClass cls ms tcEnv = do
+bindTypeClass :: Ident -> Int -> [ClassMethod] -> TCEnv -> KCM TCEnv
+bindTypeClass cls ar ms tcEnv = do
   m <- getModuleIdent
-  k <- freshKindVar
+  ks <- replicateM ar freshKindVar
   let qcls = qualifyWith m cls
-      ti = TypeClass qcls k ms
+      ti = TypeClass qcls ks ms
   return $ bindTypeInfo m cls ti tcEnv
 
 bindFreshKind :: TCEnv -> Ident -> KCM TCEnv
@@ -378,6 +382,8 @@ bindFreshKind tcEnv tv = do
   k <- freshKindVar
   return $ bindTypeVar tv k tcEnv
 
+-- TODO: With Constraint kinds: Use this method for classes as well and pass
+--         'tcKind' / 'clsKind' as an argument.
 bindTypeVars :: Ident -> [Ident] -> TCEnv -> KCM (Kind, TCEnv)
 bindTypeVars tc tvs tcEnv = do
   m <- getModuleIdent
@@ -390,12 +396,16 @@ bindTypeVar :: Ident -> Kind -> TCEnv -> TCEnv
 bindTypeVar ident k = bindTopEnv ident (TypeVar k)
 
 bindClass :: ModuleIdent -> TCEnv -> ClassEnv -> Decl a -> ClassEnv
-bindClass m tcEnv clsEnv (ClassDecl _ _ cx cls _ ds) =
-  bindClassInfo qcls (sclss, ms) clsEnv
+bindClass m tcEnv clsEnv (ClassDecl _ _ cx cls tvs ds) =
+  bindClassInfo qcls (ar, sclss, ms) clsEnv
   where qcls = qualifyWith m cls
+        ar = length tvs
+        sclss = nub $ map (constraintToSuperClass tvs) cx'
+        cx' = map (\(Constraint p cls' tys) ->
+                     Constraint p (getOrigName m cls' tcEnv) tys)
+                  cx
         ms = map (\f -> (f, f `elem` fs)) $ concatMap methods ds
         fs = concatMap impls ds
-        sclss = nub $ map (\(Constraint _ cls' _) -> getOrigName m cls' tcEnv) cx
 bindClass _ _ clsEnv _ = clsEnv
 
 instantiateWithDefaultKind :: TypeInfo -> TypeInfo
@@ -405,8 +415,8 @@ instantiateWithDefaultKind (RenamingType tc k nc) =
   RenamingType tc (defaultKind k) nc
 instantiateWithDefaultKind (AliasType tc k n ty) =
   AliasType tc (defaultKind k) n ty
-instantiateWithDefaultKind (TypeClass cls k ms) =
-  TypeClass cls (defaultKind k) ms
+instantiateWithDefaultKind (TypeClass cls ks ms) =
+  TypeClass cls (map defaultKind ks) ms
 instantiateWithDefaultKind (TypeVar _) =
   internalError "Checks.KindCheck.instantiateWithDefaultKind: type variable"
 
@@ -453,16 +463,20 @@ kcDecl _     (FreeDecl _ _) = ok
 kcDecl tcEnv (DefaultDecl _ tys) = do
   tcEnv' <- foldM bindFreshKind tcEnv $ nub $ fv tys
   mapM_ (kcValueType tcEnv' "default declaration" empty) tys
-kcDecl tcEnv (ClassDecl _ _ cx cls tv ds) = do
+kcDecl tcEnv (ClassDecl _ _ cx cls tvs ds) = do
   m <- getModuleIdent
-  let tcEnv' = bindTypeVar tv (clsKind m (qualifyWith m cls) tcEnv) tcEnv
+  let ks = clsKinds m (qualifyWith m cls) tcEnv
+      tcEnv' = foldr (uncurry bindTypeVar) tcEnv (zip tvs ks)
   kcContext tcEnv' cx
   mapM_ (kcDecl tcEnv') ds
 kcDecl tcEnv (InstanceDecl p _ cx qcls inst ds) = do
   m <- getModuleIdent
   tcEnv' <- foldM bindFreshKind tcEnv $ fv inst
   kcContext tcEnv' cx
-  kcType tcEnv' what doc (clsKind m qcls tcEnv) inst
+  -- TODO: With Constraint kinds, the following has to be reworked (perhaps with
+  --         an 'kcClsTypes' function or similar to how 'bindTypeVars' works).
+  --       This goes for 'kcConstraint' as well.
+  zipWithM_ (kcType tcEnv' what doc) (clsKinds m qcls tcEnv) inst
   mapM_ (kcDecl tcEnv') ds
     where
       what = "instance declaration"
@@ -574,9 +588,9 @@ kcContext :: TCEnv -> Context -> KCM ()
 kcContext tcEnv = mapM_ (kcConstraint tcEnv)
 
 kcConstraint :: TCEnv -> Constraint -> KCM ()
-kcConstraint tcEnv sc@(Constraint _ qcls ty) = do
+kcConstraint tcEnv sc@(Constraint _ qcls tys) = do
   m <- getModuleIdent
-  kcType tcEnv "class constraint" doc (clsKind m qcls tcEnv) ty
+  zipWithM_ (kcType tcEnv "class constraint" doc) (clsKinds m qcls tcEnv) tys
   where
     doc = pPrint sc
 
@@ -695,7 +709,7 @@ typeConstructor (DataDecl     _ tc _ _ _) = tc
 typeConstructor (ExternalDataDecl _ tc _) = tc
 typeConstructor (NewtypeDecl  _ tc _ _ _) = tc
 typeConstructor (TypeDecl     _ tc _ _  ) = tc
-typeConstructor _                        =
+typeConstructor _                         =
   internalError "Checks.KindCheck.typeConstructor: no type declaration"
 
 isTypeOrNewtypeDecl :: Decl a -> Bool
