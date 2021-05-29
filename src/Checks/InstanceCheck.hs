@@ -13,7 +13,7 @@
    infers the contexts of the implicit instance declarations introduced by
    deriving clauses in data and newtype declarations. The instances declared
    explicitly and automatically derived by the compiler are added to the
-   instance environment . It is also checked that there are no duplicate
+   instance environment. It is also checked that there are no duplicate
    instances and that all types specified in a default declaration are
    instances of the Num class.
 -}
@@ -37,11 +37,14 @@ import Base.SCC (scc)
 import Base.TypeExpansion
 import Base.Types
 import Base.TypeSubst
-import Base.Utils (fst3, snd3, findMultiples)
+import Base.Utils (fst3, findMultiples)
 
 import Env.Class
 import Env.Instance
 import Env.TypeConstructor
+
+-- TODO: With the FlexibleInstances extension, this module has to be reworked:
+--         The instance termination check could be moved here 
 
 instanceCheck :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Decl a]
               -> (InstEnv, [Message])
@@ -113,8 +116,7 @@ checkDecls tcEnv clsEnv ds = do
 bindInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
 bindInstance tcEnv clsEnv (InstanceDecl _ _ cx qcls inst ds) = do
   m <- getModuleIdent
-  let PredType ps _ = expandPolyType m tcEnv clsEnv $
-                        QualTypeExpr NoSpanInfo cx inst
+  let PredTypes ps _ = expandInst m tcEnv clsEnv cx inst
   modifyInstEnv $
     bindInstInfo (genInstIdent m tcEnv qcls inst) (m, ps, impls [] ds)
   where impls is [] = is
@@ -236,26 +238,29 @@ inferPredSets :: ClassEnv -> DeriveInfo -> INCM [((InstIdent, PredSet), Bool)]
 inferPredSets clsEnv (DeriveInfo spi tc pty tys clss) =
   mapM (inferPredSet clsEnv spi tc pty tys) clss
 
+-- TODO: The following probably has to be reworked with FlexibleInstances
+
 inferPredSet :: HasSpanInfo s => ClassEnv -> s -> QualIdent -> PredType -> [Type]
              -> QualIdent -> INCM ((InstIdent, PredSet), Bool)
 inferPredSet clsEnv p tc (PredType ps inst) tys cls = do
   m <- getModuleIdent
-  let doc = ppPred m $ Pred cls inst
-      sclss = superClasses cls clsEnv
-      ps'   = Set.fromList [Pred cls ty | ty <- tys]
-      ps''  = Set.fromList [Pred scls inst | scls <- sclss]
+  let doc = ppPred m $ Pred OPred cls [inst]
+      sclsInfos = superClasses cls clsEnv
+      ps'   = Set.fromList [Pred OPred cls [ty] | ty <- tys]
+      ps''  = Set.fromList [Pred OPred scls [inst] | (scls, [0]) <- sclsInfos]
       ps''' = ps `Set.union` ps' `Set.union` ps''
   (ps4, novarps) <-
     reducePredSet (cls == qDataId) p "derived instance" doc clsEnv ps'''
   let ps5 = filter noPolyPred $ Set.toList ps4
   if any (isDataPred m) (Set.toList novarps ++ ps5) && cls == qDataId
-    then return    (((cls, tc), ps4), False)
+    then return    (((cls, [tc]), ps4), False)
     else mapM_ (reportUndecidable p "derived instance" doc) ps5
-         >> return (((cls, tc), ps4), True)
+         >> return (((cls, [tc]), ps4), True)
   where
-    noPolyPred (Pred _ (TypeVariable _)) = False
-    noPolyPred (Pred _ _               ) = True
-    isDataPred _ (Pred qid _) = qid == qDataId
+    noPolyPred (Pred _ _ tys') = all isTypeVar tys'
+    isTypeVar (TypeVariable _) = True
+    isTypeVar _                = False
+    isDataPred _ (Pred _ qid _) = qid == qDataId
 
 updatePredSets :: [((InstIdent, PredSet), Bool)] -> INCM Bool
 updatePredSets = fmap or . mapM (uncurry updatePredSet)
@@ -273,33 +278,51 @@ updatePredSet (i, ps) enter = do
     Nothing -> internalError "InstanceCheck.updatePredSet"
 
 reportUndecidable :: HasSpanInfo s => s -> String -> Doc -> Pred -> INCM ()
-reportUndecidable p what doc predicate@(Pred _ ty) = do
+reportUndecidable p what doc pr@(Pred _ _ tys) = do
   m <- getModuleIdent
-  case ty of
-    TypeVariable _ -> return ()
-    _ -> report $ errMissingInstance m p what doc predicate
+  unless (all isTypeVar tys) $ report $ errMissingInstance m p what doc pr
+  where isTypeVar (TypeVariable _) = True
+        isTypeVar _                = False
 
--- Then, the compiler checks the contexts of all explicit instance
--- declarations to detect missing super class instances. For an instance
--- declaration
+-- Then, the compiler checks the contexts of all explicit instance declarations
+-- to detect missing super class instances. For a class declaration
 --
--- instance cx => C (T u_1 ... u_k) where ...
+-- class (D_1, ..., D_k) => C a_1 ... a_n where ...
 --
--- the compiler ensures that T is an instance of all of C's super classes
--- and also that the contexts of the corresponding instance declarations are
--- satisfied by cx.
+-- where C is a class, a_1 ... a_n are type variables and D_1 ... D_k are super
+-- class constraints,
+--
+-- a super class constraint of C
+--
+-- D a_{j_1} ... a_{j_l}
+--
+-- where D is a class and j_1 ... j_l are elements of {1, ..., n},
+--
+-- and an instance declaration
+--
+-- instance cx => C T_1 ... T_n where ...
+--
+-- where cx is the instance context and T_1 ... T_n are type expressions of the
+-- form T u_1 ... u_m with T being a type constructor and u_1 ... u_m being type
+-- variables
+--
+-- the compiler ensures that the types T_{j_1} ... T_{j_l} are an instance of D
+-- and that the context of the corresponding instance declaration is satisfied
+-- by cx.
 
 checkInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
-checkInstance tcEnv clsEnv (InstanceDecl _ _ cx cls inst _) = do
+checkInstance tcEnv clsEnv (InstanceDecl p _ cx cls inst _) = do
   m <- getModuleIdent
-  let PredType ps ty = expandPolyType m tcEnv clsEnv $
-                         QualTypeExpr NoSpanInfo cx inst
+  let PredTypes ps tys = expandInst m tcEnv clsEnv cx inst
       ocls = getOrigName m cls tcEnv
-      ps' = Set.fromList [ Pred scls ty | scls <- superClasses ocls clsEnv ]
-      doc = ppPred m $ Pred cls ty
+      ps' = Set.fromList [ uncurry (Pred OPred) (applySuperClass tys sclsInfo)
+                         | sclsInfo <- superClasses ocls clsEnv ]
+      doc = ppPred m $ Pred OPred cls tys
       what = "instance declaration"
-  (ps'', _) <- reducePredSet False inst what doc clsEnv ps'
-  Set.mapM_ (report . errMissingInstance m inst what doc) $
+  -- TODO: Is there a better span for these, for example by combining the 'cls'
+  --         and 'inst' spans?
+  (ps'', _) <- reducePredSet False p what doc clsEnv ps'
+  Set.mapM_ (report . errMissingInstance m p what doc) $
     ps'' `Set.difference` maxPredSet clsEnv ps
 checkInstance _ _ _ = ok
 
@@ -316,20 +339,21 @@ checkDefault _ _ _ = ok
 checkDefaultType :: TCEnv -> ClassEnv -> TypeExpr -> INCM ()
 checkDefaultType tcEnv clsEnv ty = do
   m <- getModuleIdent
-  let PredType _ ty' = expandPolyType m tcEnv clsEnv $
+  let PredType _ ty' = expandPolyType OPred m tcEnv clsEnv $
                          QualTypeExpr NoSpanInfo [] ty
   (ps, _) <- reducePredSet False ty what empty clsEnv
-    (Set.singleton $ Pred qNumId ty')
+    (Set.singleton $ Pred OPred qNumId [ty'])
   Set.mapM_ (report . errMissingInstance m ty what empty) ps
   where what = "default declaration"
 
 -- The function 'reducePredSet' simplifies a predicate set of the form
--- (C_1 tau_1,..,C_n tau_n) where the tau_i are arbitrary types into a
--- predicate set where all predicates are of the form C u with u being
--- a type variable. An error is reported if the predicate set cannot
--- be transformed into this form. In addition, we remove all predicates
--- that are implied by others within the same set.
--- When the flag is set, all missing Data preds are ignored
+-- (C_1 tau_{1,1} ... tau_{1,n_1}, ..., C_m tau_{m,1} ... tau_{m,n_m}) where the
+-- tau_{i,j} are arbitrary types into a predicate set where all predicates are
+-- of the form C u_1 ... u_n with the u_i being type variables.
+-- An error is reported if the predicate set cannot be transformed into this
+-- form. In addition, we remove all predicates that are implied by others
+-- within the same set.
+-- When the flag is set, all missing Data preds are ignored.
 
 reducePredSet :: HasSpanInfo s => Bool -> s -> String -> Doc -> ClassEnv -> PredSet
               -> INCM (PredSet, PredSet)
@@ -340,8 +364,8 @@ reducePredSet b p what doc clsEnv ps = do
       ps2' = if b then Set.filter (isNotDataPred m) ps2 else ps2
   Set.mapM_ (reportMissing m) ps2' >> return (ps1, ps2)
   where
-    isNotDataPred _ (Pred qid _) = qid /= qDataId
-    reportMissing m pr@(Pred _ _) =
+    isNotDataPred _ (Pred _ qid _) = qid /= qDataId
+    reportMissing m pr =
       report $ errMissingInstance m p what doc pr
     reducePreds inEnv = Set.concatMap $ reducePred inEnv
     reducePred inEnv predicate = maybe (Set.singleton predicate)
@@ -349,41 +373,50 @@ reducePredSet b p what doc clsEnv ps = do
                                        (instPredSet inEnv predicate)
 
 instPredSet :: InstEnv -> Pred -> Maybe PredSet
-instPredSet inEnv (Pred qcls ty) =
-  case unapplyType False ty of
-    (TypeConstructor tc, tys) ->
-      fmap (expandAliasType tys . snd3) (lookupInstInfo (qcls, tc) inEnv)
-    _ -> Nothing
+instPredSet inEnv (Pred _ qcls tys) = do
+  -- TODO: The following requires a rework if repeating type variables in
+  --         instance heads are allowed.
+  let (tcTys, argTys) = unzip $ map (unapplyType False) tys
+  tcs <- mapM getTc tcTys
+  (_, ps, _) <- lookupInstInfo (qcls, tcs) inEnv
+  return $ expandAliasType (concat argTys) ps
+ where
+  getTc :: Type -> Maybe QualIdent
+  getTc (TypeConstructor tc) = Just tc
+  getTc _                    = Nothing
 
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions
 -- ---------------------------------------------------------------------------
 
+-- TODO: The instance ident generation also requires a rework if repeating
+--         type variables in instance heads are allowed.
+
 genInstIdents :: ModuleIdent -> TCEnv -> Decl a -> [InstIdent]
 genInstIdents m tcEnv (DataDecl    _ tc _ _ qclss) =
-  map (flip (genInstIdent m tcEnv) $ ConstructorType NoSpanInfo $ qualify tc)
+  map (flip (genInstIdent m tcEnv) [ConstructorType NoSpanInfo $ qualify tc])
       qclss
 genInstIdents m tcEnv (NewtypeDecl _ tc _ _ qclss) =
-  map (flip (genInstIdent m tcEnv) $ ConstructorType NoSpanInfo $ qualify tc)
+  map (flip (genInstIdent m tcEnv) [ConstructorType NoSpanInfo $ qualify tc])
       qclss
-genInstIdents m tcEnv (InstanceDecl _ _ _ qcls ty _) =
-  [genInstIdent m tcEnv qcls ty]
+genInstIdents m tcEnv (InstanceDecl _ _ _ qcls tys _) =
+  [genInstIdent m tcEnv qcls tys]
 genInstIdents _ _     _                            = []
 
-genInstIdent :: ModuleIdent -> TCEnv -> QualIdent -> TypeExpr -> InstIdent
-genInstIdent m tcEnv qcls = qualInstIdent m tcEnv . (,) qcls . typeConstr
+genInstIdent :: ModuleIdent -> TCEnv -> QualIdent -> [TypeExpr] -> InstIdent
+genInstIdent m tcEnv qcls = qualInstIdent m tcEnv . (,) qcls . map typeConstr
 
 -- When qualifiying an instance identifier, we replace both the class and
--- type constructor with their original names as found in the type constructor
+-- type constructors with their original names as found in the type constructor
 -- environment.
 
 qualInstIdent :: ModuleIdent -> TCEnv -> InstIdent -> InstIdent
-qualInstIdent m tcEnv (cls, tc) = (qual cls, qual tc)
+qualInstIdent m tcEnv (cls, tcs) = (qual cls, map qual tcs)
   where
     qual = flip (getOrigName m) tcEnv
 
 unqualInstIdent :: TCEnv -> InstIdent -> InstIdent
-unqualInstIdent tcEnv (qcls, tc) = (unqual qcls, unqual tc)
+unqualInstIdent tcEnv (qcls, tcs) = (unqual qcls, map unqual tcs)
   where
     unqual = head . flip reverseLookupByOrigName tcEnv
 
@@ -399,12 +432,18 @@ isFunType _                       = False
 -- ---------------------------------------------------------------------------
 
 errMultipleInstances :: TCEnv -> [InstSource] -> Message
-errMultipleInstances tcEnv iss = message $
-  text "Multiple instances for the same class and type" $+$
+errMultipleInstances _     []         = internalError
+  "InstanceCheck.errMultipleInstances: Empty instance list"
+errMultipleInstances tcEnv iss@(is:_) = message $
+  text "Multiple instances for the same class" <+> text typeText $+$
     nest 2 (vcat (map ppInstSource iss))
   where
     ppInstSource (InstSource i m) = ppInstIdent (unqualInstIdent tcEnv i) <+>
       parens (text "defined in" <+> ppMIdent m)
+    typeText = case (length . snd . \(InstSource i' _) -> i') is of
+                 0 -> ""
+                 1 -> "and type"
+                 _ -> "and types"
 
 errMissingInstance :: HasSpanInfo s => ModuleIdent -> s -> String -> Doc -> Pred
                    -> Message
