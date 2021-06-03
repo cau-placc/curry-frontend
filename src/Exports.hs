@@ -31,7 +31,7 @@ import Curry.Base.Ident
 import Curry.Syntax
 
 import Base.CurryKinds (fromKind')
-import Base.CurryTypes (fromQualType, fromQualPredSet, fromQualPredType)
+import Base.CurryTypes (fromQualType, fromQualPredType, fromQualPredTypes)
 import Base.Messages
 import Base.Types
 
@@ -205,8 +205,8 @@ iInstDecl :: ModuleIdent -> TCEnv -> [Ident] -> InstIdent -> InstInfo -> IDecl
 iInstDecl m tcEnv tvs (cls, tcs) (m', ps, is) =
   IInstanceDecl NoPos cx (qualUnqualify m cls) tys is mm
  where
-  cx  = fromQualPredSet m tvs ps
-  tys = map (fromQualType m tvs) (tcsToTypes 0 tcs (clsKinds m cls tcEnv))
+  (cx, tys) = fromQualPredTypes m tvs $
+    PredTypes ps (tcsToTypes 0 tcs (clsKinds m cls tcEnv))
   mm  = if m == m' then Nothing else Just m'
   
   -- TODO: The following assumes that every type variable can only occur once in

@@ -28,7 +28,7 @@ module Base.Types
   , PredSet, emptyPredSet, psMember, partitionPredSet, minPredSet, maxPredSet
   , qualifyPredSet, unqualifyPredSet
   , PredType (..), predType, unpredType, qualifyPredType, unqualifyPredType
-  , PredTypes (..)
+  , PredTypes (..), qualifyPredTypes, unqualifyPredTypes
     -- * Representation of data constructors
   , DataConstr (..), constrIdent, constrTypes, recLabels, recLabelTypes
   , tupleData
@@ -359,6 +359,14 @@ data PredTypes = PredTypes PredSet [Type]
 
 instance IsType PredTypes where
   typeVars (PredTypes ps tys) = typeVars tys ++ typeVars ps
+
+qualifyPredTypes :: ModuleIdent -> PredTypes -> PredTypes
+qualifyPredTypes m (PredTypes ps tys) =
+  PredTypes (qualifyPredSet m ps) (map (qualifyType m) tys)
+
+unqualifyPredTypes :: ModuleIdent -> PredTypes -> PredTypes
+unqualifyPredTypes m (PredTypes ps tys) =
+  PredTypes (unqualifyPredSet m ps) (map (unqualifyType m) tys)
 
 -- ---------------------------------------------------------------------------
 -- Data constructors

@@ -26,10 +26,10 @@
 module Base.CurryTypes
   ( toType, toTypes, toQualType, toQualTypes
   , toPred, toQualPred, toPredSet, toQualPredSet, toPredType, toQualPredType
-  , toPredTypes, toConstrType, toMethodType
+  , toPredTypes, toQualPredTypes, toConstrType, toMethodType
   , fromType, fromQualType
   , fromPred, fromQualPred, fromPredSet, fromQualPredSet, fromPredType
-  , fromQualPredType
+  , fromQualPredType, fromPredTypes, fromQualPredTypes
   , ppType, ppPred, ppPredType, ppTypeScheme
   ) where
 
@@ -120,13 +120,17 @@ toPredType' :: Map.Map Ident Int -> PredIsICC -> CS.QualTypeExpr -> PredType
 toPredType' tvs fstIcc (CS.QualTypeExpr _ cx ty) =
   PredType (toPredSet' tvs fstIcc cx) (toType' tvs ty [])
 
-toQualPredType ::
-  ModuleIdent -> [Ident] -> PredIsICC -> CS.QualTypeExpr -> PredType
+toQualPredType
+  :: ModuleIdent -> [Ident] -> PredIsICC -> CS.QualTypeExpr -> PredType
 toQualPredType m tvs fstIcc = qualifyPredType m . toPredType tvs fstIcc
 
 toPredTypes :: [Ident] -> PredIsICC -> CS.Context -> [CS.TypeExpr] -> PredTypes
 toPredTypes tvs fstIcc cx tys =
   PredTypes (toPredSet' (enumTypeVars tvs tys) fstIcc cx) (toTypes tvs tys)
+
+toQualPredTypes :: ModuleIdent -> [Ident] -> PredIsICC -> CS.Context
+                -> [CS.TypeExpr] -> PredTypes
+toQualPredTypes m tvs fstIcc cx = qualifyPredTypes m . toPredTypes tvs fstIcc cx
 
 -- The function 'toConstrType' returns the type of a data or newtype
 -- constructor. Hereby, it restricts the context to those type variables
@@ -206,6 +210,14 @@ fromPredType tvs (PredType ps ty) =
 
 fromQualPredType :: ModuleIdent -> [Ident] -> PredType -> CS.QualTypeExpr
 fromQualPredType m tvs = fromPredType tvs . unqualifyPredType m
+
+fromPredTypes :: [Ident] -> PredTypes -> (CS.Context, [CS.TypeExpr])
+fromPredTypes tvs (PredTypes ps tys) =
+  (fromPredSet tvs ps, map (fromType tvs) tys)
+
+fromQualPredTypes
+  :: ModuleIdent -> [Ident] -> PredTypes -> (CS.Context, [CS.TypeExpr])
+fromQualPredTypes m tvs = fromPredTypes tvs . unqualifyPredTypes m
 
 -- The following functions implement pretty-printing for types.
 
