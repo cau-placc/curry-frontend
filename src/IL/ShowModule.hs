@@ -21,7 +21,7 @@ import Curry.Base.Position
 
 import IL.Type
 
--- |Show a IL module like by an devired 'Show' instance
+-- |Show an IL module like by a devired 'Show' instance
 showModule :: Module -> String
 showModule m = showsModule m "\n"
 

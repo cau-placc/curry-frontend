@@ -1511,7 +1511,7 @@ unifyTypeLists m (ty1 : tys1) (ty2 : tys2) =
 -- After performing a unification, the resulting substitution is applied
 -- to the current predicate set and the resulting predicate set is subject
 -- to a reduction. This predicate set reduction retains all predicates whose
--- types are simple variables and which are not implied but other
+-- types are all simple variables and which are not implied by other
 -- predicates in the predicate set. For all other predicates, the compiler
 -- checks whether an instance exists and replaces them by applying the
 -- instances' predicate set to the respective types. A minor complication

@@ -401,8 +401,8 @@ bindClass m tcEnv clsEnv (ClassDecl _ _ cx cls tvs ds) =
   where qcls = qualifyWith m cls
         ar = length tvs
         sclss = nub $ map (constraintToSuperClass tvs) cx'
-        cx' = map (\(Constraint p cls' tys) ->
-                     Constraint p (getOrigName m cls' tcEnv) tys)
+        cx' = map (\(Constraint p scls tys) ->
+                     Constraint p (getOrigName m scls tcEnv) tys)
                   cx
         ms = map (\f -> (f, f `elem` fs)) $ concatMap methods ds
         fs = concatMap impls ds
