@@ -78,7 +78,7 @@ exportInterface' m es pEnv tcEnv vEnv clsEnv inEnv = Interface m imports decls'
   imports = map (IImportDecl NoPos) $ usedModules decls'
   precs   = foldr (infixDecl m pEnv) [] es
   types   = foldr (typeDecl m tcEnv clsEnv tvs) [] es
-  values  = foldr (valueDecl m vEnv tvs) [] es
+  values  = foldr (valueDecl m tcEnv vEnv tvs) [] es
   insts   = Map.foldrWithKey (instDecl m tcEnv tvs) [] inEnv
   decls   = precs ++ types ++ values ++ insts
   decls'  = closeInterface m tcEnv clsEnv inEnv tvs Set.empty decls
@@ -175,15 +175,17 @@ methodDecl :: ModuleIdent -> [Ident] -> ClassMethod -> IMethodDecl
 methodDecl m tvs (ClassMethod f a (PredType ps ty)) = IMethodDecl NoPos f a $
   fromQualPredType m tvs $ PredType (Set.deleteMin ps) ty
 
-valueDecl :: ModuleIdent -> ValueEnv -> [Ident] -> Export -> [IDecl] -> [IDecl]
-valueDecl m vEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
+valueDecl
+  :: ModuleIdent -> TCEnv -> ValueEnv -> [Ident] -> Export -> [IDecl] -> [IDecl]
+valueDecl m tcEnv vEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
   [Value _ cm a (ForAll _ pty)] ->
     IFunctionDecl NoPos (qualUnqualify m f)
-      (fmap (const (head tvs)) cm) a (fromQualPredType m tvs pty) : ds
+      (fmap (flip take tvs . length . flip (clsKinds m) tcEnv) cm) a
+      (fromQualPredType m tvs pty) : ds
   [Label _ _ _ ] -> ds -- Record labels are collected somewhere else.
   _ -> internalError $ "Exports.valueDecl: " ++ show f
-valueDecl _ _ _ (ExportTypeWith _ _ _) ds = ds
-valueDecl _ _ _ _ _ = internalError "Exports.valueDecl: no pattern match"
+valueDecl _ _ _ _ (ExportTypeWith _ _ _) ds = ds
+valueDecl _ _ _ _ _ _ = internalError "Exports.valueDecl: no pattern match"
 
 -- Transforms an entry of the instance environment into an interface instance
 -- declaration and adds it to a list of instance declarations, if neither the

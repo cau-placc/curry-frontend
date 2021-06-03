@@ -148,11 +148,11 @@ checkImport (ITypeDecl _ tc k tvs ty) = do
         = Just ok
       check _ = Nothing
   checkTypeInfo "synonym type" check tc tc
-checkImport (IFunctionDecl _ f (Just tv) n ty) = do
+checkImport (IFunctionDecl _ f (Just tvs) n ty) = do
   m <- getModuleIdent
   let check (Value f' cm' n' (ForAll _ ty')) =
         f == f' && isJust cm' && n' == n &&
-        toQualPredType m [tv] OPred ty == ty'
+        toQualPredType m tvs ICC ty == ty'
       check _ = False
   checkValueInfo "method" check f f
 checkImport (IFunctionDecl _ f Nothing n ty) = do
