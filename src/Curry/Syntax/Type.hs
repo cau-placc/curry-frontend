@@ -129,7 +129,7 @@ data IDecl
   | IDataDecl       Position QualIdent (Maybe KindExpr) [Ident] [ConstrDecl]  [Ident]
   | INewtypeDecl    Position QualIdent (Maybe KindExpr) [Ident] NewConstrDecl [Ident]
   | ITypeDecl       Position QualIdent (Maybe KindExpr) [Ident] TypeExpr
-  | IFunctionDecl   Position QualIdent (Maybe Ident) Arity QualTypeExpr
+  | IFunctionDecl   Position QualIdent (Maybe [Ident]) Arity QualTypeExpr
   | HidingClassDecl Position Context QualIdent [(Ident, Maybe KindExpr)]
   | IClassDecl      Position Context QualIdent [(Ident, Maybe KindExpr)] [IMethodDecl] [Ident]
   | IInstanceDecl   Position Context QualIdent [InstanceType] [IMethodImpl] (Maybe ModuleIdent)

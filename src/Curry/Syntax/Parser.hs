@@ -246,8 +246,8 @@ iFunctionDecl = IFunctionDecl <$> position <*> qfun <*> option iMethodPragma
                 <*> arity <*-> token DoubleColon <*> qualType
 
 -- |Parser for an interface method pragma
-iMethodPragma :: Parser a Token Ident
-iMethodPragma = token PragmaMethod <-*> clsvar <*-> token PragmaEnd
+iMethodPragma :: Parser a Token [Ident]
+iMethodPragma = token PragmaMethod <-*> many clsvar <*-> token PragmaEnd
 
 -- |Parser for function's arity
 arity :: Parser a Token Int

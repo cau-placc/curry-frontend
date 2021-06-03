@@ -221,7 +221,7 @@ instance Pretty IDecl where
   pPrint (ITypeDecl _ tc k tvs ty) =
     sep [ppITypeDeclLhs "type" tc k tvs <+> equals,indent (pPrintPrec 0 ty)]
   pPrint (IFunctionDecl _ f cm a ty) =
-    sep [ ppQIdent f, maybePP (ppPragma "METHOD" . ppIdent) cm
+    sep [ ppQIdent f, maybePP (ppPragma "METHOD" . hsep . map ppIdent) cm
         , int a, text "::", pPrintPrec 0 ty ]
   pPrint (HidingClassDecl _ cx qcls kclsvars) = text "hiding" <+>
     ppClassInstHead "class" cx (ppQIdent qcls) (map ppIdentWithKind' kclsvars)
