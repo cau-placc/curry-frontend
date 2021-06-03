@@ -17,7 +17,7 @@
 -}
 module Imports (importInterfaces, importModules, qualifyEnv) where
 
-import           Data.List                  (nubBy, find)
+import           Data.List                  (nub, nubBy)
 import qualified Data.Map            as Map
 import           Data.Maybe                 (catMaybes, fromMaybe, isJust)
 import qualified Data.Set            as Set
@@ -28,8 +28,8 @@ import Curry.Base.Monad
 import Curry.Syntax
 
 import Base.CurryKinds (toKind')
-import Base.CurryTypes ( toQualType, toQualTypes, toQualPredType, toConstrType
-                       , toMethodType )
+import Base.CurryTypes ( toQualType, toQualTypes, toQualPredType
+                       , toQualPredTypes, toConstrType, toMethodType )
 
 import Base.Kinds
 import Base.Messages
@@ -144,8 +144,8 @@ importData isVisible' (DataType tc k cs) =
 importData isVisible' (RenamingType tc k nc) =
   maybe (DataType tc k []) (RenamingType tc k) (importConstr isVisible' nc)
 importData _ (AliasType tc k n ty) = AliasType tc k n ty
-importData isVisible' (TypeClass qcls k ms) =
-  TypeClass qcls k $ catMaybes $ map (importMethod isVisible') ms
+importData isVisible' (TypeClass qcls ks ms) =
+  TypeClass qcls ks $ catMaybes $ map (importMethod isVisible') ms
 importData _ (TypeVar _) = internalError "Imports.importData: type variable"
 
 importConstr :: (Ident -> Bool) -> DataConstr -> Maybe DataConstr
@@ -162,11 +162,15 @@ importClasses :: ModuleIdent -> [IDecl] -> ClassEnv -> ClassEnv
 importClasses m = flip $ foldr (bindClass m)
 
 bindClass :: ModuleIdent -> IDecl -> ClassEnv -> ClassEnv
-bindClass m (HidingClassDecl p cx cls k tv) =
-  bindClass m (IClassDecl p cx cls k tv [] [])
-bindClass m (IClassDecl _ cx cls _ _ ds ids) =
-  bindClassInfo (qualQualify m cls) (sclss, ms)
-  where sclss = map (\(Constraint _ scls _) -> qualQualify m scls) cx
+bindClass m (HidingClassDecl p cx cls ktvs) =
+  bindClass m (IClassDecl p cx cls ktvs [] [])
+bindClass m (IClassDecl _ cx cls ktvs ds ids) =
+  bindClassInfo (qualQualify m cls) (ar, sclss, ms)
+  where ar = length ktvs
+        sclss = nub $ map (constraintToSuperClass (map fst ktvs)) cx'
+        cx' = map
+          (\(Constraint p scls tys) -> Constraint p (qualQualify m scls) tys)
+          cx
         ms = map (\d -> (imethod d, isJust $ imethodArity d)) $ filter isVis ds
         isVis (IMethodDecl _ idt _ _ ) = idt `notElem` ids
 bindClass _ _ = id
@@ -175,9 +179,10 @@ importInstances :: ModuleIdent -> [IDecl] -> InstEnv -> InstEnv
 importInstances m = flip $ foldr (bindInstance m)
 
 bindInstance :: ModuleIdent -> IDecl -> InstEnv -> InstEnv
-bindInstance m (IInstanceDecl _ cx qcls ty is mm) = bindInstInfo
-  (qualQualify m qcls, qualifyTC m $ typeConstr ty) (fromMaybe m mm, ps, is)
-  where PredType ps _ = toQualPredType m [] $ QualTypeExpr NoSpanInfo cx ty
+bindInstance m (IInstanceDecl _ cx qcls tys is mm) =
+  bindInstInfo (qualQualify m qcls, map (qualifyTC m . typeConstr) tys)
+               (fromMaybe m mm, ps, is)
+  where PredTypes ps _ = toQualPredTypes m [] OPred cx tys
 bindInstance _ _ = id
 
 -- ---------------------------------------------------------------------------
@@ -194,7 +199,7 @@ precs _ _                          = []
 
 hiddenTypes :: ModuleIdent -> IDecl -> [TypeInfo]
 hiddenTypes m (HidingDataDecl     _ tc k tvs) = [typeCon DataType m tc k tvs []]
-hiddenTypes m (HidingClassDecl  _ _ qcls k _) = [typeCls m qcls k []]
+hiddenTypes m (HidingClassDecl _ _ qcls ktvs) = [typeCls m qcls (map snd ktvs) []]
 hiddenTypes m d                               = types m d
 
 -- type constructors and type classes
@@ -220,12 +225,12 @@ types m (ITypeDecl _ tc k tvs ty) =
   [typeCon aliasType m tc k tvs (toQualType m tvs ty)]
   where
     aliasType tc' k' = AliasType tc' k' (length tvs)
-types m (IClassDecl _ _ qcls k tv ds ids) =
-  [typeCls m qcls k (map mkMethod $ filter isVis ds)]
+types m (IClassDecl _ _ qcls ktvs ds ids) =
+  [typeCls m qcls (map snd ktvs) (map mkMethod $ filter isVis ds)]
   where
     isVis (IMethodDecl _ f _ _ ) = f `notElem` ids
-    mkMethod (IMethodDecl _ f a qty) = ClassMethod f a $
-      qualifyPredType m $ normalize 1 $ toMethodType qcls tv qty
+    mkMethod (IMethodDecl _ f a qty) = ClassMethod f a $ qualifyPredType m $
+      normalize (length ktvs) $ toMethodType qcls (map fst ktvs) qty
 types _ _ = []
 
 -- type constructors
@@ -234,9 +239,10 @@ typeCon :: (QualIdent -> Kind -> a) -> ModuleIdent -> QualIdent
 typeCon f m tc k tvs = f (qualQualify m tc) (toKind' k (length tvs))
 
 -- type classes
-typeCls :: ModuleIdent -> QualIdent -> Maybe KindExpr -> [ClassMethod]
+typeCls :: ModuleIdent -> QualIdent -> [Maybe KindExpr] -> [ClassMethod]
         -> TypeInfo
-typeCls m qcls k ms = TypeClass (qualQualify m qcls) (toKind' k 0) ms
+typeCls m qcls ks ms =
+  TypeClass (qualQualify m qcls) (map (flip toKind' 0) ks) ms
 
 -- data constructors, record labels, functions and class methods
 values :: ModuleIdent -> IDecl -> [ValueInfo]
@@ -265,17 +271,17 @@ values m (INewtypeDecl _ tc _ tvs nc hs) =
   where tc' = qualQualify m tc
         ty' = constrType tc' tvs
 values m (IFunctionDecl _ f Nothing a qty) =
-  [Value (qualQualify m f) Nothing a (typeScheme (toQualPredType m [] qty))]
-values m (IFunctionDecl _ f (Just tv) _ qty) =
-  let mcls = case qty of
-        QualTypeExpr _ ctx _ -> fmap (\(Constraint _ qcls _) -> qcls) $
-                                find (\(Constraint _ _ ty) -> isVar ty) ctx
-  in [Value (qualQualify m f) mcls 0 (typeScheme (toQualPredType m [tv] qty))]
-  where
-    isVar (VariableType _ i) = i == tv
-    isVar _                  = False
-values m (IClassDecl _ _ qcls _ tv ds hs) =
-  map (classMethod m qcls' tv hs) ds
+  [Value (qualQualify m f) Nothing a (typeScheme (toQualPredType m [] OPred qty))]
+-- TODO: Previously, a function was used here to find the correct constraint by
+--         comparing the constraint type to the type variable of the pragma.
+--         Check if there is any possibility of the implicit class constraint
+--         not being the first constraint of the context. 
+values m (IFunctionDecl _ f (Just tvs) _ qty@(QualTypeExpr _ cx _)) =
+  let mcls = case cx of []                      -> Nothing
+                        Constraint _ qcls _ : _ -> Just qcls
+  in [Value (qualQualify m f) mcls 0 (typeScheme (toQualPredType m tvs ICC qty))]
+values m (IClassDecl _ _ qcls ktvs ds hs) =
+  map (classMethod m qcls' (map fst ktvs) hs) ds
   where qcls' = qualQualify m qcls
 values _ _                        = []
 
@@ -321,11 +327,11 @@ constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)
 -- We always enter class methods with an arity of 0 into the value environment
 -- because there may be different implementations with different arities.
 
-classMethod :: ModuleIdent -> QualIdent -> Ident -> [Ident] -> IMethodDecl
+classMethod :: ModuleIdent -> QualIdent -> [Ident] -> [Ident] -> IMethodDecl
             -> ValueInfo
-classMethod m qcls tv hs (IMethodDecl _ f _ qty) =
+classMethod m qcls tvs hs (IMethodDecl _ f _ qty) =
   Value (qualifyLike qcls f) mcls 0 $
-    typeScheme $ qualifyPredType m $ toMethodType qcls tv qty
+    typeScheme $ qualifyPredType m $ toMethodType qcls tvs qty
   where
     mcls = if f `elem` hs then Nothing else Just qcls
 
