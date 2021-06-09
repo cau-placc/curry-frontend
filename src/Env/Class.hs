@@ -18,9 +18,9 @@
 
 module Env.Class
   ( ClassEnv, initClassEnv
-  , ClassInfo, bindClassInfo, mergeClassInfo, constraintToSuperClass
-  , lookupClassInfo, superClasses, classMethods, hasDefaultImpl
-  , applySuperClass, allSuperClasses, applyAllSuperClasses
+  , ClassInfo, SuperClassInfo, bindClassInfo, mergeClassInfo
+  , constraintToSuperClass, lookupClassInfo, superClasses, classMethods
+  , hasDefaultImpl, applySuperClass, allSuperClasses, applyAllSuperClasses
   ) where
 
 import           Data.Containers.ListUtils (nubOrd)
