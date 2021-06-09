@@ -34,11 +34,12 @@ import Curry.Base.Ident
 import Curry.Base.SpanInfo
 import Curry.Syntax
 
-import Base.CurryTypes (fromPredType, toType, toPredType)
+import Base.CurryTypes (fromPredType, toTypes, toPredType)
 import Base.Expr       (bv)
 import Base.Messages   (internalError)
 import Base.NestEnv
-import Base.Types      (arrowArity, PredType, unpredType, TypeScheme (..))
+import Base.Types      ( arrowArity, PredType, PredIsICC (..), unpredType
+                       , TypeScheme (..))
 import Base.TypeSubst
 
 import Env.Value       (ValueEnv, ValueInfo (..), qualLookupValue)
@@ -84,10 +85,10 @@ trDefaultDecl (DefaultDecl _ tys) = (\tys' -> [CDefaultDecl tys'])
 trDefaultDecl _                   = return []
 
 trClassDecl :: Decl PredType -> GAC [CClassDecl]
-trClassDecl (ClassDecl _ _ cx cls tv ds) =
-  (\cls' v' cx' tv' ds' -> [CClass cls' v' cx' tv' ds'])
+trClassDecl (ClassDecl _ _ cx cls tvs ds) =
+  (\cls' v' cx' tvs' ds' -> [CClass cls' v' cx' tvs' ds'])
     <$> trGlobalIdent cls <*> getTypeVisibility cls <*> trContext cx
-    <*> getTVarIndex tv <*> concatMapM (trClassMethodDecl sigs fs) ds
+    <*> mapM getTVarIndex tvs <*> concatMapM (trClassMethodDecl sigs fs) ds
   where fs = [f | FunctionDecl _ _ f _ <- ds]
         sigs = signatures ds
 trClassDecl _ = return []
@@ -111,32 +112,36 @@ trClassMethodDecl sigs _ (FunctionDecl _ _ f eqs) =
 trClassMethodDecl _ _ _ = return []
 
 trInstanceDecl :: Decl PredType -> GAC [CInstanceDecl]
-trInstanceDecl (InstanceDecl _ _ cx qcls ty ds) =
-  (\qcls' cx' ty' ds' -> [CInstance qcls' cx' ty' ds']) <$> trQual qcls
-  <*> trContext cx <*> trTypeExpr ty <*> mapM (trInstanceMethodDecl qcls ty) ds
+trInstanceDecl (InstanceDecl _ _ cx qcls tys ds) =
+  (\qcls' cx' tys' ds' -> [CInstance qcls' cx' tys' ds'])
+  <$> trQual qcls <*> trContext cx <*> mapM trTypeExpr tys
+  <*> mapM (trInstanceMethodDecl qcls tys) ds
 trInstanceDecl _ = return []
 
 -- Again, we use the equation's arity for function declarations instead of
 -- the one from the value.
-trInstanceMethodDecl :: QualIdent -> TypeExpr -> Decl PredType -> GAC CFuncDecl
-trInstanceMethodDecl qcls ty (FunctionDecl _ _ f eqs) = do
+trInstanceMethodDecl
+  :: QualIdent -> [TypeExpr] -> Decl PredType -> GAC CFuncDecl
+trInstanceMethodDecl qcls tys (FunctionDecl _ _ f eqs) = do
   uacy <- S.gets untypedAcy
   qty <- if uacy
            then return $ QualTypeExpr NoSpanInfo [] $
                            ConstructorType NoSpanInfo prelUntyped
            else getQualType' (qualifyLike qcls $ unRenameIdent f)
   CFunc <$> trLocalIdent f <*> pure (eqnArity $ head eqs) <*> pure Public
-        <*> trInstanceMethodType ty qty <*> mapM trEquation eqs
+        <*> trInstanceMethodType tys qty <*> mapM trEquation eqs
 trInstanceMethodDecl _ _ _ = internalError "GenAbstractCurry.trInstanceMethodDecl"
 
 -- Transforms a class method type into an instance method's type by replacing
--- the class variable with the given instance type. The implicit class context
--- is dropped in doing so.
-trInstanceMethodType :: TypeExpr -> QualTypeExpr -> GAC CQualTypeExpr
-trInstanceMethodType ity (QualTypeExpr _ cx ty) =
+-- the class variables with the given instance types. The implicit class
+-- constraint is dropped in doing so.
+trInstanceMethodType :: [TypeExpr] -> QualTypeExpr -> GAC CQualTypeExpr
+trInstanceMethodType itys (QualTypeExpr _ cx ty) =
   trQualTypeExpr $ fromPredType identSupply $
-    subst (bindSubst 0 (toType [] ity) idSubst) $
-      toPredType (take 1 identSupply) $ QualTypeExpr NoSpanInfo (drop 1 cx) ty
+    subst (foldr (uncurry bindSubst) idSubst indexedItys) $
+      toPredType (take (length itys) identSupply) OPred $
+        QualTypeExpr NoSpanInfo (drop 1 cx) ty
+  where indexedItys = zip [0 ..] (toTypes [] itys)
 
 trTypeDecl :: Decl a -> GAC [CTypeDecl]
 trTypeDecl (DataDecl    _ t vs cs clss) =
@@ -189,7 +194,7 @@ trTypeExpr (ParenType      _ ty) = trTypeExpr ty
 trTypeExpr (ForallType    _ _ _) = internalError "GenAbstractCurry.trTypeExpr"
 
 trConstraint :: Constraint -> GAC CConstraint
-trConstraint (Constraint _ q ty) = (,) <$> trQual q <*> trTypeExpr ty
+trConstraint (Constraint _ q tys) = (,) <$> trQual q <*> mapM trTypeExpr tys
 
 trContext :: Context -> GAC CContext
 trContext cx = CContext <$> mapM trConstraint cx
