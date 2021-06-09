@@ -29,7 +29,7 @@ import Curry.Syntax
 import Base.CurryTypes (fromPredType)
 import Base.Messages (internalError)
 import Base.Types
-import Base.TypeSubst (instanceType)
+import Base.TypeSubst (instanceTypes)
 import Base.Typing (typeOf)
 import Base.Utils (snd3, mapAccumM)
 
@@ -37,6 +37,10 @@ import Env.Instance
 import Env.OpPrec
 import Env.TypeConstructor
 import Env.Value
+
+-- TODO: Check whether it is possible for derived instances to violate the
+--         instance termination rules, especially considering FlexibleInstances
+--         and FlexibleContexts.
 
 data DVState = DVState
   { moduleIdent :: ModuleIdent
@@ -95,10 +99,10 @@ deriveAllInstances ds = do
 hasDataInstance :: InstEnv -> ModuleIdent -> Decl PredType -> Bool
 hasDataInstance inst mid (DataDecl    _ tc _ _ _) =
   maybe False (\(mid', _, _) -> mid == mid') $
-    lookupInstInfo (qDataId, qualifyWith mid tc) inst
+    lookupInstInfo (qDataId, [qualifyWith mid tc]) inst
 hasDataInstance inst mid (NewtypeDecl _ tc _ _ _) =
   maybe False (\(mid', _, _) -> mid == mid') $
-    lookupInstInfo (qDataId, qualifyWith mid tc) inst
+    lookupInstInfo (qDataId, [qualifyWith mid tc]) inst
 hasDataInstance _       _   _                     =
   False
 
@@ -128,12 +132,12 @@ deriveInstance :: QualIdent -> [Ident] -> [ConstrInfo] -> QualIdent
                -> DVM (Decl PredType)
 deriveInstance tc tvs cis cls = do
   inEnv <- getInstEnv
-  let ps = snd3 $ fromJust $ lookupInstInfo (cls, tc) inEnv
+  let ps = snd3 $ fromJust $ lookupInstInfo (cls, [tc]) inEnv
       ty = applyType (TypeConstructor tc) $
              take (length tvs) $ map TypeVariable [0 ..]
       QualTypeExpr _ cx inst = fromPredType tvs $ PredType ps ty
   ds <- deriveMethods cls ty cis ps
-  return $ InstanceDecl NoSpanInfo WhitespaceLayout cx cls inst ds
+  return $ InstanceDecl NoSpanInfo WhitespaceLayout cx cls [inst] ds
 
 -- Note: The methods and arities of the generated instance declarations have to
 -- correspond to the methods and arities entered previously into the instance
@@ -604,10 +608,11 @@ getInstMethodType ps cls ty f = do
 
 instMethodType :: ValueEnv -> PredSet -> QualIdent -> Type -> Ident -> PredType
 instMethodType vEnv ps cls ty f = PredType (ps `Set.union` ps'') ty''
-  where PredType ps' ty' = case qualLookupValue (qualifyLike cls f) vEnv of
-          [Value _ _ _ (ForAll _ pty)] -> pty
-          _ -> internalError "Derive.instMethodType"
-        PredType ps'' ty'' = instanceType ty $ PredType (Set.deleteMin ps') ty'
+ where
+  PredType ps' ty' = case qualLookupValue (qualifyLike cls f) vEnv of
+                       [Value _ _ _ (ForAll _ pty)] -> pty
+                       _ -> internalError "Derive.instMethodType"
+  PredType ps'' ty'' = instanceTypes [ty] $ PredType (Set.deleteMin ps') ty'
 
 -- -----------------------------------------------------------------------------
 -- Prelude entities
