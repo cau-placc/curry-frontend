@@ -43,7 +43,7 @@
     Record construction and pattern matching are represented using solely the
     record constructor. Record selections are represented using selector
     functions which are generated for each record declaration, and record
-    updated are represented using case-expressions that perform the update.
+    updates are represented using case-expressions that perform the update.
 
   * The type environment will be extended by new function declarations for:
     - Record selections, and
@@ -191,13 +191,13 @@ dsNewConstrDecl nc = internalError $ "Desugar.dsNewConstrDecl: " ++ show nc
 -- -----------------------------------------------------------------------------
 
 dsClassAndInstanceDecl :: Decl PredType -> DsM (Decl PredType)
-dsClassAndInstanceDecl (ClassDecl p li cx cls tv ds) = do
+dsClassAndInstanceDecl (ClassDecl p li cx cls tvs ds) = do
   tds' <- mapM dsTypeSig tds
   vds' <- dsDeclGroup vds
-  return $ ClassDecl p li cx cls tv $ tds' ++ vds'
+  return $ ClassDecl p li cx cls tvs $ tds' ++ vds'
   where (tds, vds) = partition isTypeSig ds
-dsClassAndInstanceDecl (InstanceDecl p li cx cls ty ds) =
-  InstanceDecl p li cx cls ty <$> dsDeclGroup ds
+dsClassAndInstanceDecl (InstanceDecl p li cx cls tys ds) =
+  InstanceDecl p li cx cls tys <$> dsDeclGroup ds
 dsClassAndInstanceDecl d = return d
 
 dsTypeSig :: Decl PredType -> DsM (Decl PredType)
@@ -779,7 +779,7 @@ dsExpr p (IfThenElse _ e1 e2 e3) = do
 dsExpr p (Case _ _ ct e alts) = dsCase p ct e alts
 
 -- We ignore the context in the type signature of a typed expression, since
--- there should be no possibility to provide an non-empty context without
+-- there should be no possibility to provide a non-empty context without
 -- scoped type-variables.
 -- TODO: Verify
 
