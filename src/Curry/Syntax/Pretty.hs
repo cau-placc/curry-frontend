@@ -129,10 +129,10 @@ ppContext cs  = parenList (map pPrint cs) <+> darrow
 
 instance Pretty Constraint where
   pPrint (Constraint _ qcls tys) = ppQIdent qcls <+>
-    hsep (map (pPrintPrec 0) tys)
+    hsep (map (pPrintPrec 2) tys)
 
 ppInstanceType :: InstanceType -> Doc
-ppInstanceType = pPrintPrec 0
+ppInstanceType = pPrintPrec 2
 
 ppDeriving :: [QualIdent] -> Doc
 ppDeriving []     = empty
