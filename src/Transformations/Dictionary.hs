@@ -270,7 +270,7 @@ getClassMethodType cls f = do
 
 classMethodType :: ValueEnv -> QualIdent -> Ident -> PredType
 classMethodType vEnv cls f = pty
-  where ForAll _ pty = funType (qualifyLike cls f) vEnv
+  where ForAll _ pty = funType False (qualifyLike cls f) vEnv
 
 createInstMethodDecl :: PredSet -> QualIdent -> [Type] -> MethodMap -> Ident
                      -> DTM (Decl PredType)
@@ -429,6 +429,8 @@ bindDefaultMethods :: ModuleIdent -> QualIdent -> [(Ident, Int)] -> ValueEnv
                    -> ValueEnv
 bindDefaultMethods m = flip . foldr . bindDefaultMethod m
 
+-- TODO: Should the implicit class constraint of a default method implementation
+--         be marked as such?
 bindDefaultMethod :: ModuleIdent -> QualIdent -> (Ident, Int) -> ValueEnv
                   -> ValueEnv
 bindDefaultMethod m cls (f, n) vEnv =
@@ -684,7 +686,7 @@ instance DictTrans Expression where
   dictTrans (Literal     _ pty l) =
     return $ Literal NoSpanInfo (unpredType pty) l
   dictTrans (Variable    _ pty v) = do
-    pls <- matchPredList (funType v) (unpredType pty)
+    pls <- matchPredList (funType True v) (unpredType pty)
     es <- mapM dictArg pls
     let ty = foldr (TypeArrow . typeOf) (unpredType pty) es
     return $ apply (Variable NoSpanInfo ty v) es
@@ -1216,10 +1218,26 @@ stringExpr = foldr (consExpr . Literal NoSpanInfo (predType charType) . Char)
 -- The function 'varType' is able to lookup both local and global identifiers.
 -- Since the environments have been qualified before, global declarations are
 -- only visible under their original name whereas local declarations are always
--- entered unqualified.
+-- entered unqualified. 'varType' transforms the implicit class constraint of
+-- the requested variable, if it has any, to a regular predicate. This is
+-- necessary because 'varType' is used in the module transformation to retrieve
+-- the types of functions with implicit class constraints like default method
+-- implementations.
+
+-- The function 'funType' has a boolean parameter which marks whether the
+-- implicit class constraint of the requested function, if it has any, should be
+-- transformed into a regular predicate. This functionality should be used when
+-- using this type information to check the types of expressions that could
+-- contain class methods (here, this is the case for the module transformation).
+-- It should only be disabled if the implicit class constraint of a requested 
+-- class method has to be treated differently than other predicates.
 
 varType :: ModuleIdent -> Ident -> ValueEnv -> TypeScheme
-varType m v vEnv = case qualLookupValue (qualify v) vEnv of
+varType m v vEnv = let ForAll n (PredType ps ty) = varType' m v vEnv
+                   in  ForAll n (PredType (removeICCFlag ps) ty)
+
+varType' :: ModuleIdent -> Ident -> ValueEnv -> TypeScheme
+varType' m v vEnv = case qualLookupValue (qualify v) vEnv of
   Value _ _ _ tySc : _ -> tySc
   Label _ _   tySc : _ -> tySc
   _ -> case qualLookupValue (qualifyWith m v) vEnv of
@@ -1233,11 +1251,13 @@ conType c vEnv = case qualLookupValue c vEnv of
   [NewtypeConstructor _ _ (ForAll n pty)] -> ForAll n pty
   _ -> internalError $ "Dictionary.conType: " ++ show c
 
-funType :: QualIdent -> ValueEnv -> TypeScheme
-funType f vEnv = case qualLookupValue f vEnv of
+funType :: Bool -> QualIdent -> ValueEnv -> TypeScheme
+funType False f vEnv = case qualLookupValue f vEnv of
   [Value _ _ _ tySc] -> tySc
   [Label _ _   tySc] -> tySc
   _ -> internalError $ "Dictionary.funType " ++ show f
+funType True  f vEnv = let ForAll n (PredType ps ty) = funType False f vEnv
+                       in  ForAll n (PredType (removeICCFlag ps) ty)
 
 opType :: QualIdent -> ValueEnv -> TypeScheme
 opType op vEnv = case qualLookupValue op vEnv of
