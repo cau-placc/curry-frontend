@@ -257,9 +257,9 @@ inferPredSet clsEnv p tc (PredType ps inst) tys cls = do
     else mapM_ (reportUndecidable p "derived instance" doc) ps5
          >> return (((cls, [tc]), ps4), True)
   where
-    noPolyPred (Pred _ _ tys') = all isTypeVar tys'
-    isTypeVar (TypeVariable _) = True
-    isTypeVar _                = False
+    noPolyPred (Pred _ _ tys') = any (not . isSimpleTypeVar) tys'
+    isSimpleTypeVar (TypeVariable _) = True
+    isSimpleTypeVar _                = False
     isDataPred _ (Pred _ qid _) = qid == qDataId
 
 updatePredSets :: [((InstIdent, PredSet), Bool)] -> INCM Bool
