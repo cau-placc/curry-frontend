@@ -210,10 +210,17 @@ createClassDictConstrDecl cls tvs ds = do
                  [toMethodType cls tvs qty | TypeSig _ fs qty <- ds, _ <- fs]
   return $ ConstrDecl NoSpanInfo (dictConstrId cls) mtys
 
-classDictConstrPredType :: ValueEnv -> ClassEnv -> QualIdent -> PredType
-classDictConstrPredType vEnv clsEnv cls = PredType ps $ foldr TypeArrow ty mtys
+-- TODO: Decide whether storing the arity of type classes in the class
+--         environment should stay. Using 'classArity' instead of the class kind
+--         would allow reducing the arity of 'bindClassEntities',
+--         'bindClassDict' and this function, as the type constructor
+--         environment would no longer be needed.
+classDictConstrPredType :: ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv
+                        -> QualIdent -> PredType
+classDictConstrPredType m tcEnv vEnv clsEnv cls =
+  PredType ps $ foldr TypeArrow ty mtys
  where
-  varTys = map TypeVariable [0 ..]
+  varTys = map TypeVariable [0 .. length (clsKinds m cls tcEnv) - 1]
   ps     = Set.fromList [ uncurry (Pred OPred) (applySuperClass varTys sclsInfo)
                         | sclsInfo <- superClasses cls clsEnv ]
   fs     = classMethods cls clsEnv
@@ -238,11 +245,13 @@ createInstDictExpr cls tys = do
              (zipWith (Variable NoSpanInfo . predType) (arrowArgs ty) fs)
 
 getInstDictConstrType :: QualIdent -> [Type] -> DTM Type
-getInstDictConstrType cls tys = do
+getInstDictConstrType cls tys =  do
+  m <- getModuleIdent
+  tcEnv <- getTyConsEnv
   vEnv <- getValueEnv
   clsEnv <- getClassEnv
-  return $
-    instanceTypes tys $ unpredType $ classDictConstrPredType vEnv clsEnv cls
+  return $ instanceTypes tys $ unpredType $
+    classDictConstrPredType m tcEnv vEnv clsEnv cls
 
 createClassMethodDecl :: QualIdent -> MethodMap -> Ident -> DTM (Decl PredType)
 createClassMethodDecl cls =
@@ -316,12 +325,13 @@ renameDecl _ _ = internalError "Dictionary.renameDecl"
 createStubs :: Decl PredType -> DTM [Decl Type]
 createStubs (ClassDecl _ _ _ cls _ _) = do
   m <- getModuleIdent
+  tcEnv <- getTyConsEnv
   vEnv <- getValueEnv
   clsEnv <- getClassEnv
   let ocls = qualifyWith m cls
       fs   = classMethods ocls clsEnv
       sclsInfos = superClasses ocls clsEnv
-      dictConstrPty = classDictConstrPredType vEnv clsEnv ocls
+      dictConstrPty = classDictConstrPredType m tcEnv vEnv clsEnv ocls
       (superDictAndMethodTys, dictTy) =
         arrowUnapply $ transformPredType dictConstrPty
       (superDictTys, methodTys)       =
@@ -412,7 +422,7 @@ bindClassDict m tcEnv clsEnv cls vEnv = bindEntity m c dc vEnv
   where c  = qDictConstrId cls
         dc = DataConstructor c a (replicate a anonId) tySc
         a  = Set.size ps + arrowArity ty
-        pty@(PredType ps ty) = classDictConstrPredType vEnv clsEnv cls
+        pty@(PredType ps ty) = classDictConstrPredType m tcEnv vEnv clsEnv cls
         tySc = ForAll (length (clsKinds m cls tcEnv)) pty
 
 bindDefaultMethods :: ModuleIdent -> QualIdent -> [(Ident, Int)] -> ValueEnv
