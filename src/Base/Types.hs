@@ -25,8 +25,8 @@ module Base.Types
   , qualifyType, unqualifyType, qualifyTC
     -- * Representation of predicates, predicate sets and predicated types
   , Pred (..), PredIsICC (..), qualifyPred, unqualifyPred
-  , PredSet, emptyPredSet, psMember, partitionPredSet, minPredSet, maxPredSet
-  , qualifyPredSet, unqualifyPredSet
+  , PredSet, emptyPredSet, psMember, removeICCFlag, partitionPredSet
+  , minPredSet, maxPredSet, qualifyPredSet, unqualifyPredSet
   , PredType (..), predType, unpredType, qualifyPredType, unqualifyPredType
   , PredTypes (..), qualifyPredTypes, unqualifyPredTypes
     -- * Representation of data constructors
@@ -277,6 +277,15 @@ emptyPredSet = Set.empty
 psMember :: Pred -> PredSet -> Bool
 psMember (Pred _ qcls tys) ps =
   Pred OPred qcls tys `Set.member` ps || Pred ICC qcls tys `Set.member` ps
+
+-- Returns the given predicate set with its implicit class constraint, if it has
+-- any, transformed into a regular predicate.
+removeICCFlag :: PredSet -> PredSet
+removeICCFlag ps =
+  case Set.lookupMin ps of
+    Just (Pred ICC qcls tys) ->
+      Set.insert (Pred OPred qcls tys) (Set.deleteMin ps)
+    _                        -> ps
 
 -- TODO: Is the following function actually useful? Reducing a predicate set
 --         might only be needed where types need to be inferred (and not just

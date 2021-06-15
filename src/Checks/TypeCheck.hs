@@ -945,7 +945,7 @@ classMethodType :: (Ident -> QualIdent) -> Ident -> TCM TypeScheme
 classMethodType qual f = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  return $ funType m (qual $ unRenameIdent f) vEnv
+  return $ funType False m (qual $ unRenameIdent f) vEnv
 
 -- Due to the sorting of the predicate set, we can simply remove the minimum
 -- element as this is guaranteed to be the class constraint (see module 'Types'
@@ -1083,7 +1083,7 @@ tcPatternHelper p (LazyPattern spi t) = do
 tcPatternHelper p t@(FunctionPattern spi _ f ts) = do
   m <- lift getModuleIdent
   vEnv <- lift getValueEnv
-  (ps, ty) <- lift $ inst (funType m f vEnv)
+  (ps, ty) <- lift $ inst (funType True m f vEnv)
   -- insert all
   S.modify (flip (foldr Set.insert) (bv t))
   tcFuncPattern p spi (pPrintPrec 0 t) f id ps ty ts
@@ -1146,7 +1146,7 @@ tcExpr (Variable spi _ v) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- if isAnonId (unqualify v) then freshDataType
-                                        else inst (funType m v vEnv)
+                                        else inst (funType True m v vEnv)
   return (ps, ty, Variable spi (predType ty) v)
 tcExpr (Constructor spi _ c) = do
   m <- getModuleIdent
@@ -1380,7 +1380,7 @@ tcInfixOp :: InfixOp a -> TCM (PredSet, Type, InfixOp PredType)
 tcInfixOp (InfixOp _ op) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  (ps, ty) <- inst (funType m op vEnv)
+  (ps, ty) <- inst (funType True m op vEnv)
   return (ps, ty, InfixOp (predType ty) op)
 tcInfixOp (InfixConstr _ op) = do
   m <- getModuleIdent
@@ -1540,6 +1540,7 @@ reducePredSet p what doc ps = do
     -- TODO: Check if there is any possibility of this method being applied to
     --         an implicit class constraint. (With FlexibleInstances or nullary
     --         type classes, instances for reducing ICCs could exist.)
+    --         If so, add the 'removeDoubleICC' predicate set reduction.
     reducePred _ pr@(Pred ICC _ _) =
       internalError $ "TypeCheck.reducePredSet: " ++
         "tried to reduce the implicit class constraint " ++ show pr
@@ -1750,6 +1751,14 @@ gen gvs ps ty = ForAll (length tvs) (subst theta (PredType ps ty))
 -- data constructor. The function 'varArity' works like 'varType' but returns
 -- a variable's arity instead of its type.
 
+-- The function 'funType' has an additional boolean parameter which marks
+-- whether the implicit class constraint of the requested function, if it has
+-- any, should be transformed into a regular predicate. This functionality
+-- should be used when using this type information to infer and check the types
+-- of expressions and patterns that could contain class methods. It should only
+-- be disabled if the implicit class constraint of a requested class method has
+-- to be treated differently than other predicates.
+
 constrType :: ModuleIdent -> QualIdent -> ValueEnv -> TypeScheme
 constrType m c vEnv = case qualLookupValue c vEnv of
   [DataConstructor  _ _ _ tySc] -> tySc
@@ -1779,14 +1788,16 @@ varArity v vEnv = case qualLookupValue v vEnv of
   Label   _ _ _ : _ -> 1
   _ -> internalError $ "TypeCheck.varArity: " ++ show v
 
-funType :: ModuleIdent -> QualIdent -> ValueEnv -> TypeScheme
-funType m f vEnv = case qualLookupValue f vEnv of
+funType :: Bool -> ModuleIdent -> QualIdent -> ValueEnv -> TypeScheme
+funType False m f vEnv = case qualLookupValue f vEnv of
   [Value _ _ _ tySc] -> tySc
   [Label _ _ tySc] -> tySc
   _ -> case qualLookupValue (qualQualify m f) vEnv of
     [Value _ _ _ tySc] -> tySc
     [Label _ _ tySc] -> tySc
     _ -> internalError $ "TypeCheck.funType: " ++ show f
+funType True  m f vEnv = let ForAll n (PredType ps ty) = funType False m f vEnv
+                         in  ForAll n (PredType (removeICCFlag ps) ty)
 
 labelType :: ModuleIdent -> QualIdent -> ValueEnv -> TypeScheme
 labelType m l vEnv = case qualLookupValue l vEnv of
