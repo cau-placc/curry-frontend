@@ -1528,7 +1528,8 @@ reducePredSet p what doc ps = do
   theta <- getTypeSubst
   inEnv <- fmap (fmap (subst theta)) <$> getInstEnv
   let ps' = subst theta ps
-      (ps1, ps2) = partitionPredSet $ minPredSet clsEnv $ reducePreds inEnv ps'
+      (ps1, ps2) =
+        partitionPredSet all $ minPredSet clsEnv $ reducePreds inEnv ps'
   theta' <-
     foldM (reportMissingInstance m p what doc inEnv) idSubst $ Set.toList ps2
   modifyTypeSubst $ compose theta'
@@ -1627,7 +1628,7 @@ applyDefaults p what doc fvs ps ty = do
   let theta = foldr (bindDefault defs inEnv ps) idSubst $ nub
                 [ tv | Pred _ qcls [TypeVariable tv] <- Set.toList ps
                      , tv `Set.notMember` fvs, isSimpleNumClass clsEnv qcls ]
-      ps'   = fst (partitionPredSet (subst theta ps))
+      ps'   = fst (partitionPredSet all (subst theta ps))
       ty'   = subst theta ty
       tvs'  = nub $ filter (`Set.notMember` fvs) (typeVars ps')
   mapM_ (report . errAmbiguousTypeVariable m p what doc ps' ty') tvs'

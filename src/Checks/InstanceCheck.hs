@@ -360,7 +360,7 @@ reducePredSet :: HasSpanInfo s => Bool -> s -> String -> Doc -> ClassEnv -> Pred
 reducePredSet b p what doc clsEnv ps = do
   m <- getModuleIdent
   inEnv <- getInstEnv
-  let (ps1, ps2) = partitionPredSet $ minPredSet clsEnv $ reducePreds inEnv ps
+  let (ps1, ps2) = partitionPredSet all $ minPredSet clsEnv $ reducePreds inEnv ps
       ps2' = if b then Set.filter (isNotDataPred m) ps2 else ps2
   Set.mapM_ (reportMissing m) ps2' >> return (ps1, ps2)
   where

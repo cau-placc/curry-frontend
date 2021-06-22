@@ -298,10 +298,20 @@ deleteDoubleICC ps =
     Just (Pred ICC qcls tys) -> Set.delete (Pred OPred qcls tys) ps
     _                        -> ps
 
--- TODO: Is this partition sensible for our purposes? Or does this have to be
---       reworked?
-partitionPredSet :: PredSet -> (PredSet, PredSet)
-partitionPredSet = Set.partition $ \(Pred _ _ tys) -> all isTypeVariable tys
+-- Partitions a predicate set based on whether the predicate types are type
+-- variables (including type variables applied to types) or other types.
+-- The first argument is a function that is supposed to either 'all' or 'any'.
+-- @partitionPredSet all ps@ returns the predicates of @ps@ which have only type
+-- variables as predicate types in the first tuple element and predicates with
+-- at least one other type in the second one.
+-- @partitionPredSet any ps@ returns the predicates which have at least one type
+-- variable as a predicate type in the first tuple element and predicates with
+-- only other types in the second one.
+-- 'all' and 'any' make no difference for predicates of single-parameter type
+-- classes.
+partitionPredSet :: ((Type -> Bool) -> [Type] -> Bool)
+                 -> PredSet -> (PredSet, PredSet)
+partitionPredSet f = Set.partition $ \(Pred _ _ tys) -> f isTypeVariable tys
   where
     isTypeVariable (TypeVariable _) = True
     isTypeVariable (TypeApply ty _) = isTypeVariable ty
