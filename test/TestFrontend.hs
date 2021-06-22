@@ -89,9 +89,9 @@ showMessages = show . ppMessages ppError . sort
 -- group of test which should fail yielding a specific error message
 failingTests :: Test
 failingTests = Group { groupName    = "Failing Tests"
-, concurrently = False
-, groupTests   = map (mkTest "test/fail/") failInfos
-}
+                     , concurrently = False
+                     , groupTests   = map (mkTest "test/fail/") failInfos
+                     }
 
 -- group of tests which should pass
 passingTests :: Test
@@ -187,6 +187,86 @@ failInfos = map (uncurry mkFailTest)
     )
   , ("MissingLabelInUpdate",
       ["Undefined record label `l1'"] )
+  , ("MPTCAmbiguousTypeVar",
+      -- Many parts in these error message are left out due to possible variable
+      -- name changes. Example of an actual error message:
+      --   Ambiguous type variable _8
+      --   in type (C _8 _6, C _7 _8) => _7 -> _6
+      --   inferred for function `f1'
+      [ "Ambiguous type variable" , "inferred for equation", "f1 = methodC . methodC"
+      , "inferred for function `f1'"
+      , "f2 (MPTCAmbiguousTypeVar.methodD x _) = x"
+      , "inferred for function `f2'"
+      ]
+    )
+  , ("MPTCFlexibleContext",
+      [ "Constraint with non-variable argument C Prelude.Bool" -- C Prelude.Bool a
+      , "occuring in the context of the inferred type for function declaration `f1'"
+      , "occuring in the context of the inferred type for function declaration `f2a'"
+      , "Type error in application", "f3a (1 :: Int)"
+      , "Types Prelude.Bool and Prelude.Int are incompatible"
+      ]
+    )
+  , ("MPTCInstanceTermination",
+      [ "The type variable `a' occurs more often"
+      , "in the constraint C a a", "than in the instance head C [a] Bool"
+      , "Unbound type variable b" -- instance C a b => C [a] Bool
+      , "The type constraint C a a is not smaller", "than the instance head D [a]"
+      ]
+    )
+  , ("MPTCInvalidMethodType",
+      [ "Method type does not mention class variable b" -- methodC1 :: a -> c -> a
+      , "Method context must not constrain class variable b" -- methodC2 :: Eq b => a -> b -> c
+      ]
+    )
+  , ("MPTCMissingInstance",
+      [ "Missing instance for C Prelude.Bool [Prelude.Bool]" -- f1 = methodC True [True]
+      , "Missing instance for D" -- f2 = methodD
+      ]
+    )
+  , ("MPTCMissingSuperClassInstance",
+      [ "Missing instance for C Prelude.Int Prelude.Bool"
+      , "in instance declaration D Prelude.Bool Prelude.Int"
+      , "Missing instance for D Prelude.Bool Prelude.Bool"
+      , "in instance declaration F Prelude.Bool"
+      , "Missing instance for E" -- "in instance declaration F Prelude.Bool"
+      ]
+    )
+  , ("MPTCNoExtension",
+      [ "Multi-parameter type class declaration C a b"
+      , "Nullary type class declaration D"
+      , "Multiple types in instance declaration C Bool Bool"
+      , "Zero types in instance declaration D"
+      ]
+    )
+  , ("MPTCSuperClassCycle",
+      [ "Mutually recursive type classes C, D (line 7.18), and E (line 9.16)"
+      , "Mutually recursive type classes F and G (line 13.12)"
+      ]
+    )
+  , ("MPTCWrongClassArity",
+      [ "The type class `C' has been applied to 0 types," -- "but it has 1 type parameter."
+      , "The type class `C' has been applied to 2 types," -- "but it has 1 type parameter."
+      , "The type class `D' has been applied to 1 type," -- "but it has 2 type parameters."
+      , "The type class `D' has been applied to 3 types," -- "but it has 2 type parameters."
+      , "The type class `E' has been applied to 1 type," -- "but it has 0 type parameters."
+      ]
+    )
+  , ("MPTCWrongKind",
+      [ "Kind error in instance declaration", "instance C Bool []"
+      ,   "Type: Bool", "Inferred kind: *", "Expected kind: * -> *"
+        {- "Kind error in instance declaration", "instance C Bool []" -}
+      ,   "Type: []", "Inferred kind: * -> *", "Expected kind: *"
+      , "Kind error in type expression", "a Bool"
+      ,   "Type: a", "Kind: *", "Cannot be applied"
+      , {- "Kind error in type expression" -} "a Bool -> b"
+      ,   "Type: b" {- "Inferred kind: * -> *", "Expected kind: *" -}
+      , "Kind error in class constraint", "C a a"
+          {- "Type: a", "Inferred kind: * -> *", "Expected kind: *" -}
+      , {- "Kind error in type expression" -} "b a"
+      ,   {- "Type: a" -} "Inferred kind: (* -> *) -> *" {- "Expected kind: *" -}
+      ]
+    )
   , ("MultipleArities", ["Equations for `test' have different arities"])
   , ("MultipleDefinitions",
       ["Multiple definitions for data/record constructor `Rec'"]
