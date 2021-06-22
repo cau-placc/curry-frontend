@@ -486,6 +486,7 @@ tcPDeclGroup ps pds = do
   let impPds'' = map (uncurry (fixType . gen fvs lps' . subst theta')) impPds'
   modifyValueEnv $ flip (rebindVars m) (concatMap (declVars . snd) impPds'')
   (ps'', expPds') <- mapAccumM (uncurry . tcCheckPDecl) gps expPds
+  mapM_ (reportFlexibleContextDecl m) (impPds'' ++ expPds')
   return (ps'', impPds'' ++ expPds')
 
 partitionPDecls :: SigEnv -> [PDecl a] -> ([PDecl a], [(QualTypeExpr, PDecl a)])
@@ -1529,7 +1530,7 @@ reducePredSet p what doc ps = do
   inEnv <- fmap (fmap (subst theta)) <$> getInstEnv
   let ps' = subst theta ps
       (ps1, ps2) =
-        partitionPredSet all $ minPredSet clsEnv $ reducePreds inEnv ps'
+        partitionPredSet any $ minPredSet clsEnv $ reducePreds inEnv ps'
   theta' <-
     foldM (reportMissingInstance m p what doc inEnv) idSubst $ Set.toList ps2
   modifyTypeSubst $ compose theta'
@@ -1598,6 +1599,52 @@ reportMissingInstance m p what doc inEnv theta (Pred _ qcls tys) =
 hasInstance :: InstEnv' -> QualIdent -> [Type] -> Bool
 hasInstance inEnv qcls = isJust . instPredSet inEnv qcls
 
+-- Predicates which have both type variables and other types as predicate types
+-- (like @C Bool a@) cannot be reported in 'reducePredSet', because that would
+-- lead to incorrect missing instance errors when 'reducePredSet' is called when
+-- some, but not all predicate types have been inferred.
+-- Therefore, to report such predicates which would only be allowed with a
+-- FlexibleContexts language extension, 'reportFlexibleContextDecl' is called at
+-- the end of inferring types for a declaration group.
+
+reportFlexibleContextDecl :: ModuleIdent -> PDecl PredType -> TCM ()
+reportFlexibleContextDecl m (_, FunctionDecl spi (PredType ps _) f _) =
+  let flexCs = Set.toList $ snd $ partitionPredSet all ps
+      what   = "function declaration"
+  in mapM_ (report . errFlexibleContext m spi what f) flexCs
+reportFlexibleContextDecl m (_, PatternDecl _ t _) =
+  reportFlexibleContextPattern m t
+reportFlexibleContextDecl _ _ =
+  report $ internalError "TypeCheck.reportFlexibleContextDecl"
+
+reportFlexibleContextPattern :: ModuleIdent -> Pattern PredType -> TCM ()
+reportFlexibleContextPattern _ (LiteralPattern  _ _ _) = ok
+reportFlexibleContextPattern _ (NegativePattern _ _ _) = ok
+reportFlexibleContextPattern m (VariablePattern spi (PredType ps _) v) =
+  let flexCs = Set.toList $ snd $ partitionPredSet all ps
+      what   = "variable"
+  in mapM_ (report . errFlexibleContext m spi what v) flexCs
+reportFlexibleContextPattern m (ConstructorPattern  _ _ _ ts) =
+  mapM_ (reportFlexibleContextPattern m) ts
+reportFlexibleContextPattern m (InfixPattern     _ _ t1 _ t2) =
+  mapM_ (reportFlexibleContextPattern m) [t1, t2]
+reportFlexibleContextPattern m (ParenPattern             _ t) =
+  reportFlexibleContextPattern m t
+reportFlexibleContextPattern m (RecordPattern       _ _ _ fs) =
+  mapM_ (\(Field _ _ t) -> reportFlexibleContextPattern m t) fs
+reportFlexibleContextPattern m (TuplePattern            _ ts) =
+  mapM_ (reportFlexibleContextPattern m) ts
+reportFlexibleContextPattern m (ListPattern           _ _ ts) =
+  mapM_ (reportFlexibleContextPattern m) ts
+reportFlexibleContextPattern m (AsPattern              _ _ t) =
+  reportFlexibleContextPattern m t
+reportFlexibleContextPattern m (LazyPattern              _ t) =
+  reportFlexibleContextPattern m t
+reportFlexibleContextPattern _ (FunctionPattern      _ _ _ _) =
+  report $ internalError "TypeCheck.reportFlexibleContextPattern"
+reportFlexibleContextPattern _ (InfixFuncPattern   _ _ _ _ _) =
+  report $ internalError "TypeCheck.reportFlexibleContextPattern"
+
 -- When a constrained type variable that is not free in the type environment
 -- disappears from the current type, the type becomes ambiguous. For instance,
 -- the type of the expression
@@ -1628,7 +1675,7 @@ applyDefaults p what doc fvs ps ty = do
   let theta = foldr (bindDefault defs inEnv ps) idSubst $ nub
                 [ tv | Pred _ qcls [TypeVariable tv] <- Set.toList ps
                      , tv `Set.notMember` fvs, isSimpleNumClass clsEnv qcls ]
-      ps'   = fst (partitionPredSet all (subst theta ps))
+      ps'   = fst (partitionPredSet any (subst theta ps))
       ty'   = subst theta ty
       tvs'  = nub $ filter (`Set.notMember` fvs) (typeVars ps')
   mapM_ (report . errAmbiguousTypeVariable m p what doc ps' ty') tvs'
@@ -1925,6 +1972,14 @@ errMissingInstance m p what doc pr = spanInfoMessage p $ vcat
   [ text "Missing instance for" <+> ppPred m pr
   , text "in" <+> text what
   , doc
+  ]
+
+errFlexibleContext :: HasSpanInfo a => ModuleIdent -> a -> String -> Ident
+                   -> Pred -> Message
+errFlexibleContext m p what v pr = spanInfoMessage p $ vcat
+  [ text "Constraint with non-variable argument" <+> ppPred m pr
+  , text "occuring in the context of the inferred type for" <+> text what <+>
+      text (escName v)
   ]
 
 errAmbiguousTypeVariable :: HasSpanInfo a => ModuleIdent -> a -> String -> Doc
