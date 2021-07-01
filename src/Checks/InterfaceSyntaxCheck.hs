@@ -268,7 +268,8 @@ checkTypeConstructor :: SpanInfo -> QualIdent -> ISC TypeExpr
 checkTypeConstructor spi tc = do
   tyEnv <- getTypeEnv
   case qualLookupTypeKind tc tyEnv of
-    [] | not (isQualified tc) -> return $ VariableType spi $ unqualify tc
+    [] | isQTupleId tc        -> return $ ConstructorType spi tc
+       | not (isQualified tc) -> return $ VariableType spi $ unqualify tc
        | otherwise            -> do
           report $ errUndefinedType tc
           return $ ConstructorType spi tc
