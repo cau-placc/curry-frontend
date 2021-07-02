@@ -356,7 +356,7 @@ checkConstraint c@(Constraint spi qcls tys) = do
     errIllegalConstraint c
   return $ Constraint spi qcls tys'
   where
-    rootType (ApplyType _ ty' _) = ty'
+    rootType (ApplyType _ ty' _) = rootType ty'
     rootType ty'                 = ty'
 
 checkClass :: Bool -> Int -> QualIdent -> TSCM ()
