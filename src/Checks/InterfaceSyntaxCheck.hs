@@ -186,7 +186,8 @@ checkIMethodDecl :: [Ident] -> IMethodDecl -> ISC IMethodDecl
 checkIMethodDecl tvs (IMethodDecl p f a qty) = do
   qty'@(QualTypeExpr _ cx _) <- checkQualType qty
   mapM_ (report . errAmbiguousType f) (filter (`notElem` fv qty') tvs)
-  mapM_ (report . errConstrainedClassVariable f) (filter (`elem` fv cx) tvs)
+  mapM_ (report . errConstrainedClassVariables f)
+        (filter ((\vs -> not (null vs) && all (`elem` tvs) vs) . fv) cx)
   return $ IMethodDecl p f a qty'
 
 checkInstanceType :: InstanceType -> ISC ()
@@ -379,9 +380,11 @@ errAmbiguousType :: HasSpanInfo s => s -> Ident -> Message
 errAmbiguousType p ident = spanInfoMessage p $ hsep $ map text
   [ "Method type does not mention class variable", idName ident ]
 
-errConstrainedClassVariable :: HasSpanInfo s => s -> Ident -> Message
-errConstrainedClassVariable p ident = spanInfoMessage p $ hsep $ map text
-  [ "Method context must not constrain class variable", idName ident ]
+errConstrainedClassVariables :: HasSpanInfo s => s -> Constraint -> Message
+errConstrainedClassVariables p c = spanInfoMessage p $ vcat
+  [ text "Constraint" <+> pPrint c
+  , text "in method context constrains only class variables"
+  ]
 
 errNonLinear :: Ident -> String -> Message
 errNonLinear tv what = spanInfoMessage tv $ hsep $ map text

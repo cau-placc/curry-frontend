@@ -225,7 +225,8 @@ checkSimpleConstraint c@(Constraint _ _ tys) =
 checkClassMethod :: [Ident] -> Decl a -> TSCM ()
 checkClassMethod tvs (TypeSig spi _ qty@(QualTypeExpr _ cx _)) = do
   mapM_ (report . errAmbiguousType spi) (filter (`notElem` fv qty) tvs)
-  mapM_ (report . errConstrainedClassVariable spi) (filter (`elem` fv cx) tvs)
+  mapM_ (report . errConstrainedClassVariables spi)
+        (filter ((\vs -> not (null vs) && all (`elem` tvs) vs) . fv) cx)
 checkClassMethod _ _ = ok
 
 checkInstanceType :: SpanInfo -> InstanceType -> TSCM ()
@@ -549,9 +550,11 @@ errAmbiguousType :: SpanInfo -> Ident -> Message
 errAmbiguousType spi ident = spanInfoMessage spi $ hsep $ map text
   [ "Method type does not mention class variable", idName ident ]
 
-errConstrainedClassVariable :: SpanInfo -> Ident -> Message
-errConstrainedClassVariable spi ident = spanInfoMessage spi $ hsep $ map text
-  [ "Method context must not constrain class variable", idName ident ]
+errConstrainedClassVariables :: SpanInfo -> Constraint -> Message
+errConstrainedClassVariables spi c = spanInfoMessage spi $ vcat
+  [ text "Constraint" <+> pPrint c
+  , text "in method context constrains only class variables"
+  ]
 
 errNonLinear :: Ident -> String -> Message
 errNonLinear tv what = spanInfoMessage tv $ hsep $ map text
