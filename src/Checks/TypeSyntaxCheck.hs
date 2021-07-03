@@ -344,8 +344,8 @@ checkClosedContext :: [Ident] -> Context -> TSCM Context
 checkClosedContext tvs = mapM (checkClosedConstraint tvs)
 
 checkClosedConstraint :: [Ident] -> Constraint -> TSCM Constraint
-checkClosedConstraint tvs c@(Constraint _ _ tys) = do
-  c' <- checkConstraint c
+checkClosedConstraint tvs c = do
+  c'@(Constraint _ _ tys) <- checkConstraint c
   mapM_ (checkClosed tvs) tys
   return c'
 
