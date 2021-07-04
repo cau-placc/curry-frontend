@@ -143,4 +143,4 @@ normalize n ty = expandAliasType [TypeVariable (occur tv) | tv <- [0..]] ty
 --         with 0 anymore.
 instanceTypes :: ExpandAliasType a => [Type] -> a -> a
 instanceTypes tys = expandAliasType (tys ++ map TypeVariable [nMax ..])
-  where nMax = maximum [n | ForAll n _ <- map polyType tys]
+  where nMax = maximum (0 : [n | ForAll n _ <- map polyType tys])
