@@ -653,13 +653,14 @@ dictTransConstrDecl tvs (ConOpDecl p ty1 op ty2) dc =
 dictTransConstrDecl _ d _ = internalError $ "Dictionary.dictTrans: " ++ show d
 
 instance DictTrans Equation where
-  dictTrans (Equation p (FunLhs _ f ts) rhs) = withLocalValueEnv $ do
-    m <- getModuleIdent
-    pls <- matchPredList (varType m f) $
-             foldr (TypeArrow . typeOf) (typeOf rhs) ts
-    ts' <- addDictArgs pls ts
-    modifyValueEnv $ bindPatterns ts'
-    Equation p (FunLhs NoSpanInfo f ts') <$> dictTrans rhs
+  dictTrans (Equation p (FunLhs _ f ts) rhs) =
+    withLocalValueEnv $ withLocalDictEnv $ do
+      m <- getModuleIdent
+      pls <- matchPredList (varType m f) $
+               foldr (TypeArrow . typeOf) (typeOf rhs) ts
+      ts' <- addDictArgs pls ts
+      modifyValueEnv $ bindPatterns ts'
+      Equation p (FunLhs NoSpanInfo f ts') <$> dictTrans rhs
   dictTrans eq                               =
     internalError $ "Dictionary.dictTrans: " ++ show eq
 
@@ -747,12 +748,12 @@ addDictArgs pls ts = do
 -- The function 'dictArg' constructs the dictionary argument for a predicate
 -- from the predicates of a class method or an overloaded function. It checks
 -- whether a dictionary for the predicate is available in the dictionary
--- environment, which is the case when the predicate's types are all type
--- variables, and uses 'instDict' otherwise in order to supply a new dictionary
--- using the appropriate instance dictionary construction function. If the
--- corresponding instance declaration has a non-empty context, the dictionary
--- construction function is applied to the dictionaries computed for the context
--- instantiated at the appropriate types.
+-- environment, which is the case when the predicate is mentioned in the type
+-- signature or is not reducible, and uses 'instDict' otherwise in order to
+-- supply a new dictionary using the appropriate instance dictionary
+-- construction function. If the corresponding instance declaration has a
+-- non-empty context, the dictionary construction function is applied to the
+-- dictionaries computed for the context instantiated at the appropriate types.
 
 -- TODO: With FlexibleInstances, there could exist instances even for predicates
 --         with only variable types. The comment above has to be updated for
