@@ -53,10 +53,11 @@ import           Data.Function       (on)
 import           Data.List           (nub, nubBy, partition, sortBy, (\\))
 import qualified Data.Map            as Map (Map, empty, insert, lookup)
 import           Data.Maybe                 (fromJust, fromMaybe, isJust)
-import qualified Data.Set.Extra      as Set ( Set, concatMap, deleteMin, empty
-                                            , fromList, insert, member
-                                            , notMember, partition, singleton
-                                            , toList, union, unions )
+import qualified Data.Set.Extra      as Set ( Set, concatMap, deleteMin
+                                            , difference, empty, fromList
+                                            , insert, member, notMember
+                                            , partition, singleton, toList
+                                            , union, unions )
 
 import Curry.Base.Ident
 import Curry.Base.Pretty
@@ -91,7 +92,7 @@ import Env.Value
 typeCheck :: ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv -> InstEnv -> [Decl a]
           -> ([Decl PredType], ValueEnv, [Message])
 typeCheck m tcEnv vEnv clsEnv inEnv ds = runTCM (checkDecls ds) initState
-  where initState = TcState m tcEnv vEnv clsEnv (inEnv, Map.empty)
+  where initState = TcState m tcEnv vEnv clsEnv (inEnv, Map.empty) Set.empty
                             [intType, floatType] idSubst emptySigEnv 1 []
 
 checkDecls :: [Decl a] -> TCM [Decl PredType]
@@ -118,6 +119,15 @@ checkDecls ds = do
 -- representation is that it makes it easy to apply the current substitution to
 -- the dynamic part of the environment.
 
+-- A so-called explicit predicate set stores the constraints mentioned in an
+-- explicit type signature and those implied by them through a super class
+-- relation. This set is used to prevent reporting missing instances if (and
+-- only if) the programmer has explicitly constrained the respective function to
+-- only be usable if such instances existed.
+
+-- TODO: With FlexibleContexts, predicates of the explicit predicate set should
+--         not be reduced during type checking.
+
 type TCM = S.State TcState
 
 type InstEnv' = (InstEnv, Map.Map QualIdent [[Type]])
@@ -128,6 +138,7 @@ data TcState = TcState
   , valueEnv     :: ValueEnv
   , classEnv     :: ClassEnv
   , instEnv      :: InstEnv'    -- instances (static and dynamic)
+  , explPreds    :: PredSet     -- predicates implied by the type signature
   , defaultTypes :: [Type]
   , typeSubst    :: TypeSubst
   , sigEnv       :: SigEnv
@@ -183,6 +194,20 @@ getInstEnv = S.gets instEnv
 
 modifyInstEnv :: (InstEnv' -> InstEnv') -> TCM ()
 modifyInstEnv f = S.modify $ \s -> s { instEnv = f $ instEnv s }
+
+getExplPreds :: TCM PredSet
+getExplPreds = S.gets explPreds
+
+modifyExplPreds :: (PredSet -> PredSet) -> TCM ()
+modifyExplPreds f =
+  S.modify $ \s -> s { explPreds = f $ explPreds s }
+
+withLocalExplPreds :: TCM a -> TCM a
+withLocalExplPreds act = do
+  oldEnv <- getExplPreds
+  res <- act
+  modifyExplPreds $ const oldEnv
+  return res
 
 getDefaultTypes :: TCM [Type]
 getDefaultTypes = S.gets defaultTypes
@@ -649,15 +674,24 @@ declVars _ = internalError "TypeCheck.declVars"
 
 tcCheckPDecl :: PredSet -> QualTypeExpr -> PDecl a
              -> TCM (PredSet, PDecl PredType)
-tcCheckPDecl ps qty pd = do
+tcCheckPDecl ps qty pd = withLocalExplPreds $ do
+  clsEnv <- getClassEnv
+  oldExPs <- getExplPreds
+  PredType newExPs _ <- expandPoly qty
+  let newExPs' = maxPredSet clsEnv newExPs
+  modifyExplPreds $ Set.union newExPs'
   (ps', (ty, pd')) <- tcPDecl ps pd
   fvs <- computeFvEnv
   theta <- getTypeSubst
   poly <- isNonExpansive $ snd pd
   let (gps, lps) = splitPredSet fvs ps'
+      -- TODO: This prevents nullary type class constraints to be passed on
+      --         between top-level functions, but might have to be reworked when
+      --         FlexibleContexts is implemented.
+      gps' = gps `Set.difference` (newExPs' `Set.difference` oldExPs)
       ty' = subst theta ty
       tySc = if poly then gen fvs lps ty' else monoType ty'
-  checkPDeclType qty gps tySc pd'
+  checkPDeclType qty gps' tySc pd'
 
 checkPDeclType :: QualTypeExpr -> PredSet -> TypeScheme -> PDecl PredType
                -> TCM (PredSet, PDecl PredType)
@@ -1528,9 +1562,10 @@ reducePredSet p what doc ps = do
   clsEnv <- getClassEnv
   theta <- getTypeSubst
   inEnv <- fmap (fmap (subst theta)) <$> getInstEnv
+  exPs <- getExplPreds
   let ps' = subst theta ps
-      (ps1, ps2) =
-        partitionPredSet any $ minPredSet clsEnv $ reducePreds inEnv ps'
+      (ps1, ps2) = partitionPredSetSomeVars exPs $
+                     minPredSet clsEnv $ reducePreds inEnv ps'
   theta' <-
     foldM (reportMissingInstance m p what doc inEnv) idSubst $ Set.toList ps2
   modifyTypeSubst $ compose theta'
@@ -1609,7 +1644,7 @@ hasInstance inEnv qcls = isJust . instPredSet inEnv qcls
 
 reportFlexibleContextDecl :: ModuleIdent -> PDecl PredType -> TCM ()
 reportFlexibleContextDecl m (_, FunctionDecl spi (PredType ps _) f _) =
-  let flexCs = Set.toList $ snd $ partitionPredSet all ps
+  let flexCs = Set.toList $ snd $ partitionPredSetOnlyVars ps
       what   = "function declaration"
   in mapM_ (report . errFlexibleContext m spi what f) flexCs
 reportFlexibleContextDecl m (_, PatternDecl _ t _) =
@@ -1621,7 +1656,7 @@ reportFlexibleContextPattern :: ModuleIdent -> Pattern PredType -> TCM ()
 reportFlexibleContextPattern _ (LiteralPattern  _ _ _) = ok
 reportFlexibleContextPattern _ (NegativePattern _ _ _) = ok
 reportFlexibleContextPattern m (VariablePattern spi (PredType ps _) v) =
-  let flexCs = Set.toList $ snd $ partitionPredSet all ps
+  let flexCs = Set.toList $ snd $ partitionPredSetOnlyVars ps
       what   = "variable"
   in mapM_ (report . errFlexibleContext m spi what v) flexCs
 reportFlexibleContextPattern m (ConstructorPattern  _ _ _ ts) =
@@ -1671,11 +1706,12 @@ applyDefaults p what doc fvs ps ty = do
   m <- getModuleIdent
   clsEnv <- getClassEnv
   inEnv <- getInstEnv
+  exPs <- getExplPreds
   defs <- getDefaultTypes
   let theta = foldr (bindDefault defs inEnv ps) idSubst $ nub
                 [ tv | Pred _ qcls [TypeVariable tv] <- Set.toList ps
                      , tv `Set.notMember` fvs, isSimpleNumClass clsEnv qcls ]
-      ps'   = fst (partitionPredSet any (subst theta ps))
+      ps'   = fst (partitionPredSetSomeVars exPs (subst theta ps))
       ty'   = subst theta ty
       tvs'  = nub $ filter (`Set.notMember` fvs) (typeVars ps')
   mapM_ (report . errAmbiguousTypeVariable m p what doc ps' ty') tvs'

@@ -25,8 +25,9 @@ module Base.Types
   , qualifyType, unqualifyType, qualifyTC
     -- * Representation of predicates, predicate sets and predicated types
   , Pred (..), PredIsICC (..), qualifyPred, unqualifyPred
-  , PredSet, emptyPredSet, psMember, removeICCFlag, partitionPredSet
-  , minPredSet, maxPredSet, qualifyPredSet, unqualifyPredSet
+  , PredSet, emptyPredSet, psMember, removeICCFlag, partitionPredSetSomeVars
+  , partitionPredSetOnlyVars, minPredSet, maxPredSet, qualifyPredSet
+  , unqualifyPredSet
   , PredType (..), predType, unpredType, qualifyPredType, unqualifyPredType
   , PredTypes (..), qualifyPredTypes, unqualifyPredTypes
     -- * Representation of data constructors
@@ -298,20 +299,32 @@ deleteDoubleICC ps =
     Just (Pred ICC qcls tys) -> Set.delete (Pred OPred qcls tys) ps
     _                        -> ps
 
--- Partitions a predicate set based on whether the predicate types are type
--- variables (including type variables applied to types) or other types.
--- The first argument is a function that is supposed to either 'all' or 'any'.
--- @partitionPredSet all ps@ returns the predicates of @ps@ which have only type
--- variables as predicate types in the first tuple element and predicates with
--- at least one other type in the second one.
--- @partitionPredSet any ps@ returns the predicates which have at least one type
--- variable as a predicate type in the first tuple element and predicates with
--- only other types in the second one.
--- 'all' and 'any' make no difference for predicates of single-parameter type
--- classes.
-partitionPredSet :: ((Type -> Bool) -> [Type] -> Bool)
+-- Partitions the predicate set given as the second argument such that all
+-- predicates in the first element of the returned tuple are elements of the
+-- predicate set given as the first argument or have at least one predicate type
+-- that is a type variable (or a type variable applied to types).
+--
+-- This function is used during the type check to report missing instances when
+-- it is possible that only some of the predicate types have been inferred. The
+-- first predicate set given is used to not report predicates without fitting
+-- instances, if they are mentioned as constraints of an explicit type
+-- signature.
+partitionPredSetSomeVars :: PredSet -> PredSet -> (PredSet, PredSet)
+partitionPredSetSomeVars = partitionPredSet any
+
+-- Partitions the given predicate set such that all predicates in the first
+-- element of the returned tuple have only type variables (or type variables
+-- applied to types) as predicate types.
+--
+-- This function is used to report constraints that would only be allowed with
+-- a FlexibleContexts language extension when all predicate types are known.
+partitionPredSetOnlyVars :: PredSet -> (PredSet, PredSet)
+partitionPredSetOnlyVars = partitionPredSet all Set.empty
+
+partitionPredSet :: ((Type -> Bool) -> [Type] -> Bool) -> PredSet
                  -> PredSet -> (PredSet, PredSet)
-partitionPredSet f = Set.partition $ \(Pred _ _ tys) -> f isTypeVariable tys
+partitionPredSet f ps =
+  Set.partition $ \pr@(Pred _ _ tys) -> pr `psMember` ps || f isTypeVariable tys
   where
     isTypeVariable (TypeVariable _) = True
     isTypeVariable (TypeApply ty _) = isTypeVariable ty
