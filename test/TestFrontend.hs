@@ -418,6 +418,17 @@ warnInfos = map (uncurry mkFailTest)
       , "Unused declaration of variable `answer'"
       ]
     )
+  , ("MPTCIncompleteInstance",
+      [ "No explicit implementation for method `methodC3'"
+      , "No explicit implementation for method `methodD1'"
+      , "No explicit implementation for method `methodD2'"
+      ]
+    )
+  , ("MPTCOrphanInstance",
+      [ "Orphan instance: instance C Foo Bool"
+      , "Orphan instance: instance E"
+      ]
+    )
   , ("NonExhaustivePattern",
       [ "Pattern matches are non-exhaustive", "In a case alternative"
       , "In an equation for `test2'", "In an equation for `and'"
