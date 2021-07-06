@@ -1171,7 +1171,7 @@ transformMethodPredType (PredType ps ty) =
   in (transformPredType $ PredType (Set.deleteMin ps) ty, iccAr)
 
 -- The function 'generalizeMethodType' generalizes an already transformed
--- method type to a forall type by quantifying all occuring type variables
+-- method type to a forall type by quantifying all occurring type variables
 -- except for the class variables whose indices are between 0 (inclusive) and
 -- the given class arity (exclusive). This function is uncurried by default so
 -- it can more easily be combined with 'transformMethodPredType'.

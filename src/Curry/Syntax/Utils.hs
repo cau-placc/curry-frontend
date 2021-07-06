@@ -161,7 +161,7 @@ typeConstr (VariableType       _ _) =
 typeConstr (ForallType       _ _ _) =
   error "Curry.Syntax.Utils.typeConstr: forall type"
 
--- |Return the list of variables occuring in a type expression.
+-- |Return the list of variables occurring in a type expression.
 typeVariables :: TypeExpr -> [Ident]
 typeVariables (ConstructorType       _ _) = []
 typeVariables (ApplyType       _ ty1 ty2) = typeVariables ty1 ++ typeVariables ty2

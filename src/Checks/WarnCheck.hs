@@ -998,7 +998,7 @@ reportUnusedTypeVars vs = warnFor WarnUnusedBindings $ do
 
 -- ---------------------------------------------------------------------------
 -- For detecting unreferenced variables, the following functions update the
--- current check state by adding identifiers occuring in declaration left hand
+-- current check state by adding identifiers occurring in declaration left hand
 -- sides.
 
 insertDecl :: Decl a -> WCM ()

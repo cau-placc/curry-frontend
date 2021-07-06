@@ -2014,7 +2014,7 @@ errFlexibleContext :: HasSpanInfo a => ModuleIdent -> a -> String -> Ident
                    -> Pred -> Message
 errFlexibleContext m p what v pr = spanInfoMessage p $ vcat
   [ text "Constraint with non-variable argument" <+> ppPred m pr
-  , text "occuring in the context of the inferred type for" <+> text what <+>
+  , text "occurring in the context of the inferred type for" <+> text what <+>
       text (escName v)
   ]
 

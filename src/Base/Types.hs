@@ -151,7 +151,7 @@ arrowUnapply (TypeArrow ty1 ty2) = (ty1 : tys, ty)
 arrowUnapply ty                  = ([], ty)
 
 -- The function 'typeConstrs' returns a list of all type constructors
--- occuring in a type t.
+-- occurring in a type t.
 
 typeConstrs :: Type -> [QualIdent]
 typeConstrs ty = constrs ty [] where
@@ -364,8 +364,8 @@ data PredType = PredType PredSet Type
   deriving (Eq, Show)
 
 -- When enumarating the type variables and skolems of a predicated type, we
--- consider the type variables occuring in the predicate set after the ones
--- occuring in the type itself.
+-- consider the type variables occurring in the predicate set after the ones
+-- occurring in the type itself.
 
 instance IsType PredType where
   typeVars (PredType ps ty) = typeVars ty ++ typeVars ps

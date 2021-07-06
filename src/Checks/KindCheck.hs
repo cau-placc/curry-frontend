@@ -234,7 +234,7 @@ instance HasType QualIdent where
   fts m qident = maybe id (:) (localIdent m qident)
 
 -- When types are entered into the type constructor environment, all type
--- synonyms occuring in the definitions are fully expanded (except for
+-- synonyms occurring in the definitions are fully expanded (except for
 -- record types) and all type constructors and type classes are qualified
 -- with the name of the module in which they are defined. This is possible
 -- because Curry does not allow (mutually) recursive type synonyms or

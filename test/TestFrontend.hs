@@ -201,8 +201,8 @@ failInfos = map (uncurry mkFailTest)
     )
   , ("MPTCFlexibleContext",
       [ "Constraint with non-variable argument C Prelude.Bool" -- C Prelude.Bool a
-      , "occuring in the context of the inferred type for function declaration `f1'"
-      , "occuring in the context of the inferred type for function declaration `f2a'"
+      , "occurring in the context of the inferred type for function declaration `f1'"
+      , "occurring in the context of the inferred type for function declaration `f2a'"
       , "Type error in application", "f3a (1 :: Int)"
       , "Types Prelude.Bool and Prelude.Int are incompatible"
       ]
