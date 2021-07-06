@@ -20,10 +20,11 @@
 module Exports (exportInterface) where
 
 import           Data.List         (nub)
-import qualified Data.Map   as Map (foldrWithKey, toList)
+import qualified Data.Map   as Map ( Map, delete, fromListWith, lookup
+                                   , mapKeysWith, toList)
 import           Data.Maybe        (mapMaybe)
-import qualified Data.Set   as Set ( Set, empty, insert, deleteMin, fromList
-                                   , member, toList )
+import qualified Data.Set   as Set ( Set, delete, empty, insert, deleteMin
+                                   , fromList, member, toList )
 
 import Curry.Base.Position
 import Curry.Base.SpanInfo
@@ -79,9 +80,9 @@ exportInterface' m es pEnv tcEnv vEnv clsEnv inEnv = Interface m imports decls'
   precs   = foldr (infixDecl m pEnv) [] es
   types   = foldr (typeDecl m tcEnv clsEnv tvs) [] es
   values  = foldr (valueDecl m tcEnv vEnv tvs) [] es
-  insts   = Map.foldrWithKey (instDecl m tcEnv tvs) [] inEnv
+  (inExps, insts) = getExportedInsts m tcEnv inEnv tvs (initInstExports m inEnv)
   decls   = precs ++ types ++ values ++ insts
-  decls'  = closeInterface m tcEnv clsEnv inEnv tvs Set.empty decls
+  decls'  = closeInterface m tcEnv clsEnv inEnv tvs Set.empty inExps decls
 
 infixDecl :: ModuleIdent -> OpPrecEnv -> Export -> [IDecl] -> [IDecl]
 infixDecl m pEnv (Export             _ f) ds = iInfixDecl m pEnv f ds
@@ -187,24 +188,66 @@ valueDecl m tcEnv vEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
 valueDecl _ _ _ _ (ExportTypeWith _ _ _) ds = ds
 valueDecl _ _ _ _ _ _ = internalError "Exports.valueDecl: no pattern match"
 
--- Transforms an entry of the instance environment into an interface instance
--- declaration and adds it to a list of instance declarations, if neither the
--- class nor any of the type constructors of the instance entry are declared in
--- same module as the instance (orphan instance). Otherwise, the given instance
--- declaration list is returned unaltered.
-instDecl :: ModuleIdent -> TCEnv -> [Ident] -> InstIdent -> InstInfo -> [IDecl]
-         -> [IDecl]
-instDecl m tcEnv tvs ident@(cls, tcs) info@(m', _, _) ds
-  | qidModule cls /= Just m' && all ((/= Just m') . qidModule) tcs =
-    iInstDecl m tcEnv tvs ident info : ds
-  | otherwise = ds
+-- The instance export map maps sets of class and type names to the instance
+-- idents that have to be exported, if all entries of the set are exported.
+type InstExportMap = Map.Map (Set.Set QualIdent) [InstIdent]
+
+-- 'initInstExports' initializes the instance export map by going through the
+-- instance environment and entering all instance idents under the set of class
+-- and type names that have to be exported for the instance to be exported.
+--
+-- For instances defined in the current module, these are the names of all
+-- classes and types occurring in the instance head that are from the current
+-- module as well. Instances can only be used if its class and all of its
+-- instance types are available, so if any of these is not exported, the
+-- instance cannot be used outside of the current module.
+--
+-- For instances defined in imported modules however, we cannot use the same
+-- approach and require all classes and types of the instance that are defined
+-- in the same module as the instance to be exported by the current module.
+-- For example, if a module M defined a class C, a type T and an instance C T,
+-- a module N imported M in its entirety, but only exported C, and a module O
+-- also imported M in its entirety, but only exported T, then a module P
+-- importing N and O would have both C and T in scope, but not the instance C T,
+-- if this approach was used. But if we instead decide on a single one of the
+-- classes and types defined in the same module as the instance and always
+-- export the instance, if this class or type is exported, then this problem is
+-- solved while limiting the number of unnecessary instance exports and imports.
+--
+-- Instances where neither the instance's class nor any of its instance types
+-- are defined in the same module as the instance (called orphan instances) are
+-- always exported if they are in the instance environment. This has to be done
+-- as we cannot limit the modules that could use these instances like we can
+-- with other instances.
+initInstExports :: ModuleIdent -> InstEnv -> InstExportMap
+initInstExports m = Map.fromListWith (++) . map instExpMapEntry . Map.toList
+ where
+  instExpMapEntry :: (InstIdent, InstInfo) -> (Set.Set QualIdent, [InstIdent])
+  instExpMapEntry (instId@(cls, tcs), (m', _, _)) =
+    let select = if m == m' then id else take 1
+    in ( Set.fromList $ select $ filter ((== Just m') . qidModule) $ cls : tcs
+       , [instId] )
+
+-- Removes the instances that currently have to be exported from the instance
+-- export map, converts them to interface declarations and returns the updated
+-- instance export map together with the interface declarations.
+getExportedInsts :: ModuleIdent -> TCEnv -> InstEnv -> [Ident] -> InstExportMap
+                 -> (InstExportMap, [IDecl])
+getExportedInsts m tcEnv inEnv tvs inExps =
+  ( Map.delete Set.empty inExps
+  , maybe [] (map (iInstDecl m tcEnv inEnv tvs)) (Map.lookup Set.empty inExps)
+  )
 
 -- Transforms an entry of the instance environment into an interface instance
 -- declaration.
-iInstDecl :: ModuleIdent -> TCEnv -> [Ident] -> InstIdent -> InstInfo -> IDecl
-iInstDecl m tcEnv tvs (cls, tcs) (m', ps, is) =
+iInstDecl :: ModuleIdent -> TCEnv -> InstEnv -> [Ident] -> InstIdent -> IDecl
+iInstDecl m tcEnv inEnv tvs instId@(cls, tcs) =
   IInstanceDecl NoPos cx (qualUnqualify m cls) tys is mm
  where
+  (m', ps, is) = case lookupInstInfo instId inEnv of
+                   Just instInfo -> instInfo
+                   Nothing -> internalError $ "Exports.iInstDecl: Couldn't " ++
+                                "find instance information for " ++ show instId
   (cx, tys) = fromQualPredTypes m tvs $
     PredTypes ps (tcsToTypes 0 tcs (clsKinds m cls tcEnv))
   mm  = if m == m' then Nothing else Just m'
@@ -327,17 +370,17 @@ iInfo (IInstanceDecl _ _ cls tys _ _) = IInst (cls, map typeConstr tys)
 iInfo (IFunctionDecl       _ _ _ _ _) = IOther
 
 closeInterface :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Ident]
-               -> Set.Set IInfo -> [IDecl] -> [IDecl]
-closeInterface _ _ _ _ _ _ [] = []
-closeInterface m tcEnv clsEnv inEnv tvs is (d:ds)
+               -> Set.Set IInfo -> InstExportMap -> [IDecl] -> [IDecl]
+closeInterface _ _ _ _ _ _ _ [] = []
+closeInterface m tcEnv clsEnv inEnv tvs is inExps (d:ds)
   | i == IOther       =
-    d : closeInterface m tcEnv clsEnv inEnv tvs is (ds ++ ds')
-  | i `Set.member` is = closeInterface m tcEnv clsEnv inEnv tvs is ds
+    d : closeInterface m tcEnv clsEnv inEnv tvs is inExps ds'
+  | i `Set.member` is = closeInterface m tcEnv clsEnv inEnv tvs is inExps ds
   | otherwise         =
-    d : closeInterface m tcEnv clsEnv inEnv tvs (Set.insert i is) (ds ++ ds')
-  where i   = iInfo d
-        ds' = hiddenTypes m tcEnv clsEnv tvs d ++
-                instances m tcEnv inEnv tvs is i
+    d : closeInterface m tcEnv clsEnv inEnv tvs (Set.insert i is) inExps' ds'
+  where i = iInfo d
+        (inExps', ds') = (ds ++) <$> ((hiddenTypes m tcEnv clsEnv tvs d ++) <$>
+           getExportedInsts m tcEnv inEnv tvs (updateInstExports m i inExps))
 
 hiddenTypes :: ModuleIdent -> TCEnv -> ClassEnv -> [Ident] -> IDecl -> [IDecl]
 hiddenTypes m tcEnv clsEnv tvs d =
@@ -362,55 +405,15 @@ hiddenTypes m tcEnv clsEnv tvs d =
           kclsvars = zip tvs ks'
       in  HidingClassDecl NoPos cx tc kclsvars
 
--- Returns a list of the interface declarations of all instances in the instance
--- environment that share an instance type or the class with the given interface
--- info for a type or a class and could be used in other modules.
-instances :: ModuleIdent -> TCEnv -> InstEnv -> [Ident] -> Set.Set IInfo
-          -> IInfo -> [IDecl]
-instances _ _ _ _ _ IOther = []
-instances m tcEnv inEnv tvs is (IType tc) =
-  [ iInstDecl m tcEnv tvs ident info
-  | (ident@(cls, tcs), info@(m', _, _)) <- Map.toList inEnv
-  -- Check if the given interface info type occurs in the instance
-  , qualQualify m tc `elem` tcs
-  -- Check if all types occuring in the instance could be used in other modules
-  , all tcConditions tcs
-  -- Check if the class of the instance could be used in other modules
-  , if qidModule cls == Just m' then Set.member (IClass (qualUnqualify m cls)) is
-  -- Check if the instance is not an orphan instance already added in 'instDecl'
-  -- TODO: It seems unnecessary to filter these out.
-                                else any ((== Just m') . qidModule) tcs ]
- where
-  -- Checks if an instance type with the given name could be used in other
-  -- modules. This is considered to be the case if the type (1) is the one
-  -- originally requested, (2) is a primary type like a list, (3) has been
-  -- defined in another module or (4) is already part of the exports.
-  -- TODO: Why is (2) tested? It should be implied by (3).
-  tcConditions :: QualIdent -> Bool
-  tcConditions tc' = tc' == qualQualify m tc || isPrimTypeId tc' ||
-    qidModule tc' /= Just m || Set.member (IType (qualUnqualify m tc')) is
-
-instances m tcEnv inEnv tvs is (IClass cls) =
-  [ iInstDecl m tcEnv tvs ident info
-  | (ident@(cls', tcs), info@(m', _, _)) <- Map.toList inEnv
-  -- Check if the given interface info class is the class of the instance
-  , qualQualify m cls == cls'
-  -- Check if the instance is defined in the same module as the class
-  -- TODO: Why is this checked?
-  , qidModule cls' == Just m'
-  -- Check if all types occuring in the instance could be used in other modules
-  -- TODO: Why is m /= m' checked? In this case, the second of the tcConditions
-  --         should apply as well for every type.
-  , m /= m' || all tcConditions tcs ]
- where
-  -- Checks if an instance type with the given name could be used in other
-  -- modules. This is considered to be the case if the type (1) is a primary
-  -- type like a list, (2) has been defined in another module or (3) is already
-  -- part of the exports.
-  tcConditions :: QualIdent -> Bool
-  tcConditions tc = isPrimTypeId tc || qidModule tc /= Just m ||
-    Set.member (IType (qualUnqualify m tc)) is
-instances _ _ _ _ _ (IInst _) = []
+-- Updates the instance export map by removing the given interface entry from
+-- the sets of class and type names that have to be exported before the
+-- associated instances are exported.
+updateInstExports :: ModuleIdent -> IInfo -> InstExportMap -> InstExportMap
+updateInstExports m (IType  tc)  =
+  Map.mapKeysWith (++) (Set.delete (qualQualify m tc))
+updateInstExports m (IClass cls) =
+  Map.mapKeysWith (++) (Set.delete (qualQualify m cls))
+updateInstExports _ _            = id
 
 definedTypes :: [IDecl] -> [QualIdent]
 definedTypes ds = foldr definedType [] ds
