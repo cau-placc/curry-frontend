@@ -346,6 +346,7 @@ passInfos = map mkPassTest
   , "Hierarchical"
   , "ImportRestricted"
   , "ImportRestricted2"
+  , "InstanceExport"
   , "Infix"
   , "Inline"
   , "Lambda"
