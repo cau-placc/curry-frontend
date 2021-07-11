@@ -49,7 +49,7 @@
 -}
 {-# LANGUAGE CPP #-}
 module Env.TypeConstructor
-  ( TypeInfo (..), tcKind, clsKinds, varKind, clsMethods
+  ( TypeInfo (..), tcKind, clsKind, varKind, clsMethods
   , TCEnv, initTCEnv, bindTypeInfo, rebindTypeInfo
   , lookupTypeInfo, qualLookupTypeInfo, qualLookupTypeInfoUnique
   , getOrigName, reverseLookupByOrigName
@@ -76,7 +76,7 @@ data TypeInfo
   = DataType     QualIdent Kind [DataConstr]
   | RenamingType QualIdent Kind DataConstr
   | AliasType    QualIdent Kind Int Type
-  | TypeClass    QualIdent [Kind] [ClassMethod]
+  | TypeClass    QualIdent Kind [ClassMethod]
   | TypeVar      Kind
     deriving Show
 
@@ -99,9 +99,9 @@ instance Entity TypeInfo where
     | tc == tc' && k == k' = Just l
   merge l@(AliasType tc k _ _) (AliasType tc' k' _ _)
     | tc == tc' && k == k' = Just l
-  merge (TypeClass cls ks ms) (TypeClass cls' ks' ms')
-    | cls == cls' && ks == ks' && (null ms || null ms' || ms == ms') =
-    Just $ TypeClass cls ks $ if null ms then ms' else ms
+  merge (TypeClass cls k ms) (TypeClass cls' k' ms')
+    | cls == cls' && k == k' && (null ms || null ms' || ms == ms') =
+    Just $ TypeClass cls k $ if null ms then ms' else ms
   merge _ _ = Nothing
 
 instance Pretty TypeInfo where
@@ -115,11 +115,11 @@ instance Pretty TypeInfo where
   pPrint (AliasType qid k ar ty) =     text "type" <+> pPrint qid
                                    <>  text "/" <> pPrint k <> text "/" <> int ar
                                    <+> equals <+> pPrint ty
-  pPrint (TypeClass qid ks ms)   =     text "class" <+> pPrint qid
-                                   <>  text "/" <> pPrint ks
+  pPrint (TypeClass qid k ms)    =     text "class" <+> pPrint qid
+                                   <>  text "/" <> pPrint k
                                    <+> equals
                                    <+> vcat (blankLine : map pPrint ms)
-  pPrint (TypeVar _)            =
+  pPrint (TypeVar _)             =
     internalError $ "Env.TypeConstructor.Pretty.TypeInfo.pPrint: type variable"
 
 tcKind :: ModuleIdent -> QualIdent -> TCEnv -> Kind
@@ -134,11 +134,11 @@ tcKind m tc tcEnv = case qualLookupTypeInfo tc tcEnv of
     _ -> internalError $
            "Env.TypeConstructor.tcKind: no type constructor: " ++ show tc
 
-clsKinds :: ModuleIdent -> QualIdent -> TCEnv -> [Kind]
-clsKinds m cls tcEnv = case qualLookupTypeInfo cls tcEnv of
-  [TypeClass _ ks _] -> ks
+clsKind :: ModuleIdent -> QualIdent -> TCEnv -> Kind
+clsKind m cls tcEnv = case qualLookupTypeInfo cls tcEnv of
+  [TypeClass _ k _] -> k
   _ -> case qualLookupTypeInfo (qualQualify m cls) tcEnv of
-    [TypeClass _ ks _] -> ks
+    [TypeClass _ k _] -> k
     _ -> internalError $
            "Env.TypeConstructor.clsKind: no type class: " ++ show cls
 
