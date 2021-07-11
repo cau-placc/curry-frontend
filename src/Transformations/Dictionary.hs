@@ -39,6 +39,7 @@ import Curry.Base.Position
 import Curry.Base.SpanInfo
 import Curry.Syntax
 
+import Base.CurryKinds
 import Base.CurryTypes
 import Base.Expr
 import Base.Kinds
@@ -220,7 +221,7 @@ classDictConstrPredType :: ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv
 classDictConstrPredType m tcEnv vEnv clsEnv cls =
   PredType ps $ foldr TypeArrow ty mtys
  where
-  varTys = map TypeVariable [0 .. length (clsKinds m cls tcEnv) - 1]
+  varTys = map TypeVariable [0 .. kindArity (clsKind m cls tcEnv) - 1]
   ps     = Set.fromList [ uncurry (Pred OPred) (applySuperClass varTys sclsInfo)
                         | sclsInfo <- superClasses cls clsEnv ]
   fs     = classMethods cls clsEnv
@@ -386,9 +387,9 @@ bindDictTypes m clsEnv tcEnv =
   foldr (bindDictType m clsEnv) tcEnv (allEntities tcEnv)
 
 bindDictType :: ModuleIdent -> ClassEnv -> TypeInfo -> TCEnv -> TCEnv
-bindDictType m clsEnv (TypeClass cls ks ms) = bindEntity m tc ti
+bindDictType m clsEnv (TypeClass cls k ms) = bindEntity m tc ti
  where
-  ti     = DataType tc (foldr KindArrow KindStar ks) [c]
+  ti     = DataType tc (dictTypeKind cls k) [c]
   tc     = qDictTypeId cls
   c      = DataConstr (dictConstrId cls) (map rtDictType (Set.toAscList ps) ++ tys)
   varTys = map TypeVariable [0 ..]
@@ -423,7 +424,7 @@ bindClassDict m tcEnv clsEnv cls vEnv = bindEntity m c dc vEnv
         dc = DataConstructor c a (replicate a anonId) tySc
         a  = Set.size ps + arrowArity ty
         pty@(PredType ps ty) = classDictConstrPredType m tcEnv vEnv clsEnv cls
-        tySc = ForAll (length (clsKinds m cls tcEnv)) pty
+        tySc = ForAll (kindArity (clsKind m cls tcEnv)) pty
 
 bindDefaultMethods :: ModuleIdent -> QualIdent -> [(Ident, Int)] -> ValueEnv
                    -> ValueEnv
@@ -445,7 +446,7 @@ bindSuperStub :: ModuleIdent -> TCEnv -> QualIdent -> SuperClassInfo -> ValueEnv
 bindSuperStub m tcEnv cls sclsInfo =
   bindEntity m f $ Value f Nothing 1 $ polyType ty
   where f  = qSuperDictStubId cls sclsInfo
-        ar = length (clsKinds m cls tcEnv)
+        ar = kindArity (clsKind m cls tcEnv)
         ty = superDictStubType cls sclsInfo (map TypeVariable [0 .. ar])
 
 bindInstDecls :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> ValueEnv
@@ -458,18 +459,18 @@ bindInstFuns :: ModuleIdent -> TCEnv -> ClassEnv -> (InstIdent, InstInfo)
 bindInstFuns m tcEnv clsEnv ((cls, tcs), (m', ps, is)) =
   bindInstDict m cls tys m' ps . bindInstMethods m clsEnv cls tys m' ps is
  where
-  tys = tcsToTypes 0 tcs (clsKinds m cls tcEnv)
+  tys = tcsToTypes 0 tcs (clsKind m cls tcEnv)
 
   -- TODO: The following assumes that every type variable can only occur once in
   --         an instance head. This should be changed with FlexibleInstances.
-  tcsToTypes :: Int -> [QualIdent] -> [Kind] -> [Type]
-  tcsToTypes minVar (tc : tcs') (k : ks) =
-    let n    = kindArity (tcKind m tc tcEnv) - kindArity k
+  tcsToTypes :: Int -> [QualIdent] -> Kind -> [Type]
+  tcsToTypes minVar (tc : tcs') (KindArrow k1 k2) =
+    let n    = kindArity (tcKind m tc tcEnv) - kindArity k1
         ntvs = map TypeVariable [minVar .. minVar + n - 1]
-    in applyType (TypeConstructor tc) ntvs : tcsToTypes (minVar + n) tcs' ks
-  tcsToTypes _ [] [] = []
-  tcsToTypes _ _  _  = internalError $ "Dictionary.bindInstFuns: " ++
-    "Different number of class kinds and instance types for " ++ show (cls, tcs)
+    in applyType (TypeConstructor tc) ntvs : tcsToTypes (minVar + n) tcs' k2
+  tcsToTypes _ [] KindConstraint = []
+  tcsToTypes _ _ _ = internalError $ "Dictionary.bindInstFuns: " ++
+    "Kind arity does not match number of instance types for " ++ show (cls, tcs)
 
 bindInstDict :: ModuleIdent -> QualIdent -> [Type] -> ModuleIdent -> PredSet
              -> ValueEnv -> ValueEnv
@@ -517,8 +518,8 @@ dictTransTypeInfo (DataType tc k cs) =
 dictTransTypeInfo (RenamingType tc k nc) =
   RenamingType tc k $ dictTransDataConstr nc
 dictTransTypeInfo ti@(AliasType _ _ _ _) = ti
-dictTransTypeInfo (TypeClass cls ks ms) =
-  TypeClass cls ks $ map dictTransClassMethod ms
+dictTransTypeInfo (TypeClass cls k ms) =
+  TypeClass cls k $ map dictTransClassMethod ms
 dictTransTypeInfo (TypeVar _) =
   internalError "Dictionary.dictTransTypeInfo: type variable"
 
@@ -998,19 +999,18 @@ dictTransIDecl _ _    _      d@(INewtypeDecl    _ _ _ _ _ _) = [d]
 dictTransIDecl _ _    _      d@(ITypeDecl         _ _ _ _ _) = [d]
 dictTransIDecl m vEnv _      (IFunctionDecl       _ f _ _ _) =
   [iFunctionDeclFromValue m vEnv (qualQualify m f)]
-dictTransIDecl _ _    _      (HidingClassDecl  p _ cls ktvs) =
-  [HidingDataDecl p (qDictTypeId cls) mk tvs]
-  where (tvs, mks) = unzip ktvs
-        mk = foldr (\mk1 mk2 -> ArrowKind <$> mk1 <*> mk2) (Just Star) mks
-dictTransIDecl m vEnv clsEnv (IClassDecl  p _ cls ktvs _ hs) =
+dictTransIDecl _ _    _      (HidingClassDecl p _ cls k tvs) =
+  [HidingDataDecl p (qDictTypeId cls) k' tvs]
+  where k' = fmap (fromKind . dictTypeKind cls . toKind) k
+dictTransIDecl m vEnv clsEnv (IClassDecl p _ cls k tvs _ hs) =
   dictDecl : defaults ++ methodStubs ++ superDictStubs
  where
-  qcls = qualQualify m cls
-  ms = classMethods qcls clsEnv
-  mk = foldr (\mk1 mk2 -> ArrowKind <$> mk1 <*> mk2) (Just Star) (map snd ktvs)
+  qcls        = qualQualify m cls
+  ms          = classMethods qcls clsEnv
+  k'          = fmap (fromKind . dictTypeKind cls . toKind) k
   sclsInfos   = superClasses qcls clsEnv
-  dictDecl    = IDataDecl p (qDictTypeId cls) mk
-                  (take (length ktvs) identSupply) [constrDecl] []
+  dictDecl    = IDataDecl p (qDictTypeId cls) k'
+                  (take (length tvs) identSupply) [constrDecl] []
   constrDecl  = iConstrDeclFromDataConstructor m vEnv $ qDictConstrId qcls
   defaults    = map (iFunctionDeclFromValue m vEnv . qDefaultMethodId qcls) ms
   methodStubs = map (iFunctionDeclFromValue m vEnv . qualifyLike qcls) $
@@ -1153,6 +1153,17 @@ rtDictType = TypeArrow unitType . dictType
 
 dictType :: Pred -> Type
 dictType (Pred _ cls tys) = applyType (TypeConstructor $ qDictTypeId cls) tys
+
+-- Converts the kind of a type class to the kind of the respective dictionary
+-- type by changing the Constraint at the end of the class kind to a *.
+dictTypeKind :: QualIdent -> Kind -> Kind
+dictTypeKind cls k = dictTypeKind' k
+ where
+  dictTypeKind' :: Kind -> Kind
+  dictTypeKind' KindConstraint    = KindStar
+  dictTypeKind' (KindArrow k1 k2) = KindArrow k1 (dictTypeKind' k2)
+  dictTypeKind' _ = internalError $ "Dictionary.dictTypeKind: Class " ++
+                                      show cls ++ " has invalid kind " ++ show k
 
 -- The function 'transformPredType' replaces each predicate with a new
 -- dictionary type argument.

@@ -309,6 +309,8 @@ type KindSubst = Map.Map Int IL.Kind
 
 transKind :: Kind -> IL.Kind
 transKind KindStar          = IL.KindStar
+transKind KindConstraint    = internalError $ "CurryToIL.transKind: " ++ 
+                                "Encountered untransformed constraint kind"
 transKind (KindVariable  _) = IL.KindStar
 transKind (KindArrow k1 k2) = IL.KindArrow (transKind k1) (transKind k2)
 

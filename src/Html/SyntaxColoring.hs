@@ -206,7 +206,7 @@ keywordCategories =
 
 specialIdentCategories :: [Category]
 specialIdentCategories =
-  [ Id_as, Id_ccall, Id_forall, Id_hiding
+  [ Id_as, Id_ccall, Id_Constraint, Id_forall, Id_hiding
   , Id_interface, Id_primitive, Id_qualified ]
 
 punctuationCategories :: [Category]
@@ -532,6 +532,7 @@ showToken (Token KW_type            _) = "type"
 showToken (Token KW_where           _) = "where"
 showToken (Token Id_as              _) = "as"
 showToken (Token Id_ccall           _) = "ccall"
+showToken (Token Id_Constraint      _) = "Constraint"
 showToken (Token Id_forall          _) = "forall"
 showToken (Token Id_hiding          _) = "hiding"
 showToken (Token Id_interface       _) = "interface"
