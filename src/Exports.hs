@@ -31,7 +31,7 @@ import Curry.Base.SpanInfo
 import Curry.Base.Ident
 import Curry.Syntax
 
-import Base.CurryKinds (fromKind')
+import Base.CurryKinds (fromKind', fromClassKind)
 import Base.CurryTypes (fromQualType, fromQualPredType, fromQualPredTypes)
 import Base.Messages
 import Base.Types
@@ -39,7 +39,7 @@ import Base.Types
 import Env.Class
 import Env.OpPrec          (OpPrecEnv, PrecInfo (..), OpPrec (..), qualLookupP)
 import Env.Instance
-import Env.TypeConstructor ( TCEnv, TypeInfo (..), tcKind, clsKinds
+import Env.TypeConstructor ( TCEnv, TypeInfo (..), tcKind, clsKind
                            , qualLookupTypeInfo )
 import Env.Value           (ValueEnv, ValueInfo (..), qualLookupValue)
 
@@ -128,16 +128,17 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
             k'   = fromKind' k n
             tvs' = take n tvs
             ty'  = fromQualType m tvs' ty
-    [TypeClass qcls ks ms] -> IClassDecl NoPos cx qcls' kclsvars ms' hs : ds
-      where qcls'    = qualUnqualify m qcls
-            cx       = [ Constraint NoSpanInfo (qualUnqualify m qscls)
-                           (map (VariableType NoSpanInfo) sclsvars)
-                       | sclsInfo <- superClasses qcls clsEnv
-                       , let (qscls, sclsvars) = applySuperClass tvs sclsInfo ]
-            ks'      = map (flip fromKind' 0) ks
-            kclsvars = zip tvs ks'
-            ms'      = map (methodDecl m tvs) ms
-            hs       = filter (`notElem` xs) (map methodName ms)
+    [TypeClass qcls k ms] -> IClassDecl NoPos cx qcls' k' clsvars ms' hs : ds
+      where qcls'   = qualUnqualify m qcls
+            cx      = [ Constraint NoSpanInfo (qualUnqualify m qscls)
+                          (map (VariableType NoSpanInfo) sclsvars)
+                      | sclsInfo <- superClasses qcls clsEnv
+                      , let (qscls, sclsvars) = applySuperClass tvs sclsInfo ]
+            n       = kindArity k
+            k'      = fromClassKind k n
+            clsvars = take n tvs
+            ms'     = map (methodDecl m tvs) ms
+            hs      = filter (`notElem` xs) (map methodName ms)
     _ -> internalError "Exports.typeDecl"
 typeDecl _ _ _ _ _ _ = internalError "Exports.typeDecl: no pattern match"
 
@@ -181,7 +182,7 @@ valueDecl
 valueDecl m tcEnv vEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
   [Value _ cm a (ForAll _ pty)] ->
     IFunctionDecl NoPos (qualUnqualify m f)
-      (fmap (flip take tvs . length . flip (clsKinds m) tcEnv) cm) a
+      (fmap (flip take tvs . kindArity . flip (clsKind m) tcEnv) cm) a
       (fromQualPredType m tvs pty) : ds
   [Label _ _ _ ] -> ds -- Record labels are collected somewhere else.
   _ -> internalError $ "Exports.valueDecl: " ++ show f
@@ -198,15 +199,15 @@ type InstExportMap = Map.Map (Set.Set QualIdent) [InstIdent]
 --
 -- For instances defined in the current module, these are the names of all
 -- classes and types occurring in the instance head that are from the current
--- module as well. Instances can only be used if its class and all of its
--- instance types are available, so if any of these is not exported, the
+-- module as well. An instance can only be used if its class and all of its
+-- instance types are in scope, so if any of these is not exported, the
 -- instance cannot be used outside of the current module.
 --
 -- For instances defined in imported modules however, we cannot use the same
 -- approach and require all classes and types of the instance that are defined
 -- in the same module as the instance to be exported by the current module.
--- For example, if a module M defined a class C, a type T and an instance C T,
--- a module N imported M in its entirety, but only exported C, and a module O
+-- For example, if a module M defined a class C, a type T and an instance C T;
+-- a module N imported M in its entirety, but only exported C; and a module O
 -- also imported M in its entirety, but only exported T, then a module P
 -- importing N and O would have both C and T in scope, but not the instance C T,
 -- if this approach was used. But if we instead decide on a single one of the
@@ -249,19 +250,19 @@ iInstDecl m tcEnv inEnv tvs instId@(cls, tcs) =
                    Nothing -> internalError $ "Exports.iInstDecl: Couldn't " ++
                                 "find instance information for " ++ show instId
   (cx, tys) = fromQualPredTypes m tvs $
-    PredTypes ps (tcsToTypes 0 tcs (clsKinds m cls tcEnv))
+    PredTypes ps (tcsToTypes 0 tcs (clsKind m cls tcEnv))
   mm  = if m == m' then Nothing else Just m'
   
   -- TODO: The following assumes that every type variable can only occur once in
   --         an instance head. This should be changed with FlexibleInstances.
-  tcsToTypes :: Int -> [QualIdent] -> [Kind] -> [Type]
-  tcsToTypes minVar (tc : tcs') (k : ks) =
-    let n    = kindArity (tcKind m tc tcEnv) - kindArity k
+  tcsToTypes :: Int -> [QualIdent] -> Kind -> [Type]
+  tcsToTypes minVar (tc : tcs') (KindArrow k1 k2) =
+    let n    = kindArity (tcKind m tc tcEnv) - kindArity k1
         ntvs = map TypeVariable [minVar .. minVar + n - 1]
-    in applyType (TypeConstructor tc) ntvs : tcsToTypes (minVar + n) tcs' ks
-  tcsToTypes _ [] [] = []
-  tcsToTypes _ _  _  = internalError $ "Exports.iInstDecl: Different number " ++
-     "of class kinds and instance types for " ++ show (cls, tcs)
+    in applyType (TypeConstructor tc) ntvs : tcsToTypes (minVar + n) tcs' k2
+  tcsToTypes _ [] KindConstraint = []
+  tcsToTypes _ _ _ = internalError $ "Exports.iInstDecl: " ++
+    "Kind arity does not match number of instance types for " ++ show (cls, tcs)
 
 -- The compiler determines the list of imported modules from the set of
 -- module qualifiers that are used in the interface. Careful readers
@@ -301,8 +302,8 @@ instance HasModule IDecl where
   modules (INewtypeDecl      _ tc _ _ nc _) = modules tc . modules nc
   modules (ITypeDecl           _ tc _ _ ty) = modules tc . modules ty
   modules (IFunctionDecl       _ f _ _ qty) = modules f . modules qty
-  modules (HidingClassDecl      _ cx cls _) = modules cx . modules cls
-  modules (IClassDecl      _ cx cls _ ms _) =
+  modules (HidingClassDecl    _ cx cls _ _) = modules cx . modules cls
+  modules (IClassDecl    _ cx cls _ _ ms _) =
     modules cx . modules cls . modules ms
   modules (IInstanceDecl _ cx cls tys _ mm) =
     modules cx . modules cls . modules tys . modules mm
@@ -364,8 +365,8 @@ iInfo (HidingDataDecl       _ tc _ _) = IType tc
 iInfo (IDataDecl        _ tc _ _ _ _) = IType tc
 iInfo (INewtypeDecl     _ tc _ _ _ _) = IType tc
 iInfo (ITypeDecl           _ _ _ _ _) = IOther
-iInfo (HidingClassDecl     _ _ cls _) = IClass cls
-iInfo (IClassDecl      _ _ cls _ _ _) = IClass cls
+iInfo (HidingClassDecl   _ _ cls _ _) = IClass cls
+iInfo (IClassDecl    _ _ cls _ _ _ _) = IClass cls
 iInfo (IInstanceDecl _ _ cls tys _ _) = IInst (cls, map typeConstr tys)
 iInfo (IFunctionDecl       _ _ _ _ _) = IOther
 
@@ -387,23 +388,24 @@ hiddenTypes m tcEnv clsEnv tvs d =
   map hiddenTypeDecl $ filter (not . isPrimTypeId) (usedTypes d [])
  where
   hiddenTypeDecl tc = case qualLookupTypeInfo (qualQualify m tc) tcEnv of
-    [DataType     _ k  _] -> hidingDataDecl k
-    [RenamingType _ k  _] -> hidingDataDecl k
-    [TypeClass  cls ks _] -> hidingClassDecl ks $ superClasses cls clsEnv
-    _                     ->
+    [DataType     _ k _] -> hidingDataDecl k
+    [RenamingType _ k _] -> hidingDataDecl k
+    [TypeClass  cls k _] -> hidingClassDecl k $ superClasses cls clsEnv
+    _                    ->
       internalError $ "Exports.hiddenTypeDecl: " ++ show tc
    where
     hidingDataDecl k = let n  = kindArity k
                            k' = fromKind' k n
                        in  HidingDataDecl NoPos tc k' $ take n tvs
-    hidingClassDecl ks sclss =
+    hidingClassDecl k sclss =
       let cx       = [ Constraint NoSpanInfo (qualUnqualify m qscls)
                          (map (VariableType NoSpanInfo) sclsvars)
                      | sclsInfo <- sclss
                      , let (qscls, sclsvars) = applySuperClass tvs sclsInfo ]
-          ks'      = map (flip fromKind' 0) ks
-          kclsvars = zip tvs ks'
-      in  HidingClassDecl NoPos cx tc kclsvars
+          n       = kindArity k
+          k'      = fromClassKind k n
+          clsvars = take n tvs
+      in  HidingClassDecl NoPos cx tc k' clsvars
 
 -- Updates the instance export map by removing the given interface entry from
 -- the sets of class and type names that have to be exported before the
@@ -419,13 +421,13 @@ definedTypes :: [IDecl] -> [QualIdent]
 definedTypes ds = foldr definedType [] ds
   where
   definedType :: IDecl -> [QualIdent] -> [QualIdent]
-  definedType (HidingDataDecl   _ tc _ _) tcs = tc : tcs
-  definedType (IDataDecl    _ tc _ _ _ _) tcs = tc : tcs
-  definedType (INewtypeDecl _ tc _ _ _ _) tcs = tc : tcs
-  definedType (ITypeDecl      _ tc _ _ _) tcs = tc : tcs
-  definedType (HidingClassDecl _ _ cls _) tcs = cls : tcs
-  definedType (IClassDecl  _ _ cls _ _ _) tcs = cls : tcs
-  definedType _                           tcs = tcs
+  definedType (HidingDataDecl     _ tc _ _) tcs = tc : tcs
+  definedType (IDataDecl      _ tc _ _ _ _) tcs = tc : tcs
+  definedType (INewtypeDecl   _ tc _ _ _ _) tcs = tc : tcs
+  definedType (ITypeDecl        _ tc _ _ _) tcs = tc : tcs
+  definedType (HidingClassDecl _ _ cls _ _) tcs = cls : tcs
+  definedType (IClassDecl  _ _ cls _ _ _ _) tcs = cls : tcs
+  definedType _                             tcs = tcs
 
 class HasType a where
   usedTypes :: a -> [QualIdent] -> [QualIdent]
@@ -443,8 +445,8 @@ instance HasType IDecl where
   usedTypes (INewtypeDecl      _ _ _ _ nc _) = usedTypes nc
   usedTypes (ITypeDecl           _ _ _ _ ty) = usedTypes ty
   usedTypes (IFunctionDecl      _ _ _ _ qty) = usedTypes qty
-  usedTypes (HidingClassDecl       _ cx _ _) = usedTypes cx
-  usedTypes (IClassDecl       _ cx _ _ ms _) = usedTypes cx . usedTypes ms
+  usedTypes (HidingClassDecl     _ cx _ _ _) = usedTypes cx
+  usedTypes (IClassDecl     _ cx _ _ _ ms _) = usedTypes cx . usedTypes ms
   usedTypes (IInstanceDecl _ cx cls tys _ _) =
     usedTypes cx . (cls :) . usedTypes tys
 

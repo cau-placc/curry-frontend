@@ -27,7 +27,7 @@ import Curry.Base.SpanInfo
 import Curry.Base.Monad
 import Curry.Syntax
 
-import Base.CurryKinds (toKind')
+import Base.CurryKinds (toKind', toClassKind)
 import Base.CurryTypes ( toQualType, toQualTypes, toQualPredType
                        , toQualPredTypes, toConstrType, toMethodType )
 
@@ -144,8 +144,8 @@ importData isVisible' (DataType tc k cs) =
 importData isVisible' (RenamingType tc k nc) =
   maybe (DataType tc k []) (RenamingType tc k) (importConstr isVisible' nc)
 importData _ (AliasType tc k n ty) = AliasType tc k n ty
-importData isVisible' (TypeClass qcls ks ms) =
-  TypeClass qcls ks $ catMaybes $ map (importMethod isVisible') ms
+importData isVisible' (TypeClass qcls k ms) =
+  TypeClass qcls k $ catMaybes $ map (importMethod isVisible') ms
 importData _ (TypeVar _) = internalError "Imports.importData: type variable"
 
 importConstr :: (Ident -> Bool) -> DataConstr -> Maybe DataConstr
@@ -162,12 +162,12 @@ importClasses :: ModuleIdent -> [IDecl] -> ClassEnv -> ClassEnv
 importClasses m = flip $ foldr (bindClass m)
 
 bindClass :: ModuleIdent -> IDecl -> ClassEnv -> ClassEnv
-bindClass m (HidingClassDecl p cx cls ktvs) =
-  bindClass m (IClassDecl p cx cls ktvs [] [])
-bindClass m (IClassDecl _ cx cls ktvs ds ids) =
+bindClass m (HidingClassDecl p cx cls k tvs) =
+  bindClass m (IClassDecl p cx cls k tvs [] [])
+bindClass m (IClassDecl _ cx cls _ tvs ds ids) =
   bindClassInfo (qualQualify m cls) (ar, sclss, ms)
-  where ar = length ktvs
-        sclss = nub $ map (constraintToSuperClass (map fst ktvs)) cx'
+  where ar = length tvs
+        sclss = nub $ map (constraintToSuperClass tvs) cx'
         cx' = map
           (\(Constraint p scls tys) -> Constraint p (qualQualify m scls) tys)
           cx
@@ -198,9 +198,9 @@ precs m (IInfixDecl _ fix prec op) = [PrecInfo (qualQualify m op) (OpPrec fix pr
 precs _ _                          = []
 
 hiddenTypes :: ModuleIdent -> IDecl -> [TypeInfo]
-hiddenTypes m (HidingDataDecl     _ tc k tvs) = [typeCon DataType m tc k tvs []]
-hiddenTypes m (HidingClassDecl _ _ qcls ktvs) = [typeCls m qcls (map snd ktvs) []]
-hiddenTypes m d                               = types m d
+hiddenTypes m (HidingDataDecl      _ tc k tvs) = [typeCon DataType m tc k tvs []]
+hiddenTypes m (HidingClassDecl _ _ qcls k tvs) = [typeCls m qcls k tvs []]
+hiddenTypes m d                                = types m d
 
 -- type constructors and type classes
 types :: ModuleIdent -> IDecl -> [TypeInfo]
@@ -225,12 +225,12 @@ types m (ITypeDecl _ tc k tvs ty) =
   [typeCon aliasType m tc k tvs (toQualType m tvs ty)]
   where
     aliasType tc' k' = AliasType tc' k' (length tvs)
-types m (IClassDecl _ _ qcls ktvs ds ids) =
-  [typeCls m qcls (map snd ktvs) (map mkMethod $ filter isVis ds)]
+types m (IClassDecl _ _ qcls k tvs ds ids) =
+  [typeCls m qcls k tvs (map mkMethod $ filter isVis ds)]
   where
     isVis (IMethodDecl _ f _ _ ) = f `notElem` ids
     mkMethod (IMethodDecl _ f a qty) = ClassMethod f a $ qualifyPredType m $
-      normalize (length ktvs) $ toMethodType qcls (map fst ktvs) qty
+      normalize (length tvs) $ toMethodType qcls tvs qty
 types _ _ = []
 
 -- type constructors
@@ -239,10 +239,10 @@ typeCon :: (QualIdent -> Kind -> a) -> ModuleIdent -> QualIdent
 typeCon f m tc k tvs = f (qualQualify m tc) (toKind' k (length tvs))
 
 -- type classes
-typeCls :: ModuleIdent -> QualIdent -> [Maybe KindExpr] -> [ClassMethod]
-        -> TypeInfo
-typeCls m qcls ks ms =
-  TypeClass (qualQualify m qcls) (map (flip toKind' 0) ks) ms
+typeCls :: ModuleIdent -> QualIdent -> Maybe KindExpr -> [Ident]
+        -> [ClassMethod] -> TypeInfo
+typeCls m qcls k tvs ms =
+  TypeClass (qualQualify m qcls) (toClassKind k (length tvs)) ms
 
 -- data constructors, record labels, functions and class methods
 values :: ModuleIdent -> IDecl -> [ValueInfo]
@@ -280,9 +280,8 @@ values m (IFunctionDecl _ f (Just tvs) _ qty@(QualTypeExpr _ cx _)) =
   let mcls = case cx of []                      -> Nothing
                         Constraint _ qcls _ : _ -> Just qcls
   in [Value (qualQualify m f) mcls 0 (typeScheme (toQualPredType m tvs ICC qty))]
-values m (IClassDecl _ _ qcls ktvs ds hs) =
-  map (classMethod m qcls' (map fst ktvs) hs) ds
-  where qcls' = qualQualify m qcls
+values m (IClassDecl _ _ qcls _ tvs ds hs) =
+  map (classMethod m (qualQualify m qcls) tvs hs) ds
 values _ _                        = []
 
 dataConstr :: ModuleIdent -> QualIdent -> [Ident] -> ConstrDecl -> ValueInfo
