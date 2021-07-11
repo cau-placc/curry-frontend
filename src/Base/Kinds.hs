@@ -21,6 +21,7 @@ module Base.Kinds where
 -- inference are instantiated to *.
 
 data Kind = KindStar
+          | KindConstraint
           | KindVariable Int
           | KindArrow Kind Kind
   deriving (Eq, Show)
@@ -36,12 +37,14 @@ kindVars :: Kind -> [Int]
 kindVars k = vars k []
   where
     vars KindStar          kvs = kvs
+    vars KindConstraint    kvs = kvs
     vars (KindVariable kv) kvs = kv : kvs
     vars (KindArrow k1 k2) kvs = vars k1 $ vars k2 kvs
 
 -- |The function 'defaultKind' instantiates all kind variables
 -- occurring in a kind to *.
 defaultKind :: Kind -> Kind
+defaultKind KindConstraint    = KindConstraint
 defaultKind (KindArrow k1 k2) = KindArrow (defaultKind k1) (defaultKind k2)
 defaultKind _                 = KindStar
 
@@ -49,6 +52,11 @@ defaultKind _                 = KindStar
 -- constructor with arity n whose arguments all have kind *.
 simpleKind :: Int -> Kind
 simpleKind n = foldr KindArrow KindStar $ replicate n KindStar
+
+-- |The function 'simpleClassKind' returns the kind of a type
+-- class with arity n whose class variables all have kind *.
+simpleClassKind :: Int -> Kind
+simpleClassKind n = foldr KindArrow KindConstraint $ replicate n KindStar
 
 -- |The function 'isSimpleKind' returns whether a kind is simple or not.
 isSimpleKind :: Kind -> Bool
