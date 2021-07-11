@@ -23,7 +23,7 @@ import Prelude hiding ((<>))
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative      ((<$>), (<*>))
 #endif
-import           Control.Monad            (when, foldM, replicateM, zipWithM_)
+import           Control.Monad            (when, foldM, replicateM)
 import           Control.Monad.Fix        (mfix)
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 import           Data.List                (partition, nub)
@@ -291,16 +291,12 @@ checkClassDecl (ClassDecl _ _ _ cls _ _ : ds) =
 checkClassDecl _ =
   internalError "Checks.KindCheck.checkClassDecl: no class declaration"
 
--- TODO: Update comment below for Constraint kinds!
-
--- For each declaration group, the kind checker first enters new
--- assumptions into the type constructor environment. For a type
--- constructor with arity n, we enter kind k_1 -> ... -> k_n -> k,
--- where k_i are fresh kind variables and k is * for data and newtype
--- type constructors and a fresh kind variable for type synonym type
--- constructors. For a type class of arity n we enter a list of kinds
--- [k_1, ..., k_n] where k_i are fresh kind variables. We also add a
--- type class to the class environment.
+-- For each declaration group, the kind checker first enters new assumptions
+-- into the type constructor environment. For a type constructor or type class
+-- with arity n, we enter kind k_1 -> ... -> k_n -> k, where k_i are fresh kind
+-- variables and k is * for data and newtype type constructors, a fresh kind
+-- variable for type synonym type constructors and Constraint for type classes.
+-- For the latter, we also add the type class to the class environment.
 -- Next, the kind checker checks the declarations of the group within
 -- the extended environment, and finally the kind checker instantiates
 -- all remaining free kind variables to *.
@@ -315,7 +311,7 @@ checkClassDecl _ =
 -- from the 'MonadFix' type class.
 
 bindKind :: ModuleIdent -> TCEnv -> ClassEnv -> TCEnv -> Decl a -> KCM TCEnv
-bindKind m tcEnv' clsEnv tcEnv (DataDecl _ tc tvs cs _) =
+bindKind m tcEnv' clsEnv tcEnv (DataDecl     _ tc tvs cs _) =
   bindTypeConstructor DataType tc tvs (Just KindStar) (map mkData cs) tcEnv
   where
     mkData (ConstrDecl _     c  tys) = mkData' c  tys
@@ -332,9 +328,9 @@ bindKind m tcEnv' clsEnv tcEnv (DataDecl _ tc tvs cs _) =
       where qtc = qualifyWith m tc
             PredType _ ty = expandConstrType m tcEnv' clsEnv qtc tvs tys
             tys' = arrowArgs ty
-bindKind _ _     _       tcEnv (ExternalDataDecl _ tc tvs) =
+bindKind _ _     _       tcEnv (ExternalDataDecl  _ tc tvs) =
   bindTypeConstructor DataType tc tvs (Just KindStar) [] tcEnv
-bindKind m tcEnv' _      tcEnv (NewtypeDecl _ tc tvs nc _) =
+bindKind m tcEnv' _      tcEnv (NewtypeDecl  _ tc tvs nc _) =
   bindTypeConstructor RenamingType tc tvs (Just KindStar) (mkData nc) tcEnv
   where
     mkData (NewConstrDecl _ c      ty) = DataConstr c [ty']
@@ -357,7 +353,7 @@ bindKind m tcEnv' clsEnv tcEnv (ClassDecl _ _ _ cls tvs ds) =
     findArity f (FunctionDecl _ _ f' eqs:_) | f == f' =
       Just $ eqnArity $ head eqs
     findArity f (_:ds')                               = findArity f ds'
-bindKind _ _      _      tcEnv _                          = return tcEnv
+bindKind _ _      _      tcEnv _                            = return tcEnv
 
 bindTypeConstructor :: (QualIdent -> Kind -> a -> TypeInfo) -> Ident
                     -> [Ident] -> Maybe Kind -> a -> TCEnv -> KCM TCEnv
@@ -374,7 +370,7 @@ bindTypeClass cls ar ms tcEnv = do
   m <- getModuleIdent
   ks <- replicateM ar freshKindVar
   let qcls = qualifyWith m cls
-      ti = TypeClass qcls ks ms
+      ti = TypeClass qcls (foldr KindArrow KindConstraint ks) ms
   return $ bindTypeInfo m cls ti tcEnv
 
 bindFreshKind :: TCEnv -> Ident -> KCM TCEnv
@@ -382,14 +378,13 @@ bindFreshKind tcEnv tv = do
   k <- freshKindVar
   return $ bindTypeVar tv k tcEnv
 
--- TODO: With Constraint kinds: Use this method for classes as well and pass
---         'tcKind' / 'clsKind' as an argument.
-bindTypeVars :: Ident -> [Ident] -> TCEnv -> KCM (Kind, TCEnv)
-bindTypeVars tc tvs tcEnv = do
+bindTypeVars :: Ident -> [Ident] -> (ModuleIdent -> QualIdent -> TCEnv -> Kind)
+             -> TCEnv -> KCM (Kind, TCEnv)
+bindTypeVars tcOrCls tvs getKind tcEnv = do
   m <- getModuleIdent
   return $ foldl (\(KindArrow k1 k2, tcEnv') tv ->
                    (k2, bindTypeVar tv k1 tcEnv'))
-                 (tcKind m (qualifyWith m tc) tcEnv, tcEnv)
+                 (getKind m (qualifyWith m tcOrCls) tcEnv, tcEnv)
                  tvs
 
 bindTypeVar :: Ident -> Kind -> TCEnv -> TCEnv
@@ -415,8 +410,8 @@ instantiateWithDefaultKind (RenamingType tc k nc) =
   RenamingType tc (defaultKind k) nc
 instantiateWithDefaultKind (AliasType tc k n ty) =
   AliasType tc (defaultKind k) n ty
-instantiateWithDefaultKind (TypeClass cls ks ms) =
-  TypeClass cls (map defaultKind ks) ms
+instantiateWithDefaultKind (TypeClass cls k ms) =
+  TypeClass cls (defaultKind k) ms
 instantiateWithDefaultKind (TypeVar _) =
   internalError "Checks.KindCheck.instantiateWithDefaultKind: type variable"
 
@@ -446,14 +441,14 @@ kcDeclGroup tcEnv clsEnv ds = do
 kcDecl :: TCEnv -> Decl a -> KCM ()
 kcDecl _     (InfixDecl _ _ _ _) = ok
 kcDecl tcEnv (DataDecl _ tc tvs cs _) = do
-  (_, tcEnv') <- bindTypeVars tc tvs tcEnv
+  (_, tcEnv') <- bindTypeVars tc tvs tcKind tcEnv
   mapM_ (kcConstrDecl tcEnv') cs
 kcDecl _     (ExternalDataDecl _ _ _) = ok
 kcDecl tcEnv (NewtypeDecl _ tc tvs nc _) = do
-  (_, tcEnv') <- bindTypeVars tc tvs tcEnv
+  (_, tcEnv') <- bindTypeVars tc tvs tcKind tcEnv
   kcNewConstrDecl tcEnv' nc
 kcDecl tcEnv t@(TypeDecl _ tc tvs ty) = do
-  (k, tcEnv') <- bindTypeVars tc tvs tcEnv
+  (k, tcEnv') <- bindTypeVars tc tvs tcKind tcEnv
   kcType tcEnv' "type declaration" (pPrint t) k ty
 kcDecl tcEnv (TypeSig _ _ qty) = kcTypeSig tcEnv qty
 kcDecl tcEnv (FunctionDecl _ _ _ eqs) = mapM_ (kcEquation tcEnv) eqs
@@ -464,19 +459,14 @@ kcDecl tcEnv (DefaultDecl _ tys) = do
   tcEnv' <- foldM bindFreshKind tcEnv $ nub $ fv tys
   mapM_ (kcValueType tcEnv' "default declaration" empty) tys
 kcDecl tcEnv (ClassDecl _ _ cx cls tvs ds) = do
-  m <- getModuleIdent
-  let ks = clsKinds m (qualifyWith m cls) tcEnv
-      tcEnv' = foldr (uncurry bindTypeVar) tcEnv (zip tvs ks)
+  (_, tcEnv') <- bindTypeVars cls tvs clsKind tcEnv
   kcContext tcEnv' cx
   mapM_ (kcDecl tcEnv') ds
 kcDecl tcEnv (InstanceDecl p _ cx qcls inst ds) = do
   m <- getModuleIdent
   tcEnv' <- foldM bindFreshKind tcEnv $ fv inst
   kcContext tcEnv' cx
-  -- TODO: With Constraint kinds, the following has to be reworked (perhaps with
-  --         an 'kcClsTypes' function or similar to how 'bindTypeVars' works).
-  --       This goes for 'kcConstraint' as well.
-  zipWithM_ (kcType tcEnv' what doc) (clsKinds m qcls tcEnv) inst
+  kcClassApl tcEnv' what doc qcls (clsKind m qcls tcEnv) inst
   mapM_ (kcDecl tcEnv') ds
     where
       what = "instance declaration"
@@ -590,7 +580,7 @@ kcContext tcEnv = mapM_ (kcConstraint tcEnv)
 kcConstraint :: TCEnv -> Constraint -> KCM ()
 kcConstraint tcEnv sc@(Constraint _ qcls tys) = do
   m <- getModuleIdent
-  zipWithM_ (kcType tcEnv "class constraint" doc) (clsKinds m qcls tcEnv) tys
+  kcClassApl tcEnv "class constraint" doc qcls (clsKind m qcls tcEnv) tys
   where
     doc = pPrint sc
 
@@ -612,6 +602,28 @@ kcType tcEnv what doc k ty = do
   unify ty what (doc $-$ text "Type:" <+> doc') k k'
   where
     doc' = pPrintPrec 0 ty
+
+-- Since type class instance heads and constraints are not stored as regular
+-- type expressions, the class arity is checked separately from other kinds
+-- in 'kcClassApl'.
+
+kcClassApl :: TCEnv -> String -> Doc -> QualIdent -> Kind -> [TypeExpr]
+           -> KCM ()
+kcClassApl tcEnv what doc qcls k = kcClassApl' k
+ where
+  clsAr = kindArity k
+
+  kcClassApl' :: Kind -> [TypeExpr] -> KCM ()
+  kcClassApl' (KindArrow k1 k2)  (ty : tys) =
+    kcType tcEnv what doc k1 ty >> kcClassApl' k2 tys
+  kcClassApl' KindConstraint     []         = ok
+  kcClassApl' k'@(KindArrow _ _) []         = report $
+    errClassKindMismatch what doc qcls (clsAr - kindArity k') clsAr
+  kcClassApl' KindConstraint     (_  : tys) = report $
+    errClassKindMismatch what doc qcls (clsAr + length tys + 1) clsAr
+  kcClassApl' _                  _          =
+    internalError $ "KindCheck.kcClassApl: Class " ++ show qcls ++
+                      " has invalid kind " ++ show k
 
 kcTypeExpr :: TCEnv -> String -> Doc -> Int -> TypeExpr -> KCM Kind
 kcTypeExpr tcEnv _ _ n (ConstructorType p tc) = do
@@ -652,6 +664,9 @@ kcArrow p what doc k = do
     KindStar -> do
       report $ errNonArrowKind p what doc KindStar
       (,) <$> freshKindVar <*> freshKindVar
+    KindConstraint -> do
+      report $ errNonArrowKind p what doc KindConstraint
+      (,) <$> freshKindVar <*> freshKindVar
     KindVariable kv -> do
       alpha <- freshKindVar
       beta <- freshKindVar
@@ -673,6 +688,8 @@ unify p what doc k1 k2 = do
     Nothing -> report $ errKindMismatch p what doc k1' k2'
     Just sigma -> modifyKindSubst (compose sigma)
 
+-- Notice that 'KindConstraint's should not be able to appear in the kinds that
+-- 'unifyKinds' is applied to, which is why they are not covered here.
 unifyKinds :: Kind -> Kind -> Maybe KindSubst
 unifyKinds KindStar KindStar = Just idSubst
 unifyKinds (KindVariable kv1) (KindVariable kv2)
@@ -774,3 +791,14 @@ errKindMismatch p what doc k1 k2 = spanInfoMessage p $ vcat
   , text "Inferred kind:" <+> ppKind k2
   , text "Expected kind:" <+> ppKind k1
   ]
+
+errClassKindMismatch :: String -> Doc -> QualIdent -> Int -> Int -> Message
+errClassKindMismatch what doc qcls wrongAr clsAr =
+  let aplTyText  = text $ "type"           ++ if wrongAr == 1 then "" else "s"
+      clsParText = text $ "type parameter" ++ if clsAr   == 1 then "" else "s"
+  in spanInfoMessage qcls $ vcat
+     [ text "Kind error in" <+> text what, doc 
+     , text "The type class" <+> text (escQualName qcls)
+       <+> text "has been applied to" <+> pPrint wrongAr <+> aplTyText <> comma
+     , text "but it has" <+> pPrint clsAr <+> clsParText <> dot
+     ]
