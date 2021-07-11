@@ -129,10 +129,9 @@ bindType m (NewtypeDecl _ tc _ nc _) = bindTypeKind m tc (Data qtc ids)
 bindType m (TypeDecl _ tc _ _) = bindTypeKind m tc (Alias qtc)
   where
     qtc = qualifyWith m tc
-bindType m (ClassDecl _ _ _ cls vars ds) = bindTypeKind m cls (Class qcls ar ms)
+bindType m (ClassDecl _ _ _ cls _ ds) = bindTypeKind m cls (Class qcls ms)
   where
     qcls = qualifyWith m cls
-    ar = length vars
     ms = concatMap methods ds
 bindType _ _ = id
 
@@ -150,12 +149,12 @@ checkDecl :: Decl a -> TSCM (Decl a)
 checkDecl (DataDecl p tc tvs cs clss)         = do
   checkTypeLhs tvs
   cs' <- mapM (checkConstrDecl tvs) cs
-  mapM_ (checkClass False 1) clss
+  mapM_ (checkClass False) clss
   return $ DataDecl p tc tvs cs' clss
 checkDecl (NewtypeDecl p tc tvs nc clss)      = do
   checkTypeLhs tvs
   nc' <- checkNewConstrDecl tvs nc
-  mapM_ (checkClass False 1) clss
+  mapM_ (checkClass False) clss
   return $ NewtypeDecl p tc tvs nc' clss
 checkDecl (TypeDecl p tc tvs ty)              = do
   checkTypeLhs tvs
@@ -178,7 +177,7 @@ checkDecl (ClassDecl p li cx cls clsvars ds)  = do
   return $ ClassDecl p li cx' cls clsvars ds'
 checkDecl (InstanceDecl p li cx qcls inst ds) = do
   checkMPTCExtInstance p qcls inst
-  checkClass True (length inst) qcls
+  checkClass True qcls
   (cx', inst') <- checkQualTypes cx inst
   checkSimpleContext cx'
   mapM_ (checkInstanceType p) inst'
@@ -351,7 +350,7 @@ checkClosedConstraint tvs c = do
 
 checkConstraint :: Constraint -> TSCM Constraint
 checkConstraint c@(Constraint spi qcls tys) = do
-  checkClass False (length tys) qcls
+  checkClass False qcls
   tys' <- mapM checkType tys
   unless (all (isVariableType . rootType) tys') $ report $
     errIllegalConstraint c
@@ -361,26 +360,24 @@ checkConstraint c@(Constraint spi qcls tys) = do
     rootType (ParenType _ ty)   = rootType ty
     rootType ty                 = ty
 
-checkClass :: Bool -> Int -> QualIdent -> TSCM ()
-checkClass isInstDecl ar qcls = do
+checkClass :: Bool -> QualIdent -> TSCM ()
+checkClass isInstDecl qcls = do
   m <- getModuleIdent
   tEnv <- getTypeEnv
   case qualLookupTypeKind qcls tEnv of
     [] -> report $ errUndefinedClass qcls
-    [Class c clsAr _]
+    [Class c _]
       | c == qDataId -> when (isInstDecl && m /= preludeMIdent) $ report $
                           errIllegalDataInstance qcls
-      | ar /= clsAr  -> report $ errWrongClassArity qcls ar clsAr
       | otherwise    -> ok
     [_] -> report $ errUndefinedClass qcls
     tks -> case qualLookupTypeKind (qualQualify m qcls) tEnv of
-      [Class c clsAr _]
+      [Class c _]
         | c == qDataId -> when (isInstDecl && m /= preludeMIdent) $ report $
                             errIllegalDataInstance qcls
-        | ar /= clsAr  -> report $ errWrongClassArity qcls ar clsAr
         | otherwise    -> ok
       [_] -> report $ errUndefinedClass qcls
-      _ -> report $ errAmbiguousIdent qcls $ map origName tks
+      _   -> report $ errAmbiguousIdent qcls $ map origName tks
 
 checkClosedType :: [Ident] -> TypeExpr -> TSCM TypeExpr
 checkClosedType tvs ty = do
@@ -397,10 +394,10 @@ checkType c@(ConstructorType spi tc) = do
       | isQTupleId tc -> return c
       | not (isQualified tc) -> return $ VariableType spi $ unqualify tc
       | otherwise -> report (errUndefinedType tc) >> return c
-    [Class _ _ _] -> report (errUndefinedType tc) >> return c
+    [Class _ _] -> report (errUndefinedType tc) >> return c
     [_] -> return c
     tks -> case qualLookupTypeKind (qualQualify m tc) tEnv of
-      [Class _ _ _] -> report (errUndefinedType tc) >> return c
+      [Class _ _] -> report (errUndefinedType tc) >> return c
       [_] -> return c
       _ -> report (errAmbiguousIdent tc $ map origName tks) >> return c
 checkType (ApplyType spi ty1 ty2) = ApplyType spi <$> checkType ty1
@@ -638,13 +635,3 @@ errNonDecreasingInstanceConstraint spi c qcls inst = spanInfoMessage spi $ vcat
   , text "than the instance head"
     <+> hsep (pPrint qcls : map ppInstanceType inst)
   ]
-
-errWrongClassArity :: QualIdent -> Int -> Int -> Message
-errWrongClassArity qcls wrongAr clsAr =
-  let aplTyText  = text $ "type"           ++ if wrongAr == 1 then "" else "s"
-      clsParText = text $ "type parameter" ++ if clsAr   == 1 then "" else "s"
-  in spanInfoMessage qcls $ vcat
-     [ text "The type class" <+> text (escQualName qcls)
-       <+> text "has been applied to" <+> pPrint wrongAr <+> aplTyText <> comma
-     , text "but it has" <+> pPrint clsAr <+> clsParText <> dot
-     ]

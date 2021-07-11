@@ -71,19 +71,18 @@ intfSyntaxCheck (Interface n is ds) = (Interface n is ds', reverse $ errors s')
 -- The latter must not occur in type expressions in interfaces.
 
 bindType :: IDecl -> TypeEnv -> TypeEnv
-bindType (IInfixDecl                _ _ _ _) = id
-bindType (HidingDataDecl           _ tc _ _) = qualBindTopEnv tc (Data tc [])
-bindType (IDataDecl           _ tc _ _ cs _) = qualBindTopEnv tc $
+bindType (IInfixDecl           _ _ _ _) = id
+bindType (HidingDataDecl      _ tc _ _) = qualBindTopEnv tc (Data tc [])
+bindType (IDataDecl      _ tc _ _ cs _) = qualBindTopEnv tc $
   Data tc (map constrId cs)
-bindType (INewtypeDecl        _ tc _ _ nc _) = qualBindTopEnv tc $
+bindType (INewtypeDecl   _ tc _ _ nc _) = qualBindTopEnv tc $
   Data tc [nconstrId nc]
-bindType (ITypeDecl              _ tc _ _ _) = qualBindTopEnv tc (Alias tc)
-bindType (IFunctionDecl           _ _ _ _ _) = id
-bindType (HidingClassDecl  _ _ cls kclsvars) = qualBindTopEnv cls $
-  Class cls (length kclsvars) []
-bindType (IClassDecl _ _ cls kclsvars ms hs) = qualBindTopEnv cls $
-  Class cls (length kclsvars) (filter (`notElem` hs) (map imethod ms))
-bindType (IInstanceDecl         _ _ _ _ _ _) = id
+bindType (ITypeDecl         _ tc _ _ _) = qualBindTopEnv tc (Alias tc)
+bindType (IFunctionDecl      _ _ _ _ _) = id
+bindType (HidingClassDecl  _ _ cls _ _) = qualBindTopEnv cls $ Class cls []
+bindType (IClassDecl _ _ cls _ _ ms hs) = qualBindTopEnv cls $
+  Class cls (filter (`notElem` hs) (map imethod ms))
+bindType (IInstanceDecl    _ _ _ _ _ _) = id
 
 -- The checks applied to the interface are similar to those performed
 -- during syntax checking of type expressions.
@@ -112,22 +111,20 @@ checkIDecl (ITypeDecl p tc k tvs ty) = do
   liftM (ITypeDecl p tc k tvs) (checkClosedType tvs ty)
 checkIDecl (IFunctionDecl p f cm n qty) =
   liftM (IFunctionDecl p f cm n) (checkQualType qty)
-checkIDecl (HidingClassDecl p cx qcls kclsvars) = do
-  let clsvars = map fst kclsvars
+checkIDecl (HidingClassDecl p cx qcls k clsvars) = do
   checkTypeVars "hiding class declaration" clsvars
   cx' <- checkClosedContext clsvars cx
   checkSimpleContext cx'
-  return $ HidingClassDecl p cx' qcls kclsvars
-checkIDecl (IClassDecl p cx qcls kclsvars ms hs) = do
-  let clsvars = map fst kclsvars
+  return $ HidingClassDecl p cx' qcls k clsvars
+checkIDecl (IClassDecl p cx qcls k clsvars ms hs) = do
   checkTypeVars "class declaration" clsvars
   cx' <- checkClosedContext clsvars cx
   checkSimpleContext cx'
   ms' <- mapM (checkIMethodDecl clsvars) ms
   checkHidden (errNoElement "method" "class") qcls (map imethod ms') hs
-  return $ IClassDecl p cx' qcls kclsvars ms' hs
+  return $ IClassDecl p cx' qcls k clsvars ms' hs
 checkIDecl (IInstanceDecl p cx qcls inst is m) = do
-  checkClass (length inst) qcls
+  checkClass qcls
   (cx', inst') <- checkQualTypes cx inst
   checkSimpleContext cx'
   mapM_ checkInstanceType inst'
@@ -221,19 +218,18 @@ checkClosedConstraint tvs c = do
 
 checkConstraint :: Constraint -> ISC Constraint
 checkConstraint (Constraint spi qcls tys) = do
-  checkClass (length tys) qcls
+  checkClass qcls
   Constraint spi qcls `liftM` (mapM checkType tys)
 
-checkClass :: Int -> QualIdent -> ISC ()
-checkClass ar qcls = do
+checkClass :: QualIdent -> ISC ()
+checkClass qcls = do
   tEnv <- getTypeEnv
   case qualLookupTypeKind qcls tEnv of
-    [] -> report $ errUndefinedClass qcls
-    [Class _ clsAr _] ->
-      when (ar /= clsAr) $ report $ errWrongClassArity qcls ar clsAr
-    [_] -> report $ errUndefinedClass qcls
-    _ -> internalError $ "Checks.InterfaceSyntaxCheck.checkClass: " ++
-           "ambiguous identifier " ++ show qcls
+    []          -> report $ errUndefinedClass qcls
+    [Class _ _] -> return ()
+    [_]         -> report $ errUndefinedClass qcls
+    _           -> internalError $ "Checks.InterfaceSyntaxCheck.checkClass: " ++
+                                     "ambiguous identifier " ++ show qcls
 
 checkClosedType :: [Ident] -> TypeExpr -> ISC TypeExpr
 checkClosedType tvs ty = do
@@ -440,13 +436,3 @@ errNonDecreasingInstanceConstraint spi c qcls inst = spanInfoMessage spi $ vcat
   , text "than the instance head"
     <+> hsep (pPrint qcls : map ppInstanceType inst)
   ]
-
-errWrongClassArity :: QualIdent -> Int -> Int -> Message
-errWrongClassArity qcls wrongAr clsAr =
-  let aplTyText  = text $ "type"           ++ if wrongAr == 1 then "" else "s"
-      clsParText = text $ "type parameter" ++ if clsAr   == 1 then "" else "s"
-  in spanInfoMessage qcls $ vcat
-     [ text "The type class" <+> text (escQualName qcls)
-       <+> text "has been applied to" <+> pPrint wrongAr <+> aplTyText <> comma
-     , text "but it has" <+> pPrint clsAr <+> clsParText <> dot
-     ]

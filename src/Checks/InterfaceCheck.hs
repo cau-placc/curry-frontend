@@ -58,7 +58,7 @@ import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
 
-import Base.CurryKinds (toKind')
+import Base.CurryKinds (toKind', toClassKind)
 import Base.CurryTypes
 import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.TopEnv
@@ -162,20 +162,18 @@ checkImport (IFunctionDecl _ f Nothing n ty) = do
         toQualPredType m [] OPred ty == ty'
       check _ = False
   checkValueInfo "function" check f f
-checkImport (HidingClassDecl _ cx cls kclsvars) = do
+checkImport (HidingClassDecl _ cx cls k clsvars) = do
   clsEnv <- getClassEnv
-  let (clsvars, ks) = unzip kclsvars
-      check (TypeClass cls' ks' _)
-        | cls == cls' && map (flip toKind' 0) ks == ks' &&
+  let check (TypeClass cls' k' _)
+        | cls == cls' && toClassKind k (length clsvars) == k' &&
           map (constraintToSuperClass clsvars) cx == superClasses cls' clsEnv
         = Just ok
       check _ = Nothing
   checkTypeInfo "hidden type class" check cls cls
-checkImport (IClassDecl _ cx cls kclsvars ms _) = do
+checkImport (IClassDecl _ cx cls k clsvars ms _) = do
   clsEnv <- getClassEnv
-  let (clsvars, ks) = unzip kclsvars
-      check (TypeClass cls' ks' fs)
-        | cls == cls' && map (flip toKind' 0) ks == ks' &&
+  let check (TypeClass cls' k' fs)
+        | cls == cls' && toClassKind k (length clsvars) == k' &&
           map (constraintToSuperClass clsvars) cx == superClasses cls' clsEnv &&
           map (\m -> (imethod m, imethodArity m)) ms ==
             map (\f -> (methodName f, methodArity f)) fs
