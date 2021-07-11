@@ -249,11 +249,19 @@ failInfos = map (uncurry mkFailTest)
       ]
     )
   , ("MPTCWrongClassArity",
-      [ "The type class `C' has been applied to 0 types," -- "but it has 1 type parameter."
+      [ "Kind error in instance declaration", "instance C"
+      , "The type class `C' has been applied to 0 types,"
+      , "but it has 1 type parameter."
+      , "Kind error in class constraint", "C a b"
       , "The type class `C' has been applied to 2 types," -- "but it has 1 type parameter."
-      , "The type class `D' has been applied to 1 type," -- "but it has 2 type parameters."
-      , "The type class `D' has been applied to 3 types," -- "but it has 2 type parameters."
-      , "The type class `E' has been applied to 1 type," -- "but it has 0 type parameters."
+      , {- Kind error in class constraint -} "D a"
+      , "The type class `D' has been applied to 1 type,"
+      , "but it has 2 type parameters."
+      , {- Kind error in instance declaration -} "instance D Bool Bool Bool"
+      , "The type class `D' has been applied to 3 types,"-- "but it has 2 type parameters."
+      , {- Kind error in instance declaration -} "instance E Bool"
+      , "The type class `E' has been applied to 1 type,"
+      , "but it has 0 type parameters."
       ]
     )
   , ("MPTCWrongKind",
