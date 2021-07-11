@@ -92,6 +92,7 @@ instance Symbol Token where
   dist _ (Token Id_primitive       _) = (0,  8)
   dist _ (Token Id_qualified       _) = (0,  8)
   dist _ (Token PragmaHiding       _) = (0,  9)
+  dist _ (Token Id_Constraint      _) = (0,  9)
   dist _ (Token PragmaLanguage     _) = (0, 11)
   dist _ (Token Id                 a) = distAttr False a
   dist _ (Token QId                a) = distAttr False a
@@ -204,6 +205,7 @@ data Category
   -- special identifiers
   | Id_as
   | Id_ccall
+  | Id_Constraint
   | Id_forall
   | Id_hiding
   | Id_interface
@@ -349,6 +351,7 @@ instance Show Token where
   showsPrec _ (Token KW_where           _) = showsEscaped "where"
   showsPrec _ (Token Id_as              _) = showsSpecialIdent "as"
   showsPrec _ (Token Id_ccall           _) = showsSpecialIdent "ccall"
+  showsPrec _ (Token Id_Constraint      _) = showsSpecialIdent "Constraint"
   showsPrec _ (Token Id_forall          _) = showsSpecialIdent "forall"
   showsPrec _ (Token Id_hiding          _) = showsSpecialIdent "hiding"
   showsPrec _ (Token Id_interface       _) = showsSpecialIdent "interface"
@@ -473,13 +476,14 @@ keywords = Map.fromList
 -- |Map of keywords and special identifiers
 keywordsSpecialIds :: Map.Map String Category
 keywordsSpecialIds = Map.union keywords $ Map.fromList
-  [ ("as"       , Id_as       )
-  , ("ccall"    , Id_ccall    )
-  , ("forall"   , Id_forall   )
-  , ("hiding"   , Id_hiding   )
-  , ("interface", Id_interface)
-  , ("primitive", Id_primitive)
-  , ("qualified", Id_qualified)
+  [ ("as"        , Id_as        )
+  , ("ccall"     , Id_ccall     )
+  , ("Constraint", Id_Constraint)
+  , ("forall"    , Id_forall    )
+  , ("hiding"    , Id_hiding    )
+  , ("interface" , Id_interface )
+  , ("primitive" , Id_primitive )
+  , ("qualified" , Id_qualified )
   ]
 
 pragmas :: Map.Map String Category

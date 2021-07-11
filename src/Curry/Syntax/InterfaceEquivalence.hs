@@ -20,7 +20,6 @@
 module Curry.Syntax.InterfaceEquivalence (fixInterface, intfEquiv) where
 
 import Data.List (deleteFirstsBy, sort)
-import Data.Function (on)
 import qualified Data.Set as Set
 
 import Curry.Base.Ident
@@ -60,8 +59,9 @@ instance Equiv IImportDecl where
 
 -- Since the kind of type constructors or type classes can be omitted
 -- in the interface when the kind is simple, i.e., it is either * or of
--- the form * -> ... -> *, a non given kind has to be considered equivalent
--- to a given one if the latter is simple.
+-- the form * -> ... -> * for type constructors or Constraint or of the
+-- form * -> ... -> * -> Constraint for type classes, a non given kind has
+-- to be considered equivalent to a given one if the latter is simple.
 
 eqvKindExpr :: Maybe KindExpr -> Maybe KindExpr -> Bool
 Nothing  `eqvKindExpr` (Just k) = isSimpleKindExpr k
@@ -73,6 +73,15 @@ isSimpleKindExpr Star               = True
 isSimpleKindExpr (ArrowKind Star k) = isSimpleKindExpr k
 isSimpleKindExpr _                  = False
 
+eqvClassKindExpr :: Maybe KindExpr -> Maybe KindExpr -> Bool
+Nothing  `eqvClassKindExpr` (Just k) = isSimpleClassKindExpr k
+(Just k) `eqvClassKindExpr` Nothing  = isSimpleClassKindExpr k
+k1       `eqvClassKindExpr` k2       = k1 == k2
+
+isSimpleClassKindExpr :: KindExpr -> Bool
+isSimpleClassKindExpr ConstraintKind     = True
+isSimpleClassKindExpr (ArrowKind Star k) = isSimpleClassKindExpr k
+isSimpleClassKindExpr _                  = False
 
 instance Equiv IDecl where
   IInfixDecl _ fix1 p1 op1 =~= IInfixDecl _ fix2 p2 op2
@@ -89,13 +98,11 @@ instance Equiv IDecl where
     = tc1 == tc2 && k1 `eqvKindExpr` k2 && tvs1 == tvs2 && ty1 == ty2
   IFunctionDecl _ f1 cm1 n1 qty1 =~= IFunctionDecl _ f2 cm2 n2 qty2
     = f1 == f2 && cm1 == cm2 && n1 == n2 && qty1 == qty2
-  HidingClassDecl _ cx1 cls1 ktvs1 =~= HidingClassDecl _ cx2 cls2 ktvs2
-    = cx1 == cx2 && cls1 == cls2 && map fst ktvs1 == map fst ktvs2 &&
-      and (zipWith (eqvKindExpr `on` snd) ktvs1 ktvs2)
-  IClassDecl _ cx1 cls1 ktvs1 ms1 hs1 =~= IClassDecl _ cx2 cls2 ktvs2 ms2 hs2
-    = cx1 == cx2 && cls1 == cls2 && map fst ktvs1 == map fst ktvs2 &&
-      and (zipWith (eqvKindExpr `on` snd) ktvs1 ktvs2) && ms1 `eqvList` ms2 &&
-      hs1 `eqvSet` hs2
+  HidingClassDecl _ cx1 cls1 k1 tvs1 =~= HidingClassDecl _ cx2 cls2 k2 tvs2
+    = cx1 == cx2 && cls1 == cls2 && k1 `eqvClassKindExpr` k2 && tvs1 == tvs2
+  IClassDecl _ cx1 cls1 k1 tvs1 ms1 hs1 =~= IClassDecl _ cx2 cls2 k2 tvs2 ms2 hs2
+    = cx1 == cx2 && cls1 == cls2 && k1 `eqvClassKindExpr` k2 && tvs1 == tvs2 &&
+      ms1 `eqvList` ms2 && hs1 `eqvSet` hs2
   IInstanceDecl _ cx1 cls1 tys1 is1 m1 =~= IInstanceDecl _ cx2 cls2 tys2 is2 m2
     = cx1 == cx2 && cls1 == cls2 && tys1 == tys2 && sort is1 == sort is2 &&
       m1 == m2
@@ -153,10 +160,10 @@ instance FixInterface IDecl where
     ITypeDecl p tc k vs (fix tcs ty)
   fix tcs (IFunctionDecl p f cm n qty) =
     IFunctionDecl p f cm n (fix tcs qty)
-  fix tcs (HidingClassDecl p cx cls ktvs) =
-    HidingClassDecl p (fix tcs cx) cls ktvs
-  fix tcs (IClassDecl p cx cls ktvs ms hs) =
-    IClassDecl p (fix tcs cx) cls ktvs (fix tcs ms) hs
+  fix tcs (HidingClassDecl p cx cls k tvs) =
+    HidingClassDecl p (fix tcs cx) cls k tvs
+  fix tcs (IClassDecl p cx cls k tvs ms hs) =
+    IClassDecl p (fix tcs cx) cls k tvs (fix tcs ms) hs
   fix tcs (IInstanceDecl p cx cls inst is m) =
     IInstanceDecl p (fix tcs cx) cls (fix tcs inst) is m
   fix _ d = d
@@ -207,6 +214,6 @@ typeConstructors ds = [tc | (QualIdent _ Nothing tc) <- foldr tyCons [] ds]
         tyCons (INewtypeDecl _ tc _ _ _ _) tcs = tc : tcs
         tyCons (ITypeDecl      _ tc _ _ _) tcs = tc : tcs
         tyCons (IFunctionDecl   _ _ _ _ _) tcs = tcs
-        tyCons (HidingClassDecl   _ _ _ _) tcs = tcs
-        tyCons (IClassDecl    _ _ _ _ _ _) tcs = tcs
+        tyCons (HidingClassDecl _ _ _ _ _) tcs = tcs
+        tyCons (IClassDecl  _ _ _ _ _ _ _) tcs = tcs
         tyCons (IInstanceDecl _ _ _ _ _ _) tcs = tcs

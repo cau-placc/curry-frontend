@@ -214,9 +214,10 @@ iHidingDecl = tokenPos Id_hiding <**> (hDataDecl <|> hClassDecl)
   where
   hDataDecl = hiddenData <$-> token KW_data <*> withKind qtycon <*> many tyvar
   hClassDecl = hiddenClass <$>
-    classInstHead KW_class qtycls (many (withKind clsvar))
+    classInstHead KW_class (withKind qtycls) (many clsvar)
   hiddenData (tc, k) tvs p = HidingDataDecl p tc k tvs
-  hiddenClass (_, _, cx, qcls, kclsvars) p = HidingClassDecl p cx qcls kclsvars
+  hiddenClass (_, _, cx, (qcls, k), clsvars) p =
+    HidingClassDecl p cx qcls k clsvars
 
 -- |Parser for an interface data declaration
 iDataDecl :: Parser a Token IDecl
@@ -260,9 +261,9 @@ iTypeDeclLhs f kw = f' <$> tokenPos kw <*> withKind qtycon <*> many tyvar
 
 -- |Parser for an interface class declaration
 iClassDecl :: Parser a Token IDecl
-iClassDecl = (\(sp, _, cx, qcls, kclsvars) ->
-               IClassDecl (span2Pos sp) cx qcls kclsvars)
-        <$> classInstHead KW_class qtycls (many (withKind clsvar))
+iClassDecl = (\(sp, _, cx, (qcls, k), clsvars) ->
+               IClassDecl (span2Pos sp) cx qcls k clsvars)
+        <$> classInstHead KW_class (withKind qtycls) (many clsvar)
         <*> braces (iMethod `sepBy` semicolon)
         <*> iClassHidden
 
@@ -616,6 +617,7 @@ kind0 = kind1 `chainr1` (ArrowKind <$-> token RightArrow)
 -- kind1 ::= * | '(' kind0 ')'
 kind1 :: Parser a Token KindExpr
 kind1 = Star <$-> token SymStar
+    <|> ConstraintKind <$-> token Id_Constraint
     <|> parens kind0
 
 -- ---------------------------------------------------------------------------
@@ -1261,14 +1263,15 @@ anonIdent = (`setSpanInfo` anonId) . fromSrcSpanBoth <$> tokenSpan Underscore
 
 mIdent :: Parser a Token ModuleIdent
 mIdent = mIdent' <$> spanPosition <*>
-     tokens [Id,QId,Id_as,Id_ccall,Id_forall,Id_hiding,
-             Id_interface,Id_primitive,Id_qualified]
+     tokens [Id,QId,Id_as,Id_ccall,Id_Constraint,Id_forall,
+             Id_hiding,Id_interface,Id_primitive,Id_qualified]
   where mIdent' sp a = ModuleIdent (fromSrcSpanBoth sp) (modulVal a ++ [sval a])
 
 ident :: Parser a Token Ident
 ident = (\ sp t -> setSpanInfo (fromSrcSpanBoth sp) (mkIdent (sval t)))
-          <$> spanPosition <*> tokens [Id,Id_as,Id_ccall,Id_forall,Id_hiding,
-                                       Id_interface,Id_primitive,Id_qualified]
+          <$> spanPosition
+          <*> tokens [Id,Id_as,Id_ccall,Id_Constraint,Id_forall,
+                      Id_hiding,Id_interface,Id_primitive,Id_qualified]
 
 qIdent :: Parser a Token QualIdent
 qIdent = qualify <$> ident <|> qIdentWith QId

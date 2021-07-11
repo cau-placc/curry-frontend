@@ -223,10 +223,10 @@ instance Pretty IDecl where
   pPrint (IFunctionDecl _ f cm a ty) =
     sep [ ppQIdent f, maybePP (ppPragma "METHOD" . hsep . map ppIdent) cm
         , int a, text "::", pPrintPrec 0 ty ]
-  pPrint (HidingClassDecl _ cx qcls kclsvars) = text "hiding" <+>
-    ppClassInstHead "class" cx (ppQIdent qcls) (map ppIdentWithKind' kclsvars)
-  pPrint (IClassDecl _ cx qcls kclsvars ms hs) =
-    ppClassInstHead "class" cx (ppQIdent qcls) (map ppIdentWithKind' kclsvars)
+  pPrint (HidingClassDecl _ cx qcls k clsvars) = text "hiding" <+>
+    ppClassInstHead "class" cx (ppQIdentWithKind qcls k) (map ppIdent clsvars)
+  pPrint (IClassDecl _ cx qcls k clsvars ms hs) =
+    ppClassInstHead "class" cx (ppQIdentWithKind qcls k) (map ppIdent clsvars)
     <+> lbrace $$
         vcat (punctuate semi $ map (indent . pPrint) ms) $$
         rbrace <+> ppHiding hs
@@ -247,12 +247,6 @@ instance Pretty IMethodDecl where
 ppIMethodImpl :: IMethodImpl -> Doc
 ppIMethodImpl (f, a) = ppIdent f <+> int a
 
-ppIdentWithKind :: Ident -> Maybe KindExpr -> Doc
-ppIdentWithKind ident = ppQIdentWithKind (qualify ident)
-
-ppIdentWithKind' :: (Ident, Maybe KindExpr) -> Doc
-ppIdentWithKind' = uncurry ppIdentWithKind
-
 ppQIdentWithKind :: QualIdent -> Maybe KindExpr -> Doc
 ppQIdentWithKind tc (Just k) =
   parens $ ppQIdent tc <+> text "::" <+> pPrintPrec 0 k
@@ -269,6 +263,7 @@ ppHiding hs
 
 instance Pretty KindExpr where
   pPrintPrec _ Star              = char '*'
+  pPrintPrec _ ConstraintKind    = text "Constraint"
   pPrintPrec p (ArrowKind k1 k2) =
     parenIf (p > 0) (fsep (ppArrowKind (ArrowKind k1 k2)))
     where

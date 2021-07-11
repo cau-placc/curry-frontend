@@ -130,8 +130,8 @@ data IDecl
   | INewtypeDecl    Position QualIdent (Maybe KindExpr) [Ident] NewConstrDecl [Ident]
   | ITypeDecl       Position QualIdent (Maybe KindExpr) [Ident] TypeExpr
   | IFunctionDecl   Position QualIdent (Maybe [Ident]) Arity QualTypeExpr
-  | HidingClassDecl Position Context QualIdent [(Ident, Maybe KindExpr)]
-  | IClassDecl      Position Context QualIdent [(Ident, Maybe KindExpr)] [IMethodDecl] [Ident]
+  | HidingClassDecl Position Context QualIdent (Maybe KindExpr) [Ident]
+  | IClassDecl      Position Context QualIdent (Maybe KindExpr) [Ident] [IMethodDecl] [Ident]
   | IInstanceDecl   Position Context QualIdent [InstanceType] [IMethodImpl] (Maybe ModuleIdent)
     deriving (Eq, Read, Show)
 
@@ -145,6 +145,7 @@ type IMethodImpl = (Ident, Arity)
 -- |Kind expressions
 data KindExpr
   = Star
+  | ConstraintKind
   | ArrowKind KindExpr KindExpr
     deriving (Eq, Read, Show)
 

@@ -128,6 +128,7 @@ showToken (Token DoubleArrow    _) = "DoubleArrow"
 -- special identifiers
 showToken (Token Id_as          _) = "Id_as"
 showToken (Token Id_ccall       _) = "Id_ccall"
+showToken (Token Id_Constraint  _) = "Id_Constraint"
 showToken (Token Id_forall      _) = "Id_forall"
 showToken (Token Id_hiding      _) = "Id_hiding"
 showToken (Token Id_interface   _) = "Id_interface"
