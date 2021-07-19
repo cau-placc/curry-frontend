@@ -21,7 +21,7 @@ module Exports (exportInterface) where
 
 import           Data.List         (nub)
 import qualified Data.Map   as Map ( Map, delete, fromListWith, lookup
-                                   , mapKeysWith, toList)
+                                   , mapKeysWith )
 import           Data.Maybe        (mapMaybe)
 import qualified Data.Set   as Set ( Set, delete, empty, insert, deleteMin
                                    , fromList, member, toList )
@@ -32,15 +32,15 @@ import Curry.Base.Ident
 import Curry.Syntax
 
 import Base.CurryKinds (fromKind', fromClassKind)
-import Base.CurryTypes (fromQualType, fromQualPredType, fromQualPredTypes)
+import Base.CurryTypes ( fromQualType, fromQualPredType, fromQualPredTypes
+                       , toTypes )
 import Base.Messages
 import Base.Types
 
 import Env.Class
 import Env.OpPrec          (OpPrecEnv, PrecInfo (..), OpPrec (..), qualLookupP)
 import Env.Instance
-import Env.TypeConstructor ( TCEnv, TypeInfo (..), tcKind, clsKind
-                           , qualLookupTypeInfo )
+import Env.TypeConstructor (TCEnv, TypeInfo (..), clsKind, qualLookupTypeInfo)
 import Env.Value           (ValueEnv, ValueInfo (..), qualLookupValue)
 
 import CompilerEnv
@@ -80,7 +80,7 @@ exportInterface' m es pEnv tcEnv vEnv clsEnv inEnv = Interface m imports decls'
   precs   = foldr (infixDecl m pEnv) [] es
   types   = foldr (typeDecl m tcEnv clsEnv tvs) [] es
   values  = foldr (valueDecl m tcEnv vEnv tvs) [] es
-  (inExps, insts) = getExportedInsts m tcEnv inEnv tvs (initInstExports m inEnv)
+  (inExps, insts) = getExportedInsts m inEnv tvs (initInstExports m inEnv)
   decls   = precs ++ types ++ values ++ insts
   decls'  = closeInterface m tcEnv clsEnv inEnv tvs Set.empty inExps decls
 
@@ -221,48 +221,37 @@ type InstExportMap = Map.Map (Set.Set QualIdent) [InstIdent]
 -- as we cannot limit the modules that could use these instances like we can
 -- with other instances.
 initInstExports :: ModuleIdent -> InstEnv -> InstExportMap
-initInstExports m = Map.fromListWith (++) . map instExpMapEntry . Map.toList
+initInstExports m = Map.fromListWith (++) . map instExpMapEntry . instEnvList
  where
   instExpMapEntry :: (InstIdent, InstInfo) -> (Set.Set QualIdent, [InstIdent])
-  instExpMapEntry (instId@(cls, tcs), (m', _, _)) =
+  instExpMapEntry (instId@(cls, tys), (m', _, _)) =
     let select = if m == m' then id else take 1
-    in ( Set.fromList $ select $ filter ((== Just m') . qidModule) $ cls : tcs
+    in ( Set.fromList $ select $ filter ((== Just m') . qidModule) $
+           cls : concatMap typeConstrs tys
        , [instId] )
 
 -- Removes the instances that currently have to be exported from the instance
 -- export map, converts them to interface declarations and returns the updated
 -- instance export map together with the interface declarations.
-getExportedInsts :: ModuleIdent -> TCEnv -> InstEnv -> [Ident] -> InstExportMap
+getExportedInsts :: ModuleIdent -> InstEnv -> [Ident] -> InstExportMap
                  -> (InstExportMap, [IDecl])
-getExportedInsts m tcEnv inEnv tvs inExps =
+getExportedInsts m inEnv tvs inExps =
   ( Map.delete Set.empty inExps
-  , maybe [] (map (iInstDecl m tcEnv inEnv tvs)) (Map.lookup Set.empty inExps)
+  , maybe [] (map (iInstDecl m inEnv tvs)) (Map.lookup Set.empty inExps)
   )
 
 -- Transforms an entry of the instance environment into an interface instance
 -- declaration.
-iInstDecl :: ModuleIdent -> TCEnv -> InstEnv -> [Ident] -> InstIdent -> IDecl
-iInstDecl m tcEnv inEnv tvs instId@(cls, tcs) =
-  IInstanceDecl NoPos cx (qualUnqualify m cls) tys is mm
+iInstDecl :: ModuleIdent -> InstEnv -> [Ident] -> InstIdent -> IDecl
+iInstDecl m inEnv tvs instId@(cls, tys) =
+  IInstanceDecl NoPos cx (qualUnqualify m cls) tys' is mm
  where
-  (m', ps, is) = case lookupInstInfo instId inEnv of
+  (m', ps, is) = case lookupInstExact instId inEnv of
                    Just instInfo -> instInfo
-                   Nothing -> internalError $ "Exports.iInstDecl: Couldn't " ++
+                   Nothing -> internalError $ "Exports.iInstDecl: Could not " ++
                                 "find instance information for " ++ show instId
-  (cx, tys) = fromQualPredTypes m tvs $
-    PredTypes ps (tcsToTypes 0 tcs (clsKind m cls tcEnv))
+  (cx, tys') = fromQualPredTypes m tvs $ PredTypes ps tys
   mm  = if m == m' then Nothing else Just m'
-  
-  -- TODO: The following assumes that every type variable can only occur once in
-  --         an instance head. This should be changed with FlexibleInstances.
-  tcsToTypes :: Int -> [QualIdent] -> Kind -> [Type]
-  tcsToTypes minVar (tc : tcs') (KindArrow k1 k2) =
-    let n    = kindArity (tcKind m tc tcEnv) - kindArity k1
-        ntvs = map TypeVariable [minVar .. minVar + n - 1]
-    in applyType (TypeConstructor tc) ntvs : tcsToTypes (minVar + n) tcs' k2
-  tcsToTypes _ [] KindConstraint = []
-  tcsToTypes _ _ _ = internalError $ "Exports.iInstDecl: " ++
-    "Kind arity does not match number of instance types for " ++ show (cls, tcs)
 
 -- The compiler determines the list of imported modules from the set of
 -- module qualifiers that are used in the interface. Careful readers
@@ -367,7 +356,7 @@ iInfo (INewtypeDecl     _ tc _ _ _ _) = IType tc
 iInfo (ITypeDecl           _ _ _ _ _) = IOther
 iInfo (HidingClassDecl   _ _ cls _ _) = IClass cls
 iInfo (IClassDecl    _ _ cls _ _ _ _) = IClass cls
-iInfo (IInstanceDecl _ _ cls tys _ _) = IInst (cls, map typeConstr tys)
+iInfo (IInstanceDecl _ _ cls tys _ _) = IInst (cls, toTypes [] tys)
 iInfo (IFunctionDecl       _ _ _ _ _) = IOther
 
 closeInterface :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Ident]
@@ -381,7 +370,7 @@ closeInterface m tcEnv clsEnv inEnv tvs is inExps (d:ds)
     d : closeInterface m tcEnv clsEnv inEnv tvs (Set.insert i is) inExps' ds'
   where i = iInfo d
         (inExps', ds') = (ds ++) <$> ((hiddenTypes m tcEnv clsEnv tvs d ++) <$>
-           getExportedInsts m tcEnv inEnv tvs (updateInstExports m i inExps))
+           getExportedInsts m inEnv tvs (updateInstExports m i inExps))
 
 hiddenTypes :: ModuleIdent -> TCEnv -> ClassEnv -> [Ident] -> IDecl -> [IDecl]
 hiddenTypes m tcEnv clsEnv tvs d =
