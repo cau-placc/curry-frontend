@@ -31,7 +31,7 @@ import Base.Messages (internalError)
 import Base.Types
 import Base.TypeSubst (instanceTypes)
 import Base.Typing (typeOf)
-import Base.Utils (snd3, mapAccumM)
+import Base.Utils (fst3, snd3, mapAccumM)
 
 import Env.Instance
 import Env.OpPrec
@@ -97,14 +97,15 @@ deriveAllInstances ds = do
 -- If we ever entered a data instance for this datatype into the instance
 -- environment, we can safely derive a data instance
 hasDataInstance :: InstEnv -> ModuleIdent -> Decl PredType -> Bool
-hasDataInstance inst mid (DataDecl    _ tc _ _ _) =
-  maybe False (\(mid', _, _) -> mid == mid') $
-    lookupInstInfo (qDataId, [qualifyWith mid tc]) inst
-hasDataInstance inst mid (NewtypeDecl _ tc _ _ _) =
-  maybe False (\(mid', _, _) -> mid == mid') $
-    lookupInstInfo (qDataId, [qualifyWith mid tc]) inst
-hasDataInstance _       _   _                     =
-  False
+hasDataInstance inst mid (DataDecl    _ tc tvs _ _) =
+  maybe False ((== mid) . fst3) (lookupInstExact (qDataId, [ty]) inst)
+  -- TODO: An alternative would be to use 'expandConstrType' or 'toConstrType',
+  --         but that probably isn't needed.
+  where ty = applyType (TypeConstructor (qualifyWith mid tc))
+               (map TypeVariable [0 .. length tvs - 1])
+hasDataInstance inst mid (NewtypeDecl p tc tvs _ _) =
+  hasDataInstance inst mid (DataDecl p tc tvs [] [])
+hasDataInstance _    _   _                          = False
 
 deriveDataInstance :: Decl PredType -> DVM (Decl PredType)
 deriveDataInstance (DataDecl    p tc tvs _ _) =
@@ -132,9 +133,10 @@ deriveInstance :: QualIdent -> [Ident] -> [ConstrInfo] -> QualIdent
                -> DVM (Decl PredType)
 deriveInstance tc tvs cis cls = do
   inEnv <- getInstEnv
-  let ps = snd3 $ fromJust $ lookupInstInfo (cls, [tc]) inEnv
-      ty = applyType (TypeConstructor tc) $
+  let ty = applyType (TypeConstructor tc) $
              take (length tvs) $ map TypeVariable [0 ..]
+      -- TODO: Maybe add a specific error message?
+      ps = snd3 $ fromJust $ lookupInstExact (cls, [ty]) inEnv
       QualTypeExpr _ cx inst = fromPredType tvs $ PredType ps ty
   ds <- deriveMethods cls ty cis ps
   return $ InstanceDecl NoSpanInfo WhitespaceLayout cx cls [inst] ds
