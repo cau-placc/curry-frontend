@@ -181,8 +181,8 @@ checkImport (IClassDecl _ cx cls k clsvars ms _) = do
       check _ = Nothing
   checkTypeInfo "type class" check cls cls
 checkImport (IInstanceDecl _ cx cls tys is m) =
-  checkInstInfo check cls (cls, map typeConstr tys) m
-  where PredTypes ps _ = toPredTypes [] OPred cx tys
+  checkInstInfo check cls (cls, tys') m
+  where PredTypes ps tys' = toPredTypes [] OPred cx tys
         check ps' is' = ps == ps' && sort is == sort is'
 
 checkConstrImport :: QualIdent -> [Ident] -> ConstrDecl -> IC ()
@@ -258,11 +258,11 @@ checkTypeInfo what check p tc = do
         _    -> internalError "checkTypeInfo"
   checkImported checkInfo tc
 
-checkInstInfo :: HasSpanInfo s => (PredSet -> [(Ident, Int)] -> Bool) -> s -> InstIdent
-              -> Maybe ModuleIdent -> IC ()
+checkInstInfo :: HasSpanInfo s => (PredSet -> [(Ident, Int)] -> Bool) -> s
+              -> InstIdent -> Maybe ModuleIdent -> IC ()
 checkInstInfo check p i mm = do
   inEnv <- getInstEnv
-  let checkInfo m _ = case lookupInstInfo i inEnv of
+  let checkInfo m _ = case lookupInstExact i inEnv of
         Just (m', ps, is)
           | m /= m'   -> report $ errNoInstance p m i
           | otherwise ->
