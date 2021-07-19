@@ -180,9 +180,8 @@ importInstances m = flip $ foldr (bindInstance m)
 
 bindInstance :: ModuleIdent -> IDecl -> InstEnv -> InstEnv
 bindInstance m (IInstanceDecl _ cx qcls tys is mm) =
-  bindInstInfo (qualQualify m qcls, map (qualifyTC m . typeConstr) tys)
-               (fromMaybe m mm, ps, is)
-  where PredTypes ps _ = toQualPredTypes m [] OPred cx tys
+  bindInstInfo (qualQualify m qcls, tys') (fromMaybe m mm, ps, is)
+  where PredTypes ps tys' = toQualPredTypes m [] OPred cx tys
 bindInstance _ _ = id
 
 -- ---------------------------------------------------------------------------
@@ -372,7 +371,7 @@ qualifyLocal currentEnv initEnv = currentEnv
   , tyConsEnv = foldr bindQual   tcEnv $ localBindings $ tyConsEnv currentEnv
   , valueEnv  = foldr bindGlobal tyEnv $ localBindings $ valueEnv  currentEnv
   , classEnv  = Map.unionWith mergeClassInfo clsEnv $ classEnv currentEnv
-  , instEnv   = Map.union                    iEnv   $ instEnv  currentEnv
+  , instEnv   = Map.unionWith Map.union      iEnv   $ instEnv  currentEnv
   }
   where
     pEnv   = opPrecEnv initEnv
