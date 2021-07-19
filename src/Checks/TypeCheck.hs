@@ -44,8 +44,9 @@ import Prelude hiding ((<>))
 import           Control.Applicative        ((<$>), (<*>))
 #endif
 import           Control.Monad.Trans (lift)
-import           Control.Monad.Extra (allM, filterM, foldM, liftM, (&&^),
-                                      notM, replicateM, when, unless, unlessM)
+import           Control.Monad.Extra ( allM, filterM, foldM, liftM, (&&^)
+                                     , maybeM, notM, replicateM, when, unless
+                                     , unlessM)
 import qualified Control.Monad.State as S
                                      (State, StateT, get, gets, put, modify,
                                       runState, evalStateT)
@@ -53,7 +54,7 @@ import           Data.Function       (on)
 import           Data.List           (nub, nubBy, partition, sortBy, (\\))
 import qualified Data.Map            as Map (Map, empty, insert, lookup)
 import           Data.Maybe                 (fromJust, fromMaybe, isJust)
-import qualified Data.Set.Extra      as Set ( Set, concatMap, deleteMin
+import qualified Data.Set.Extra      as Set ( Set, concatMapM, deleteMin
                                             , difference, empty, fromList
                                             , insert, member, notMember
                                             , partition, singleton, toList
@@ -1564,16 +1565,17 @@ reducePredSet p what doc ps = do
   inEnv <- fmap (fmap (subst theta)) <$> getInstEnv
   exPs <- getExplPreds
   let ps' = subst theta ps
-      (ps1, ps2) = partitionPredSetSomeVars exPs $
-                     minPredSet clsEnv $ reducePreds inEnv ps'
+  (ps1, ps2) <- partitionPredSetSomeVars exPs <$>
+                  minPredSet clsEnv <$> reducePreds inEnv ps'
   theta' <-
     foldM (reportMissingInstance m p what doc inEnv) idSubst $ Set.toList ps2
   modifyTypeSubst $ compose theta'
   return ps1
   where
-    reducePreds inEnv = Set.concatMap $ reducePred inEnv
+    reducePreds inEnv = Set.concatMapM $ reducePred inEnv
     reducePred inEnv pr@(Pred OPred qcls tys) =
-      maybe (Set.singleton pr) (reducePreds inEnv) (instPredSet inEnv qcls tys)
+      maybeM (return $ Set.singleton pr) (reducePreds inEnv)
+        (instPredSet p what doc inEnv qcls tys)
     -- TODO: Check if there is any possibility of this method being applied to
     --         an implicit class constraint. (With FlexibleInstances or nullary
     --         type classes, instances for reducing ICCs could exist.)
@@ -1587,19 +1589,15 @@ reducePredSet p what doc ps = do
 --         Example: class C a b | a -> b
 --                  instance C [a] Int
 --                  Then, a constraint like C [a] b can be reduced.
-instPredSet :: InstEnv' -> QualIdent -> [Type] -> Maybe PredSet
-instPredSet inEnv qcls tys = case Map.lookup qcls $ snd inEnv of
-  Just tyss | tys `elem` tyss -> Just emptyPredSet
-  -- TODO: The following requires a rework if repeating type variables in
-  --         instance heads are allowed.
-  _ -> do let (tcTys, argTys) = unzip $ map (unapplyType False) tys
-          tcs <- mapM getTc tcTys
-          (_, ps, _) <- lookupInstInfo (qcls, tcs) $ fst inEnv
-          return $ expandAliasType (concat argTys) ps
- where
-  getTc :: Type -> Maybe QualIdent
-  getTc (TypeConstructor tc) = Just tc
-  getTc _                    = Nothing
+instPredSet :: HasSpanInfo p => p -> String -> Doc -> InstEnv'
+            -> QualIdent -> [Type] -> TCM (Maybe PredSet)
+instPredSet p what doc inEnv qcls tys = case Map.lookup qcls $ snd inEnv of
+  Just tyss | tys `elem` tyss -> return $ Just emptyPredSet
+  _ -> case lookupInstMatch qcls tys (fst inEnv) of
+         [(_, ps, _, _, sigma)] -> return $ Just (subst sigma ps)
+         insts -> do unless (null insts) $ report $
+                       errInstanceOverlap p what doc qcls tys insts
+                     return Nothing
 
 -- TODO: If FlexibleContexts is implemented, this method should suggest
 --         activating that extension if there is an instance missing.
@@ -1631,8 +1629,10 @@ reportMissingInstance m p what doc inEnv theta (Pred _ qcls tys) =
         report $ errMissingInstance m p what doc (Pred OPred qcls tys')
         return theta
 
+-- TODO: Is 'lookupInstExact' sufficient here?
 hasInstance :: InstEnv' -> QualIdent -> [Type] -> Bool
-hasInstance inEnv qcls = isJust . instPredSet inEnv qcls
+hasInstance inEnv qcls tys = isJust (lookupInstExact (qcls, tys) (fst inEnv)) ||
+  maybe False (tys `elem`) (Map.lookup qcls (snd inEnv))
 
 -- Predicates which have both type variables and other types as predicate types
 -- (like @C Bool a@) cannot be reported in 'reducePredSet', because that would
@@ -2009,6 +2009,20 @@ errMissingInstance m p what doc pr = spanInfoMessage p $ vcat
   , text "in" <+> text what
   , doc
   ]
+
+errInstanceOverlap :: HasSpanInfo p => p -> String -> Doc
+                   -> QualIdent -> [Type] -> [InstMatchInfo] -> Message
+errInstanceOverlap p what doc qcls tys insts = spanInfoMessage p $ vcat
+  [ text "Instance overlap for" <+> ppInstIdent (qcls, tys)
+  , text "arising in" <+> text what
+  , doc
+  , text "Matching instances:"
+  , nest 2 $ vcat $ map displayMatchingInst insts
+  ]
+ where
+  displayMatchingInst :: InstMatchInfo -> Doc
+  displayMatchingInst (m, _, itys, _, _) =
+    ppInstIdent (qcls, itys) <+> text "from" <+> pPrint m
 
 errFlexibleContext :: HasSpanInfo a => ModuleIdent -> a -> String -> Ident
                    -> Pred -> Message
