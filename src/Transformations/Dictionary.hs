@@ -28,8 +28,7 @@ import           Control.Monad.Extra      ( concatMapM, liftM, maybeM, when
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 
 import           Data.List         (inits, nub, partition, tails, zipWith4)
-import qualified Data.Map   as Map ( Map, empty, insert, lookup, mapWithKey
-                                   , toList )
+import qualified Data.Map   as Map (Map, empty, insert, lookup, mapWithKey)
 import           Data.Maybe        (fromMaybe, isJust)
 import qualified Data.Set   as Set ( deleteMin, fromList, lookupMin, null, size
                                    , toAscList, toList, union )
@@ -449,28 +448,13 @@ bindSuperStub m tcEnv cls sclsInfo =
         ar = kindArity (clsKind m cls tcEnv)
         ty = superDictStubType cls sclsInfo (map TypeVariable [0 .. ar])
 
-bindInstDecls :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> ValueEnv
-              -> ValueEnv
-bindInstDecls m tcEnv clsEnv =
-  flip (foldr $ bindInstFuns m tcEnv clsEnv) . Map.toList
+bindInstDecls :: ModuleIdent -> ClassEnv -> InstEnv -> ValueEnv -> ValueEnv
+bindInstDecls m clsEnv = flip (foldr $ bindInstFuns m clsEnv) . instEnvList
 
-bindInstFuns :: ModuleIdent -> TCEnv -> ClassEnv -> (InstIdent, InstInfo)
-             -> ValueEnv -> ValueEnv
-bindInstFuns m tcEnv clsEnv ((cls, tcs), (m', ps, is)) =
+bindInstFuns :: ModuleIdent -> ClassEnv -> (InstIdent, InstInfo) -> ValueEnv
+             -> ValueEnv
+bindInstFuns m clsEnv ((cls, tys), (m', ps, is)) =
   bindInstDict m cls tys m' ps . bindInstMethods m clsEnv cls tys m' ps is
- where
-  tys = tcsToTypes 0 tcs (clsKind m cls tcEnv)
-
-  -- TODO: The following assumes that every type variable can only occur once in
-  --         an instance head. This should be changed with FlexibleInstances.
-  tcsToTypes :: Int -> [QualIdent] -> Kind -> [Type]
-  tcsToTypes minVar (tc : tcs') (KindArrow k1 k2) =
-    let n    = kindArity (tcKind m tc tcEnv) - kindArity k1
-        ntvs = map TypeVariable [minVar .. minVar + n - 1]
-    in applyType (TypeConstructor tc) ntvs : tcsToTypes (minVar + n) tcs' k2
-  tcsToTypes _ [] KindConstraint = []
-  tcsToTypes _ _ _ = internalError $ "Dictionary.bindInstFuns: " ++
-    "Kind arity does not match number of instance types for " ++ show (cls, tcs)
 
 bindInstDict :: ModuleIdent -> QualIdent -> [Type] -> ModuleIdent -> PredSet
              -> ValueEnv -> ValueEnv
@@ -606,7 +590,7 @@ instance DictTrans Module where
     clsEnv <- getClassEnv
     inEnv <- getInstEnv
     modifyValueEnv $ bindClassDecls m tcEnv clsEnv
-    modifyValueEnv $ bindInstDecls m tcEnv clsEnv inEnv
+    modifyValueEnv $ bindInstDecls m clsEnv inEnv
     modifyTyConsEnv $ bindDictTypes m clsEnv
     transDs <- mapM dictTrans liftedDs
     modifyValueEnv $ dictTransValues
@@ -772,26 +756,15 @@ instFunApp m pls p@(Pred _ cls tys) = apply (Variable NoSpanInfo ty' f)
   where f   = qInstFunId m cls tys
         ty' = foldr1 TypeArrow $ map rtDictType $ pls ++ [p]
 
--- TODO: The following requires a rework if repeating type variables in
---         instance heads are allowed.
 instPredList :: Pred -> DTM (ModuleIdent, [Pred])
-instPredList (Pred _ cls tys) = case getTcs of
-  Just (tcs, argTys) -> do
-    inEnv <- getInstEnv
-    case lookupInstInfo (cls, tcs) inEnv of
-      Just (m, ps, _) -> return (m, expandAliasType argTys $ Set.toAscList ps)
-      Nothing -> internalError $ "Dictionary.instPredList: " ++ show (cls, tcs)
-  Nothing -> internalError $ "Dictionary.instPredList: " ++ show tys
- where
-  getTcs :: Maybe ([QualIdent], [Type])
-  getTcs = do
-    let (tcTys, argTys) = unzip $ map (unapplyType True) tys
-    tcs <- mapM getTc tcTys
-    return (tcs, concat argTys)
-
-  getTc :: Type -> Maybe QualIdent
-  getTc (TypeConstructor tc) = Just tc
-  getTc _                    = Nothing
+instPredList (Pred _ cls tys) = do
+  inEnv <- getInstEnv
+  case lookupInstMatch cls tys inEnv of
+    [] -> internalError $ "Dictionary.instPredList: " ++
+                            "Cound not find an instance for " ++ show (cls, tys)
+    [(m, ps, _, _, sigma)] -> return (m, Set.toAscList (subst sigma ps))
+    _ : _ -> internalError $ "Dictionary.instPredList: " ++
+                               "Multiple instances for " ++ show (cls, tys)
 
 -- When adding dictionary arguments on the left hand side of an equation and
 -- in applications, respectively, the compiler must unify the function's type
@@ -844,14 +817,13 @@ emptySpEnv :: SpecEnv
 emptySpEnv = Map.empty
 
 initSpEnv :: ClassEnv -> InstEnv -> SpecEnv
-initSpEnv clsEnv = foldr (uncurry bindInstance) emptySpEnv . Map.toList
-  where bindInstance (cls, tcs) (m, _, _) =
-          flip (foldr $ bindInstanceMethod m cls tcs) $ classMethods cls clsEnv
-        bindInstanceMethod m cls tcs f = Map.insert (f', d) f''
+initSpEnv clsEnv = foldr (uncurry bindInstance) emptySpEnv . instEnvList
+  where bindInstance (cls, tys) (m, _, _) =
+          flip (foldr $ bindInstanceMethod m cls tys) $ classMethods cls clsEnv
+        bindInstanceMethod m cls tys f = Map.insert (f', d) f''
           where f'  = qualifyLike cls f
                 d   = qInstFunId m cls tys
                 f'' = qImplMethodId m cls tys f
-                tys = map TypeConstructor tcs
 
 class Specialize a where
   specialize :: a Type -> DTM (a Type)
