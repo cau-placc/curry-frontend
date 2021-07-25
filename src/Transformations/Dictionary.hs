@@ -47,6 +47,7 @@ import Base.TopEnv
 import Base.Types
 import Base.TypeSubst
 import Base.Typing
+import Base.Utils (uncurry3)
 
 import Env.Class
 import Env.Instance
@@ -748,21 +749,21 @@ dictArg :: Pred -> DTM (Expression Type)
 dictArg p = maybeM (instDict p) return (lookup p <$> getDictEnv)
 
 instDict :: Pred -> DTM (Expression Type)
-instDict p = instPredList p >>= flip (uncurry instFunApp) p
+instDict p = instPredList p >>= flip (uncurry3 instFunApp) p
 
-instFunApp :: ModuleIdent -> [Pred] -> Pred -> DTM (Expression Type)
-instFunApp m pls p@(Pred _ cls tys) = apply (Variable NoSpanInfo ty' f)
+instFunApp :: ModuleIdent -> [Type] -> [Pred] -> Pred -> DTM (Expression Type)
+instFunApp m tys pls p@(Pred _ cls _) = apply (Variable NoSpanInfo ty' f)
   <$> mapM dictArg pls
   where f   = qInstFunId m cls tys
         ty' = foldr1 TypeArrow $ map rtDictType $ pls ++ [p]
 
-instPredList :: Pred -> DTM (ModuleIdent, [Pred])
+instPredList :: Pred -> DTM (ModuleIdent, [Type], [Pred])
 instPredList (Pred _ cls tys) = do
   inEnv <- getInstEnv
   case lookupInstMatch cls tys inEnv of
     [] -> internalError $ "Dictionary.instPredList: " ++
                             "Cound not find an instance for " ++ show (cls, tys)
-    [(m, ps, _, _, sigma)] -> return (m, Set.toAscList (subst sigma ps))
+    [(m, ps, itys, _, tau)] -> return (m, itys, Set.toAscList (subst tau ps))
     _ : _ -> internalError $ "Dictionary.instPredList: " ++
                                "Multiple instances for " ++ show (cls, tys)
 
@@ -1044,22 +1045,21 @@ iConstrDeclFromDataConstructor m vEnv c = case qualLookupValue c vEnv of
 -- applied to in the class definition. More concretely, for each super class
 -- type argument, the index of the respective subclass variable is added to the
 -- identifier in parentheses. As an example, we consider the super class
--- relation shown in the class declaration class N.D b b a => C a b
+-- relation shown in the class declaration class N.D b b a => C a b c
 --
 -- Super class dictionary stub:  _super#M.C#N.D(1)(1)(0)
 --
--- Instance dictionary functions consist of the name of the class and the type
--- constructor names of the instance types, each of the latter in parentheses.
--- Instance method implementations contain all of the above and add the method
--- name before the class name. Examples are shown for the instance declaration
--- instance M.C Int (Either a b):
+-- Instance dictionary functions consist of the full instance head, where all
+-- type constructors, including the class, are displayed with their name, type
+-- variables are displayed as with their indices, and type arguments are
+-- parenthesized each. Instance method implementations are identified like the
+-- dictionary functions, but with the method name added before the class name.
+-- For both kinds of functions, it is important that their identifiers are
+-- generated using the instance types from the instance environment.
+-- Examples are shown for the instance declaration instance M.C Int [a] (b, a):
 --
--- Instance dictionary function:    _inst#M.C(Prelude.Int)(Prelude.Either)
--- Instance method implementation:  _impl#cf#M.C(Prelude.Int)(Prelude.Either)
-
--- TODO: For the comment above, check in which cases the class and type names in
---         these identifiers are qualified. Also check how Lists, Tuples, etc.
---         are displayed.
+-- Instance dictionary function:    _inst#M.C(Prelude.Int)([](0))((,)(1)(0))
+-- Instance method implementation:  _impl#cf#M.C(Prelude.Int)([](0))((,)(1)(0))
 
 dictTypeId :: QualIdent -> Ident
 dictTypeId cls = mkIdent $ "_Dict#" ++ idName (unqualify cls)
@@ -1103,8 +1103,12 @@ qImplMethodId m cls tys = qualifyWith m . implMethodId cls tys
 typeId :: Type -> String
 typeId ty = '(' : typeId' ty ++ ")"
  where
-  typeId' (TypeVariable v) = show v
-  typeId' ty'              = qualName (rootOfType ty')
+  typeId' (TypeConstructor  tc) = qualName tc
+  typeId' (TypeVariable      v) = show v
+  typeId' (TypeApply   ty1 ty2) = typeId' ty1 ++ typeId ty2
+  typeId' (TypeArrow   ty1 ty2) = qualName qArrowId ++ typeId ty1 ++ typeId ty2
+  typeId' (TypeForall    _ ty') = typeId' ty'
+  typeId' (TypeConstrained _ _) = internalError "Dictionary.typeId"
 
 -- -----------------------------------------------------------------------------
 -- Generating variables
