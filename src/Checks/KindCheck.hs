@@ -464,7 +464,7 @@ kcDecl tcEnv (ClassDecl _ _ cx cls tvs ds) = do
   mapM_ (kcDecl tcEnv') ds
 kcDecl tcEnv (InstanceDecl p _ cx qcls inst ds) = do
   m <- getModuleIdent
-  tcEnv' <- foldM bindFreshKind tcEnv $ fv inst
+  tcEnv' <- foldM bindFreshKind tcEnv $ nub $ fv inst
   kcContext tcEnv' cx
   kcClassApl tcEnv' what doc qcls (clsKind m qcls tcEnv) inst
   mapM_ (kcDecl tcEnv') ds
