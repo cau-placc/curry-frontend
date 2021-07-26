@@ -376,10 +376,10 @@ instPredSet :: HasSpanInfo p => p -> String -> Doc -> InstEnv -> Pred
             -> INCM (Maybe PredSet)
 instPredSet p what doc inEnv (Pred _ qcls tys) =
   case lookupInstMatch qcls tys inEnv of
+    [] -> return Nothing
     [(_, ps, _, _, sigma)] -> return $ Just (subst sigma ps)
-    insts -> do unless (null insts) $ report $
-                  errInstanceOverlap p what doc qcls tys insts
-                return Nothing
+    insts -> do report $ errInstanceOverlap p what doc qcls tys insts
+                return $ Just Set.empty
 
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions

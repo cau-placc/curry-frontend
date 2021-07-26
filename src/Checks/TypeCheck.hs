@@ -1594,10 +1594,10 @@ instPredSet :: HasSpanInfo p => p -> String -> Doc -> InstEnv'
 instPredSet p what doc inEnv qcls tys = case Map.lookup qcls $ snd inEnv of
   Just tyss | tys `elem` tyss -> return $ Just emptyPredSet
   _ -> case lookupInstMatch qcls tys (fst inEnv) of
+         [] -> return Nothing
          [(_, ps, _, _, sigma)] -> return $ Just (subst sigma ps)
-         insts -> do unless (null insts) $ report $
-                       errInstanceOverlap p what doc qcls tys insts
-                     return Nothing
+         insts -> do report $ errInstanceOverlap p what doc qcls tys insts
+                     return $ Just Set.empty
 
 -- TODO: If FlexibleContexts is implemented, this method should suggest
 --         activating that extension if there is an instance missing.
