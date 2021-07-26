@@ -32,8 +32,7 @@ import Curry.Base.Ident
 import Curry.Syntax
 
 import Base.CurryKinds (fromKind', fromClassKind)
-import Base.CurryTypes ( fromQualType, fromQualPredType, fromQualPredTypes
-                       , toTypes )
+import Base.CurryTypes (fromQualType, fromQualPredType, fromQualPredTypes)
 import Base.Messages
 import Base.Types
 
@@ -80,8 +79,8 @@ exportInterface' m es pEnv tcEnv vEnv clsEnv inEnv = Interface m imports decls'
   precs   = foldr (infixDecl m pEnv) [] es
   types   = foldr (typeDecl m tcEnv clsEnv tvs) [] es
   values  = foldr (valueDecl m tcEnv vEnv tvs) [] es
-  (inExps, insts) = getExportedInsts m inEnv tvs (initInstExports m inEnv)
-  decls   = precs ++ types ++ values ++ insts
+  (inExps, insts) = getExportedInsts (initInstExports m inEnv)
+  decls   = map ID (precs ++ types ++ values) ++ insts
   decls'  = closeInterface m tcEnv clsEnv inEnv tvs Set.empty inExps decls
 
 infixDecl :: ModuleIdent -> OpPrecEnv -> Export -> [IDecl] -> [IDecl]
@@ -231,14 +230,11 @@ initInstExports m = Map.fromListWith (++) . map instExpMapEntry . instEnvList
        , [instId] )
 
 -- Removes the instances that currently have to be exported from the instance
--- export map, converts them to interface declarations and returns the updated
--- instance export map together with the interface declarations.
-getExportedInsts :: ModuleIdent -> InstEnv -> [Ident] -> InstExportMap
-                 -> (InstExportMap, [IDecl])
-getExportedInsts m inEnv tvs inExps =
-  ( Map.delete Set.empty inExps
-  , maybe [] (map (iInstDecl m inEnv tvs)) (Map.lookup Set.empty inExps)
-  )
+-- export map and returns them as export information together with the updated
+-- instance export map.
+getExportedInsts :: InstExportMap -> (InstExportMap, [ExpInfo])
+getExportedInsts inExps =
+  (Map.delete Set.empty inExps, maybe [] (map II) (Map.lookup Set.empty inExps))
 
 -- Transforms an entry of the instance environment into an interface instance
 -- declaration.
@@ -345,36 +341,51 @@ instance HasModule ModuleIdent where
 -- closing an interface is implemented as a fix-point computation which
 -- starts from the initial interface.
 
+-- The 'ExpInfo' data type is used when closing an interface because instances
+-- cannot be stored as 'IDecl's directly. This is because comparing type
+-- variables can be necessary when checking if an instance has already been
+-- exported, because repeating type variables are allowed in instance heads.
+-- These type variables cannot be compared at this stage however, as the type
+-- constructors defined in the exported declarations have to be filtered out
+-- from the type variable ident supply, which means that type variables can only
+-- be computed after fully closing an interface. Instead, instances are stored
+-- as instance idents, which use unconverted type variables and are later
+-- transformed to interface declarations.
+data ExpInfo = ID IDecl | II InstIdent
+
 data IInfo = IOther | IType QualIdent | IClass QualIdent | IInst InstIdent
   deriving (Eq, Ord)
 
-iInfo :: IDecl -> IInfo
-iInfo (IInfixDecl            _ _ _ _) = IOther
-iInfo (HidingDataDecl       _ tc _ _) = IType tc
-iInfo (IDataDecl        _ tc _ _ _ _) = IType tc
-iInfo (INewtypeDecl     _ tc _ _ _ _) = IType tc
-iInfo (ITypeDecl           _ _ _ _ _) = IOther
-iInfo (HidingClassDecl   _ _ cls _ _) = IClass cls
-iInfo (IClassDecl    _ _ cls _ _ _ _) = IClass cls
-iInfo (IInstanceDecl _ _ cls tys _ _) = IInst (cls, toTypes [] tys)
-iInfo (IFunctionDecl       _ _ _ _ _) = IOther
+iInfo :: ExpInfo -> IInfo
+iInfo (ID (IInfixDecl          _ _ _ _)) = IOther
+iInfo (ID (HidingDataDecl     _ tc _ _)) = IType tc
+iInfo (ID (IDataDecl      _ tc _ _ _ _)) = IType tc
+iInfo (ID (INewtypeDecl   _ tc _ _ _ _)) = IType tc
+iInfo (ID (ITypeDecl         _ _ _ _ _)) = IOther
+iInfo (ID (HidingClassDecl _ _ cls _ _)) = IClass cls
+iInfo (ID (IClassDecl  _ _ cls _ _ _ _)) = IClass cls
+iInfo (ID (IInstanceDecl   _ _ _ _ _ _)) = internalError "Exports.iInfo"
+iInfo (ID (IFunctionDecl     _ _ _ _ _)) = IOther
+iInfo (II                        instId) = IInst instId
 
 closeInterface :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Ident]
-               -> Set.Set IInfo -> InstExportMap -> [IDecl] -> [IDecl]
+               -> Set.Set IInfo -> InstExportMap -> [ExpInfo] -> [IDecl]
 closeInterface _ _ _ _ _ _ _ [] = []
 closeInterface m tcEnv clsEnv inEnv tvs is inExps (d:ds)
   | i == IOther       =
-    d : closeInterface m tcEnv clsEnv inEnv tvs is inExps ds'
+    d' : closeInterface m tcEnv clsEnv inEnv tvs is inExps ds'
   | i `Set.member` is = closeInterface m tcEnv clsEnv inEnv tvs is inExps ds
   | otherwise         =
-    d : closeInterface m tcEnv clsEnv inEnv tvs (Set.insert i is) inExps' ds'
+    d' : closeInterface m tcEnv clsEnv inEnv tvs (Set.insert i is) inExps' ds'
   where i = iInfo d
-        (inExps', ds') = (ds ++) <$> ((hiddenTypes m tcEnv clsEnv tvs d ++) <$>
-           getExportedInsts m inEnv tvs (updateInstExports m i inExps))
+        (inExps', ds') = (ds ++) <$> ((hiddenTypes m tcEnv clsEnv tvs d' ++) <$>
+           getExportedInsts (updateInstExports m i inExps))
+        d' = case d of ID d''    -> d''
+                       II instId -> iInstDecl m inEnv tvs instId
 
-hiddenTypes :: ModuleIdent -> TCEnv -> ClassEnv -> [Ident] -> IDecl -> [IDecl]
+hiddenTypes :: ModuleIdent -> TCEnv -> ClassEnv -> [Ident] -> IDecl -> [ExpInfo]
 hiddenTypes m tcEnv clsEnv tvs d =
-  map hiddenTypeDecl $ filter (not . isPrimTypeId) (usedTypes d [])
+  map (ID . hiddenTypeDecl) $ filter (not . isPrimTypeId) (usedTypes d [])
  where
   hiddenTypeDecl tc = case qualLookupTypeInfo (qualQualify m tc) tcEnv of
     [DataType     _ k _] -> hidingDataDecl k
@@ -460,7 +471,7 @@ instance HasType Constraint where
 
 instance HasType TypeExpr where
   usedTypes (ConstructorType _ tc) = (tc :)
-  usedTypes (ApplyType _ ty1 ty2) = usedTypes ty1 . usedTypes ty2
+  usedTypes (ApplyType  _ ty1 ty2) = usedTypes ty1 . usedTypes ty2
   usedTypes (VariableType     _ _) = id
   usedTypes (TupleType      _ tys) = usedTypes tys
   usedTypes (ListType        _ ty) = usedTypes ty
