@@ -54,11 +54,10 @@ import           Data.Function       (on)
 import           Data.List           (nub, nubBy, partition, sortBy, (\\))
 import qualified Data.Map            as Map (Map, empty, insert, lookup)
 import           Data.Maybe                 (fromJust, fromMaybe, isJust)
-import qualified Data.Set.Extra      as Set ( Set, concatMapM, deleteMin
-                                            , difference, empty, fromList
-                                            , insert, member, notMember
-                                            , partition, singleton, toList
-                                            , union, unions )
+import qualified Data.Set.Extra      as Set ( Set, concatMapM, deleteMin, empty
+                                            , fromList, insert, member
+                                            , notMember, partition, singleton
+                                            , toList, union, unions )
 
 import Curry.Base.Ident
 import Curry.Base.Pretty
@@ -506,13 +505,23 @@ tcPDeclGroup ps pds = do
   tvs <- concatMap (typeVars . subst theta . fst) <$>
            filterM (notM . isNonExpansive . snd . snd) impPds'
   let fvs = foldr Set.insert (fvEnv (subst theta vEnv)) tvs
-      (gps, lps) = splitPredSet fvs ps'
-  lps' <- foldM (uncurry . defaultPDecl fvs) lps impPds'
+      -- The predicates from the declarations that are not explicitly typed are
+      -- partitioned into three groups: Local predicates, that do not contain
+      -- any free type variables, are reduced and added to the types of the
+      -- declarations. Mixed predicates, that contain both free and other type
+      -- variables, are also added to the types of the declarations, but are not
+      -- reduced. The remaining predicates are passed on together with the
+      -- predicates containing free type variables from the explicitly typed
+      -- declarations.
+      (gps, (mps, lps)) = fmap (splitPredSetAny fvs) $
+                                splitPredSetAll fvs $ subst theta ps'
+  lps' <- Set.union mps <$> reducePredSet NoSpanInfo "" empty lps
+  lps'' <- foldM (uncurry . defaultPDecl fvs) lps' impPds'
   theta' <- getTypeSubst
-  let impPds'' = map (uncurry (fixType . gen fvs lps' . subst theta')) impPds'
+  let impPds'' = map (uncurry (fixType . gen fvs lps'' . subst theta')) impPds'
+  mapM_ (reportFlexibleContextDecl m) impPds''
   modifyValueEnv $ flip (rebindVars m) (concatMap (declVars . snd) impPds'')
   (ps'', expPds') <- mapAccumM (uncurry . tcCheckPDecl) gps expPds
-  mapM_ (reportFlexibleContextDecl m) (impPds'' ++ expPds')
   return (ps'', impPds'' ++ expPds')
 
 partitionPDecls :: SigEnv -> [PDecl a] -> ([PDecl a], [(QualTypeExpr, PDecl a)])
@@ -566,7 +575,7 @@ tcPDecl ps (i, FunctionDecl p _ f eqs) = do
 tcPDecl ps (i, d@(PatternDecl p t rhs)) = do
   (ps', ty', t') <- tcPattern p t
   (ps'', rhs') <- tcRhs rhs >>-
-    unifyDecl p "pattern declaration" (pPrint d) (ps `Set.union` ps') ty'
+    unify p "pattern declaration" (pPrint d) (ps `Set.union` ps') ty'
   return (ps'', (ty', (i, PatternDecl p t' rhs')))
 tcPDecl _ _ = internalError "TypeCheck.tcPDecl"
 
@@ -584,7 +593,7 @@ tcFunctionPDecl i ps tySc@(ForAll _ pty) p f eqs = do
 tcEquation :: Type -> PredSet -> Equation a
            -> TCM (PredSet, Equation PredType)
 tcEquation ty ps eqn@(Equation p lhs rhs) =
-  tcEqn p lhs rhs >>- unifyDecl p "equation" (pPrint eqn) ps ty
+  tcEqn p lhs rhs >>- unify p "equation" (pPrint eqn) ps ty
 
 tcEqn :: SpanInfo -> Lhs a -> Rhs a
       -> TCM (PredSet, Type, Equation PredType)
@@ -594,8 +603,9 @@ tcEqn p lhs rhs = do
     (ps, tys, lhs') <- S.evalStateT (tcLhs p lhs) Set.empty
     (ps', ty, rhs') <- tcRhs rhs
     return (ps, tys, lhs', ps', ty, rhs')
-  ps'' <- reducePredSet p "equation" (pPrint (Equation p lhs' rhs'))
-                        (ps `Set.union` ps')
+  let ps'' = ps `Set.union` ps'
+  -- ps'' <- reducePredSet p "equation" (pPrint (Equation p lhs' rhs'))
+  --                       (ps `Set.union` ps')
   return (ps'', foldr TypeArrow ty tys, Equation p lhs' rhs')
 
 bindLambdaVars :: QuantExpr t => t -> TCM ()
@@ -609,20 +619,13 @@ lambdaVar v = do
   ty <- freshTypeVar
   return (v, 0, monoType ty)
 
-unifyDecl :: HasSpanInfo p => p -> String -> Doc -> PredSet -> Type -> PredSet
-          -> Type
-          -> TCM PredSet
-unifyDecl p what doc psLhs tyLhs psRhs tyRhs = do
-  ps <- unify p what doc psLhs tyLhs psRhs tyRhs
-  fvs <- computeFvEnv
-  applyDefaultsDecl p what doc fvs ps tyLhs
-
 -- After inferring types for a group of mutually recursive declarations
 -- and computing the set of its constrained type variables, the compiler
 -- has to be prepared for some of the constrained type variables to not
--- appear in some of the inferred types, i.e., there may be ambiguous
--- types that have not been reported by 'unifyDecl' above at the level
--- of individual function equations and pattern declarations.
+-- appear in some of the inferred types. The type variables remaining ambiguous
+-- after defaulting numeric types are reported by 'defaultPDecl'.
+-- When type-checking class method implementations and explicitly typed
+-- expressions, this is done by 'applyDefaultsDecl'.
 
 defaultPDecl :: Set.Set Int -> PredSet -> Type -> PDecl a -> TCM PredSet
 defaultPDecl fvs ps ty (_, FunctionDecl p _ f _) =
@@ -677,22 +680,18 @@ tcCheckPDecl :: PredSet -> QualTypeExpr -> PDecl a
              -> TCM (PredSet, PDecl PredType)
 tcCheckPDecl ps qty pd = withLocalExplPreds $ do
   clsEnv <- getClassEnv
-  oldExPs <- getExplPreds
   PredType newExPs _ <- expandPoly qty
-  let newExPs' = maxPredSet clsEnv newExPs
-  modifyExplPreds $ Set.union newExPs'
+  modifyExplPreds $ Set.union (maxPredSet clsEnv newExPs)
   (ps', (ty, pd')) <- tcPDecl ps pd
   fvs <- computeFvEnv
   theta <- getTypeSubst
+  let (gps, lps) = splitPredSetAny fvs (subst theta ps')
   poly <- isNonExpansive $ snd pd
-  let (gps, lps) = splitPredSet fvs ps'
-      -- TODO: This prevents nullary type class constraints to be passed on
-      --         between top-level functions, but might have to be reworked when
-      --         FlexibleContexts is implemented.
-      gps' = gps `Set.difference` (newExPs' `Set.difference` oldExPs)
-      ty' = subst theta ty
-      tySc = if poly then gen fvs lps ty' else monoType ty'
-  checkPDeclType qty gps' tySc pd'
+  lps' <- reducePredSet NoSpanInfo "" empty lps
+  lps'' <- defaultPDecl fvs lps' ty pd
+  let ty' = subst theta ty
+      tySc = if poly then gen fvs lps'' ty' else monoType ty'
+  checkPDeclType qty gps tySc pd'
 
 checkPDeclType :: QualTypeExpr -> PredSet -> TypeScheme -> PDecl PredType
                -> TCM (PredSet, PDecl PredType)
@@ -953,8 +952,12 @@ tcMethodPDecl qcls tySc (i, FunctionDecl p _ f eqs) = withLocalValueEnv $ do
   m <- getModuleIdent
   modifyValueEnv $ bindFun m f (Just qcls) (eqnArity $ head eqs) tySc
   (ps, (ty, pd)) <- tcFunctionPDecl i emptyPredSet tySc p f eqs
+  let what = "implementation of method " ++ escName f
+  fvs <- computeFvEnv
+  ps' <- reducePredSet NoSpanInfo "" empty ps
+  ps'' <- applyDefaultsDecl p what empty fvs ps' ty
   theta <- getTypeSubst
-  return (gen Set.empty ps $ subst theta ty, pd)
+  return (gen Set.empty ps'' $ subst theta ty, pd)
 tcMethodPDecl _ _ _ = internalError "TypeCheck.tcMethodPDecl"
 
 checkClassMethodType :: QualTypeExpr -> TypeScheme -> PDecl PredType
@@ -1160,7 +1163,8 @@ tcRhs (SimpleRhs p li e ds) = do
     (ps, ds') <- tcDecls ds
     (ps', ty, e') <- tcExpr e
     return (ps, ds', ps', ty, e')
-  ps'' <- reducePredSet p "expression" (pPrintPrec 0 e') (ps `Set.union` ps')
+  let ps'' = ps `Set.union` ps'
+  -- ps'' <- reducePredSet p "expression" (pPrintPrec 0 e') (ps `Set.union` ps')
   return (ps'', ty, SimpleRhs p li e' ds')
 tcRhs (GuardedRhs spi li es ds) = withLocalValueEnv $ do
   (ps, ds') <- tcDecls ds
@@ -1192,15 +1196,17 @@ tcExpr (Constructor spi _ c) = do
 tcExpr (Paren spi e) = do
   (ps, ty, e') <- tcExpr e
   return (ps, ty, Paren spi e')
-tcExpr (Typed spi e qty) = do
+tcExpr te@(Typed spi e qty) = do
+  let what = "explicitly typed expression"
   pty <- expandPoly qty
   (ps, ty) <- inst (typeScheme pty)
-  (ps', e') <- tcExpr e >>-
-    unifyDecl spi "explicitly typed expression" (pPrintPrec 0 e) emptyPredSet ty
+  (ps', e') <- tcExpr e >>- unify spi what (pPrintPrec 0 e) emptyPredSet ty
   fvs <- computeFvEnv
   theta <- getTypeSubst
-  let (gps, lps) = splitPredSet fvs ps'
-      tySc = gen fvs lps (subst theta ty)
+  let (gps, lps) = splitPredSetAny fvs (subst theta ps')
+  lps' <- reducePredSet NoSpanInfo "" empty lps
+  lps'' <- applyDefaultsDecl spi what (pPrint te) fvs lps' ty
+  let tySc = gen fvs lps'' (subst theta ty)
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
     report $
@@ -1234,7 +1240,8 @@ tcExpr (ListCompr spi e qs) = do
     (ps, qs') <- mapAccumM (tcQual spi) emptyPredSet qs
     (ps', ty, e') <- tcExpr e
     return (ps, qs', ps', ty, e')
-  ps'' <- reducePredSet spi "expression" (pPrintPrec 0 e') (ps `Set.union` ps')
+  let ps'' = ps `Set.union` ps'
+  -- ps'' <- reducePredSet spi "expression" (pPrintPrec 0 e') (ps `Set.union` ps')
   return (ps'', listType ty, ListCompr spi e' qs')
 tcExpr e@(EnumFrom spi e1) = do
   (ps, ty) <- freshEnumType
@@ -1287,14 +1294,16 @@ tcExpr (Lambda spi ts e) = do
     (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern spi) ts
     (ps, ty, e') <- tcExpr e
     return (pss, tys, ts', ps, ty, e')
-  ps' <- reducePredSet spi "expression" (pPrintPrec 0 e') (Set.unions $ ps : pss)
+  let ps' = Set.unions $ ps : pss
+  -- ps' <- reducePredSet spi "expression" (pPrintPrec 0 e') (Set.unions $ ps : pss)
   return (ps', foldr TypeArrow ty tys, Lambda spi ts' e')
 tcExpr (Let spi li ds e) = do
   (ps, ds', ps', ty, e') <- withLocalValueEnv $ do
     (ps, ds') <- tcDecls ds
     (ps', ty, e') <- tcExpr e
     return (ps, ds', ps', ty, e')
-  ps'' <- reducePredSet spi "expression" (pPrintPrec 0 e') (ps `Set.union` ps')
+  let ps'' = ps `Set.union` ps'
+  -- ps'' <- reducePredSet spi "expression" (pPrintPrec 0 e') (ps `Set.union` ps')
   return (ps'', ty, Let spi li ds' e')
 tcExpr (Do spi li sts e) = do
   (sts', ty, ps', e') <- withLocalValueEnv $ do
@@ -1335,8 +1344,9 @@ tcAltern tyLhs p t rhs = do
       tcPatternArg p "case pattern" (pPrint (Alt p t rhs)) emptyPredSet tyLhs t
     (ps', ty', rhs') <- tcRhs rhs
     return (ps, t', ps', ty', rhs')
-  ps'' <- reducePredSet p "alternative" (pPrint (Alt p t' rhs'))
-                        (ps `Set.union` ps')
+  let ps'' = ps `Set.union` ps'
+  -- ps'' <- reducePredSet p "alternative" (pPrint (Alt p t' rhs'))
+  --                       (ps `Set.union` ps')
   return (ps'', ty', Alt p t' rhs')
 
 tcQual :: HasSpanInfo p => p -> PredSet -> Statement a
@@ -1497,7 +1507,8 @@ unify p what doc ps1 ty1 ps2 ty2 = do
   case unifyTypes m ty1' ty2' of
     Left reason -> report $ errTypeMismatch p what doc m ty1' ty2' reason
     Right sigma -> modifyTypeSubst (compose sigma)
-  reducePredSet p what doc $ ps1 `Set.union` ps2
+  -- reducePredSet p what doc $ ps1 `Set.union` ps2
+  return $ ps1 `Set.union` ps2
 
 unifyTypes :: ModuleIdent -> Type -> Type -> Either Doc TypeSubst
 unifyTypes _ (TypeVariable tv1) (TypeVariable tv2)
@@ -1907,12 +1918,20 @@ expandPolyICC fstIcc qty = do
   clsEnv <- getClassEnv
   return $ expandPolyType fstIcc m tcEnv clsEnv qty
 
--- The function 'splitPredSet' splits a predicate set into a pair of predicate
--- sets such that all type variables that appear in the types of the predicates
--- in the first predicate set are elements of a given set of type variables.
+-- The function 'splitPredSetAny' splits a predicate set into a pair of
+-- predicate sets such that every predicate containing at least one of the given
+-- set of type variables is in the first returned predicate set.
 
-splitPredSet :: Set.Set Int -> PredSet -> (PredSet, PredSet)
-splitPredSet fvs = Set.partition (all (`Set.member` fvs) . typeVars)
+-- 'splitPredSetAll' is similar, but the predicates in the first predicate set
+-- contain only type variables that are in the given set of type variables, but
+-- at least one of them.
+
+splitPredSetAny :: Set.Set Int -> PredSet -> (PredSet, PredSet)
+splitPredSetAny fvs = Set.partition $ any (`Set.member` fvs) . typeVars
+
+splitPredSetAll :: Set.Set Int -> PredSet -> (PredSet, PredSet)
+splitPredSetAll fvs = Set.partition $
+  (\vs -> not (null vs) && all (`Set.member` fvs) vs) . typeVars
 
 -- The functions 'fvEnv' and 'fsEnv' compute the set of free type variables
 -- and free skolems of a type environment, respectively. We ignore the types
