@@ -61,6 +61,9 @@ subst' sigma (TypeForall      tvs ty) =
 instance SubstType Pred where
   subst sigma (Pred isIcc qcls tys) = Pred isIcc qcls (subst sigma tys)
 
+instance SubstType LPred where
+  subst sigma (LPred pr spi doc what) = LPred (subst sigma pr) spi doc what
+
 instance SubstType PredType where
   subst sigma (PredType ps ty) = PredType (subst sigma ps) (subst sigma ty)
 

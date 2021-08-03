@@ -24,10 +24,11 @@ module Base.Types
   , IsType (..), typeConstrs
   , qualifyType, unqualifyType, qualifyTC
     -- * Representation of predicates, predicate sets and predicated types
-  , Pred (..), PredIsICC (..), qualifyPred, unqualifyPred
-  , PredSet, emptyPredSet, psMember, removeICCFlag, partitionPredSetSomeVars
-  , partitionPredSetOnlyVars, minPredSet, maxPredSet, qualifyPredSet
-  , unqualifyPredSet
+  , Pred (..), PredIsICC (..), IsPred (..), LPred (..), qualifyPred
+  , unqualifyPred
+  , PredSet, emptyPredSet, LPredSet, emptyLPredSet, psMember, removeICCFlag
+  , partitionPredSetSomeVars, partitionPredSetOnlyVars, minPredSet, maxPredSet
+  , qualifyPredSet, unqualifyPredSet
   , PredType (..), predType, unpredType, qualifyPredType, unqualifyPredType
   , PredTypes (..), qualifyPredTypes, unqualifyPredTypes
     -- * Representation of data constructors
@@ -47,8 +48,11 @@ module Base.Types
   ) where
 
 import qualified Data.Set.Extra as Set
+import           Data.Function (on)
 
 import Curry.Base.Ident
+import Curry.Base.Pretty
+import Curry.Base.SpanInfo
 
 import Base.Messages (internalError)
 
@@ -214,8 +218,12 @@ qualifyTC m tc | isPrimTypeId tc = tc
 -- Predicates
 -- ---------------------------------------------------------------------------
 
--- TODO: If this implicity field works in combination with the derived Ord
--- instance, add and/or update comments
+-- Predicates use a flag which marks whether the predicate is the implicit class
+-- constraint of a class method. This flag is positioned as the first field of
+-- the predicate data constructor, which ensures such an implicit class
+-- constraint is always the minimum w.r.t. the order of the derived 'Ord'
+-- instance (see predicate sets below for more information why this order is
+-- relevant).
 
 data Pred = Pred PredIsICC QualIdent [Type]
   deriving (Eq, Ord, Show)
@@ -225,34 +233,59 @@ data Pred = Pred PredIsICC QualIdent [Type]
 data PredIsICC = ICC | OPred
   deriving (Eq, Ord, Show)
 
--- We provide a custom 'Ord' instance for predicates here where we consider
--- the type component of the predicate before the class component. This way,
--- we ensure that a class method's implicit class constraint is always the
--- minimum w.r.t. this order, because the type expression for that constraint
--- is a type variable with index 0 and there are no other class constraints
--- in a predicate set that constraint the same type variable as restrictions
--- on class variables are not allowed (see predicate sets below for more
--- information why this order is relevant).
-
--- instance Ord Pred where
---  Pred qcls1 ty1 `compare` Pred qcls2 ty2 = case ty1 `compare` ty2 of
---    LT -> LT
---    EQ -> qcls1 `compare` qcls2
---    GT -> GT
-
 instance IsType Pred where
   typeVars (Pred _ _ tys) = typeVars tys
 
 instance IsType a => IsType [a] where
   typeVars = concatMap typeVars
 
-qualifyPred :: ModuleIdent -> Pred -> Pred
-qualifyPred m (Pred isIcc qcls tys) =
-  Pred isIcc (qualQualify m qcls) (map (qualifyType m) tys)
+-- In addition to a predicate, located predicates contain information about the
+-- source code location where the predicate came from, which can be used in
+-- error messages. For the 'Eq' and 'Ord' instances of located predicates, only
+-- the predicate part is compared, so that the same predicate coming from
+-- multiple different source code locations does only occur once in predicate
+-- sets.
 
-unqualifyPred :: ModuleIdent -> Pred -> Pred
-unqualifyPred m (Pred isIcc qcls tys) =
-  Pred isIcc (qualUnqualify m qcls) (map (unqualifyType m) tys)
+data LPred = LPred Pred SpanInfo String Doc
+  deriving Show
+
+instance Eq LPred where
+  (==) = (==) `on` getPred
+
+instance Ord LPred where
+  compare = compare `on` getPred
+
+-- The 'IsPred' class provides a common interface for 'Pred's and 'LPred's,
+-- so that many functions can be applied to both kinds of predicates and
+-- predicate sets.
+class Ord a => IsPred a where
+  getPred :: a -> Pred
+  -- TODO: Is there a better name? (Should have been 'fromPred', which is taken)
+  getFromPred :: Pred -> a
+  modifyPred :: (Pred -> Pred) -> a -> a
+
+instance IsPred Pred where
+  getPred = id
+  getFromPred = id
+  modifyPred = id
+
+instance IsPred LPred where
+  getPred (LPred pr _ _ _) = pr
+  getFromPred pr = LPred pr NoSpanInfo "" empty
+  modifyPred f (LPred pr spi what doc) = LPred (f pr) spi what doc
+
+instance IsType LPred where
+  typeVars = typeVars . getPred
+
+qualifyPred :: IsPred a => ModuleIdent -> a -> a
+qualifyPred m = modifyPred $
+  \(Pred isIcc qcls tys) ->
+    Pred isIcc (qualQualify m qcls) (map (qualifyType m) tys)
+
+unqualifyPred :: IsPred a => ModuleIdent -> a -> a
+unqualifyPred m = modifyPred $
+  \(Pred isIcc qcls tys) ->
+    Pred isIcc (qualUnqualify m qcls) (map (unqualifyType m) tys)
 
 -- ---------------------------------------------------------------------------
 -- Predicate sets
@@ -267,37 +300,43 @@ unqualifyPred m (Pred isIcc qcls tys) =
 
 type PredSet = Set.Set Pred
 
+type LPredSet = Set.Set LPred
+
 instance (IsType a, Ord a) => IsType (Set.Set a) where
   typeVars = concat . Set.toList . Set.map typeVars
 
 emptyPredSet :: PredSet
 emptyPredSet = Set.empty
 
+emptyLPredSet :: LPredSet
+emptyLPredSet = Set.empty
+
 -- Checks if a predicate is a member of a predicate set ignoring the 'PredIsICC'
 -- flag.
-psMember :: Pred -> PredSet -> Bool
-psMember (Pred _ qcls tys) ps =
-  Pred OPred qcls tys `Set.member` ps || Pred ICC qcls tys `Set.member` ps
+psMember :: (IsPred a, IsPred b) => a -> Set.Set b -> Bool
+psMember pr ps = let Pred _ qcls tys = getPred pr
+                     psMember' :: Pred -> Pred -> Bool
+                     psMember' = (||) `on` ((`Set.member` ps) . getFromPred)
+                 in psMember' (Pred OPred qcls tys) (Pred ICC qcls tys)
 
 -- Returns the given predicate set with its implicit class constraint, if it has
 -- any, transformed into a regular predicate.
-removeICCFlag :: PredSet -> PredSet
-removeICCFlag ps =
-  case Set.lookupMin ps of
-    Just (Pred ICC qcls tys) ->
-      Set.insert (Pred OPred qcls tys) (Set.deleteMin ps)
-    _                        -> ps
+removeICCFlag :: IsPred a => Set.Set a -> Set.Set a
+removeICCFlag ps = case Set.lookupMin ps of
+  Just pr | (\(Pred isIcc _ _) -> isIcc == ICC) (getPred pr) ->
+    Set.insert (modifyPred (\(Pred _ qcls tys) -> Pred OPred qcls tys) pr)
+                (Set.deleteMin ps)
+  _ -> ps
 
 -- TODO: Is the following function actually useful? Reducing a predicate set
 --         might only be needed where types need to be inferred (and not just
 --         checked) and implicit class constraints might not be able to appear
 --         in these cases.
 -- Deletes duplicates of implicit class constraints from predicate sets.
-deleteDoubleICC :: PredSet -> PredSet
-deleteDoubleICC ps =
-  case Set.lookupMin ps of
-    Just (Pred ICC qcls tys) -> Set.delete (Pred OPred qcls tys) ps
-    _                        -> ps
+deleteDoubleICC :: IsPred a => Set.Set a -> Set.Set a
+deleteDoubleICC ps = case fmap getPred (Set.lookupMin ps) of
+  Just (Pred ICC qcls tys) -> Set.delete (getFromPred (Pred OPred qcls tys)) ps
+  _                        -> ps
 
 -- Partitions the predicate set given as the second argument such that all
 -- predicates in the first element of the returned tuple are elements of the
@@ -309,7 +348,8 @@ deleteDoubleICC ps =
 -- first predicate set given is used to not report predicates without fitting
 -- instances, if they are mentioned as constraints of an explicit type
 -- signature.
-partitionPredSetSomeVars :: PredSet -> PredSet -> (PredSet, PredSet)
+partitionPredSetSomeVars :: (IsPred a, IsPred b) => Set.Set a -> Set.Set b
+                                                 -> (Set.Set b, Set.Set b)
 partitionPredSetSomeVars = partitionPredSet any
 
 -- Partitions the given predicate set such that all predicates in the first
@@ -318,13 +358,13 @@ partitionPredSetSomeVars = partitionPredSet any
 --
 -- This function is used to report constraints that would only be allowed with
 -- a FlexibleContexts language extension when all predicate types are known.
-partitionPredSetOnlyVars :: PredSet -> (PredSet, PredSet)
-partitionPredSetOnlyVars = partitionPredSet all Set.empty
+partitionPredSetOnlyVars :: IsPred a => Set.Set a -> (Set.Set a, Set.Set a)
+partitionPredSetOnlyVars = partitionPredSet all emptyPredSet
 
-partitionPredSet :: ((Type -> Bool) -> [Type] -> Bool) -> PredSet
-                 -> PredSet -> (PredSet, PredSet)
-partitionPredSet f ps =
-  Set.partition $ \pr@(Pred _ _ tys) -> pr `psMember` ps || f isTypeVariable tys
+partitionPredSet :: (IsPred a, IsPred b) => ((Type -> Bool) -> [Type] -> Bool)
+                 -> Set.Set a -> Set.Set b -> (Set.Set b, Set.Set b)
+partitionPredSet f ps = Set.partition $
+  (\pr@(Pred _ _ tys) -> pr `psMember` ps || f isTypeVariable tys) . getPred
   where
     isTypeVariable (TypeVariable _) = True
     isTypeVariable (TypeApply ty _) = isTypeVariable ty
@@ -336,24 +376,25 @@ partitionPredSet f ps =
 -- adds all predicates to a predicate set which are implied by the predicates
 -- in the given predicate set.
 
-minPredSet :: ClassEnv -> PredSet -> PredSet
+minPredSet :: IsPred a => ClassEnv -> Set.Set a -> Set.Set a
 minPredSet clsEnv ps =
   ps `Set.difference` Set.concatMap (impliedPredicates clsEnv) ps
 
-maxPredSet :: ClassEnv -> PredSet -> PredSet
+maxPredSet :: IsPred a => ClassEnv -> Set.Set a -> Set.Set a
 maxPredSet clsEnv ps =
   ps `Set.union` Set.concatMap (impliedPredicates clsEnv) ps
 
 -- Returns the set of all predicates implied by the given predicate, excluding
 -- the given predicate.
-impliedPredicates :: ClassEnv -> Pred -> PredSet
-impliedPredicates clsEnv (Pred _ cls tys) = Set.fromList $ tail $
-  map (uncurry (Pred OPred)) (applyAllSuperClasses cls tys clsEnv)
+impliedPredicates :: IsPred a => ClassEnv -> a -> Set.Set a
+impliedPredicates clsEnv pr =
+  Set.fromList $ tail $ map (flip modifyPred pr . const . uncurry (Pred OPred))
+    ((\(Pred _ qcls tys) -> applyAllSuperClasses qcls tys clsEnv) (getPred pr))
 
-qualifyPredSet :: ModuleIdent -> PredSet -> PredSet
+qualifyPredSet :: IsPred a => ModuleIdent -> Set.Set a -> Set.Set a
 qualifyPredSet m = Set.map (qualifyPred m)
 
-unqualifyPredSet :: ModuleIdent -> PredSet -> PredSet
+unqualifyPredSet :: IsPred a => ModuleIdent -> Set.Set a -> Set.Set a
 unqualifyPredSet m = Set.map (unqualifyPred m)
 
 -- ---------------------------------------------------------------------------
