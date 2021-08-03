@@ -193,9 +193,7 @@ failInfos = map (uncurry mkFailTest)
       --   Ambiguous type variable _8
       --   in type (C _8 _6, C _7 _8) => _7 -> _6
       --   inferred for function `f1'
-      [ "Ambiguous type variable" , "inferred for equation", "f1 = methodC . methodC"
-      , "inferred for function `f1'"
-      , "f2 (MPTCAmbiguousTypeVar.methodD x _) = x"
+      [ "Ambiguous type variable" , "inferred for function `f1'"
       , "inferred for function `f2'"
       ]
     )
