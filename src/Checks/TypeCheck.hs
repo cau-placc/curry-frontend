@@ -55,7 +55,7 @@ import           Data.List           (nub, nubBy, partition, sortBy, (\\))
 import qualified Data.Map            as Map (Map, empty, insert, lookup)
 import           Data.Maybe                 (fromJust, fromMaybe, isJust)
 import qualified Data.Set.Extra      as Set ( Set, concatMapM, deleteMin, empty
-                                            , fromList, insert, member
+                                            , fromList, insert, map, member
                                             , notMember, partition, singleton
                                             , toList, union, unions )
 
@@ -465,19 +465,19 @@ lookupTypeSig = Map.lookup
 -- cannot be generalized must not be generalized in the other declarations of
 -- that group as well.
 
-tcDecls :: [Decl a] -> TCM (PredSet, [Decl PredType])
+tcDecls :: [Decl a] -> TCM (LPredSet, [Decl PredType])
 tcDecls = fmap (fmap fromPDecls) . tcPDecls . toPDecls
 
-tcPDecls :: [PDecl a] -> TCM (PredSet, [PDecl PredType])
+tcPDecls :: [PDecl a] -> TCM (LPredSet, [PDecl PredType])
 tcPDecls pds = withLocalSigEnv $ do
   let (vpds, opds) = partition (isValueDecl . snd) pds
   setSigEnv $ foldr (bindTypeSigs . snd) emptySigEnv $ opds
   m <- getModuleIdent
   (ps, vpdss') <-
-    mapAccumM tcPDeclGroup emptyPredSet $ scc (bv . snd) (qfv m . snd) vpds
+    mapAccumM tcPDeclGroup emptyLPredSet $ scc (bv . snd) (qfv m . snd) vpds
   return (ps, map untyped opds ++ concat (vpdss' :: [[PDecl PredType]]))
 
-tcPDeclGroup :: PredSet -> [PDecl a] -> TCM (PredSet, [PDecl PredType])
+tcPDeclGroup :: LPredSet -> [PDecl a] -> TCM (LPredSet, [PDecl PredType])
 tcPDeclGroup ps [(i, ExternalDecl p fs)] = do
   tys <- mapM (tcExternal . varIdent) fs
   return (ps, [(i, ExternalDecl p (zipWith (fmap . const . predType) tys fs))])
@@ -491,7 +491,9 @@ tcPDeclGroup ps [(i, FreeDecl p fvs)] = do
   where
     addDataPred (idt, n, ForAll ids ty1) = do
       (ps2, ty2) <- freshDataType
-      ps' <- unify idt "free variable" (ppIdent idt) emptyPredSet (unpredType ty1) ps2 ty2
+      let (what, idtDoc) = ("free variable", ppIdent idt)
+          ps2' = Set.map (\pr -> LPred pr (getSpanInfo idt) what idtDoc) ps2
+      ps' <- unify idt what idtDoc emptyLPredSet (unpredType ty1) ps2' ty2
       return ((idt, n, ForAll ids ty1), ps')
 tcPDeclGroup ps pds = do
   vEnv <- getValueEnv
@@ -515,7 +517,7 @@ tcPDeclGroup ps pds = do
       -- declarations.
       (gps, (mps, lps)) = fmap (splitPredSetAny fvs) $
                                 splitPredSetAll fvs $ subst theta ps'
-  lps' <- Set.union mps <$> reducePredSet NoSpanInfo "" empty lps
+  lps' <- Set.union mps <$> reducePredSet lps
   lps'' <- foldM (uncurry . defaultPDecl fvs) lps' impPds'
   theta' <- getTypeSubst
   let impPds'' = map (uncurry (fixType . gen fvs lps'' . subst theta')) impPds'
@@ -568,7 +570,7 @@ tcDeclVar poly v = do
         lambdaVar v
     Nothing -> lambdaVar v
 
-tcPDecl :: PredSet -> PDecl a -> TCM (PredSet, (Type, PDecl PredType))
+tcPDecl :: LPredSet -> PDecl a -> TCM (LPredSet, (Type, PDecl PredType))
 tcPDecl ps (i, FunctionDecl p _ f eqs) = do
   vEnv <- getValueEnv
   tcFunctionPDecl i ps (varType f vEnv) p f eqs
@@ -583,20 +585,20 @@ tcPDecl _ _ = internalError "TypeCheck.tcPDecl"
 -- signature. This prevents missing instance errors when the inferred type
 -- of a function is less general than the declared type.
 
-tcFunctionPDecl :: Int -> PredSet -> TypeScheme -> SpanInfo -> Ident
-                -> [Equation a] -> TCM (PredSet, (Type, PDecl PredType))
+tcFunctionPDecl :: Int -> LPredSet -> TypeScheme -> SpanInfo -> Ident
+                -> [Equation a] -> TCM (LPredSet, (Type, PDecl PredType))
 tcFunctionPDecl i ps tySc@(ForAll _ pty) p f eqs = do
   (_, ty) <- inst tySc
   (ps', eqs') <- mapAccumM (tcEquation ty) ps eqs
   return (ps', (ty, (i, FunctionDecl p pty f eqs')))
 
-tcEquation :: Type -> PredSet -> Equation a
-           -> TCM (PredSet, Equation PredType)
+tcEquation :: Type -> LPredSet -> Equation a
+           -> TCM (LPredSet, Equation PredType)
 tcEquation ty ps eqn@(Equation p lhs rhs) =
   tcEqn p lhs rhs >>- unify p "equation" (pPrint eqn) ps ty
 
 tcEqn :: SpanInfo -> Lhs a -> Rhs a
-      -> TCM (PredSet, Type, Equation PredType)
+      -> TCM (LPredSet, Type, Equation PredType)
 tcEqn p lhs rhs = do
   (ps, tys, lhs', ps', ty, rhs') <- withLocalValueEnv $ do
     bindLambdaVars lhs
@@ -627,7 +629,7 @@ lambdaVar v = do
 -- When type-checking class method implementations and explicitly typed
 -- expressions, this is done by 'applyDefaultsDecl'.
 
-defaultPDecl :: Set.Set Int -> PredSet -> Type -> PDecl a -> TCM PredSet
+defaultPDecl :: Set.Set Int -> LPredSet -> Type -> PDecl a -> TCM LPredSet
 defaultPDecl fvs ps ty (_, FunctionDecl p _ f _) =
   applyDefaultsDecl p ("function " ++ escName f) empty fvs ps ty
 defaultPDecl fvs ps ty (_, PatternDecl p t _) = case t of
@@ -637,7 +639,7 @@ defaultPDecl fvs ps ty (_, PatternDecl p t _) = case t of
 defaultPDecl _ _ _ _ = internalError "TypeCheck.defaultPDecl"
 
 applyDefaultsDecl :: HasSpanInfo p => p -> String -> Doc -> Set.Set Int
-                  -> PredSet -> Type -> TCM PredSet
+                  -> LPredSet -> Type -> TCM LPredSet
 applyDefaultsDecl p what doc fvs ps ty = do
   theta <- getTypeSubst
   let ty' = subst theta ty
@@ -676,8 +678,8 @@ declVars _ = internalError "TypeCheck.declVars"
 -- because the context of a function's type signature is ignored in the
 -- function 'tcFunctionPDecl' above.
 
-tcCheckPDecl :: PredSet -> QualTypeExpr -> PDecl a
-             -> TCM (PredSet, PDecl PredType)
+tcCheckPDecl :: LPredSet -> QualTypeExpr -> PDecl a
+             -> TCM (LPredSet, PDecl PredType)
 tcCheckPDecl ps qty pd = withLocalExplPreds $ do
   clsEnv <- getClassEnv
   PredType newExPs _ <- expandPoly qty
@@ -687,14 +689,14 @@ tcCheckPDecl ps qty pd = withLocalExplPreds $ do
   theta <- getTypeSubst
   let (gps, lps) = splitPredSetAny fvs (subst theta ps')
   poly <- isNonExpansive $ snd pd
-  lps' <- reducePredSet NoSpanInfo "" empty lps
+  lps' <- reducePredSet lps
   lps'' <- defaultPDecl fvs lps' ty pd
   let ty' = subst theta ty
       tySc = if poly then gen fvs lps'' ty' else monoType ty'
   checkPDeclType qty gps tySc pd'
 
-checkPDeclType :: QualTypeExpr -> PredSet -> TypeScheme -> PDecl PredType
-               -> TCM (PredSet, PDecl PredType)
+checkPDeclType :: QualTypeExpr -> LPredSet -> TypeScheme -> PDecl PredType
+               -> TCM (LPredSet, PDecl PredType)
 checkPDeclType qty ps tySc (i, FunctionDecl p _ f eqs) = do
   pty <- expandPoly qty
   unlessM (checkTypeSig pty tySc) $ do
@@ -951,10 +953,10 @@ tcMethodPDecl :: QualIdent -> TypeScheme -> PDecl a -> TCM (TypeScheme, PDecl Pr
 tcMethodPDecl qcls tySc (i, FunctionDecl p _ f eqs) = withLocalValueEnv $ do
   m <- getModuleIdent
   modifyValueEnv $ bindFun m f (Just qcls) (eqnArity $ head eqs) tySc
-  (ps, (ty, pd)) <- tcFunctionPDecl i emptyPredSet tySc p f eqs
+  (ps, (ty, pd)) <- tcFunctionPDecl i emptyLPredSet tySc p f eqs
   let what = "implementation of method " ++ escName f
   fvs <- computeFvEnv
-  ps' <- reducePredSet NoSpanInfo "" empty ps
+  ps' <- reducePredSet ps
   ps'' <- applyDefaultsDecl p what empty fvs ps' ty
   theta <- getTypeSubst
   return (gen Set.empty ps'' $ subst theta ty, pd)
@@ -1025,7 +1027,7 @@ tcLiteral poly (Float _)
   | otherwise = fmap ((,) emptyPredSet) (freshConstrained fractionalTypes)
 tcLiteral _    (String _) = return (emptyPredSet, stringType)
 
-tcLhs :: HasSpanInfo p => p -> Lhs a -> PTCM (PredSet, [Type], Lhs PredType)
+tcLhs :: HasSpanInfo p => p -> Lhs a -> PTCM (LPredSet, [Type], Lhs PredType)
 tcLhs p (FunLhs spi f ts) = do
   (pss, tys, ts') <- unzip3 <$> mapM (tcPatternHelper p) ts
   return (Set.unions pss, tys, FunLhs spi f ts')
@@ -1049,42 +1051,50 @@ tcLhs p (ApLhs spi lhs ts) = do
 -- in order to add a Data constraint for non-linear patterns
 
 tcPattern :: HasSpanInfo p => p -> Pattern a
-          -> TCM (PredSet, Type, Pattern PredType)
+          -> TCM (LPredSet, Type, Pattern PredType)
 tcPattern = tcPatternWith Set.empty
 
 tcPatternWith :: HasSpanInfo p => Set.Set Ident -> p -> Pattern a
-              -> TCM (PredSet, Type, Pattern PredType)
+              -> TCM (LPredSet, Type, Pattern PredType)
 tcPatternWith s p pt = S.evalStateT (tcPatternHelper p pt) s
 
 type PTCM a = S.StateT (Set.Set Ident) TCM a
 
 tcPatternHelper :: HasSpanInfo p => p -> Pattern a
-                -> PTCM (PredSet, Type, Pattern PredType)
-tcPatternHelper _ (LiteralPattern spi _ l) = do
+                -> PTCM (LPredSet, Type, Pattern PredType)
+tcPatternHelper _ t@(LiteralPattern spi _ l) = do
   (ps, ty) <- lift $ tcLiteral False l
-  return (ps, ty, LiteralPattern spi (predType ty) l)
-tcPatternHelper _ (NegativePattern spi _ l) = do
+  let ps' = Set.map (\pr -> LPred pr spi "literal pattern" (pPrint t)) ps
+  return (ps', ty, LiteralPattern spi (predType ty) l)
+tcPatternHelper _ t@(NegativePattern spi _ l) = do
   (ps, ty) <- lift $ tcLiteral False l
-  return (ps, ty, NegativePattern spi (predType ty) l)
-tcPatternHelper _ (VariablePattern spi _ v) = do
+  let ps' = Set.map (\pr -> LPred pr spi "literal pattern" (pPrint t)) ps
+  return (ps', ty, NegativePattern spi (predType ty) l)
+tcPatternHelper _ t@(VariablePattern spi _ v) = do
   vEnv <- lift getValueEnv
   (_, ty) <- lift $ inst (varType v vEnv)
   used <- S.get
+  let what = "variable pattern"
   ps <- if Set.member v used
-          then return (Set.singleton (dataPred ty))
+          then return $ Set.singleton (LPred (dataPred ty) spi what (pPrint t))
           else S.put (Set.insert v used) >> return Set.empty
   return (ps, ty, VariablePattern spi (predType ty) v)
 tcPatternHelper p t@(ConstructorPattern spi _ c ts) = do
   m <- lift getModuleIdent
   vEnv <- lift getValueEnv
   (ps, (tys, ty')) <- fmap arrowUnapply <$> lift (skol (constrType m c vEnv))
-  (ps', ts') <- mapAccumM (uncurry . ptcPatternArg p "pattern" (pPrintPrec 0 t))
-                          ps (zip tys ts)
-  return (ps', ty', ConstructorPattern spi (predType ty') c ts')
-tcPatternHelper p (InfixPattern spi a t1 op t2) = do
+  let doc = pPrintPrec 0 t
+      ps' = Set.map (\pr -> LPred pr spi "constructor pattern" doc) ps
+  (ps'', ts') <- mapAccumM (uncurry . ptcPatternArg p "pattern" doc) ps'
+                           (zip tys ts)
+  return (ps'', ty', ConstructorPattern spi (predType ty') c ts')
+tcPatternHelper p t@(InfixPattern spi a t1 op t2) = do
   (ps, ty, t') <- tcPatternHelper p (ConstructorPattern NoSpanInfo a op [t1,t2])
-  let ConstructorPattern _ a' op' [t1', t2'] = t'
-  return (ps, ty, InfixPattern spi a' t1' op' t2')
+  let doc = pPrint t
+      ps' = Set.map (\lpr@(LPred pr spi' what _) ->
+                       if spi == spi' then LPred pr spi what doc else lpr) ps
+      ConstructorPattern _ a' op' [t1', t2'] = t'
+  return (ps', ty, InfixPattern spi a' t1' op' t2')
 tcPatternHelper p (ParenPattern spi t) = do
   (ps, ty, t') <- tcPatternHelper p t
   return (ps, ty, ParenPattern spi t')
@@ -1092,26 +1102,29 @@ tcPatternHelper _ t@(RecordPattern spi _ c fs) = do
   m <- lift getModuleIdent
   vEnv <- lift getValueEnv
   (ps, ty) <- fmap arrowBase <$> lift (skol (constrType m c vEnv))
+  let (cspi, cdoc) = (getSpanInfo c, ppQIdent c)
+      ps' = Set.map (\pr -> LPred pr cspi "constructor pattern" cdoc) ps
   -- tcField does not support passing "used" variables, thus we do it by hand
   used <- S.get
-  (ps', fs') <- lift $ mapAccumM (tcField (tcPatternWith used) "pattern"
-    (\t' -> pPrintPrec 0 t $-$ text "Term:" <+> pPrintPrec 0 t') ty) ps fs
+  (ps'', fs') <- lift $ mapAccumM (tcField (tcPatternWith used) "pattern"
+    (\t' -> pPrintPrec 0 t $-$ text "Term:" <+> pPrintPrec 0 t') ty) ps' fs
   S.put $ foldr Set.insert used $ concatMap bv fs
-  return (ps', ty, RecordPattern spi (predType ty) c fs')
+  return (ps'', ty, RecordPattern spi (predType ty) c fs')
 tcPatternHelper p (TuplePattern spi ts) = do
   (pss, tys, ts') <- unzip3 <$> mapM (tcPatternHelper p) ts
   return (Set.unions pss, tupleType tys, TuplePattern spi ts')
 tcPatternHelper p t@(ListPattern spi _ ts) = do
   ty <- lift freshTypeVar
   (ps, ts') <- mapAccumM (flip (ptcPatternArg p "pattern" (pPrintPrec 0 t)) ty)
-                         emptyPredSet ts
+                         emptyLPredSet ts
   return (ps, listType ty, ListPattern spi (predType $ listType ty) ts')
 tcPatternHelper p t@(AsPattern spi v t') = do
   vEnv <- lift getValueEnv
   (_, ty) <- lift $ inst (varType v vEnv)
   used <- S.get
+  let (vspi, what, vdoc) = (getSpanInfo v, "variable pattern", pPrint v)
   ps <- if Set.member v used
-          then return (Set.singleton (dataPred ty))
+          then return $ Set.singleton (LPred (dataPred ty) vspi what vdoc)
           else S.put (Set.insert v used) >> return Set.empty
   (ps'', t'') <- tcPatternHelper p t' >>-
     (\ps' ty' -> lift $ unify p "pattern" (pPrintPrec 0 t) ps ty ps' ty')
@@ -1123,20 +1136,25 @@ tcPatternHelper p t@(FunctionPattern spi _ f ts) = do
   m <- lift getModuleIdent
   vEnv <- lift getValueEnv
   (ps, ty) <- lift $ inst (funType True m f vEnv)
+  let ps' = Set.map (\pr -> LPred pr spi "functional pattern" (pPrint t)) ps
   -- insert all
   S.modify (flip (foldr Set.insert) (bv t))
-  tcFuncPattern p spi (pPrintPrec 0 t) f id ps ty ts
-tcPatternHelper p (InfixFuncPattern spi a t1 op t2) = do
+  tcFuncPattern p spi (pPrintPrec 0 t) f id ps' ty ts
+tcPatternHelper p t@(InfixFuncPattern spi a t1 op t2) = do
   (ps, ty, t') <- tcPatternHelper p (FunctionPattern spi a op [t1, t2])
-  let FunctionPattern _ a' op' [t1', t2'] = t'
-  return (ps, ty, InfixFuncPattern spi a' t1' op' t2')
+  let doc = pPrint t
+      ps' = Set.map (\lpr@(LPred pr spi' what _) ->
+                       if spi == spi' then LPred pr spi what doc else lpr) ps
+      FunctionPattern _ a' op' [t1', t2'] = t'
+  return (ps', ty, InfixFuncPattern spi a' t1' op' t2')
 
 tcFuncPattern :: HasSpanInfo p => p -> SpanInfo -> Doc -> QualIdent
               -> ([Pattern PredType] -> [Pattern PredType])
-              -> PredSet -> Type -> [Pattern a]
-              -> PTCM (PredSet, Type, Pattern PredType)
-tcFuncPattern _ spi _ f ts ps ty [] =
-  return (Set.insert (dataPred ty) ps, ty, FunctionPattern spi (predType ty) f (ts []))
+              -> LPredSet -> Type -> [Pattern a]
+              -> PTCM (LPredSet, Type, Pattern PredType)
+tcFuncPattern _ spi doc f ts ps ty [] =
+  let ps' = Set.insert (LPred (dataPred ty) spi "functional pattern" doc) ps
+  in return (ps', ty, FunctionPattern spi (predType ty) f (ts []))
 tcFuncPattern p spi doc f ts ps ty (t':ts') = do
   (alpha, beta) <- lift $
     tcArrow p "functional pattern" (doc $-$ text "Term:" <+> pPrintPrec 0 t) ty
@@ -1144,20 +1162,20 @@ tcFuncPattern p spi doc f ts ps ty (t':ts') = do
   tcFuncPattern p spi doc f (ts . (t'' :)) ps' beta ts'
   where t = FunctionPattern spi (predType ty) f (ts [])
 
-ptcPatternArg :: HasSpanInfo p => p -> String -> Doc -> PredSet -> Type
-             -> Pattern a -> PTCM (PredSet, Pattern PredType)
+ptcPatternArg :: HasSpanInfo p => p -> String -> Doc -> LPredSet -> Type
+              -> Pattern a -> PTCM (LPredSet, Pattern PredType)
 ptcPatternArg p what doc ps ty t =
   tcPatternHelper p t >>-
     (\ps' ty' -> lift $
       unify p what (doc $-$ text "Term:" <+> pPrintPrec 0 t) ps ty ps' ty')
 
-tcPatternArg :: HasSpanInfo p => p -> String -> Doc -> PredSet -> Type
-             -> Pattern a -> TCM (PredSet, Pattern PredType)
+tcPatternArg :: HasSpanInfo p => p -> String -> Doc -> LPredSet -> Type
+             -> Pattern a -> TCM (LPredSet, Pattern PredType)
 tcPatternArg p what doc ps ty t =
   tcPattern p t >>-
     unify p what (doc $-$ text "Term:" <+> pPrintPrec 0 t) ps ty
 
-tcRhs :: Rhs a -> TCM (PredSet, Type, Rhs PredType)
+tcRhs :: Rhs a -> TCM (LPredSet, Type, Rhs PredType)
 tcRhs (SimpleRhs p li e ds) = do
   (ps, ds', ps', ty, e') <- withLocalValueEnv $ do
     (ps, ds') <- tcDecls ds
@@ -1172,27 +1190,31 @@ tcRhs (GuardedRhs spi li es ds) = withLocalValueEnv $ do
   (ps', es') <- mapAccumM (tcCondExpr ty) ps es
   return (ps', ty, GuardedRhs spi li es' ds')
 
-tcCondExpr :: Type -> PredSet -> CondExpr a -> TCM (PredSet, CondExpr PredType)
+tcCondExpr :: Type -> LPredSet -> CondExpr a -> TCM (LPredSet, CondExpr PredType)
 tcCondExpr ty ps (CondExpr p g e) = do
   (ps', g') <- tcExpr g >>- unify p "guard" (pPrintPrec 0 g) ps boolType
   (ps'', e') <- tcExpr e >>- unify p "guarded expression" (pPrintPrec 0 e) ps' ty
   return (ps'', CondExpr p g' e')
 
-tcExpr :: Expression a -> TCM (PredSet, Type, Expression PredType)
-tcExpr (Literal spi _ l) = do
+tcExpr :: Expression a -> TCM (LPredSet, Type, Expression PredType)
+tcExpr e@(Literal spi _ l) = do
   (ps, ty) <- tcLiteral True l
-  return (ps, ty, Literal spi (predType ty) l)
-tcExpr (Variable spi _ v) = do
+  let ps' = Set.map (\pr -> LPred pr spi "literal" (pPrint e)) ps
+  return (ps', ty, Literal spi (predType ty) l)
+tcExpr e@(Variable spi _ v) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- if isAnonId (unqualify v) then freshDataType
                                         else inst (funType True m v vEnv)
-  return (ps, ty, Variable spi (predType ty) v)
-tcExpr (Constructor spi _ c) = do
+  -- TODO: Maybe use a different "what" for anonymous variables
+  let ps' = Set.map (\pr -> LPred pr spi "variable" (pPrint e)) ps
+  return (ps', ty, Variable spi (predType ty) v)
+tcExpr e@(Constructor spi _ c) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- inst (constrType m c vEnv)
-  return (ps, ty, Constructor spi (predType ty) c)
+  let ps' = Set.map (\pr -> LPred pr spi "constructor" (pPrint e)) ps
+  return (ps', ty, Constructor spi (predType ty) c)
 tcExpr (Paren spi e) = do
   (ps, ty, e') <- tcExpr e
   return (ps, ty, Paren spi e')
@@ -1200,28 +1222,31 @@ tcExpr te@(Typed spi e qty) = do
   let what = "explicitly typed expression"
   pty <- expandPoly qty
   (ps, ty) <- inst (typeScheme pty)
-  (ps', e') <- tcExpr e >>- unify spi what (pPrintPrec 0 e) emptyPredSet ty
+  let ps' = Set.map (\pr -> LPred pr spi what (pPrint te)) ps
+  (ps'', e') <- tcExpr e >>- unify spi what (pPrintPrec 0 e) emptyLPredSet ty
   fvs <- computeFvEnv
   theta <- getTypeSubst
-  let (gps, lps) = splitPredSetAny fvs (subst theta ps')
-  lps' <- reducePredSet NoSpanInfo "" empty lps
+  let (gps, lps) = splitPredSetAny fvs (subst theta ps'')
+  lps' <- reducePredSet lps
   lps'' <- applyDefaultsDecl spi what (pPrint te) fvs lps' ty
   let tySc = gen fvs lps'' (subst theta ty)
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
     report $
       errTypeSigTooGeneral m (text "Expression:" <+> pPrintPrec 0 e) qty tySc
-  return (ps `Set.union` gps, ty, Typed spi e' qty)
+  return (ps' `Set.union` gps, ty, Typed spi e' qty)
 tcExpr e@(Record spi _ c fs) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- fmap arrowBase <$> inst (constrType m c vEnv)
-  (ps', fs') <- mapAccumM (tcField (const tcExpr) "construction"
-    (\e' -> pPrintPrec 0 e $-$ text "Term:" <+> pPrintPrec 0 e') ty) ps fs
+  let (cspi, cdoc) = (getSpanInfo c, ppQIdent c)
+      ps' = Set.map (\pr -> LPred pr cspi "constructor" cdoc) ps
+  (ps'', fs') <- mapAccumM (tcField (const tcExpr) "construction"
+    (\e' -> pPrintPrec 0 e $-$ text "Term:" <+> pPrintPrec 0 e') ty) ps' fs
   let missing = map (qualifyLike c) (constrLabels m c vEnv)
                   \\ map (\(Field _ qid _) -> qid) fs'
   pss <- mapM (tcMissingField spi ty) missing
-  return (Set.unions (ps':pss), ty, Record spi (predType ty) c fs')
+  return (Set.unions (ps'':pss), ty, Record spi (predType ty) c fs')
 tcExpr e@(RecordUpdate spi e1 fs) = do
   (ps, ty, e1') <- tcExpr e1
   (ps', fs') <- mapAccumM (tcField (const tcExpr) "update"
@@ -1232,12 +1257,12 @@ tcExpr (Tuple spi es) = do
   return (Set.unions pss, tupleType tys, Tuple spi es')
 tcExpr e@(List spi _ es) = do
   ty <- freshTypeVar
-  (ps, es') <-
-    mapAccumM (flip (tcArg spi "expression" (pPrintPrec 0 e)) ty) emptyPredSet es
+  (ps, es') <- mapAccumM (flip (tcArg spi "expression" (pPrintPrec 0 e)) ty)
+                 emptyLPredSet es
   return (ps, listType ty, List spi (predType $ listType ty) es')
 tcExpr (ListCompr spi e qs) = do
   (ps, qs', ps', ty, e') <- withLocalValueEnv $ do
-    (ps, qs') <- mapAccumM (tcQual spi) emptyPredSet qs
+    (ps, qs') <- mapAccumM (tcQual spi) emptyLPredSet qs
     (ps', ty, e') <- tcExpr e
     return (ps, qs', ps', ty, e')
   let ps'' = ps `Set.union` ps'
@@ -1245,28 +1270,33 @@ tcExpr (ListCompr spi e qs) = do
   return (ps'', listType ty, ListCompr spi e' qs')
 tcExpr e@(EnumFrom spi e1) = do
   (ps, ty) <- freshEnumType
-  (ps', e1') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) ps ty e1
-  return (ps', listType ty, EnumFrom spi e1')
+  let ps' = Set.map (\pr -> LPred pr spi "arithmetic sequence" (pPrint e)) ps
+  (ps'', e1') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) ps' ty e1
+  return (ps'', listType ty, EnumFrom spi e1')
 tcExpr e@(EnumFromThen spi e1 e2) = do
   (ps, ty) <- freshEnumType
-  (ps', e1') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) ps ty e1
-  (ps'', e2') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) ps' ty e2
-  return (ps'', listType ty, EnumFromThen spi e1' e2')
+  let ps' = Set.map (\pr -> LPred pr spi "arithmetic sequence" (pPrint e)) ps
+  (ps'', e1') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) ps' ty e1
+  (ps''', e2') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) ps'' ty e2
+  return (ps''', listType ty, EnumFromThen spi e1' e2')
 tcExpr e@(EnumFromTo spi e1 e2) = do
   (ps, ty) <- freshEnumType
-  (ps', e1') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) ps ty e1
-  (ps'', e2') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) ps' ty e2
-  return (ps'', listType ty, EnumFromTo spi e1' e2')
+  let ps' = Set.map (\pr -> LPred pr spi "arithmetic sequence" (pPrint e)) ps
+  (ps'', e1') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) ps' ty e1
+  (ps''', e2') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) ps'' ty e2
+  return (ps''', listType ty, EnumFromTo spi e1' e2')
 tcExpr e@(EnumFromThenTo spi e1 e2 e3) = do
   (ps, ty) <- freshEnumType
-  (ps', e1') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) ps ty e1
-  (ps'', e2') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) ps' ty e2
-  (ps''', e3') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) ps'' ty e3
-  return (ps''', listType ty, EnumFromThenTo spi e1' e2' e3')
+  let ps' = Set.map (\pr -> LPred pr spi "arithmetic sequence" (pPrint e)) ps
+  (ps2, e1') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) ps' ty e1
+  (ps3, e2') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) ps2 ty e2
+  (ps4, e3') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) ps3 ty e3
+  return (ps4, listType ty, EnumFromThenTo spi e1' e2' e3')
 tcExpr e@(UnaryMinus spi e1) = do
   (ps, ty) <- freshNumType
-  (ps', e1') <- tcArg spi "unary negation" (pPrintPrec 0 e) ps ty e1
-  return (ps', ty, UnaryMinus spi e1')
+  let ps' = Set.map (\pr -> LPred pr spi "unary negation" (pPrint e)) ps
+  (ps'', e1') <- tcArg spi "unary negation" (pPrintPrec 0 e) ps' ty e1
+  return (ps'', ty, UnaryMinus spi e1')
 tcExpr e@(Apply spi e1 e2) = do
   (ps, (alpha, beta), e1') <- tcExpr e1 >>=-
     tcArrow spi "application" (pPrintPrec 0 e $-$ text "Term:" <+> pPrintPrec 0 e1)
@@ -1289,7 +1319,7 @@ tcExpr e@(RightSection spi op e1) = do
   (ps', e1') <- tcArg spi "right section" (pPrintPrec 0 e) ps beta e1
   return (ps', TypeArrow alpha gamma, RightSection spi op' e1')
 tcExpr (Lambda spi ts e) = do
-  (pss, tys, ts', ps, ty, e')<- withLocalValueEnv $ do
+  (pss, tys, ts', ps, ty, e') <- withLocalValueEnv $ do
     bindLambdaVars ts
     (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern spi) ts
     (ps, ty, e') <- tcExpr e
@@ -1308,13 +1338,13 @@ tcExpr (Let spi li ds e) = do
 tcExpr (Do spi li sts e) = do
   (sts', ty, ps', e') <- withLocalValueEnv $ do
     ((ps, mTy), sts') <-
-      mapAccumM (uncurry (tcStmt spi)) (emptyPredSet, Nothing) sts
+      mapAccumM (uncurry (tcStmt spi)) (emptyLPredSet, Nothing) sts
     ty <- liftM (maybe id TypeApply mTy) freshTypeVar
     (ps', e') <- tcExpr e >>- unify spi "statement" (pPrintPrec 0 e) ps ty
     return (sts', ty, ps', e')
   return (ps', ty, Do spi li sts' e')
 tcExpr e@(IfThenElse spi e1 e2 e3) = do
-  (ps, e1') <- tcArg spi "expression" (pPrintPrec 0 e) emptyPredSet boolType e1
+  (ps, e1') <- tcArg spi "expression" (pPrintPrec 0 e) emptyLPredSet boolType e1
   (ps', ty, e2') <- tcExpr e2
   (ps'', e3') <- tcArg spi "expression" (pPrintPrec 0 e) (ps `Set.union` ps') ty e3
   return (ps'', ty, IfThenElse spi e1' e2' e3')
@@ -1324,24 +1354,24 @@ tcExpr (Case spi li ct e as) = do
   (ps', as') <- mapAccumM (tcAlt tyLhs tyRhs) ps as
   return (ps', tyRhs, Case spi li ct e' as')
 
-tcArg :: HasSpanInfo p => p -> String -> Doc -> PredSet -> Type -> Expression a
-      -> TCM (PredSet, Expression PredType)
+tcArg :: HasSpanInfo p => p -> String -> Doc -> LPredSet -> Type -> Expression a
+      -> TCM (LPredSet, Expression PredType)
 tcArg p what doc ps ty e =
   tcExpr e >>- unify p what (doc $-$ text "Term:" <+> pPrintPrec 0 e) ps ty
 
-tcAlt :: Type -> Type -> PredSet -> Alt a
-      -> TCM (PredSet, Alt PredType)
+tcAlt :: Type -> Type -> LPredSet -> Alt a
+      -> TCM (LPredSet, Alt PredType)
 tcAlt tyLhs tyRhs ps a@(Alt p t rhs) =
   tcAltern tyLhs p t rhs >>-
     unify p "case alternative" (pPrint a) ps tyRhs
 
 tcAltern :: Type -> SpanInfo -> Pattern a
-         -> Rhs a -> TCM (PredSet, Type, Alt PredType)
+         -> Rhs a -> TCM (LPredSet, Type, Alt PredType)
 tcAltern tyLhs p t rhs = do
   (ps, t', ps', ty', rhs') <- withLocalValueEnv $ do
     bindLambdaVars t
     (ps, t') <-
-      tcPatternArg p "case pattern" (pPrint (Alt p t rhs)) emptyPredSet tyLhs t
+      tcPatternArg p "case pattern" (pPrint (Alt p t rhs)) emptyLPredSet tyLhs t
     (ps', ty', rhs') <- tcRhs rhs
     return (ps, t', ps', ty', rhs')
   let ps'' = ps `Set.union` ps'
@@ -1349,8 +1379,8 @@ tcAltern tyLhs p t rhs = do
   --                       (ps `Set.union` ps')
   return (ps'', ty', Alt p t' rhs')
 
-tcQual :: HasSpanInfo p => p -> PredSet -> Statement a
-       -> TCM (PredSet, Statement PredType)
+tcQual :: HasSpanInfo p => p -> LPredSet -> Statement a
+       -> TCM (LPredSet, Statement PredType)
 tcQual p ps (StmtExpr spi e) = do
   (ps', e') <- tcExpr e >>- unify p "guard" (pPrintPrec 0 e) ps boolType
   return (ps', StmtExpr spi e')
@@ -1364,14 +1394,15 @@ tcQual p ps q@(StmtBind spi t e) = do
   (ps'', t') <- tcPatternArg p "generator" (pPrint q) ps' alpha t
   return (ps'', StmtBind spi t' e')
 
-tcStmt :: HasSpanInfo p => p -> PredSet -> Maybe Type -> Statement a
-       -> TCM ((PredSet, Maybe Type), Statement PredType)
+tcStmt :: HasSpanInfo p => p -> LPredSet -> Maybe Type -> Statement a
+       -> TCM ((LPredSet, Maybe Type), Statement PredType)
 tcStmt p ps mTy (StmtExpr spi e) = do
   (ps', ty) <- maybe freshMonadType (return . (,) emptyPredSet) mTy
+  let ps'' = Set.map (\pr -> LPred pr spi "statement" (pPrint e)) ps'
   alpha <- freshTypeVar
-  (ps'', e') <- tcExpr e >>-
-    unify p "statement" (pPrintPrec 0 e) (ps `Set.union` ps') (applyType ty [alpha])
-  return ((ps'', Just ty), StmtExpr spi e')
+  (ps''', e') <- tcExpr e >>-
+    unify p "statement" (pPrintPrec 0 e) (ps `Set.union` ps'') (applyType ty [alpha])
+  return ((ps''', Just ty), StmtExpr spi e')
 tcStmt _ ps mTy (StmtDecl spi li ds) = do
   (ps', ds') <- tcDecls ds
   return ((ps `Set.union` ps', mTy), StmtDecl spi li ds')
@@ -1379,12 +1410,13 @@ tcStmt p ps mTy st@(StmtBind spi t e) = do
   failable <- checkFailableBind t
   let freshMType = if failable then freshMonadFailType else freshMonadType
   (ps', ty) <- maybe freshMType (return . (,) emptyPredSet) mTy
+  let ps'' = Set.map (\pr -> LPred pr spi "statement" (pPrint st)) ps'
   alpha <- freshTypeVar
-  (ps'', e') <-
-    tcArg p "statement" (pPrint st) (ps `Set.union` ps') (applyType ty [alpha]) e
+  (ps3, e') <-
+    tcArg p "statement" (pPrint st) (ps `Set.union` ps'') (applyType ty [alpha]) e
   bindLambdaVars t
-  (ps''', t') <- tcPatternArg p "statement" (pPrint st) ps'' alpha t
-  return ((ps''', Just ty), StmtBind spi t' e')
+  (ps4, t') <- tcPatternArg p "statement" (pPrint st) ps3 alpha t
+  return ((ps4, Just ty), StmtBind spi t' e')
 
 checkFailableBind :: Pattern a -> TCM Bool
 checkFailableBind (ConstructorPattern _ _ idt ps   ) = do
@@ -1422,42 +1454,49 @@ checkFailableBind (LazyPattern        _       _    ) = return False
 checkFailableBind (VariablePattern    _ _ _        ) = return False
 checkFailableBind _                                  = return True
 
-tcInfixOp :: InfixOp a -> TCM (PredSet, Type, InfixOp PredType)
+tcInfixOp :: InfixOp a -> TCM (LPredSet, Type, InfixOp PredType)
 tcInfixOp (InfixOp _ op) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- inst (funType True m op vEnv)
-  return (ps, ty, InfixOp (predType ty) op)
+  let (opspi, opdoc) = (getSpanInfo op, ppQIdent op)
+      ps' = Set.map (\pr -> LPred pr opspi "infix operator" opdoc) ps
+  return (ps', ty, InfixOp (predType ty) op)
 tcInfixOp (InfixConstr _ op) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty) <- inst (constrType m op vEnv)
-  return (ps, ty, InfixConstr (predType ty) op)
+  let (opspi, opdoc) = (getSpanInfo op, ppQIdent op)
+      ps' = Set.map (\pr -> LPred pr opspi "infix constructor" opdoc) ps
+  return (ps', ty, InfixConstr (predType ty) op)
 
 -- The first unification in 'tcField' cannot fail; it serves only for
 -- instantiating the type variables in the field label's type.
 
-tcField :: (SpanInfo -> a b -> TCM (PredSet, Type, a PredType))
-        -> String -> (a b -> Doc) -> Type -> PredSet -> Field (a b)
-        -> TCM (PredSet, Field (a PredType))
+tcField :: (SpanInfo -> a b -> TCM (LPredSet, Type, a PredType))
+        -> String -> (a b -> Doc) -> Type -> LPredSet -> Field (a b)
+        -> TCM (LPredSet, Field (a PredType))
 tcField check what doc ty ps (Field p l x) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps', ty') <- inst (labelType m l vEnv)
-  let TypeArrow ty1 ty2 = ty'
-  _ <- unify p "field label" empty emptyPredSet ty emptyPredSet ty1
-  (ps'', x') <- check p x >>-
-    unify p ("record " ++ what) (doc x) (ps `Set.union` ps') ty2
-  return (ps'', Field p l x')
+  let ps'' = Set.map (\pr -> LPred pr p "field label" (ppQIdent l)) ps'
+      TypeArrow ty1 ty2 = ty'
+  _ <- unify p "field label" empty emptyLPredSet ty emptyLPredSet ty1
+  (ps''', x') <- check p x >>-
+    unify p ("record " ++ what) (doc x) (ps `Set.union` ps'') ty2
+  return (ps''', Field p l x')
 
-tcMissingField :: HasSpanInfo p => p -> Type -> QualIdent -> TCM PredSet
+tcMissingField :: HasSpanInfo p => p -> Type -> QualIdent -> TCM LPredSet
 tcMissingField p ty l = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty') <- inst (labelType m l vEnv)
-  let TypeArrow _ ty2 = ty'
-  let ps' = Set.singleton (dataPred ty2)
-  unify p "field label" empty ps ty' ps' (TypeArrow ty ty2)
+  let (recSpi, what, ldoc) = (getSpanInfo p, "field label", ppQIdent l)
+      ps' = Set.map (\pr -> LPred pr recSpi what ldoc) ps
+      TypeArrow _ ty2 = ty'
+      ps'' = Set.singleton (LPred (dataPred ty2) recSpi what ldoc)
+  unify p what empty ps' ty' ps'' (TypeArrow ty ty2)
 
 -- | Checks that it's argument can be used as an arrow type @a -> b@ and returns
 -- the pair @(a, b)@.
@@ -1497,8 +1536,8 @@ tcBinary p what doc ty = tcArrow p what doc ty >>= uncurry binaryArrow
 
 -- Unification: The unification uses Robinson's algorithm.
 
-unify :: HasSpanInfo p => p -> String -> Doc -> PredSet -> Type -> PredSet
-      -> Type -> TCM PredSet
+unify :: HasSpanInfo p => p -> String -> Doc -> LPredSet -> Type -> LPredSet
+      -> Type -> TCM LPredSet
 unify p what doc ps1 ty1 ps2 ty2 = do
   theta <- getTypeSubst
   let ty1' = subst theta ty1
@@ -1568,8 +1607,8 @@ unifyTypeLists m (ty1 : tys1) (ty2 : tys2) =
 -- restricted by the current predicate set after the reduction and thus
 -- may cause a further extension of the current type substitution.
 
-reducePredSet :: HasSpanInfo p => p -> String -> Doc -> PredSet -> TCM PredSet
-reducePredSet p what doc ps = do
+reducePredSet :: LPredSet -> TCM LPredSet
+reducePredSet ps = do
   m <- getModuleIdent
   clsEnv <- getClassEnv
   theta <- getTypeSubst
@@ -1578,20 +1617,19 @@ reducePredSet p what doc ps = do
   let ps' = subst theta ps
   (ps1, ps2) <- partitionPredSetSomeVars exPs <$>
                   minPredSet clsEnv <$> reducePreds inEnv ps'
-  theta' <-
-    foldM (reportMissingInstance m p what doc inEnv) idSubst $ Set.toList ps2
+  theta' <- foldM (reportMissingInstance m inEnv) idSubst $ Set.toList ps2
   modifyTypeSubst $ compose theta'
   return ps1
   where
     reducePreds inEnv = Set.concatMapM $ reducePred inEnv
-    reducePred inEnv pr@(Pred OPred qcls tys) =
+    reducePred inEnv pr@(LPred (Pred OPred _ _) _ _ _) =
       maybeM (return $ Set.singleton pr) (reducePreds inEnv)
-        (instPredSet p what doc inEnv qcls tys)
+        (instPredSet pr inEnv)
     -- TODO: Check if there is any possibility of this method being applied to
     --         an implicit class constraint. (With FlexibleInstances or nullary
     --         type classes, instances for reducing ICCs could exist.)
     --         If so, add the 'removeDoubleICC' predicate set reduction.
-    reducePred _ pr@(Pred ICC _ _) =
+    reducePred _ pr@(LPred (Pred ICC _ _) _ _ _) =
       internalError $ "TypeCheck.reducePredSet: " ++
         "tried to reduce the implicit class constraint " ++ show pr
 
@@ -1600,21 +1638,22 @@ reducePredSet p what doc ps = do
 --         Example: class C a b | a -> b
 --                  instance C [a] Int
 --                  Then, a constraint like C [a] b can be reduced.
-instPredSet :: HasSpanInfo p => p -> String -> Doc -> InstEnv'
-            -> QualIdent -> [Type] -> TCM (Maybe PredSet)
-instPredSet p what doc inEnv qcls tys = case Map.lookup qcls $ snd inEnv of
-  Just tyss | tys `elem` tyss -> return $ Just emptyPredSet
-  _ -> case lookupInstMatch qcls tys (fst inEnv) of
-         [] -> return Nothing
-         [(_, ps, _, _, sigma)] -> return $ Just (subst sigma ps)
-         insts -> do report $ errInstanceOverlap p what doc qcls tys insts
-                     return $ Just Set.empty
+instPredSet :: LPred -> InstEnv' -> TCM (Maybe LPredSet)
+instPredSet (LPred (Pred _ qcls tys) p what doc) inEnv =
+  case Map.lookup qcls $ snd inEnv of
+    Just tyss | tys `elem` tyss -> return $ Just emptyLPredSet
+    _ -> case lookupInstMatch qcls tys (fst inEnv) of
+          [] -> return Nothing
+          [(_, ps, _, _, sigma)] -> return $
+            Just (Set.map (\pr -> LPred pr p what doc) (subst sigma ps))
+          insts -> do report $ errInstanceOverlap p what doc qcls tys insts
+                      return $ Just emptyLPredSet
 
 -- TODO: If FlexibleContexts is implemented, this method should suggest
 --         activating that extension if there is an instance missing.
-reportMissingInstance :: HasSpanInfo p => ModuleIdent -> p -> String -> Doc
-                      -> InstEnv' -> TypeSubst -> Pred -> TCM TypeSubst
-reportMissingInstance m p what doc inEnv theta (Pred _ qcls tys) =
+reportMissingInstance :: ModuleIdent -> InstEnv' -> TypeSubst -> LPred
+                      -> TCM TypeSubst
+reportMissingInstance m inEnv theta (LPred (Pred _ qcls tys) p what doc) =
   case subst theta tys of
     -- TODO: Here, only unary constraints are taken into account. Reworking this
     --         to work with n-ary constraints would be difficult, but it also
@@ -1711,23 +1750,24 @@ reportFlexibleContextPattern _ (InfixFuncPattern   _ _ _ _ _) =
 -- types that satisfies all constraints for the ambiguous type variable. An
 -- error is reported if no such type exists.
 
-applyDefaults :: HasSpanInfo p => p -> String -> Doc -> Set.Set Int -> PredSet
-              -> Type -> TCM PredSet
+applyDefaults :: HasSpanInfo p => p -> String -> Doc -> Set.Set Int -> LPredSet
+              -> Type -> TCM LPredSet
 applyDefaults p what doc fvs ps ty = do
   m <- getModuleIdent
   clsEnv <- getClassEnv
   inEnv <- getInstEnv
   exPs <- getExplPreds
   defs <- getDefaultTypes
-  let theta = foldr (bindDefault defs inEnv ps) idSubst $ nub
-                [ tv | Pred _ qcls [TypeVariable tv] <- Set.toList ps
+  let ps'   = Set.map getPred ps
+      theta = foldr (bindDefault defs inEnv ps') idSubst $ nub
+                [ tv | Pred _ qcls [TypeVariable tv] <- Set.toList ps'
                      , tv `Set.notMember` fvs, isSimpleNumClass clsEnv qcls ]
-      ps'   = fst (partitionPredSetSomeVars exPs (subst theta ps))
+      ps''  = fst (partitionPredSetSomeVars exPs (subst theta ps))
       ty'   = subst theta ty
-      tvs'  = nub $ filter (`Set.notMember` fvs) (typeVars ps')
-  mapM_ (report . errAmbiguousTypeVariable m p what doc ps' ty') tvs'
+      tvs'  = nub $ filter (`Set.notMember` fvs) (typeVars ps'')
+  mapM_ (report . errAmbiguousTypeVariable m p what doc ps'' ty') tvs'
   modifyTypeSubst $ compose theta
-  return ps'
+  return ps''
 
 bindDefault :: [Type] -> InstEnv' -> PredSet -> Int -> TypeSubst -> TypeSubst
 bindDefault defs inEnv ps tv =
@@ -1824,11 +1864,12 @@ skol (ForAll n (PredType ps ty)) = do
 -- type variables that are free in tau and not fixed by the environment.
 -- The set of the latter is given by gvs.
 
-gen :: Set.Set Int -> PredSet -> Type -> TypeScheme
-gen gvs ps ty = ForAll (length tvs) (subst theta (PredType ps ty))
+gen :: Set.Set Int -> LPredSet -> Type -> TypeScheme
+gen gvs ps ty = ForAll (length tvs) (subst theta (PredType ps' ty))
   where tvs = [tv | tv <- nub (typeVars ty), tv `Set.notMember` gvs]
         tvs' = map TypeVariable [0 ..]
         theta = foldr2 bindSubst idSubst tvs tvs'
+        ps' = Set.map getPred ps
 
 -- Auxiliary Functions:
 -- The functions 'constrType', 'varType', 'funType' and 'labelType' are used
@@ -1926,10 +1967,10 @@ expandPolyICC fstIcc qty = do
 -- contain only type variables that are in the given set of type variables, but
 -- at least one of them.
 
-splitPredSetAny :: Set.Set Int -> PredSet -> (PredSet, PredSet)
+splitPredSetAny :: Set.Set Int -> LPredSet -> (LPredSet, LPredSet)
 splitPredSetAny fvs = Set.partition $ any (`Set.member` fvs) . typeVars
 
-splitPredSetAll :: Set.Set Int -> PredSet -> (PredSet, PredSet)
+splitPredSetAll :: Set.Set Int -> LPredSet -> (LPredSet, LPredSet)
 splitPredSetAll fvs = Set.partition $
   (\vs -> not (null vs) && all (`Set.member` fvs) vs) . typeVars
 
@@ -2025,7 +2066,7 @@ errMissingInstance :: HasSpanInfo a => ModuleIdent -> a -> String -> Doc -> Pred
                    -> Message
 errMissingInstance m p what doc pr = spanInfoMessage p $ vcat
   [ text "Missing instance for" <+> ppPred m pr
-  , text "in" <+> text what
+  , text "arising from" <+> text what
   , doc
   ]
 
@@ -2033,7 +2074,7 @@ errInstanceOverlap :: HasSpanInfo p => p -> String -> Doc
                    -> QualIdent -> [Type] -> [InstMatchInfo] -> Message
 errInstanceOverlap p what doc qcls tys insts = spanInfoMessage p $ vcat
   [ text "Instance overlap for" <+> ppInstIdent (qcls, tys)
-  , text "arising in" <+> text what
+  , text "arising from" <+> text what
   , doc
   , text "Matching instances:"
   , nest 2 $ vcat $ map displayMatchingInst insts
@@ -2052,10 +2093,10 @@ errFlexibleContext m p what v pr = spanInfoMessage p $ vcat
   ]
 
 errAmbiguousTypeVariable :: HasSpanInfo a => ModuleIdent -> a -> String -> Doc
-                         -> PredSet -> Type -> Int -> Message
+                         -> LPredSet -> Type -> Int -> Message
 errAmbiguousTypeVariable m p what doc ps ty tv = spanInfoMessage p $ vcat
   [ text "Ambiguous type variable" <+> ppType m (TypeVariable tv)
-  , text "in type" <+> ppPredType m (PredType ps ty)
+  , text "in type" <+> ppPredType m (PredType (Set.map getPred ps) ty)
   , text "inferred for" <+> text what
   , doc
   ]
