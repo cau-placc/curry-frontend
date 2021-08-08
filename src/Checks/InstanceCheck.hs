@@ -19,9 +19,11 @@
 -}
 module Checks.InstanceCheck (instanceCheck) where
 
-import           Control.Monad.Extra        (concatMapM, maybeM, whileM, unless)
+import           Control.Monad.Extra        ( concatMapM, maybeM, unless, when
+                                            , whenM, whileM )
 import qualified Control.Monad.State as S   (State, execState, gets, modify)
-import           Data.List                  (nub, partition, sortBy)
+import           Data.List                  ((\\), nub, partition, sortBy)
+import           Data.Maybe                 (isJust)
 import qualified Data.Set.Extra      as Set
 
 import Curry.Base.Ident
@@ -31,6 +33,7 @@ import Curry.Syntax hiding (impls)
 import Curry.Syntax.Pretty
 
 import Base.CurryTypes
+import Base.Expr (fv)
 import Base.Messages (Message, spanInfoMessage, message, internalError)
 import Base.SCC (scc)
 import Base.TypeExpansion
@@ -41,9 +44,6 @@ import Base.Utils (fst3, findMultiples)
 import Env.Class
 import Env.Instance
 import Env.TypeConstructor
-
--- TODO: With the FlexibleInstances extension, this module has to be reworked:
---         The instance termination check could be moved here 
 
 instanceCheck :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Decl a]
               -> (InstEnv, [Message])
@@ -113,11 +113,28 @@ checkDecls tcEnv clsEnv ds = do
 -- instance environment.
 
 bindInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
-bindInstance tcEnv clsEnv (InstanceDecl _ _ cx qcls inst ds) = do
+bindInstance tcEnv clsEnv (InstanceDecl p _ cx qcls inst ds) = do
   m <- getModuleIdent
-  let PredTypes ps tys = expandInst m tcEnv clsEnv cx inst
-  modifyInstEnv $
-    bindInstInfo (getOrigName m qcls tcEnv, tys) (m, ps, impls [] ds)
+  -- TODO: The following comment applies after the implementation of
+  --         FlexibleInstances.
+  -- Before instances are entered into the instance environment, the context and
+  -- instance types have to be expanded and normalized, as they could contain
+  -- type synonyms. To report violations of the rules ensuring instance
+  -- resolution termination with constraints and instance heads that are as
+  -- close to the original code as possible, the type constructors occuring in
+  -- them are unqualified. Additionally, the context and instance types are
+  -- passed on before normalization, so that the original type variables can be
+  -- used (otherwise, these type variables might not be in the correct order
+  -- because of type synonyms).
+  let PredTypes ps tys = expandPredTypes m tcEnv clsEnv $
+                           toPredTypes [] OPred cx inst
+      ops = Set.map (\(Pred _ pcls ptys) -> uncurry (Pred OPred) $
+                       unqualInstIdent tcEnv (pcls, ptys)) ps
+      otys = map (unqualType tcEnv) tys
+      PredTypes ips itys = normalize 0 $ PredTypes ps tys
+  whenM (checkInstanceTermination m False (nub $ fv inst) p ops qcls otys) $
+    modifyInstEnv $ bindInstInfo (getOrigName m qcls tcEnv, itys)
+                                 (m, ips, impls [] ds)
   where impls is [] = is
         impls is (FunctionDecl _ _ f eqs:ds')
           | f' `elem` map fst is = impls is ds'
@@ -218,8 +235,8 @@ bindDerivedInstance :: HasSpanInfo s => ClassEnv -> s -> PredType -> QualIdent
                     -> INCM ()
 bindDerivedInstance clsEnv p pty cls = do
   m <- getModuleIdent
-  (((_, tys), ps), _) <- inferPredSet clsEnv p pty [] cls
-  modifyInstEnv (bindInstInfo (cls, tys) (m, ps, impls))
+  (((_, tys), ps), enter) <- inferPredSet clsEnv p pty [] cls
+  when enter $ modifyInstEnv (bindInstInfo (cls, tys) (m, ps, impls))
   where impls | cls == qEqId      = [(eqOpId, 2)]
               | cls == qOrdId     = [(leqOpId, 2)]
               | cls == qEnumId    = [ (succId, 1), (predId, 1), (toEnumId, 1)
@@ -234,8 +251,10 @@ bindDerivedInstance clsEnv p pty cls = do
                 internalError "InstanceCheck.bindDerivedInstance.impls"
 
 inferPredSets :: ClassEnv -> DeriveInfo -> INCM [((InstIdent, PredSet), Bool)]
-inferPredSets clsEnv (DeriveInfo spi pty tys clss) =
-  mapM (inferPredSet clsEnv spi pty tys) clss
+inferPredSets clsEnv (DeriveInfo spi pty@(PredType _ inst) tys clss) = do
+  inEnv <- getInstEnv
+  let clss' = filter (\cls -> isJust $ lookupInstExact (cls, [inst]) inEnv) clss
+  mapM (inferPredSet clsEnv spi pty tys) clss'
 
 -- TODO: The following probably has to be reworked with FlexibleInstances
 
@@ -253,8 +272,9 @@ inferPredSet clsEnv p (PredType ps inst) tys cls = do
   let ps5 = filter noPolyPred $ Set.toList ps4
   if any (isDataPred m) (Set.toList novarps ++ ps5) && cls == qDataId
     then return    (((cls, [inst]), ps4), False)
-    else mapM_ (reportUndecidable p "derived instance" doc) ps5
-         >> return (((cls, [inst]), ps4), True)
+    else do mapM_ (reportUndecidable p "derived instance" doc) ps5
+            enter <- checkInstanceTermination m True [] p ps4 cls [inst]
+            return (((cls, [inst]), ps4), enter)
   where
     noPolyPred (Pred _ _ tys') = any (not . isSimpleTypeVar) tys'
     isSimpleTypeVar (TypeVariable _) = True
@@ -282,6 +302,59 @@ reportUndecidable p what doc pr@(Pred _ _ tys) = do
   unless (all isTypeVar tys) $ report $ errMissingInstance m p what doc pr
   where isTypeVar (TypeVariable _) = True
         isTypeVar _                = False
+
+-- Checks if the instance given by its span info, context, class identifier and
+-- instance types follows the instance termination rules.
+-- Additionally, this function takes the ident of the current module, a flag
+-- signalizing whether the instance is derived and a list of the type variables
+-- of the original instance, which is allowed to be empty.
+checkInstanceTermination :: HasSpanInfo p => ModuleIdent -> Bool -> [Ident]
+                         -> p -> PredSet -> QualIdent -> [Type] -> INCM Bool
+checkInstanceTermination m d oVars spi ps qcls iTys =
+  and <$> mapM checkInstanceTerminationPred (Set.toList ps)
+ where
+  iVars  = typeVars iTys
+  iSize  = sum (map typeSize iTys)
+  oVars' = oVars ++ identSupply
+  iDoc   = pPrint (fromQualPred m oVars' (Pred OPred qcls iTys))
+
+  -- Checks if a constraint of the instance context follows the Paterson
+  -- conditions. Only the first two of the three Paterson conditions are tested
+  -- since Curry does not yet support type functions (like type families).
+  checkInstanceTerminationPred :: Pred -> INCM Bool
+  checkInstanceTerminationPred pr@(Pred _ _ pTys) = do
+    paterson1 <- checkTypeVarQuantity (typeVars pTys)
+    paterson2 <- checkConstraintSize
+    return $ paterson1 && paterson2
+   where
+    cDoc = pPrint $ fromQualPred m oVars' pr
+
+    -- Checks if all type variables in the constraint occur at least as often
+    -- in the instance head (the first Paterson condition).
+    checkTypeVarQuantity :: [Int] -> INCM Bool
+    checkTypeVarQuantity cVars = do
+      let errVars = map (oVars' !!) (nub (cVars \\ iVars))
+      mapM_ (report . errVarQuantityConstraint d spi cDoc iDoc) errVars
+      return $ null errVars
+
+    -- Checks if the constraint is smaller than the instance head (the second
+    -- Paterson condition).
+    checkConstraintSize :: INCM Bool
+    checkConstraintSize =
+      if sum (map typeSize pTys) >= iSize
+        then report (errNonDecreasingConstraint d spi cDoc iDoc) >> return False
+        else return True
+
+-- Returns the size of the given type.
+-- The size of a type is the number of all data type constructors and type
+-- variables (counting repititions) taken together.
+typeSize :: Type -> Int
+typeSize (TypeConstructor   _) = 1
+typeSize (TypeVariable      _) = 1
+typeSize (TypeConstrained _ _) = 1
+typeSize (TypeApply   ty1 ty2) = typeSize ty1 + typeSize ty2
+typeSize (TypeArrow   ty1 ty2) = 1 + typeSize ty1 + typeSize ty2
+typeSize (TypeForall     _ ty) = typeSize ty
 
 -- Then, the compiler checks the contexts of all explicit instance declarations
 -- to detect missing super class instances. For a class declaration
@@ -374,11 +447,12 @@ reducePredSet b p what doc clsEnv ps = do
 
 instPredSet :: HasSpanInfo p => p -> String -> Doc -> InstEnv -> Pred
             -> INCM (Maybe PredSet)
-instPredSet p what doc inEnv (Pred _ qcls tys) =
+instPredSet p what doc inEnv pr@(Pred _ qcls tys) =
   case lookupInstMatch qcls tys inEnv of
     [] -> return Nothing
     [(_, ps, _, _, sigma)] -> return $ Just (subst sigma ps)
-    insts -> do report $ errInstanceOverlap p what doc qcls tys insts
+    insts -> do m <- getModuleIdent
+                report $ errInstanceOverlap m p what doc pr insts
                 return $ Just Set.empty
 
 -- ---------------------------------------------------------------------------
@@ -408,18 +482,25 @@ genInstIdent m tcEnv qcls tys =
 -- the original name in the type constructor environment.
 
 unqualInstIdent :: TCEnv -> InstIdent -> InstIdent
-unqualInstIdent tcEnv (qcls, tys) = (unqual qcls, map unqualTy tys)
-  where
-    unqual :: QualIdent -> QualIdent
-    unqual = head . flip reverseLookupByOrigName tcEnv
+unqualInstIdent tcEnv (qcls, tys) =
+  (unqualTC tcEnv qcls, map (unqualType tcEnv) tys)
 
-    unqualTy :: Type -> Type
-    unqualTy (TypeConstructor      tc) = TypeConstructor (unqual tc)
-    unqualTy (TypeApply       ty1 ty2) = TypeApply (unqualTy ty1) (unqualTy ty2)
-    unqualTy tv@(TypeVariable       _) = tv
-    unqualTy (TypeConstrained tys' tv) = TypeConstrained (map unqualTy tys') tv
-    unqualTy (TypeArrow       ty1 ty2) = TypeArrow (unqualTy ty1) (unqualTy ty2)
-    unqualTy (TypeForall       tvs ty) = TypeForall tvs (unqualTy ty)
+unqualType :: TCEnv -> Type -> Type
+unqualType tcEnv (TypeConstructor     tc) = TypeConstructor (unqualTC tcEnv tc)
+unqualType tcEnv (TypeApply      ty1 ty2) =
+  TypeApply (unqualType tcEnv ty1) (unqualType tcEnv ty2)
+unqualType _     tv@(TypeVariable      _) = tv
+unqualType tcEnv (TypeConstrained tys tv) =
+  TypeConstrained (map (unqualType tcEnv) tys) tv
+unqualType tcEnv (TypeArrow      ty1 ty2) =
+  TypeArrow (unqualType tcEnv ty1) (unqualType tcEnv ty2)
+unqualType tcEnv (TypeForall      tvs ty) = TypeForall tvs (unqualType tcEnv ty)
+
+-- TODO: With FlexibleInstances, where some types after expansion might not
+--         be in scope, is using 'head' safe or should the given name be
+--         returned as a default option?
+unqualTC :: TCEnv -> QualIdent -> QualIdent
+unqualTC tcEnv = head . flip reverseLookupByOrigName tcEnv
 
 isFunType :: Type -> Bool
 isFunType (TypeArrow         _ _) = True
@@ -453,20 +534,40 @@ errMissingInstance m p what doc predicate = spanInfoMessage (getSpanInfo p) $ vc
   , text "in" <+> text what <+> doc
   ]
 
-errInstanceOverlap :: HasSpanInfo p => p -> String -> Doc
-                   -> QualIdent -> [Type] -> [InstMatchInfo] -> Message
-errInstanceOverlap p what doc qcls tys insts = spanInfoMessage p $ vcat
-  [ text "Instance overlap for" <+> ppInstIdent (qcls, tys)
-  , text "arising in" <+> text what
-  , doc
-  , text "Matching instances:"
-  , nest 2 $ vcat $ map displayMatchingInst insts
-  ]
+errInstanceOverlap :: HasSpanInfo p => ModuleIdent -> p -> String -> Doc -> Pred
+                                    -> [InstMatchInfo] -> Message
+errInstanceOverlap m p what doc pr@(Pred _ qcls _) insts = spanInfoMessage p $
+  vcat [ text "Instance overlap for" <+> ppPred m pr
+       , text "arising in" <+> text what
+       , doc
+       , text "Matching instances:"
+       , nest 2 $ vcat $ map displayMatchingInst insts
+       ]
  where
   -- TODO: This function is very similar to 'ppInstSource', but the latter
   --         currently needs a 'TCEnv', which would need to be carried around in
   --         many functions to be available here. Check if this extra effort
   --         would produce better error messages.
   displayMatchingInst :: InstMatchInfo -> Doc
-  displayMatchingInst (m, _, itys, _, _) =
-    ppInstIdent (qcls, itys) <+> parens (text "defined in" <+> pPrint m)
+  displayMatchingInst (m', _, itys, _, _) =
+    ppPred m (Pred OPred qcls itys) <+> parens (text "defined in" <+> pPrint m')
+
+errVarQuantityConstraint :: HasSpanInfo p => Bool -> p -> Doc -> Doc -> Ident
+                                          -> Message
+errVarQuantityConstraint d spi cDoc iDoc varId = spanInfoMessage spi $ vcat
+  [ text "The type variable" <+> text (escName varId)
+    <+> text "occurs more often"
+  , text "in the constraint" <+> cDoc
+  , endDoc
+  ]
+ where
+  endDoc = if d then text "than in the head of the derived instance" $$ iDoc
+                else text "than in the instance head" <+> iDoc
+
+errNonDecreasingConstraint :: HasSpanInfo p => Bool -> p -> Doc -> Doc
+                                            -> Message
+errNonDecreasingConstraint d spi cDoc iDoc = spanInfoMessage spi $ vcat
+  [text "The type constraint" <+> cDoc <+> text "is not smaller", endDoc]
+ where
+  endDoc = if d then text "than the head of the derived instance" $$ iDoc
+                else text "than the instance head" <+> iDoc
