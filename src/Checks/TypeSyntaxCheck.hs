@@ -181,7 +181,6 @@ checkDecl (InstanceDecl p li cx qcls inst ds) = do
   (cx', inst') <- checkQualTypes cx inst
   checkSimpleContext cx'
   mapM_ (checkInstanceType p) inst'
-  checkInstanceTermination p qcls inst' cx'
   InstanceDecl p li cx' qcls inst' <$> mapM checkDecl ds
 checkDecl d                                   = return d
 
@@ -436,64 +435,6 @@ checkMPTCExt errFunc params = do
   exts <- getExtensions
   unless (MultiParamTypeClasses `elem` exts) $ report $ errFunc params
 
--- Checks if the type class given by its span info, class identifier, instance
--- types and context follows the instance termination rules.
--- TODO: Check if using the constraint span info in the error messages is better
---       If flexible instances / contexts are implemented, type synonyms have to
---         be expanded for both Paterson conditions
-checkInstanceTermination
-  :: SpanInfo -> QualIdent -> [InstanceType] -> Context -> TSCM ()
-checkInstanceTermination iSpi qcls iTys = mapM_ checkInstanceTermination'
- where
-  iVars = fv iTys
-  iSize = sum (map typeSize iTys)
-
-  -- Checks if a constraint of the instance context follows the Paterson
-  -- conditions. Only the first two of the three Paterson conditions are tested
-  -- since Curry does not yet support type functions (like type families).
-  checkInstanceTermination' :: Constraint -> TSCM ()
-  checkInstanceTermination' c@(Constraint _ _ cTys) = do
-    -- The free variables of the constraint are filtered here to avoid reporting
-    -- unbound type variables twice (see 'checkQualTypes').
-    _ <- checkTypeVarQuantity (filter (`elem` iVars) (fv cTys)) iVars
-    checkConstraintSize
-   where
-    -- Checks if all type variables in the constraint occur at least as often
-    -- in the instance head (the first Paterson condition).
-    checkTypeVarQuantity :: [Ident] -> [Ident] -> TSCM [Ident]
-    checkTypeVarQuantity (cVar : cVars) iVars' =
-      checkTypeVarQuantity cVars =<< deleteOrReportTypeVar cVar iVars'
-    checkTypeVarQuantity []             _      = return []
-
-    -- Deletes a constraint type variable from the list of instance head type
-    -- variables or reports an error if the variable couldn't be found.
-    deleteOrReportTypeVar :: Ident -> [Ident] -> TSCM [Ident]
-    deleteOrReportTypeVar cVar (iVar : iVars') =
-      if cVar == iVar then return iVars'
-                      else (iVar :) <$> deleteOrReportTypeVar cVar iVars'
-    deleteOrReportTypeVar cVar []             = do
-      report $ errVarQuantityInstanceConstraint iSpi cVar c qcls iTys
-      return []
-
-    -- Checks if the constraint is smaller than the instance head (the second
-    -- Paterson condition).
-    checkConstraintSize :: TSCM ()
-    checkConstraintSize = when (sum (map typeSize cTys) >= iSize) $ report $
-      errNonDecreasingInstanceConstraint iSpi c qcls iTys
-
--- Returns the size of the given type expression.
--- The size of a type expression is the number of all data type constructors and
--- type variables (counting repititions) taken together.
-typeSize :: TypeExpr -> Int
-typeSize (ConstructorType _ _) = 1
-typeSize (ApplyType _ ty1 ty2) = typeSize ty1 + typeSize ty2
-typeSize (VariableType    _ _) = 1
-typeSize (TupleType     _ tys) = 1 + sum (map typeSize tys)
-typeSize (ListType       _ ty) = 1 + typeSize ty
-typeSize (ArrowType _ ty1 ty2) = 1 + typeSize ty1 + typeSize ty2
-typeSize (ParenType      _ ty) = typeSize ty
-typeSize (ForallType   _ _ ty) = typeSize ty
-
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions
 -- ---------------------------------------------------------------------------
@@ -616,22 +557,3 @@ errMultiParamInstanceNoExt spi qcls inst =
      , text "An instance head must have exactly one type."
      , text "Use the MultiParamTypeClasses extension to enable"
      , text "instance declarations with zero or multiple types."]
-
-errVarQuantityInstanceConstraint
-  :: SpanInfo -> Ident -> Constraint -> QualIdent -> [InstanceType] -> Message
-errVarQuantityInstanceConstraint spi varId c qcls inst =
-  spanInfoMessage spi $ vcat
-    [ text "The type variable" <+> text (escName varId)
-      <+> text "occurs more often"
-    , text "in the constraint" <+> pPrint c
-    , text "than in the instance head"
-      <+> hsep (pPrint qcls : map ppInstanceType inst)
-    ]
-
-errNonDecreasingInstanceConstraint
-  :: SpanInfo -> Constraint -> QualIdent -> [InstanceType] -> Message
-errNonDecreasingInstanceConstraint spi c qcls inst = spanInfoMessage spi $ vcat
-  [ text "The type constraint" <+> pPrint c <+> text "is not smaller"
-  , text "than the instance head"
-    <+> hsep (pPrint qcls : map ppInstanceType inst)
-  ]
