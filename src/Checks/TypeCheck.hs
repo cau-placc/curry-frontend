@@ -55,9 +55,9 @@ import           Data.List           (nub, nubBy, partition, sortBy, (\\))
 import qualified Data.Map            as Map (Map, empty, insert, lookup)
 import           Data.Maybe                 (fromJust, fromMaybe, isJust)
 import qualified Data.Set.Extra      as Set ( Set, concatMapM, deleteMin, empty
-                                            , fromList, insert, map, member
-                                            , notMember, partition, singleton
-                                            , toList, union, unions )
+                                            , filter, fromList, insert, map
+                                            , member, notMember, partition
+                                            , singleton, toList, union, unions )
 
 import Curry.Base.Ident
 import Curry.Base.Pretty
@@ -521,7 +521,7 @@ tcPDeclGroup ps pds = do
   lps'' <- foldM (uncurry . defaultPDecl fvs) lps' impPds'
   theta' <- getTypeSubst
   let impPds'' = map (uncurry (fixType . gen fvs lps'' . subst theta')) impPds'
-  mapM_ (reportFlexibleContextDecl m) impPds''
+  mapM_ (reportFlexibleContextDecl m fvs) impPds''
   modifyValueEnv $ flip (rebindVars m) (concatMap (declVars . snd) impPds'')
   (ps'', expPds') <- mapAccumM (uncurry . tcCheckPDecl) gps expPds
   return (ps'', impPds'' ++ expPds')
@@ -1692,42 +1692,46 @@ hasInstance inEnv qcls tys = isJust (lookupInstExact (qcls, tys) (fst inEnv)) ||
 -- FlexibleContexts language extension, 'reportFlexibleContextDecl' is called at
 -- the end of inferring types for a declaration group.
 
-reportFlexibleContextDecl :: ModuleIdent -> PDecl PredType -> TCM ()
-reportFlexibleContextDecl m (_, FunctionDecl spi (PredType ps _) f _) =
-  let flexCs = Set.toList $ snd $ partitionPredSetOnlyVars ps
+reportFlexibleContextDecl :: ModuleIdent -> Set.Set Int -> PDecl PredType
+                          -> TCM ()
+reportFlexibleContextDecl m fvs (_, FunctionDecl spi (PredType ps _) f _) =
+  let flexCs = Set.toList $ snd $ partitionPredSetOnlyVars $
+                            snd $ splitPredSetAny fvs ps
       what   = "function declaration"
   in mapM_ (report . errFlexibleContext m spi what f) flexCs
-reportFlexibleContextDecl m (_, PatternDecl _ t _) =
-  reportFlexibleContextPattern m t
-reportFlexibleContextDecl _ _ =
+reportFlexibleContextDecl m fvs (_, PatternDecl _ t _) =
+  reportFlexibleContextPattern m fvs t
+reportFlexibleContextDecl _ _ _ =
   report $ internalError "TypeCheck.reportFlexibleContextDecl"
 
-reportFlexibleContextPattern :: ModuleIdent -> Pattern PredType -> TCM ()
-reportFlexibleContextPattern _ (LiteralPattern  _ _ _) = ok
-reportFlexibleContextPattern _ (NegativePattern _ _ _) = ok
-reportFlexibleContextPattern m (VariablePattern spi (PredType ps _) v) =
-  let flexCs = Set.toList $ snd $ partitionPredSetOnlyVars ps
+reportFlexibleContextPattern :: ModuleIdent -> Set.Set Int -> Pattern PredType
+                             -> TCM ()
+reportFlexibleContextPattern _ _   (LiteralPattern  _ _ _) = ok
+reportFlexibleContextPattern _ _   (NegativePattern _ _ _) = ok
+reportFlexibleContextPattern m fvs (VariablePattern spi (PredType ps _) v) =
+  let flexCs = Set.toList $ snd $ partitionPredSetOnlyVars $
+                            snd $ splitPredSetAny fvs ps
       what   = "variable"
   in mapM_ (report . errFlexibleContext m spi what v) flexCs
-reportFlexibleContextPattern m (ConstructorPattern  _ _ _ ts) =
-  mapM_ (reportFlexibleContextPattern m) ts
-reportFlexibleContextPattern m (InfixPattern     _ _ t1 _ t2) =
-  mapM_ (reportFlexibleContextPattern m) [t1, t2]
-reportFlexibleContextPattern m (ParenPattern             _ t) =
-  reportFlexibleContextPattern m t
-reportFlexibleContextPattern m (RecordPattern       _ _ _ fs) =
-  mapM_ (\(Field _ _ t) -> reportFlexibleContextPattern m t) fs
-reportFlexibleContextPattern m (TuplePattern            _ ts) =
-  mapM_ (reportFlexibleContextPattern m) ts
-reportFlexibleContextPattern m (ListPattern           _ _ ts) =
-  mapM_ (reportFlexibleContextPattern m) ts
-reportFlexibleContextPattern m (AsPattern              _ _ t) =
-  reportFlexibleContextPattern m t
-reportFlexibleContextPattern m (LazyPattern              _ t) =
-  reportFlexibleContextPattern m t
-reportFlexibleContextPattern _ (FunctionPattern      _ _ _ _) =
+reportFlexibleContextPattern m fvs (ConstructorPattern  _ _ _ ts) =
+  mapM_ (reportFlexibleContextPattern m fvs) ts
+reportFlexibleContextPattern m fvs (InfixPattern     _ _ t1 _ t2) =
+  mapM_ (reportFlexibleContextPattern m fvs) [t1, t2]
+reportFlexibleContextPattern m fvs (ParenPattern             _ t) =
+  reportFlexibleContextPattern m fvs t
+reportFlexibleContextPattern m fvs (RecordPattern       _ _ _ fs) =
+  mapM_ (\(Field _ _ t) -> reportFlexibleContextPattern m fvs t) fs
+reportFlexibleContextPattern m fvs (TuplePattern            _ ts) =
+  mapM_ (reportFlexibleContextPattern m fvs) ts
+reportFlexibleContextPattern m fvs (ListPattern           _ _ ts) =
+  mapM_ (reportFlexibleContextPattern m fvs) ts
+reportFlexibleContextPattern m fvs (AsPattern              _ _ t) =
+  reportFlexibleContextPattern m fvs t
+reportFlexibleContextPattern m fvs (LazyPattern              _ t) =
+  reportFlexibleContextPattern m fvs t
+reportFlexibleContextPattern _ _   (FunctionPattern      _ _ _ _) =
   report $ internalError "TypeCheck.reportFlexibleContextPattern"
-reportFlexibleContextPattern _ (InfixFuncPattern   _ _ _ _ _) =
+reportFlexibleContextPattern _ _   (InfixFuncPattern   _ _ _ _ _) =
   report $ internalError "TypeCheck.reportFlexibleContextPattern"
 
 -- When a constrained type variable that is not free in the type environment
@@ -1762,7 +1766,8 @@ applyDefaults p what doc fvs ps ty = do
       theta = foldr (bindDefault defs inEnv ps') idSubst $ nub
                 [ tv | Pred _ qcls [TypeVariable tv] <- Set.toList ps'
                      , tv `Set.notMember` fvs, isSimpleNumClass clsEnv qcls ]
-      ps''  = fst (partitionPredSetSomeVars exPs (subst theta ps))
+      ps''  = Set.filter (\pr -> pr `psMember` exPs || not (null (typeVars pr)))
+                         (subst theta ps)
       ty'   = subst theta ty
       tvs'  = nub $ filter (`Set.notMember` fvs) (typeVars ps'')
   mapM_ (report . errAmbiguousTypeVariable m p what doc ps'' ty') tvs'
@@ -1967,10 +1972,12 @@ expandPolyICC fstIcc qty = do
 -- contain only type variables that are in the given set of type variables, but
 -- at least one of them.
 
-splitPredSetAny :: Set.Set Int -> LPredSet -> (LPredSet, LPredSet)
+splitPredSetAny :: IsPred a => Set.Set Int -> Set.Set a
+                            -> (Set.Set a, Set.Set a)
 splitPredSetAny fvs = Set.partition $ any (`Set.member` fvs) . typeVars
 
-splitPredSetAll :: Set.Set Int -> LPredSet -> (LPredSet, LPredSet)
+splitPredSetAll :: IsPred a => Set.Set Int -> Set.Set a
+                            -> (Set.Set a, Set.Set a)
 splitPredSetAll fvs = Set.partition $
   (\vs -> not (null vs) && all (`Set.member` fvs) vs) . typeVars
 

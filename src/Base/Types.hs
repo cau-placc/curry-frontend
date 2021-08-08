@@ -258,7 +258,7 @@ instance Ord LPred where
 -- The 'IsPred' class provides a common interface for 'Pred's and 'LPred's,
 -- so that many functions can be applied to both kinds of predicates and
 -- predicate sets.
-class Ord a => IsPred a where
+class (Ord a, IsType a) => IsPred a where
   getPred :: a -> Pred
   -- TODO: Is there a better name? (Should have been 'fromPred', which is taken)
   getFromPred :: Pred -> a
@@ -325,7 +325,7 @@ removeICCFlag :: IsPred a => Set.Set a -> Set.Set a
 removeICCFlag ps = case Set.lookupMin ps of
   Just pr | (\(Pred isIcc _ _) -> isIcc == ICC) (getPred pr) ->
     Set.insert (modifyPred (\(Pred _ qcls tys) -> Pred OPred qcls tys) pr)
-                (Set.deleteMin ps)
+               (Set.deleteMin ps)
   _ -> ps
 
 -- TODO: Is the following function actually useful? Reducing a predicate set
