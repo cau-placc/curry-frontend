@@ -35,6 +35,7 @@ import Curry.Base.Ident
 import Curry.Base.Pretty
 import Curry.Syntax.Pretty
 
+import Base.CurryTypes
 import Base.Subst
 import Base.Types
 import Base.TypeSubst
@@ -44,7 +45,8 @@ import Base.TypeSubst
 type InstIdent = (QualIdent, [Type])
 
 ppInstIdent :: InstIdent -> Doc
-ppInstIdent (qcls, tys) = ppQIdent qcls <+> hsep (map pPrint tys)
+ppInstIdent (qcls, tys) =
+  ppQIdent qcls <+> hsep (map (pPrintPrec 2 . fromType identSupply) tys)
 
 -- An 'InstInfo' contains all relevant information about an instance declaration
 -- beyond its identifier. These are its module, the given instance context, and
