@@ -1639,14 +1639,15 @@ reducePredSet ps = do
 --                  instance C [a] Int
 --                  Then, a constraint like C [a] b can be reduced.
 instPredSet :: LPred -> InstEnv' -> TCM (Maybe LPredSet)
-instPredSet (LPred (Pred _ qcls tys) p what doc) inEnv =
+instPredSet lpr@(LPred (Pred _ qcls tys) p what doc) inEnv =
   case Map.lookup qcls $ snd inEnv of
     Just tyss | tys `elem` tyss -> return $ Just emptyLPredSet
     _ -> case lookupInstMatch qcls tys (fst inEnv) of
           [] -> return Nothing
           [(_, ps, _, _, sigma)] -> return $
             Just (Set.map (\pr -> LPred pr p what doc) (subst sigma ps))
-          insts -> do report $ errInstanceOverlap p what doc qcls tys insts
+          insts -> do m <- getModuleIdent
+                      report $ errInstanceOverlap m lpr insts
                       return $ Just emptyLPredSet
 
 -- TODO: If FlexibleContexts is implemented, this method should suggest
@@ -2077,19 +2078,19 @@ errMissingInstance m p what doc pr = spanInfoMessage p $ vcat
   , doc
   ]
 
-errInstanceOverlap :: HasSpanInfo p => p -> String -> Doc
-                   -> QualIdent -> [Type] -> [InstMatchInfo] -> Message
-errInstanceOverlap p what doc qcls tys insts = spanInfoMessage p $ vcat
-  [ text "Instance overlap for" <+> ppInstIdent (qcls, tys)
-  , text "arising from" <+> text what
-  , doc
-  , text "Matching instances:"
-  , nest 2 $ vcat $ map displayMatchingInst insts
-  ]
+errInstanceOverlap :: ModuleIdent -> LPred -> [InstMatchInfo] -> Message
+errInstanceOverlap m (LPred pr@(Pred _ qcls _) p what doc) insts =
+  spanInfoMessage p $ vcat
+    [ text "Instance overlap for" <+> ppPred m pr
+    , text "arising from" <+> text what
+    , doc
+    , text "Matching instances:"
+    , nest 2 $ vcat $ map displayMatchingInst insts
+    ]
  where
   displayMatchingInst :: InstMatchInfo -> Doc
-  displayMatchingInst (m, _, itys, _, _) =
-    ppInstIdent (qcls, itys) <+> text "from" <+> pPrint m
+  displayMatchingInst (m', _, itys, _, _) =
+    ppPred m (Pred OPred qcls itys) <+> text "from" <+> pPrint m'
 
 errFlexibleContext :: HasSpanInfo a => ModuleIdent -> a -> String -> Ident
                    -> Pred -> Message
