@@ -18,3 +18,5 @@ f2 = let f2a x = methodC True x
 
 f3 = let (_, f3a) = (False, methodC True)
      in (f3a True, f3a (1 :: Int))
+
+f4 x = let f4a y = methodC x y && x in f4a True 

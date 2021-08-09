@@ -4,9 +4,7 @@ module MPTCInstanceTermination where
 
 class C a b
 
-instance C a a => C [a] Bool
-
-instance C a b => C [a] Int
+instance C b b => C [b] Bool
 
 class D a
 

@@ -20,3 +20,16 @@ class D where
   methodD :: Bool
 
 f2 = methodD
+
+class E a b c where
+  methodE :: a -> b -> c -> Bool
+
+instance E [a] [a] [b] where
+  methodE _ _ _ = True
+
+instance E [a] [b] [b] where
+  methodE _ _ _ = False
+
+f3 x = let f' :: a -> Bool
+           f' y = methodE [x] [True] [y]
+       in f' True : x

@@ -197,18 +197,47 @@ failInfos = map (uncurry mkFailTest)
       , "inferred for function `f2'"
       ]
     )
+  , ("MPTCDeriving",
+      [ "The type constraint C a a is not smaller"
+      , "than the head of the derived instance", "Prelude.Eq (T1 a)"
+      , "The type variable `a' occurs more often", "in the constraint C a a"
+      , "than in the head of the derived instance" -- Prelude.Eq (T1 a)
+      , "Missing instance for C [a] [b]", "in derived instance Prelude.Eq (T2 a b)"
+      , "Instance overlap for C (a, b) (b, b)"
+      , "arising in derived instance", "Prelude.Show (T3 a b)"
+      , "Matching instances:", "C (a, b) (b, c) (defined in MPTCDeriving)"
+      , "C (a, b) (c, b) (defined in MPTCDeriving)"
+      ]
+    )
   , ("MPTCFlexibleContext",
       [ "Constraint with non-variable argument C Prelude.Bool" -- C Prelude.Bool a
       , "occurring in the context of the inferred type for function declaration `f1'"
       , "occurring in the context of the inferred type for function declaration `f2a'"
       , "Type error in application", "f3a (1 :: Int)"
       , "Types Prelude.Bool and Prelude.Int are incompatible"
+      , "occurring in the context of the inferred type for function declaration `f4a'"
+      ]
+    )
+  , ("MPTCInstanceOverlap",
+      -- The following error messages expected for this module explicitly
+      -- include source span data, since that is partly the only part of the
+      -- messages that differentiates them.
+      [ "MPTCInstanceOverlap.curry:14:6-14:12 Error:"
+      , "Instance overlap for C [Prelude.Bool] [Prelude.Bool] [Prelude.Bool]"
+      , "arising from variable", "methodC"
+      , "Matching instances:", "C [a] [a] [b] from MPTCInstanceOverlap"
+      , "C [a] [b] [b] from MPTCInstanceOverlap"
+      , "MPTCInstanceOverlap.curry:17:12-17:18 Error:"
+      , "MPTCInstanceOverlap.curry:19:18-19:24 Error:"
+      , "MPTCInstanceOverlap.curry:21:12-21:18 Error:"
+      , "Missing instance for C [" -- C [a] [b] [c]
+      , "MPTCInstanceOverlap.curry:25:19-25:25 Error:"
+      , "MPTCInstanceOverlap.curry:29:11-29:12 Error:", "f'"
       ]
     )
   , ("MPTCInstanceTermination",
-      [ "The type variable `a' occurs more often"
-      , "in the constraint C a a", "than in the instance head C [a] Bool"
-      , "Unbound type variable b" -- instance C a b => C [a] Bool
+      [ "The type variable `b' occurs more often"
+      , "in the constraint C b b", "than in the instance head C [b] Bool"
       , "The type constraint C a a is not smaller", "than the instance head D [a]"
       ]
     )
@@ -223,12 +252,22 @@ failInfos = map (uncurry mkFailTest)
     )
   , ("MPTCMissingInstance",
       [ "Missing instance for C Prelude.Bool [Prelude.Bool]" -- f1 = methodC True [True]
-      , "Missing instance for D" -- f2 = methodD
+      , "arising from variable", "methodC"
+      , "Missing instance for D", {- arising from variable -} "methodD" -- f2 = methodD
+      , "Missing instance for E [[Prelude.Bool]] [Prelude.Bool] [" -- E [[Bool]] [Bool] a
+      , {- arising from variable -} "methodE"
       ]
     )
   , ("MPTCMissingSuperClassInstance",
       [ "Missing instance for C Prelude.Int Prelude.Bool"
       , "in instance declaration D Prelude.Bool Prelude.Int"
+      , "Missing instance for C (b, a) (a, b)"
+      , "in instance declaration D (a, b) (b, a)"
+      , "Instance overlap for C (a, b) (a, b)"
+      , "arising in instance declaration", "D (a, b) (a, b)"
+      , "Matching instances:"
+      , "C (a, b) (a, c) (defined in MPTCMissingSuperClassInstance)"
+      , "C (a, b) (c, b) (defined in MPTCMissingSuperClassInstance)"
       , "Missing instance for D Prelude.Bool Prelude.Bool"
       , "in instance declaration F Prelude.Bool"
       , "Missing instance for E" -- "in instance declaration F Prelude.Bool"
