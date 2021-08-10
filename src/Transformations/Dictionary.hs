@@ -763,7 +763,7 @@ instPredList (Pred _ cls tys) = do
   case lookupInstMatch cls tys inEnv of
     [] -> internalError $ "Dictionary.instPredList: " ++
                             "Cound not find an instance for " ++ show (cls, tys)
-    [(m, ps, itys, _, tau)] -> return (m, itys, Set.toAscList (subst tau ps))
+    [(m, ps, itys, _, tau)] -> return (m, itys, subst tau (Set.toAscList ps))
     _ : _ -> internalError $ "Dictionary.instPredList: " ++
                                "Multiple instances for " ++ show (cls, tys)
 
