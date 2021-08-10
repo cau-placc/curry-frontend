@@ -395,6 +395,7 @@ passInfos = map mkPassTest
   , "MPTCListLike"
   , "MPTCNoExtension"
   , "MPTCNullaryClasses"
+  , "MPTCPotentialInstanceOverlap"
   , "MPTCSuperClasses"
   , "NegLit"
   , "Newtype1"

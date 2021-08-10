@@ -44,6 +44,18 @@ f2 = methodD
 f3 :: G a a b => (a b (a b b), Bool)
 f3 = (methodG, methodF)
 
+instance C [a] where
+  methodC = []
+
+instance D ((,,) a) [a] [a] where
+  methodD = (head methodC, methodC, methodC)
+
+instance C a => D ((,,) a) [b] [b] where
+  methodD = (methodC, methodC, methodC)
+
+instance C a => E ((,,) a) [b] where
+  methodE = (methodC, methodC, True)
+
 -- Expected result: (False, Right True)
 testExp1 :: (Bool, Either Bool Bool)
 testExp1 = methodG
@@ -51,3 +63,12 @@ testExp1 = methodG
 -- Expected result: (True, True)
 testExp2 :: (Bool, Bool)
 testExp2 = let methodD' = methodD in (fst methodE, fst methodD' && snd methodD')
+
+-- The following function is accepted, just like in Haskell, even though it
+-- could be considered to cause an overlapping instance error, since the
+-- instances for 'D' declared on lines 58 and 61 both fit, but only second one
+-- is suitable for being the super class instance required by the instance for
+-- 'E' declared on line 64.
+-- Expected result: (True, [], [])
+testExp3 :: (Bool, [Bool], [Bool])
+testExp3 = f2
