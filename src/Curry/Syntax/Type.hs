@@ -547,14 +547,17 @@ instance HasSpanInfo (Decl a) where
   updateEndPos d@(DefaultDecl _ _) = d
   updateEndPos d@(ClassDecl _ _ _ _ _ (d':ds)) =
     setEndPosition (getSrcSpanEnd (last (d':ds))) d
-  updateEndPos d@(ClassDecl (SpanInfo _ ss) _ _ _ _ _) =
-    setEndPosition (end (last ss)) d
-  updateEndPos d@(ClassDecl _ _ _ _ _ _) = d
+  updateEndPos d@(ClassDecl spi _ _ cls clsvars _) =
+    let sipEnd = map end $ take 1 $ reverse $ getSrcInfoPoints spi
+        ends = filter (/= NoPos) $ getSrcSpanEnd (last (cls : clsvars)) : sipEnd
+    in if null ends then d else setEndPosition (maximum ends) d
   updateEndPos d@(InstanceDecl _ _ _ _ _ (d':ds)) =
     setEndPosition (getSrcSpanEnd (last (d':ds))) d
-  updateEndPos d@(InstanceDecl (SpanInfo _ ss) _ _ _ _ _) =
-    setEndPosition (end (last ss)) d
-  updateEndPos d@(InstanceDecl _ _ _ _ _ _) = d
+  updateEndPos d@(InstanceDecl spi _ _ qcls inst _) =
+    let sipEnd = map end $ take 1 $ reverse $ getSrcInfoPoints spi
+        ends = filter (/= NoPos) $
+                 last (getSrcSpanEnd qcls : map getSrcSpanEnd inst) : sipEnd
+    in if null ends then d else setEndPosition (maximum ends) d
 
   getLayoutInfo (ClassDecl _ li _ _ _ _) = li
   getLayoutInfo (InstanceDecl _ li _ _ _ _) = li
