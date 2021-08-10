@@ -521,7 +521,7 @@ tcPDeclGroup ps pds = do
   lps'' <- foldM (uncurry . defaultPDecl fvs) lps' impPds'
   theta' <- getTypeSubst
   let impPds'' = map (uncurry (fixType . gen fvs lps'' . subst theta')) impPds'
-  mapM_ (reportFlexibleContextDecl m fvs) impPds''
+  mapM_ (reportFlexibleContextDecl m) impPds''
   modifyValueEnv $ flip (rebindVars m) (concatMap (declVars . snd) impPds'')
   (ps'', expPds') <- mapAccumM (uncurry . tcCheckPDecl) gps expPds
   return (ps'', impPds'' ++ expPds')
@@ -1693,46 +1693,42 @@ hasInstance inEnv qcls tys = isJust (lookupInstExact (qcls, tys) (fst inEnv)) ||
 -- FlexibleContexts language extension, 'reportFlexibleContextDecl' is called at
 -- the end of inferring types for a declaration group.
 
-reportFlexibleContextDecl :: ModuleIdent -> Set.Set Int -> PDecl PredType
-                          -> TCM ()
-reportFlexibleContextDecl m fvs (_, FunctionDecl spi (PredType ps _) f _) =
-  let flexCs = Set.toList $ snd $ partitionPredSetOnlyVars $
-                            snd $ splitPredSetAny fvs ps
+reportFlexibleContextDecl :: ModuleIdent -> PDecl PredType -> TCM ()
+reportFlexibleContextDecl m (_, FunctionDecl spi (PredType ps _) f _) =
+  let flexCs = Set.toList $ snd $ partitionPredSetOnlyVars ps
       what   = "function declaration"
   in mapM_ (report . errFlexibleContext m spi what f) flexCs
-reportFlexibleContextDecl m fvs (_, PatternDecl _ t _) =
-  reportFlexibleContextPattern m fvs t
-reportFlexibleContextDecl _ _ _ =
+reportFlexibleContextDecl m (_, PatternDecl _ t _) =
+  reportFlexibleContextPattern m t
+reportFlexibleContextDecl _ _ =
   report $ internalError "TypeCheck.reportFlexibleContextDecl"
 
-reportFlexibleContextPattern :: ModuleIdent -> Set.Set Int -> Pattern PredType
-                             -> TCM ()
-reportFlexibleContextPattern _ _   (LiteralPattern  _ _ _) = ok
-reportFlexibleContextPattern _ _   (NegativePattern _ _ _) = ok
-reportFlexibleContextPattern m fvs (VariablePattern spi (PredType ps _) v) =
-  let flexCs = Set.toList $ snd $ partitionPredSetOnlyVars $
-                            snd $ splitPredSetAny fvs ps
+reportFlexibleContextPattern :: ModuleIdent -> Pattern PredType -> TCM ()
+reportFlexibleContextPattern _ (LiteralPattern  _ _ _) = ok
+reportFlexibleContextPattern _ (NegativePattern _ _ _) = ok
+reportFlexibleContextPattern m (VariablePattern spi (PredType ps _) v) =
+  let flexCs = Set.toList $ snd $ partitionPredSetOnlyVars ps
       what   = "variable"
   in mapM_ (report . errFlexibleContext m spi what v) flexCs
-reportFlexibleContextPattern m fvs (ConstructorPattern  _ _ _ ts) =
-  mapM_ (reportFlexibleContextPattern m fvs) ts
-reportFlexibleContextPattern m fvs (InfixPattern     _ _ t1 _ t2) =
-  mapM_ (reportFlexibleContextPattern m fvs) [t1, t2]
-reportFlexibleContextPattern m fvs (ParenPattern             _ t) =
-  reportFlexibleContextPattern m fvs t
-reportFlexibleContextPattern m fvs (RecordPattern       _ _ _ fs) =
-  mapM_ (\(Field _ _ t) -> reportFlexibleContextPattern m fvs t) fs
-reportFlexibleContextPattern m fvs (TuplePattern            _ ts) =
-  mapM_ (reportFlexibleContextPattern m fvs) ts
-reportFlexibleContextPattern m fvs (ListPattern           _ _ ts) =
-  mapM_ (reportFlexibleContextPattern m fvs) ts
-reportFlexibleContextPattern m fvs (AsPattern              _ _ t) =
-  reportFlexibleContextPattern m fvs t
-reportFlexibleContextPattern m fvs (LazyPattern              _ t) =
-  reportFlexibleContextPattern m fvs t
-reportFlexibleContextPattern _ _   (FunctionPattern      _ _ _ _) =
+reportFlexibleContextPattern m (ConstructorPattern _ _ _ ts) =
+  mapM_ (reportFlexibleContextPattern m) ts
+reportFlexibleContextPattern m (InfixPattern    _ _ t1 _ t2) =
+  mapM_ (reportFlexibleContextPattern m) [t1, t2]
+reportFlexibleContextPattern m (ParenPattern            _ t) =
+  reportFlexibleContextPattern m t
+reportFlexibleContextPattern m (RecordPattern      _ _ _ fs) =
+  mapM_ (\(Field _ _ t) -> reportFlexibleContextPattern m t) fs
+reportFlexibleContextPattern m (TuplePattern           _ ts) =
+  mapM_ (reportFlexibleContextPattern m) ts
+reportFlexibleContextPattern m (ListPattern          _ _ ts) =
+  mapM_ (reportFlexibleContextPattern m) ts
+reportFlexibleContextPattern m (AsPattern             _ _ t) =
+  reportFlexibleContextPattern m t
+reportFlexibleContextPattern m (LazyPattern             _ t) =
+  reportFlexibleContextPattern m t
+reportFlexibleContextPattern _ (FunctionPattern     _ _ _ _) =
   report $ internalError "TypeCheck.reportFlexibleContextPattern"
-reportFlexibleContextPattern _ _   (InfixFuncPattern   _ _ _ _ _) =
+reportFlexibleContextPattern _ (InfixFuncPattern  _ _ _ _ _) =
   report $ internalError "TypeCheck.reportFlexibleContextPattern"
 
 -- When a constrained type variable that is not free in the type environment
