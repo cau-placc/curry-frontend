@@ -27,7 +27,7 @@ module Checks.InterfaceSyntaxCheck (intfSyntaxCheck) where
 import Prelude hiding ((<>))
 #endif
 
-import           Control.Monad            (liftM, liftM2, unless, when)
+import           Control.Monad            (filterM, liftM, liftM2, unless, when)
 import qualified Control.Monad.State as S
 import           Data.List                (nub, partition)
 import           Data.Maybe               (isNothing)
@@ -37,6 +37,7 @@ import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.TopEnv
 import Base.Utils    (findMultiples, findDouble)
 
+import Env.Class (funDepCoverage, toFunDep)
 import Env.TypeConstructor
 import Env.Type
 
@@ -44,7 +45,6 @@ import Curry.Base.Ident
 import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
-import Curry.Syntax.Pretty
 
 data ISCState = ISCState
   { typeEnv :: TypeEnv
@@ -71,18 +71,18 @@ intfSyntaxCheck (Interface n is ds) = (Interface n is ds', reverse $ errors s')
 -- The latter must not occur in type expressions in interfaces.
 
 bindType :: IDecl -> TypeEnv -> TypeEnv
-bindType (IInfixDecl           _ _ _ _) = id
-bindType (HidingDataDecl      _ tc _ _) = qualBindTopEnv tc (Data tc [])
-bindType (IDataDecl      _ tc _ _ cs _) = qualBindTopEnv tc $
+bindType (IInfixDecl             _ _ _ _) = id
+bindType (HidingDataDecl        _ tc _ _) = qualBindTopEnv tc (Data tc [])
+bindType (IDataDecl        _ tc _ _ cs _) = qualBindTopEnv tc $
   Data tc (map constrId cs)
-bindType (INewtypeDecl   _ tc _ _ nc _) = qualBindTopEnv tc $
+bindType (INewtypeDecl     _ tc _ _ nc _) = qualBindTopEnv tc $
   Data tc [nconstrId nc]
-bindType (ITypeDecl         _ tc _ _ _) = qualBindTopEnv tc (Alias tc)
-bindType (IFunctionDecl      _ _ _ _ _) = id
-bindType (HidingClassDecl  _ _ cls _ _) = qualBindTopEnv cls $ Class cls []
-bindType (IClassDecl _ _ cls _ _ ms hs) = qualBindTopEnv cls $
+bindType (ITypeDecl           _ tc _ _ _) = qualBindTopEnv tc (Alias tc)
+bindType (IFunctionDecl        _ _ _ _ _) = id
+bindType (HidingClassDecl  _ _ cls _ _ _) = qualBindTopEnv cls $ Class cls []
+bindType (IClassDecl _ _ cls _ _ _ ms hs) = qualBindTopEnv cls $
   Class cls (filter (`notElem` hs) (map imethod ms))
-bindType (IInstanceDecl    _ _ _ _ _ _) = id
+bindType (IInstanceDecl      _ _ _ _ _ _) = id
 
 -- The checks applied to the interface are similar to those performed
 -- during syntax checking of type expressions.
@@ -111,18 +111,20 @@ checkIDecl (ITypeDecl p tc k tvs ty) = do
   liftM (ITypeDecl p tc k tvs) (checkClosedType tvs ty)
 checkIDecl (IFunctionDecl p f cm n qty) =
   liftM (IFunctionDecl p f cm n) (checkQualType qty)
-checkIDecl (HidingClassDecl p cx qcls k clsvars) = do
+checkIDecl (HidingClassDecl p cx qcls k clsvars funDeps) = do
   checkTypeVars "hiding class declaration" clsvars
   cx' <- checkClosedContext clsvars cx
   checkSimpleContext cx'
-  return $ HidingClassDecl p cx' qcls k clsvars
-checkIDecl (IClassDecl p cx qcls k clsvars ms hs) = do
+  funDeps' <- filterM (checkClosedFunDep clsvars) funDeps
+  return $ HidingClassDecl p cx' qcls k clsvars funDeps'
+checkIDecl (IClassDecl p cx qcls k clsvars funDeps ms hs) = do
   checkTypeVars "class declaration" clsvars
   cx' <- checkClosedContext clsvars cx
   checkSimpleContext cx'
-  ms' <- mapM (checkIMethodDecl clsvars) ms
+  funDeps' <- filterM (checkClosedFunDep clsvars) funDeps
+  ms' <- mapM (checkIMethodDecl clsvars funDeps') ms
   checkHidden (errNoElement "method" "class") qcls (map imethod ms') hs
-  return $ IClassDecl p cx' qcls k clsvars ms' hs
+  return $ IClassDecl p cx' qcls k clsvars funDeps' ms' hs
 checkIDecl (IInstanceDecl p cx qcls inst is m) = do
   checkClass qcls
   (cx', inst') <- checkQualTypes cx inst
@@ -178,10 +180,11 @@ checkSimpleConstraint :: Constraint -> ISC ()
 checkSimpleConstraint c@(Constraint _ _ tys) =
   unless (all isVariableType tys) $ report $ errIllegalSimpleConstraint c
 
-checkIMethodDecl :: [Ident] -> IMethodDecl -> ISC IMethodDecl
-checkIMethodDecl tvs (IMethodDecl p f a qty) = do
+checkIMethodDecl :: [Ident] -> [FunDep] -> IMethodDecl -> ISC IMethodDecl
+checkIMethodDecl tvs funDeps (IMethodDecl p f a qty) = do
   qty'@(QualTypeExpr _ cx _) <- checkQualType qty
-  mapM_ (report . errAmbiguousType f) (filter (`notElem` fv qty') tvs)
+  let covVars = funDepCoverage tvs (map (toFunDep tvs) funDeps) (fv qty')
+  mapM_ (report . errAmbiguousType f) (filter (`notElem` covVars) tvs)
   mapM_ (report . errConstrainedClassVariables f)
         (filter ((\vs -> not (null vs) && all (`elem` tvs) vs) . fv) cx)
   return $ IMethodDecl p f a qty'
@@ -219,6 +222,12 @@ checkConstraint :: Constraint -> ISC Constraint
 checkConstraint (Constraint spi qcls tys) = do
   checkClass qcls
   Constraint spi qcls `liftM` (mapM checkType tys)
+
+checkClosedFunDep :: [Ident] -> FunDep -> ISC Bool
+checkClosedFunDep clsvars (FunDep _ ltvs rtvs) = do
+  let unboundVars = filter (`notElem` clsvars) $ ltvs ++ rtvs
+  mapM_ (report . errUnboundVariable) unboundVars
+  return $ null unboundVars
 
 checkClass :: QualIdent -> ISC ()
 checkClass qcls = do
