@@ -79,7 +79,7 @@ exportInterface' m es pEnv tcEnv vEnv clsEnv inEnv = Interface m imports decls'
   precs   = foldr (infixDecl m pEnv) [] es
   types   = foldr (typeDecl m tcEnv clsEnv tvs) [] es
   values  = foldr (valueDecl m tcEnv vEnv tvs) [] es
-  (inExps, insts) = getExportedInsts (initInstExports m inEnv)
+  (inExps, insts) = getExportedInsts (initInstExports m clsEnv inEnv)
   decls   = map ID (precs ++ types ++ values) ++ insts
   decls'  = closeInterface m tcEnv clsEnv inEnv tvs Set.empty inExps decls
 
@@ -127,7 +127,8 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
             k'   = fromKind' k n
             tvs' = take n tvs
             ty'  = fromQualType m tvs' ty
-    [TypeClass qcls k ms] -> IClassDecl NoPos cx qcls' k' clsvars ms' hs : ds
+    [TypeClass qcls k ms] ->
+      IClassDecl NoPos cx qcls' k' clsvars funDeps ms' hs : ds
       where qcls'   = qualUnqualify m qcls
             cx      = [ Constraint NoSpanInfo (qualUnqualify m qscls)
                           (map (VariableType NoSpanInfo) sclsvars)
@@ -136,6 +137,7 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
             n       = kindArity k
             k'      = fromClassKind k n
             clsvars = take n tvs
+            funDeps = map (fromFunDep clsvars) (classFunDeps qcls clsEnv)
             ms'     = map (methodDecl m tvs) ms
             hs      = filter (`notElem` xs) (map methodName ms)
     _ -> internalError "Exports.typeDecl"
@@ -219,14 +221,27 @@ type InstExportMap = Map.Map (Set.Set QualIdent) [InstIdent]
 -- always exported if they are in the instance environment. This has to be done
 -- as we cannot limit the modules that could use these instances like we can
 -- with other instances.
-initInstExports :: ModuleIdent -> InstEnv -> InstExportMap
-initInstExports m = Map.fromListWith (++) . map instExpMapEntry . instEnvList
+--
+-- Instances of classes with functional dependencies can be used to improve
+-- inferred types even if some of the types occurring in the instance are not in
+-- scope. For example, consider a class C a b c | a -> b and an instance
+-- C Bool Int T, where T is some locally defined type that is not exported.
+-- Then, if a predicate of the form C Bool t1 t2 is inferred while type-checking
+-- a function in some module importing the module of this instance, it can be
+-- inferred that t1 must be Int because of the instance. Therefore, the instance
+-- types are not taken into account when deciding whether instances of classes
+-- with functional dependencies should be exported.
+
+initInstExports :: ModuleIdent -> ClassEnv -> InstEnv -> InstExportMap
+initInstExports m clsEnv =
+  Map.fromListWith (++) . map instExpMapEntry . instEnvList
  where
   instExpMapEntry :: (InstIdent, InstInfo) -> (Set.Set QualIdent, [InstIdent])
   instExpMapEntry (instId@(cls, tys), (m', _, _)) =
     let select = if m == m' then id else take 1
-    in ( Set.fromList $ select $ filter ((== Just m') . qidModule) $
-           cls : concatMap typeConstrs tys
+        tcs = if null (classFunDeps cls clsEnv) then concatMap typeConstrs tys
+                                                else []
+    in ( Set.fromList $ select $ filter ((== Just m') . qidModule) $ cls : tcs
        , [instId] )
 
 -- Removes the instances that currently have to be exported from the instance
@@ -287,8 +302,8 @@ instance HasModule IDecl where
   modules (INewtypeDecl      _ tc _ _ nc _) = modules tc . modules nc
   modules (ITypeDecl           _ tc _ _ ty) = modules tc . modules ty
   modules (IFunctionDecl       _ f _ _ qty) = modules f . modules qty
-  modules (HidingClassDecl    _ cx cls _ _) = modules cx . modules cls
-  modules (IClassDecl    _ cx cls _ _ ms _) =
+  modules (HidingClassDecl  _ cx cls _ _ _) = modules cx . modules cls
+  modules (IClassDecl  _ cx cls _ _ _ ms _) =
     modules cx . modules cls . modules ms
   modules (IInstanceDecl _ cx cls tys _ mm) =
     modules cx . modules cls . modules tys . modules mm
@@ -357,16 +372,16 @@ data IInfo = IOther | IType QualIdent | IClass QualIdent | IInst InstIdent
   deriving (Eq, Ord)
 
 iInfo :: ExpInfo -> IInfo
-iInfo (ID (IInfixDecl          _ _ _ _)) = IOther
-iInfo (ID (HidingDataDecl     _ tc _ _)) = IType tc
-iInfo (ID (IDataDecl      _ tc _ _ _ _)) = IType tc
-iInfo (ID (INewtypeDecl   _ tc _ _ _ _)) = IType tc
-iInfo (ID (ITypeDecl         _ _ _ _ _)) = IOther
-iInfo (ID (HidingClassDecl _ _ cls _ _)) = IClass cls
-iInfo (ID (IClassDecl  _ _ cls _ _ _ _)) = IClass cls
-iInfo (ID (IInstanceDecl   _ _ _ _ _ _)) = internalError "Exports.iInfo"
-iInfo (ID (IFunctionDecl     _ _ _ _ _)) = IOther
-iInfo (II                        instId) = IInst instId
+iInfo (ID (IInfixDecl            _ _ _ _)) = IOther
+iInfo (ID (HidingDataDecl       _ tc _ _)) = IType tc
+iInfo (ID (IDataDecl        _ tc _ _ _ _)) = IType tc
+iInfo (ID (INewtypeDecl     _ tc _ _ _ _)) = IType tc
+iInfo (ID (ITypeDecl           _ _ _ _ _)) = IOther
+iInfo (ID (HidingClassDecl _ _ cls _ _ _)) = IClass cls
+iInfo (ID (IClassDecl  _ _ cls _ _ _ _ _)) = IClass cls
+iInfo (ID (IInstanceDecl     _ _ _ _ _ _)) = internalError "Exports.iInfo"
+iInfo (ID (IFunctionDecl       _ _ _ _ _)) = IOther
+iInfo (II                          instId) = IInst instId
 
 closeInterface :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Ident]
                -> Set.Set IInfo -> InstExportMap -> [ExpInfo] -> [IDecl]
@@ -390,22 +405,23 @@ hiddenTypes m tcEnv clsEnv tvs d =
   hiddenTypeDecl tc = case qualLookupTypeInfo (qualQualify m tc) tcEnv of
     [DataType     _ k _] -> hidingDataDecl k
     [RenamingType _ k _] -> hidingDataDecl k
-    [TypeClass  cls k _] -> hidingClassDecl k $ superClasses cls clsEnv
+    [TypeClass  cls k _] -> hidingClassDecl cls k
     _                    ->
       internalError $ "Exports.hiddenTypeDecl: " ++ show tc
    where
     hidingDataDecl k = let n  = kindArity k
                            k' = fromKind' k n
                        in  HidingDataDecl NoPos tc k' $ take n tvs
-    hidingClassDecl k sclss =
+    hidingClassDecl qcls k =
       let cx       = [ Constraint NoSpanInfo (qualUnqualify m qscls)
                          (map (VariableType NoSpanInfo) sclsvars)
-                     | sclsInfo <- sclss
+                     | sclsInfo <- superClasses qcls clsEnv
                      , let (qscls, sclsvars) = applySuperClass tvs sclsInfo ]
           n       = kindArity k
           k'      = fromClassKind k n
           clsvars = take n tvs
-      in  HidingClassDecl NoPos cx tc k' clsvars
+          funDeps = map (fromFunDep clsvars) (classFunDeps qcls clsEnv)
+      in  HidingClassDecl NoPos cx tc k' clsvars funDeps
 
 -- Updates the instance export map by removing the given interface entry from
 -- the sets of class and type names that have to be exported before the
@@ -421,13 +437,13 @@ definedTypes :: [IDecl] -> [QualIdent]
 definedTypes ds = foldr definedType [] ds
   where
   definedType :: IDecl -> [QualIdent] -> [QualIdent]
-  definedType (HidingDataDecl     _ tc _ _) tcs = tc : tcs
-  definedType (IDataDecl      _ tc _ _ _ _) tcs = tc : tcs
-  definedType (INewtypeDecl   _ tc _ _ _ _) tcs = tc : tcs
-  definedType (ITypeDecl        _ tc _ _ _) tcs = tc : tcs
-  definedType (HidingClassDecl _ _ cls _ _) tcs = cls : tcs
-  definedType (IClassDecl  _ _ cls _ _ _ _) tcs = cls : tcs
-  definedType _                             tcs = tcs
+  definedType (HidingDataDecl       _ tc _ _) tcs = tc : tcs
+  definedType (IDataDecl        _ tc _ _ _ _) tcs = tc : tcs
+  definedType (INewtypeDecl     _ tc _ _ _ _) tcs = tc : tcs
+  definedType (ITypeDecl          _ tc _ _ _) tcs = tc : tcs
+  definedType (HidingClassDecl _ _ cls _ _ _) tcs = cls : tcs
+  definedType (IClassDecl  _ _ cls _ _ _ _ _) tcs = cls : tcs
+  definedType _                               tcs = tcs
 
 class HasType a where
   usedTypes :: a -> [QualIdent] -> [QualIdent]
@@ -445,8 +461,8 @@ instance HasType IDecl where
   usedTypes (INewtypeDecl      _ _ _ _ nc _) = usedTypes nc
   usedTypes (ITypeDecl           _ _ _ _ ty) = usedTypes ty
   usedTypes (IFunctionDecl      _ _ _ _ qty) = usedTypes qty
-  usedTypes (HidingClassDecl     _ cx _ _ _) = usedTypes cx
-  usedTypes (IClassDecl     _ cx _ _ _ ms _) = usedTypes cx . usedTypes ms
+  usedTypes (HidingClassDecl   _ cx _ _ _ _) = usedTypes cx
+  usedTypes (IClassDecl   _ cx _ _ _ _ ms _) = usedTypes cx . usedTypes ms
   usedTypes (IInstanceDecl _ cx cls tys _ _) =
     usedTypes cx . (cls :) . usedTypes tys
 
