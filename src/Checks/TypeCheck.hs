@@ -913,11 +913,12 @@ tcTopPDecl (i, TypeDecl p tc tvs ty)
   = return (i, TypeDecl p tc tvs ty)
 tcTopPDecl (i, DefaultDecl p tys)
   = return (i, DefaultDecl p tys)
-tcTopPDecl (i, ClassDecl p li cx cls tvs ds)     = withLocalSigEnv $ do
+tcTopPDecl (i, ClassDecl p li cx cls tvs fds ds) = withLocalSigEnv $ do
   let (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
   setSigEnv $ foldr (bindTypeSigs . snd) emptySigEnv opds
   vpds' <- mapM (tcClassMethodPDecl (qualify cls) tvs) vpds
-  return (i, ClassDecl p li cx cls tvs $ fromPDecls $ map untyped opds ++ vpds')
+  return
+    (i, ClassDecl p li cx cls tvs fds $ fromPDecls $ map untyped opds ++ vpds')
 tcTopPDecl (i, InstanceDecl p li cx qcls tys ds) = do
   tcEnv <- getTyConsEnv
   mid <- getModuleIdent

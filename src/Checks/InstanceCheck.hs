@@ -121,7 +121,7 @@ bindInstance tcEnv clsEnv (InstanceDecl p _ cx qcls inst ds) = do
   -- instance types have to be expanded and normalized, as they could contain
   -- type synonyms. To report violations of the rules ensuring instance
   -- resolution termination with constraints and instance heads that are as
-  -- close to the original code as possible, the type constructors occuring in
+  -- close to the original code as possible, the type constructors occurring in
   -- them are unqualified. Additionally, the context and instance types are
   -- passed on before normalization, so that the original type variables can be
   -- used (otherwise, these type variables might not be in the correct order
