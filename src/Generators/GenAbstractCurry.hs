@@ -85,10 +85,11 @@ trDefaultDecl (DefaultDecl _ tys) = (\tys' -> [CDefaultDecl tys'])
 trDefaultDecl _                   = return []
 
 trClassDecl :: Decl PredType -> GAC [CClassDecl]
-trClassDecl (ClassDecl _ _ cx cls tvs ds) =
-  (\cls' v' cx' tvs' ds' -> [CClass cls' v' cx' tvs' ds'])
+trClassDecl (ClassDecl _ _ cx cls tvs fds ds) =
+  (\cls' v' cx' tvs' fds' ds' -> [CClass cls' v' cx' tvs' fds' ds'])
     <$> trGlobalIdent cls <*> getTypeVisibility cls <*> trContext cx
-    <*> mapM getTVarIndex tvs <*> concatMapM (trClassMethodDecl sigs fs) ds
+    <*> mapM getTVarIndex tvs <*> mapM trFunDep fds
+    <*> concatMapM (trClassMethodDecl sigs fs) ds
   where fs = [f | FunctionDecl _ _ f _ <- ds]
         sigs = signatures ds
 trClassDecl _ = return []
@@ -198,6 +199,10 @@ trConstraint (Constraint _ q tys) = (,) <$> trQual q <*> mapM trTypeExpr tys
 
 trContext :: Context -> GAC CContext
 trContext cx = CContext <$> mapM trConstraint cx
+
+trFunDep :: FunDep -> GAC CFunDep
+trFunDep (FunDep _ ltvs rtvs) =
+  (,) <$> mapM getTVarIndex ltvs <*> mapM getTVarIndex rtvs
 
 trQualTypeExpr :: QualTypeExpr -> GAC CQualTypeExpr
 trQualTypeExpr (QualTypeExpr _ cx ty) =
