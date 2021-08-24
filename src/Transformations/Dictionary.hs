@@ -47,7 +47,7 @@ import Base.TopEnv
 import Base.Types
 import Base.TypeSubst
 import Base.Typing
-import Base.Utils (uncurry3)
+import Base.Utils (foldr2, uncurry3)
 
 import Env.Class
 import Env.Instance
@@ -762,7 +762,7 @@ instPredList (Pred _ cls tys) = do
   inEnv <- getInstEnv
   case lookupInstMatch cls tys inEnv of
     [] -> internalError $ "Dictionary.instPredList: " ++
-                            "Cound not find an instance for " ++ show (cls, tys)
+                            "Could not find an instance for " ++ show (cls, tys)
     [(m, ps, itys, _, tau)] -> return (m, itys, subst tau (Set.toAscList ps))
     _ : _ -> internalError $ "Dictionary.instPredList: " ++
                                "Multiple instances for " ++ show (cls, tys)
@@ -785,14 +785,66 @@ instPredList (Pred _ cls tys) = do
 matchPredList :: (ValueEnv -> TypeScheme) -> Type -> DTM [Pred]
 matchPredList tySc ty2 = do
   ForAll _ (PredType ps ty1) <- tySc <$> getValueEnv
-  return $ foldr (\(pls1, pls2) pls' ->
-                   fromMaybe pls' $ qualMatch pls1 ty1 pls2 ty2)
-                 (internalError $ "Dictionary.matchPredList: " ++ show ps)
-                 (splits $ Set.toAscList ps)
+  dictEnvPreds <- map fst <$> getDictEnv
+  let maxDictTv = maximum (-1 : typeVars dictEnvPreds)
+      argPreds = foldr (\(pls1, pls2) pls' -> fromMaybe pls' $
+                          qualMatch pls1 ty1 pls2 ty2 maxDictTv)
+                       (internalError $ "Dictionary.matchPredList: " ++ show ps)
+                       (splits $ Set.toAscList ps)
+  clsEnv <- getClassEnv
+  inEnv <- getInstEnv
+  return $ inferDependentVars clsEnv inEnv dictEnvPreds argPreds
 
-qualMatch :: [Pred] -> Type -> [Pred] -> Type -> Maybe [Pred]
-qualMatch pls1 ty1 pls2 ty2 = case predListMatch pls2 ty2 of
-  Just ty2' -> Just $ subst (matchType ty1 ty2' idSubst) pls1
+-- Note: The functions starting with 'inferDependentVars' and the renaming of
+-- type variables only occurring in the context of a type in 'qualMatch' were
+-- an attempt to solve the problem of not being able to determine the types that
+-- these type variables were instantiated with during the type inference.
+-- However, this attempt relied on the assumption that the dictionary
+-- environment would contain the correctly instantiated predicates, which is not
+-- the case. Additionally, even if it did work, this kind of type inference is
+-- not supposed to take place during the dictionary translation, which means
+-- that it would have been a workaround and not a proper solution.
+-- These changes have been left in the code because they document the attempted
+-- solution and provide an approach for using functional dependencies to improve
+-- inferred types, which could be implemented in a similar way in the type
+-- check.
+
+inferDependentVars :: ClassEnv -> InstEnv -> [Pred] -> [Pred] -> [Pred]
+inferDependentVars clsEnv inEnv envPreds argPreds =
+  let sigma = foldr (uncurry3 inferDependentVarsDictEnv) idSubst
+                [ (argTys, envTys, funDep)
+                | Pred _ argCls argTys <- argPreds
+                , Pred _ envCls envTys <- envPreds
+                , argCls == envCls
+                , funDep <- classFunDeps argCls clsEnv
+                ]
+      sigma' = foldr (inferDependentVarsInstEnv clsEnv inEnv) sigma argPreds
+      argPreds' = subst sigma' argPreds
+  in if argPreds == argPreds'
+       then argPreds
+       else inferDependentVars clsEnv inEnv envPreds argPreds'
+
+inferDependentVarsDictEnv :: [Type] -> [Type] -> Env.Class.FunDep -> TypeSubst
+                          -> TypeSubst
+inferDependentVarsDictEnv argTys envTys funDep sigma =
+  case getRhsOnLhsMatch funDep envTys (subst sigma argTys) of
+    Nothing -> sigma
+    Just (envTysRhs, argTysRhs) -> foldr2 matchType sigma argTysRhs envTysRhs
+
+inferDependentVarsInstEnv :: ClassEnv -> InstEnv -> Pred -> TypeSubst
+                          -> TypeSubst
+inferDependentVarsInstEnv clsEnv inEnv (Pred _ argCls argTys) sigma =
+  let (argTys', instTys) =
+        unzip $ typeDepsInstEnv argCls (subst sigma argTys) clsEnv inEnv
+  in foldr2 matchType sigma argTys' instTys
+
+qualMatch :: [Pred] -> Type -> [Pred] -> Type -> Int -> Maybe [Pred]
+qualMatch pls1 ty1 pls2 ty2 maxDictTv = case predListMatch pls2 ty2 of
+  Just ty2' ->
+    let freshTys = map TypeVariable [maximum (maxDictTv : typeVars ty2') + 1 ..]
+        psTvs = [maximum (-1 : typeVars ty1) + 1 .. maximum (-1 : typeVars pls1)]
+        renamePsTvs = foldr2 bindSubst idSubst psTvs freshTys
+    in Just $ subst (matchType ty1 ty2' idSubst) $ subst renamePsTvs pls1
   Nothing -> Nothing
 
 predListMatch :: [Pred] -> Type -> Maybe Type

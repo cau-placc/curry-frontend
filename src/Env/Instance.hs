@@ -23,10 +23,11 @@
 module Env.Instance
   ( InstIdent, ppInstIdent, InstInfo, InstMatchInfo
   , InstEnv, initInstEnv, bindInstInfo, removeInstInfo, instEnvList
-  , lookupInstExact, lookupInstMatch
+  , lookupInstExact, lookupInstMatch, typeDepsInstEnv
   ) where
 
-import qualified Data.Map as Map ( Map, adjust, empty, delete, insertWith
+import           Data.Function   (on)
+import qualified Data.Map as Map ( Map, adjust, empty, delete, insertWith, keys
                                  , lookup, member, singleton, toList, union )
 
 import Control.Monad ((<=<))
@@ -39,6 +40,8 @@ import Base.CurryTypes
 import Base.Subst
 import Base.Types
 import Base.TypeSubst
+
+import Env.Class
 
 -- An 'InstIdent' uniquely identifies an instance by its class name and instance
 -- types.
@@ -97,6 +100,14 @@ lookupInstMatch qcls tys inEnv =
     Just instMap ->
       [ (m, ps, itys, is, sigma) | (itys, (m, ps, is)) <- Map.toList instMap
                                  , Just sigma <- [matchInstTypes itys tys] ]
+
+typeDepsInstEnv :: QualIdent -> [Type] -> ClassEnv -> InstEnv -> [(Type, Type)]
+typeDepsInstEnv qcls tys clsEnv inEnv = filter (uncurry (/=)) $ concat
+  [ zip (getFunDepRhs funDep tys) (subst sigma (getFunDepRhs funDep itys))
+  | itys <- maybe [] Map.keys (Map.lookup qcls inEnv)
+  , funDep <- classFunDeps qcls clsEnv
+  , Just sigma <- [(matchInstTypes `on` getFunDepLhs funDep) itys tys]
+  ]
 
 -- Tries to match the given instance types (first argument) with the given
 -- requested types (second argument) and returns the respective type
