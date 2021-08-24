@@ -119,12 +119,12 @@ ok = return ()
 -- and free type constructor and type class identifiers of the declarations.
 
 bt :: Decl a -> [Ident]
-bt (DataDecl       _ tc _ _ _) = [tc]
-bt (ExternalDataDecl   _ tc _) = [tc]
-bt (NewtypeDecl    _ tc _ _ _) = [tc]
-bt (TypeDecl         _ tc _ _) = [tc]
-bt (ClassDecl _ _ _ cls _ _ _) = [cls]
-bt _                           = []
+bt (DataDecl     _ tc _ _ _) = [tc]
+bt (ExternalDataDecl _ tc _) = [tc]
+bt (NewtypeDecl  _ tc _ _ _) = [tc]
+bt (TypeDecl       _ tc _ _) = [tc]
+bt (ClassDecl _ _ _ cls _ _) = [cls]
+bt _                         = []
 
 ft :: ModuleIdent -> Decl a -> [Ident]
 ft m d = fts m d []
@@ -150,7 +150,7 @@ instance HasType (Decl a) where
   fts m (PatternDecl             _ _ rhs) = fts m rhs
   fts _ (FreeDecl                    _ _) = id
   fts m (DefaultDecl               _ tys) = fts m tys
-  fts m (ClassDecl       _ _ cx _ _ _ ds) = fts m cx . fts m ds
+  fts m (ClassDecl         _ _ cx _ _ ds) = fts m cx . fts m ds
   fts m (InstanceDecl _ _ cx cls inst ds) =
     fts m cx . fts m cls . fts m inst . fts m ds
 
@@ -278,16 +278,16 @@ fc m = foldr fc' []
 checkAcyclicSuperClasses :: [Decl a] -> KCM ()
 checkAcyclicSuperClasses ds = do
   m <- getModuleIdent
-  mapM_ checkClassDecl $ scc bt (\(ClassDecl _ _ cx _ _ _ _) -> fc m cx) ds
+  mapM_ checkClassDecl $ scc bt (\(ClassDecl _ _ cx _ _ _) -> fc m cx) ds
 
 checkClassDecl :: [Decl a] -> KCM ()
 checkClassDecl [] =
   internalError "Checks.KindCheck.checkClassDecl: empty list"
-checkClassDecl [ClassDecl _ _ cx cls _ _ _] = do
+checkClassDecl [ClassDecl _ _ cx cls _ _] = do
   m <- getModuleIdent
   when (cls `elem` fc m cx) $ report $ errRecursiveClasses [cls]
-checkClassDecl (ClassDecl _ _ _ cls _ _ _ : ds) =
-  report $ errRecursiveClasses $ cls : [cls' | ClassDecl _ _ _ cls' _ _ _ <- ds]
+checkClassDecl (ClassDecl _ _ _ cls _ _ : ds) =
+  report $ errRecursiveClasses $ cls : [cls' | ClassDecl _ _ _ cls' _ _ <- ds]
 checkClassDecl _ =
   internalError "Checks.KindCheck.checkClassDecl: no class declaration"
 
@@ -311,7 +311,7 @@ checkClassDecl _ =
 -- from the 'MonadFix' type class.
 
 bindKind :: ModuleIdent -> TCEnv -> ClassEnv -> TCEnv -> Decl a -> KCM TCEnv
-bindKind m tcEnv' clsEnv tcEnv (DataDecl       _ tc tvs cs _) =
+bindKind m tcEnv' clsEnv tcEnv (DataDecl     _ tc tvs cs _) =
   bindTypeConstructor DataType tc tvs (Just KindStar) (map mkData cs) tcEnv
   where
     mkData (ConstrDecl _     c  tys) = mkData' c  tys
@@ -328,21 +328,21 @@ bindKind m tcEnv' clsEnv tcEnv (DataDecl       _ tc tvs cs _) =
       where qtc = qualifyWith m tc
             PredType _ ty = expandConstrType m tcEnv' clsEnv qtc tvs tys
             tys' = arrowArgs ty
-bindKind _ _     _       tcEnv (ExternalDataDecl    _ tc tvs) =
+bindKind _ _     _       tcEnv (ExternalDataDecl  _ tc tvs) =
   bindTypeConstructor DataType tc tvs (Just KindStar) [] tcEnv
-bindKind m tcEnv' _      tcEnv (NewtypeDecl    _ tc tvs nc _) =
+bindKind m tcEnv' _      tcEnv (NewtypeDecl  _ tc tvs nc _) =
   bindTypeConstructor RenamingType tc tvs (Just KindStar) (mkData nc) tcEnv
   where
     mkData (NewConstrDecl _ c      ty) = DataConstr c [ty']
       where ty'  = expandMonoType m tcEnv' tvs ty
     mkData (NewRecordDecl _ c (l, ty)) = RecordConstr c [l] [ty']
       where ty'  = expandMonoType m tcEnv' tvs ty
-bindKind m tcEnv' _      tcEnv (TypeDecl         _ tc tvs ty) =
+bindKind m tcEnv' _      tcEnv (TypeDecl _ tc tvs ty) =
   bindTypeConstructor aliasType tc tvs Nothing ty' tcEnv
   where
     aliasType tc' k = AliasType tc' k $ length tvs
     ty' = expandMonoType m tcEnv' tvs ty
-bindKind m tcEnv' clsEnv tcEnv (ClassDecl _ _ _ cls tvs _ ds) =
+bindKind m tcEnv' clsEnv tcEnv (ClassDecl _ _ _ cls tvs ds) =
   bindTypeClass cls (length tvs) (concatMap mkMethods ds) tcEnv
   where
     mkMethods (TypeSig _ fs qty) = map (mkMethod qty) fs
@@ -353,7 +353,7 @@ bindKind m tcEnv' clsEnv tcEnv (ClassDecl _ _ _ cls tvs _ ds) =
     findArity f (FunctionDecl _ _ f' eqs:_) | f == f' =
       Just $ eqnArity $ head eqs
     findArity f (_:ds')                               = findArity f ds'
-bindKind _ _      _      tcEnv _                              = return tcEnv
+bindKind _ _      _      tcEnv _                            = return tcEnv
 
 bindTypeConstructor :: (QualIdent -> Kind -> a -> TypeInfo) -> Ident
                     -> [Ident] -> Maybe Kind -> a -> TCEnv -> KCM TCEnv
@@ -391,15 +391,14 @@ bindTypeVar :: Ident -> Kind -> TCEnv -> TCEnv
 bindTypeVar ident k = bindTopEnv ident (TypeVar k)
 
 bindClass :: ModuleIdent -> TCEnv -> ClassEnv -> Decl a -> ClassEnv
-bindClass m tcEnv clsEnv (ClassDecl _ _ cx cls tvs fds ds) =
-  bindClassInfo qcls (ar, sclss, fds', ms) clsEnv
+bindClass m tcEnv clsEnv (ClassDecl _ _ cx cls tvs ds) =
+  bindClassInfo qcls (ar, sclss, ms) clsEnv
   where qcls = qualifyWith m cls
         ar = length tvs
         sclss = nub $ map (constraintToSuperClass tvs) cx'
         cx' = map (\(Constraint p scls tys) ->
                      Constraint p (getOrigName m scls tcEnv) tys)
                   cx
-        fds' = map (toFunDep tvs) fds
         ms = map (\f -> (f, f `elem` fs)) $ concatMap methods ds
         fs = concatMap impls ds
 bindClass _ _ clsEnv _ = clsEnv
@@ -459,7 +458,7 @@ kcDecl _     (FreeDecl _ _) = ok
 kcDecl tcEnv (DefaultDecl _ tys) = do
   tcEnv' <- foldM bindFreshKind tcEnv $ nub $ fv tys
   mapM_ (kcValueType tcEnv' "default declaration" empty) tys
-kcDecl tcEnv (ClassDecl _ _ cx cls tvs _ ds) = do
+kcDecl tcEnv (ClassDecl _ _ cx cls tvs ds) = do
   (_, tcEnv') <- bindTypeVars cls tvs clsKind tcEnv
   kcContext tcEnv' cx
   mapM_ (kcDecl tcEnv') ds

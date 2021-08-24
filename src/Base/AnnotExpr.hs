@@ -35,7 +35,7 @@ class QualAnnotExpr e where
 instance QualAnnotExpr Decl where
   qafv m (FunctionDecl    _ _ _ eqs) = concatMap (qafv m) eqs
   qafv m (PatternDecl       _ _ rhs) = qafv m rhs
-  qafv m (ClassDecl  _ _ _ _ _ _ ds) = concatMap (qafv m) ds
+  qafv m (ClassDecl    _ _ _ _ _ ds) = concatMap (qafv m) ds
   qafv m (InstanceDecl _ _ _ _ _ ds) = concatMap (qafv m) ds
   qafv _ _                           = []
 

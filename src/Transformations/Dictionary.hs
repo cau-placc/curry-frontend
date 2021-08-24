@@ -157,7 +157,7 @@ getNextId = do
 
 liftDecls :: Decl PredType -> DTM [Decl PredType]
 liftDecls (DefaultDecl _ _) = return []
-liftDecls (ClassDecl _ _ _ cls tvs _ ds) = do
+liftDecls (ClassDecl _ _ _ cls tvs ds) = do
   m <- getModuleIdent
   liftClassDecls (qualifyWith m cls) tvs ds
 liftDecls (InstanceDecl _ _ cx cls tys ds) = do
@@ -324,7 +324,7 @@ renameDecl _ _ = internalError "Dictionary.renameDecl"
 -- class dictionary from the provided class dictionary.
 
 createStubs :: Decl PredType -> DTM [Decl Type]
-createStubs (ClassDecl _ _ _ cls _ _ _) = do
+createStubs (ClassDecl _ _ _ cls _ _) = do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv
   vEnv <- getValueEnv
@@ -549,7 +549,7 @@ addExports (Just (Exporting p es)) es' = Just $ Exporting p $ es ++ es'
 addExports Nothing                 _   = internalError "Dictionary.addExports"
 
 dictExports :: Decl a -> DTM [Export]
-dictExports (ClassDecl _ _ _ cls _ _ _) = do
+dictExports (ClassDecl _ _ _ cls _ _) = do
   m <- getModuleIdent
   clsEnv <- getClassEnv
   return $ classExports m clsEnv cls
@@ -962,20 +962,20 @@ dictTransInterface vEnv clsEnv (Interface m is ds) =
   Interface m is $ concatMap (dictTransIDecl m vEnv clsEnv) ds
 
 dictTransIDecl :: ModuleIdent -> ValueEnv -> ClassEnv -> IDecl -> [IDecl]
-dictTransIDecl m vEnv _      d@(IInfixDecl           _ _ _ op)
+dictTransIDecl m vEnv _      d@(IInfixDecl         _ _ _ op)
   | arrowArity (rawType $ opType (qualQualify m op) vEnv) /= 2 = []
   | otherwise = [d]
-dictTransIDecl _ _    _      d@(HidingDataDecl        _ _ _ _) = [d]
-dictTransIDecl m _    _      (IDataDecl      p tc k tvs cs hs) =
+dictTransIDecl _ _    _      d@(HidingDataDecl      _ _ _ _) = [d]
+dictTransIDecl m _    _      (IDataDecl    p tc k tvs cs hs) =
   [IDataDecl p tc k tvs (map (dictTransIConstrDecl m tvs) cs) hs]
-dictTransIDecl _ _    _      d@(INewtypeDecl      _ _ _ _ _ _) = [d]
-dictTransIDecl _ _    _      d@(ITypeDecl           _ _ _ _ _) = [d]
-dictTransIDecl m vEnv _      (IFunctionDecl         _ f _ _ _) =
+dictTransIDecl _ _    _      d@(INewtypeDecl    _ _ _ _ _ _) = [d]
+dictTransIDecl _ _    _      d@(ITypeDecl         _ _ _ _ _) = [d]
+dictTransIDecl m vEnv _      (IFunctionDecl       _ f _ _ _) =
   [iFunctionDeclFromValue m vEnv (qualQualify m f)]
-dictTransIDecl _ _    _      (HidingClassDecl p _ cls k tvs _) =
+dictTransIDecl _ _    _      (HidingClassDecl p _ cls k tvs) =
   [HidingDataDecl p (qDictTypeId cls) k' tvs]
   where k' = fmap (fromKind . dictTypeKind cls . toKind) k
-dictTransIDecl m vEnv clsEnv (IClassDecl p _ cls k tvs _ _ hs) =
+dictTransIDecl m vEnv clsEnv (IClassDecl p _ cls k tvs _ hs) =
   dictDecl : defaults ++ methodStubs ++ superDictStubs
  where
   qcls        = qualQualify m cls
@@ -990,7 +990,7 @@ dictTransIDecl m vEnv clsEnv (IClassDecl p _ cls k tvs _ _ hs) =
                   filter (`notElem` hs) ms
   superDictStubs = map (iFunctionDeclFromValue m vEnv . qSuperDictStubId qcls)
                      sclsInfos
-dictTransIDecl m vEnv clsEnv (IInstanceDecl  _ _ cls tys _ mm) =
+dictTransIDecl m vEnv clsEnv (IInstanceDecl _ _ cls tys _ mm) =
   iFunctionDeclFromValue m vEnv (qInstFunId m' qcls tys') :
     map (iFunctionDeclFromValue m vEnv . qImplMethodId m' qcls tys') ms
   where m'   = fromMaybe m mm

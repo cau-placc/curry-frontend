@@ -23,7 +23,7 @@ module Curry.AbstractCurry.Type
   ( CurryProg (..), MName, QName, CVisibility (..), CTVarIName
   , CDefaultDecl (..), CClassDecl (..), CInstanceDecl (..)
   , CTypeDecl (..), CConsDecl (..), CFieldDecl (..)
-  , CConstraint, CContext (..), CFunDep, CTypeExpr (..), CQualTypeExpr (..)
+  , CConstraint, CContext (..), CTypeExpr (..), CQualTypeExpr (..)
   , COpDecl (..), CFixity (..), Arity, CFuncDecl (..), CRhs (..), CRule (..)
   , CLocalDecl (..), CVarIName, CExpr (..), CCaseType (..), CStatement (..)
   , CPattern (..), CLiteral (..), CField, version
@@ -76,22 +76,16 @@ data CDefaultDecl = CDefaultDecl [CTypeExpr]
 -- |Definitions of type classes.
 -- A type class definition of the form
 -- @
--- class cx => c a1 ... an | ..., lhsAs -> rhsAs, ... where { ...;f :: t;... }
+-- class cx => c a1 ... an where { ...;f :: t;... }
 -- @
--- , where each @lhsAs@ and @rhsAs@ is a selection of the variables @a1 ... an@
--- and @lhsAs -> rhsAs@ represents a functional dependency,
 -- is represented by the Curry term
 -- @
--- (CClass c v cx tvs funDeps [...(CFunc f ar v t [...,CRule r,...])...])
+-- (CClass c v cx tvs [...(CFunc f ar v t [...,CRule r,...])...])
 -- @
--- where @tvs@ is the list of indices of the type variables @a1@ to @an@,
--- @funDeps@ is a list of the form @[...,(lhsTvs, rhsTvs),...]@, with @lhsTvs@
--- and @rhsTvs@ being lists of indices in @tvs@ representing @lhsAs@ and @rhsAs@
--- respectively, and @v@ is the visibility of the type class resp. method.
+-- where @tvs@ is the list of indices of the type variables @a1@ to @an@ and
+-- @v@ is the visibility of the type class resp. method.
 -- /Note:/ Type class declarations with none or more than one type variable are
 --         only allowed with the @MultiParamTypeClasses@ language extension.
---         Functional dependencies are only allowed with the
---         @FunctionalDependencies@ language extension.
 --         The type variable indices are unique inside each class
 --         declaration and are usually numbered from 0.
 --         The methods' types share the type class' type variable indices
@@ -101,8 +95,7 @@ data CDefaultDecl = CDefaultDecl [CTypeExpr]
 --         determined by a given default implementation or 0.
 --         Regardless of whether typed or untyped abstract curry is generated,
 --         the methods' declarations are always typed.
-data CClassDecl
-  = CClass QName CVisibility CContext [CTVarIName] [CFunDep] [CFuncDecl]
+data CClassDecl = CClass QName CVisibility CContext [CTVarIName] [CFuncDecl]
     deriving (Eq, Read, Show)
 
 -- |Definitions of instances.
@@ -177,9 +170,6 @@ type CConstraint = (QName, [CTypeExpr])
 -- |The type for representing a context.
 data CContext = CContext [CConstraint]
   deriving (Eq, Read, Show)
-
--- |The type for representing a functional dependency of a type class.
-type CFunDep = ([CTVarIName], [CTVarIName])
 
 -- |Type expression.
 -- A type expression is either a type variable, a function type,

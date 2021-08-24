@@ -272,7 +272,7 @@ checkDecl (TypeDecl             _ _ vs ty) = inNestedScope $ do
 checkDecl (FunctionDecl         p _ f eqs) = checkFunctionDecl p f eqs
 checkDecl (PatternDecl            _ p rhs) = checkPattern p >> checkRhs rhs
 checkDecl (DefaultDecl              _ tys) = mapM_ checkTypeExpr tys
-checkDecl (ClassDecl       _ _ _ _ _ _ ds) = mapM_ checkDecl ds
+checkDecl (ClassDecl         _ _ _ _ _ ds) = mapM_ checkDecl ds
 checkDecl (InstanceDecl p _ cx cls tys ds) = do
   checkOrphanInstance p cx cls tys
   checkMissingMethodImplementations p cls ds
@@ -1002,26 +1002,26 @@ reportUnusedTypeVars vs = warnFor WarnUnusedBindings $ do
 -- sides.
 
 insertDecl :: Decl a -> WCM ()
-insertDecl (DataDecl        _ d _ cs _) = do
+insertDecl (DataDecl      _ d _ cs _) = do
   insertTypeConsId d
   mapM_ insertConstrDecl cs
-insertDecl (ExternalDataDecl     _ d _) = insertTypeConsId d
-insertDecl (NewtypeDecl     _ d _ nc _) = do
+insertDecl (ExternalDataDecl   _ d _) = insertTypeConsId d
+insertDecl (NewtypeDecl   _ d _ nc _) = do
   insertTypeConsId d
   insertNewConstrDecl nc
-insertDecl (TypeDecl          _ t _ ty) = do
+insertDecl (TypeDecl        _ t _ ty) = do
   insertTypeConsId t
   insertTypeExpr ty
-insertDecl (FunctionDecl       _ _ f _) = do
+insertDecl (FunctionDecl     _ _ f _) = do
   cons <- isConsId f
   unless cons $ insertVar f
-insertDecl (ExternalDecl          _ vs) = mapM_ (insertVar . varIdent) vs
-insertDecl (PatternDecl          _ p _) = insertPattern False p
-insertDecl (FreeDecl              _ vs) = mapM_ (insertVar . varIdent) vs
-insertDecl (ClassDecl _ _ _ cls _ _ ds) = do
+insertDecl (ExternalDecl        _ vs) = mapM_ (insertVar . varIdent) vs
+insertDecl (PatternDecl        _ p _) = insertPattern False p
+insertDecl (FreeDecl            _ vs) = mapM_ (insertVar . varIdent) vs
+insertDecl (ClassDecl _ _ _ cls _ ds) = do
   insertTypeConsId cls
   mapM_ insertVar $ concatMap methods ds
-insertDecl _                            = ok
+insertDecl _                          = ok
 
 insertTypeExpr :: TypeExpr -> WCM ()
 insertTypeExpr (VariableType       _ _) = ok
@@ -1251,7 +1251,7 @@ checkCaseModeDecl (PatternDecl _ t rhs) = do
 checkCaseModeDecl (FreeDecl  _ vs) =
   mapM_ (checkCaseModeID isVarName . varIdent) vs
 checkCaseModeDecl (DefaultDecl _ tys) = mapM_ checkTypeExpr tys
-checkCaseModeDecl (ClassDecl _ _ cx cls tvs _ ds) = do
+checkCaseModeDecl (ClassDecl _ _ cx cls tvs ds) = do
   checkCaseModeContext cx
   checkCaseModeID isClassDeclName cls
   mapM_ (checkCaseModeID isVarName) tvs
@@ -1501,7 +1501,7 @@ checkRedContextDecl (TypeSig _ ids (QualTypeExpr _ cx _)) =
   where (vs, ps) = getPredFromContext cx
 checkRedContextDecl (FunctionDecl _ _ _ eqs) = mapM_ checkRedContextEq eqs
 checkRedContextDecl (PatternDecl _ _ rhs) = checkRedContextRhs rhs
-checkRedContextDecl (ClassDecl _ _ cx i _ _ ds) = do
+checkRedContextDecl (ClassDecl _ _ cx i _ ds) = do
   checkRedContext'
     (warnRedContext (text ("class declaration " ++ escName i)) vs)
     ps

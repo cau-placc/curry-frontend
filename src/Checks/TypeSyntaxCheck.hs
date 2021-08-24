@@ -27,7 +27,7 @@ import Prelude hiding ((<>))
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative      ((<$>), (<*>), pure)
 #endif
-import           Control.Monad            (filterM, unless, when)
+import           Control.Monad            (unless, when)
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 import           Data.List                (nub)
 import           Data.Maybe               (isNothing)
@@ -44,7 +44,6 @@ import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.TopEnv
 import Base.Utils (findMultiples, findDouble)
 
-import Env.Class (funDepCoverage, toFunDep)
 import Env.TypeConstructor (TCEnv)
 import Env.Type
 
@@ -130,7 +129,7 @@ bindType m (NewtypeDecl _ tc _ nc _) = bindTypeKind m tc (Data qtc ids)
 bindType m (TypeDecl _ tc _ _) = bindTypeKind m tc (Alias qtc)
   where
     qtc = qualifyWith m tc
-bindType m (ClassDecl _ _ _ cls _ _ ds) = bindTypeKind m cls (Class qcls ms)
+bindType m (ClassDecl _ _ _ cls _ ds) = bindTypeKind m cls (Class qcls ms)
   where
     qcls = qualifyWith m cls
     ms = concatMap methods ds
@@ -161,23 +160,21 @@ checkDecl (TypeDecl p tc tvs ty)              = do
   checkTypeLhs tvs
   ty' <- checkClosedType tvs ty
   return $ TypeDecl p tc tvs ty'
-checkDecl (TypeSig p vs qty)                  =
+checkDecl (TypeSig p vs qty)                   =
   TypeSig p vs <$> checkQualType qty
 checkDecl (FunctionDecl a p f eqs)            = FunctionDecl a p f <$>
   mapM checkEquation eqs
 checkDecl (PatternDecl p t rhs)               = PatternDecl p t <$> checkRhs rhs
 checkDecl (DefaultDecl p tys)                 = DefaultDecl p <$>
   mapM (checkClosedType []) tys
-checkDecl (ClassDecl p li cx cls clsvars funDeps ds) = do
+checkDecl (ClassDecl p li cx cls clsvars ds)  = do
   checkMPTCExtClass p cls clsvars
-  checkFunDepExt p cls funDeps
   checkTypeVars "class declaration" clsvars
   cx' <- checkClosedContext clsvars cx
   checkSimpleContext cx'
-  funDeps' <- filterM (checkClosedFunDep clsvars) funDeps
   ds' <- mapM checkDecl ds
-  mapM_ (checkClassMethod clsvars funDeps') ds'
-  return $ ClassDecl p li cx' cls clsvars funDeps' ds'
+  mapM_ (checkClassMethod clsvars) ds'
+  return $ ClassDecl p li cx' cls clsvars ds'
 checkDecl (InstanceDecl p li cx qcls inst ds) = do
   checkMPTCExtInstance p qcls inst
   checkClass True qcls
@@ -223,13 +220,12 @@ checkSimpleConstraint c@(Constraint _ _ tys) =
 -- context must not contain any additional constraints for these class
 -- variables.
 
-checkClassMethod :: [Ident] -> [FunDep] -> Decl a -> TSCM ()
-checkClassMethod tvs funDeps (TypeSig spi _ qty@(QualTypeExpr _ cx _)) = do
-  let covVars = funDepCoverage tvs (map (toFunDep tvs) funDeps) (fv qty)
-  mapM_ (report . errAmbiguousType spi) (filter (`notElem` covVars) tvs)
+checkClassMethod :: [Ident] -> Decl a -> TSCM ()
+checkClassMethod tvs (TypeSig spi _ qty@(QualTypeExpr _ cx _)) = do
+  mapM_ (report . errAmbiguousType spi) (filter (`notElem` fv qty) tvs)
   mapM_ (report . errConstrainedClassVariables spi)
         (filter ((\vs -> not (null vs) && all (`elem` tvs) vs) . fv) cx)
-checkClassMethod _ _ _ = ok
+checkClassMethod _ _ = ok
 
 checkInstanceType :: SpanInfo -> InstanceType -> TSCM ()
 checkInstanceType p inst = do
@@ -363,12 +359,6 @@ checkConstraint c@(Constraint spi qcls tys) = do
     rootType (ParenType _ ty)   = rootType ty
     rootType ty                 = ty
 
-checkClosedFunDep :: [Ident] -> FunDep -> TSCM Bool
-checkClosedFunDep clsvars (FunDep _ ltvs rtvs) = do
-  let unboundVars = filter (`notElem` clsvars) $ ltvs ++ rtvs
-  mapM_ (report . errUnboundVariable) unboundVars
-  return $ null unboundVars
-
 checkClass :: Bool -> QualIdent -> TSCM ()
 checkClass isInstDecl qcls = do
   m <- getModuleIdent
@@ -445,23 +435,17 @@ checkMPTCExt errFunc params = do
   exts <- getExtensions
   unless (MultiParamTypeClasses `elem` exts) $ report $ errFunc params
 
-checkFunDepExt :: SpanInfo -> Ident -> [FunDep] -> TSCM ()
-checkFunDepExt _   _   []      = ok
-checkFunDepExt spi cls (_ : _) = do
-  exts <- getExtensions
-  unless (FunctionalDependencies `elem` exts) $ report $ errFunDepNoExt spi cls
-
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions
 -- ---------------------------------------------------------------------------
 
 getIdent :: Decl a -> Ident
-getIdent (DataDecl     _ tc _ _ _)   = tc
-getIdent (ExternalDataDecl _ tc _)   = tc
-getIdent (NewtypeDecl _ tc _ _ _)    = tc
-getIdent (TypeDecl _ tc _ _)         = tc
-getIdent (ClassDecl _ _ _ cls _ _ _) = cls
-getIdent _                           = internalError
+getIdent (DataDecl     _ tc _ _ _) = tc
+getIdent (ExternalDataDecl _ tc _) = tc
+getIdent (NewtypeDecl _ tc _ _ _)  = tc
+getIdent (TypeDecl _ tc _ _)       = tc
+getIdent (ClassDecl _ _ _ cls _ _) = cls
+getIdent _                         = internalError
   "Checks.TypeSyntaxCheck.getIdent: no type or class declaration"
 
 isTypeSyn :: QualIdent -> TypeEnv -> Bool
@@ -573,10 +557,3 @@ errMultiParamInstanceNoExt spi qcls inst =
      , text "An instance head must have exactly one type."
      , text "Use the MultiParamTypeClasses extension to enable"
      , text "instance declarations with zero or multiple types."]
-
-errFunDepNoExt :: SpanInfo -> Ident -> Message
-errFunDepNoExt spi cls = spanInfoMessage spi $ vcat $
-  [ text "Class" <+> text (escName cls) <+> text "uses functional dependencies."
-  , text "Use the FunctionalDependencies extension to enable"
-  , text "class declarations with functional dependencies."
-  ]

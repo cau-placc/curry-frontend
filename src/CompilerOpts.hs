@@ -319,8 +319,6 @@ extensions =
     , "enable anonymous free variables"                      )
   , ( CPP                      , "CPP"
     , "run C preprocessor"                                   )
-  , ( FunctionalDependencies   , "FunctionalDependencies"
-    , "enable functional dependencies"                       )
   , ( FunctionalPatterns       , "FunctionalPatterns"
     , "enable functional patterns"                           )
   , ( MultiParamTypeClasses    , "MultiParamTypeClasses"

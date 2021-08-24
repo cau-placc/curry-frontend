@@ -191,10 +191,10 @@ dsNewConstrDecl nc = internalError $ "Desugar.dsNewConstrDecl: " ++ show nc
 -- -----------------------------------------------------------------------------
 
 dsClassAndInstanceDecl :: Decl PredType -> DsM (Decl PredType)
-dsClassAndInstanceDecl (ClassDecl p li cx cls tvs fds ds) = do
+dsClassAndInstanceDecl (ClassDecl p li cx cls tvs ds) = do
   tds' <- mapM dsTypeSig tds
   vds' <- dsDeclGroup vds
-  return $ ClassDecl p li cx cls tvs fds $ tds' ++ vds'
+  return $ ClassDecl p li cx cls tvs $ tds' ++ vds'
   where (tds, vds) = partition isTypeSig ds
 dsClassAndInstanceDecl (InstanceDecl p li cx cls tys ds) =
   InstanceDecl p li cx cls tys <$> dsDeclGroup ds

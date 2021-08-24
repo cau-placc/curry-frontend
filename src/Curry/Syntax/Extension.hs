@@ -56,31 +56,28 @@ instance Binary Extension where
       _ -> fail "Invalid encoding for Extension"
 
 instance Binary KnownExtension where
-  put AnonFreeVars           = putWord8 0
-  put CPP                    = putWord8 1
-  put FunctionalDependencies = putWord8 2
-  put FunctionalPatterns     = putWord8 3
-  put MultiParamTypeClasses  = putWord8 4
-  put NegativeLiterals       = putWord8 5
-  put NoImplicitPrelude      = putWord8 6
+  put AnonFreeVars          = putWord8 0
+  put CPP                   = putWord8 1
+  put FunctionalPatterns    = putWord8 2
+  put MultiParamTypeClasses = putWord8 3
+  put NegativeLiterals      = putWord8 4
+  put NoImplicitPrelude     = putWord8 5
 
   get = do
     x <- getWord8
     case x of
       0 -> return AnonFreeVars
       1 -> return CPP
-      2 -> return FunctionalDependencies
-      3 -> return FunctionalPatterns
-      4 -> return MultiParamTypeClasses
-      5 -> return NegativeLiterals
-      6 -> return NoImplicitPrelude
+      2 -> return FunctionalPatterns
+      3 -> return MultiParamTypeClasses
+      4 -> return NegativeLiterals
+      5 -> return NoImplicitPrelude
       _ -> fail "Invalid encoding for KnownExtension"
 
 -- |Known language extensions of Curry.
 data KnownExtension
   = AnonFreeVars              -- ^ anonymous free variables
   | CPP                       -- ^ C preprocessor
-  | FunctionalDependencies    -- ^ functional dependencies
   | FunctionalPatterns        -- ^ functional patterns
   | MultiParamTypeClasses     -- ^ multi-parameter type classes
   | NegativeLiterals          -- ^ negative literals
