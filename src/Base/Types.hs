@@ -28,8 +28,9 @@ module Base.Types
   , unqualifyPred
   , PredSet, emptyPredSet, LPredSet, emptyLPredSet, psMember, removeICCFlag
   , partitionPredSetSomeVars, partitionPredSetOnlyVars, minPredSet, maxPredSet
-  , qualifyPredSet, unqualifyPredSet
+  , qualifyPredSet, unqualifyPredSet, funDepCoveragePredSet
   , PredType (..), predType, unpredType, qualifyPredType, unqualifyPredType
+  , ambiguousTypeVars
   , PredTypes (..), qualifyPredTypes, unqualifyPredTypes
     -- * Representation of data constructors
   , DataConstr (..), constrIdent, constrTypes, recLabels, recLabelTypes
@@ -47,8 +48,9 @@ module Base.Types
   , predefTypes
   ) where
 
-import qualified Data.Set.Extra as Set
 import           Data.Function (on)
+import           Data.List (nub)
+import qualified Data.Set.Extra as Set
 
 import Curry.Base.Ident
 import Curry.Base.Pretty
@@ -56,7 +58,9 @@ import Curry.Base.SpanInfo
 
 import Base.Messages (internalError)
 
-import Env.Class (ClassEnv, applyAllSuperClasses)
+import Env.Class ( ClassEnv, FunDep, applyAllSuperClasses, classFunDeps
+                 , deleteVarFunDep, funDepCoverage, removeTrivialFunDeps
+                 , renameFunDep, renameVarFunDep )
 
 -- ---------------------------------------------------------------------------
 -- Types
@@ -397,6 +401,31 @@ qualifyPredSet m = Set.map (qualifyPred m)
 unqualifyPredSet :: IsPred a => ModuleIdent -> Set.Set a -> Set.Set a
 unqualifyPredSet m = Set.map (unqualifyPred m)
 
+funDepCoveragePredSet :: IsPred a => ClassEnv -> Set.Set a -> Set.Set Int
+                                  -> Set.Set Int
+funDepCoveragePredSet clsEnv ps tvSet =
+  let predList = map getPred (Set.toList ps)
+      tvSetPs = Set.fromList (typeVars predList)
+      freshVar = Set.findMax (Set.insert (-1) (tvSet `Set.union` tvSetPs)) + 1
+      funDeps = removeTrivialFunDeps $ predListFunDeps freshVar predList
+  in funDepCoverage funDeps tvSet
+ where
+  predListFunDeps :: Int -> [Pred] -> [FunDep]
+  predListFunDeps _ [] = []
+  predListFunDeps freshVar (Pred _ cls tys : preds) =
+    let (freshVar', funDeps) = instantiateFunDeps tys freshVar $
+          map (renameFunDep freshVar) $ classFunDeps cls clsEnv
+    in funDeps ++ predListFunDeps freshVar' preds
+
+  instantiateFunDeps :: [Type] -> Int -> [FunDep] -> (Int, [FunDep])
+  instantiateFunDeps [] i funDeps = (i, funDeps)
+  instantiateFunDeps (ty : tys) i funDeps = instantiateFunDeps tys (i + 1) $
+    case nub (typeVars ty) of
+      []   -> map (deleteVarFunDep i) funDeps
+      [tv] -> map (renameVarFunDep i tv) funDeps
+      tvs  -> let (tvs', freshVar) = (Set.fromList tvs, Set.singleton i)
+              in (tvs', freshVar) : (freshVar, tvs') : funDeps
+
 -- ---------------------------------------------------------------------------
 -- Predicated types
 -- ---------------------------------------------------------------------------
@@ -424,6 +453,12 @@ qualifyPredType m (PredType ps ty) =
 unqualifyPredType :: ModuleIdent -> PredType -> PredType
 unqualifyPredType m (PredType ps ty) =
   PredType (unqualifyPredSet m ps) (unqualifyType m ty)
+
+ambiguousTypeVars :: ClassEnv -> PredType -> Set.Set Int -> [Int]
+ambiguousTypeVars clsEnv (PredType ps ty) fvs =
+  let coveredVars = funDepCoveragePredSet clsEnv ps $
+                      Set.fromList (typeVars ty) `Set.union` fvs
+  in filter (`Set.notMember` coveredVars) (typeVars ps)
 
 -- The 'PredTypes' data type stores a predicate set and a list of types all
 -- constrained by this predicate set. It can be used to represent the context
