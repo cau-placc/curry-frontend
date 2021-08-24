@@ -562,6 +562,7 @@ tcDeclVar poly v = do
   sigs <- getSigEnv
   case lookupTypeSig v sigs of
     Just qty
+    -- Maybe use the variables of the unpredicated type here?
       | poly || null (fv qty) -> do
         pty <- expandPoly qty
         return (v, 0, typeScheme pty)
@@ -1868,11 +1869,11 @@ skol (ForAll n (PredType ps ty)) = do
 -- The set of the latter is given by gvs.
 
 gen :: Set.Set Int -> LPredSet -> Type -> TypeScheme
-gen gvs ps ty = ForAll (length tvs) (subst theta (PredType ps' ty))
-  where tvs = [tv | tv <- nub (typeVars ty), tv `Set.notMember` gvs]
+gen gvs ps ty = ForAll (length tvs) (subst theta pty)
+  where pty = PredType (Set.map getPred ps) ty
+        tvs = [tv | tv <- nub (typeVars pty), tv `Set.notMember` gvs]
         tvs' = map TypeVariable [0 ..]
         theta = foldr2 bindSubst idSubst tvs tvs'
-        ps' = Set.map getPred ps
 
 -- Auxiliary Functions:
 -- The functions 'constrType', 'varType', 'funType' and 'labelType' are used

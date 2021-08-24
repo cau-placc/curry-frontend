@@ -125,8 +125,8 @@ toQualPredType
 toQualPredType m tvs fstIcc = qualifyPredType m . toPredType tvs fstIcc
 
 toPredTypes :: [Ident] -> PredIsICC -> CS.Context -> [CS.TypeExpr] -> PredTypes
-toPredTypes tvs fstIcc cx tys =
-  PredTypes (toPredSet' (enumTypeVars tvs tys) fstIcc cx) (toTypes tvs tys)
+toPredTypes tvs fstIcc cx tys = flip PredTypes (toTypes tvs tys) $
+  toPredSet' (enumTypeVars tvs (tys, cx)) fstIcc cx
 
 toQualPredTypes :: ModuleIdent -> [Ident] -> PredIsICC -> CS.Context
                 -> [CS.TypeExpr] -> PredTypes

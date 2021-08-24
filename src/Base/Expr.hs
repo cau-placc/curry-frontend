@@ -51,6 +51,15 @@ instance QualExpr e => QualExpr [e] where
 instance QuantExpr e => QuantExpr [e] where
   bv = concatMap bv
 
+instance (Expr e1, Expr e2) => Expr (e1, e2) where
+  fv (e1, e2) = fv e1 ++ fv e2
+
+instance (QualExpr e1, QualExpr e2) => QualExpr (e1, e2) where
+  qfv m (e1, e2) = qfv m e1 ++ qfv m e2
+
+instance (QuantExpr e1, QuantExpr e2) => QuantExpr (e1, e2) where
+  bv (e1, e2) = bv e1 ++ bv e2
+
 -- The 'Decl' instance of 'QualExpr' returns all free
 -- variables on the right hand side, regardless of whether they are bound
 -- on the left hand side. This is more convenient as declarations are
@@ -183,7 +192,7 @@ instance QuantExpr Constraint where
   bv _ = []
 
 instance Expr QualTypeExpr where
-  fv (QualTypeExpr _ _ ty) = fv ty
+  fv (QualTypeExpr _ cx ty) = fv ty ++ fv cx
 
 instance QuantExpr QualTypeExpr where
   bv (QualTypeExpr _ _ ty) = bv ty
