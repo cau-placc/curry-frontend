@@ -506,7 +506,9 @@ tcPDeclGroup ps pds = do
   theta <- getTypeSubst
   tvs <- concatMap (typeVars . subst theta . fst) <$>
            filterM (notM . isNonExpansive . snd . snd) impPds'
+  clsEnv <- getClassEnv
   let fvs = foldr Set.insert (fvEnv (subst theta vEnv)) tvs
+      fvs' = funDepCoveragePredSet clsEnv (subst theta ps') fvs
       -- The predicates from the declarations that are not explicitly typed are
       -- partitioned into three groups: Local predicates, that do not contain
       -- any free type variables, are reduced and added to the types of the
@@ -515,12 +517,12 @@ tcPDeclGroup ps pds = do
       -- reduced. The remaining predicates are passed on together with the
       -- predicates containing free type variables from the explicitly typed
       -- declarations.
-      (gps, (mps, lps)) = fmap (splitPredSetAny fvs) $
-                                splitPredSetAll fvs $ subst theta ps'
+      (gps, (mps, lps)) = fmap (splitPredSetAny fvs') $
+                                splitPredSetAll fvs' $ subst theta ps'
   lps' <- Set.union mps <$> reducePredSet lps
-  lps'' <- foldM (uncurry . defaultPDecl fvs) lps' impPds'
+  lps'' <- foldM (uncurry . defaultPDecl fvs') lps' impPds'
   theta' <- getTypeSubst
-  let impPds'' = map (uncurry (fixType . gen fvs lps'' . subst theta')) impPds'
+  let impPds'' = map (uncurry (fixType . gen fvs' lps'' . subst theta')) impPds'
   mapM_ (reportFlexibleContextDecl m) impPds''
   modifyValueEnv $ flip (rebindVars m) (concatMap (declVars . snd) impPds'')
   (ps'', expPds') <- mapAccumM (uncurry . tcCheckPDecl) gps expPds
@@ -633,10 +635,9 @@ lambdaVar v = do
 defaultPDecl :: Set.Set Int -> LPredSet -> Type -> PDecl a -> TCM LPredSet
 defaultPDecl fvs ps ty (_, FunctionDecl p _ f _) =
   applyDefaultsDecl p ("function " ++ escName f) empty fvs ps ty
-defaultPDecl fvs ps ty (_, PatternDecl p t _) = case t of
-  VariablePattern _ _ v ->
-    applyDefaultsDecl p ("variable " ++ escName v) empty fvs ps ty
-  _ -> return ps
+defaultPDecl fvs ps ty (_, PatternDecl p (VariablePattern _ _ v) _) =
+  applyDefaultsDecl p ("variable " ++ escName v) empty fvs ps ty
+defaultPDecl _ ps _ (_, PatternDecl _ _ _) = return ps
 defaultPDecl _ _ _ _ = internalError "TypeCheck.defaultPDecl"
 
 applyDefaultsDecl :: HasSpanInfo p => p -> String -> Doc -> Set.Set Int
@@ -686,8 +687,8 @@ tcCheckPDecl ps qty pd = withLocalExplPreds $ do
   PredType newExPs _ <- expandPoly qty
   modifyExplPreds $ Set.union (maxPredSet clsEnv newExPs)
   (ps', (ty, pd')) <- tcPDecl ps pd
-  fvs <- computeFvEnv
   theta <- getTypeSubst
+  fvs <- funDepCoveragePredSet clsEnv (subst theta ps') <$> computeFvEnv
   let (gps, lps) = splitPredSetAny fvs (subst theta ps')
   poly <- isNonExpansive $ snd pd
   lps' <- reducePredSet lps
@@ -957,11 +958,13 @@ tcMethodPDecl qcls tySc (i, FunctionDecl p _ f eqs) = withLocalValueEnv $ do
   modifyValueEnv $ bindFun m f (Just qcls) (eqnArity $ head eqs) tySc
   (ps, (ty, pd)) <- tcFunctionPDecl i emptyLPredSet tySc p f eqs
   let what = "implementation of method " ++ escName f
-  fvs <- computeFvEnv
+  clsEnv <- getClassEnv
+  theta <- getTypeSubst
+  fvs <- funDepCoveragePredSet clsEnv (subst theta ps) <$> computeFvEnv
   ps' <- reducePredSet ps
   ps'' <- applyDefaultsDecl p what empty fvs ps' ty
-  theta <- getTypeSubst
-  return (gen Set.empty ps'' $ subst theta ty, pd)
+  theta' <- getTypeSubst
+  return (gen Set.empty ps'' $ subst theta' ty, pd)
 tcMethodPDecl _ _ _ = internalError "TypeCheck.tcMethodPDecl"
 
 checkClassMethodType :: QualTypeExpr -> TypeScheme -> PDecl PredType
@@ -1226,8 +1229,9 @@ tcExpr te@(Typed spi e qty) = do
   (ps, ty) <- inst (typeScheme pty)
   let ps' = Set.map (\pr -> LPred pr spi what (pPrint te)) ps
   (ps'', e') <- tcExpr e >>- unify spi what (pPrintPrec 0 e) emptyLPredSet ty
-  fvs <- computeFvEnv
+  clsEnv <- getClassEnv
   theta <- getTypeSubst
+  fvs <- funDepCoveragePredSet clsEnv (subst theta ps'') <$> computeFvEnv
   let (gps, lps) = splitPredSetAny fvs (subst theta ps'')
   lps' <- reducePredSet lps
   lps'' <- applyDefaultsDecl spi what (pPrint te) fvs lps' ty
@@ -1768,7 +1772,7 @@ applyDefaults p what doc fvs ps ty = do
       ps''  = Set.filter (\pr -> pr `psMember` exPs || not (null (typeVars pr)))
                          (subst theta ps)
       ty'   = subst theta ty
-      tvs'  = nub $ filter (`Set.notMember` fvs) (typeVars ps'')
+      tvs'  = ambiguousTypeVars clsEnv (PredType (Set.map getPred ps'') ty') fvs
   mapM_ (report . errAmbiguousTypeVariable m p what doc ps'' ty') tvs'
   modifyTypeSubst $ compose theta
   return ps''
