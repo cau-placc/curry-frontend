@@ -80,8 +80,8 @@ qDecl e@(ExternalDecl               _ _) = return e
 qDecl (PatternDecl              p t rhs) = PatternDecl p <$> qPattern t <*> qRhs rhs
 qDecl vs@(FreeDecl                  _ _) = return vs
 qDecl (DefaultDecl                p tys) = DefaultDecl p <$> mapM qTypeExpr tys
-qDecl (ClassDecl     p li cx cls tvs ds) = ClassDecl p li <$>
-  qContext cx <*> pure cls <*> pure tvs <*> mapM qDecl ds
+qDecl (ClassDecl p li cx cls tvs fds ds) = ClassDecl p li <$>
+  qContext cx <*> pure cls <*> pure tvs <*> pure fds <*> mapM qDecl ds
 qDecl (InstanceDecl p li cx qcls tys ds) = InstanceDecl p li <$>
   qContext cx <*> qClass qcls <*> mapM qTypeExpr tys <*> mapM qDecl ds
 

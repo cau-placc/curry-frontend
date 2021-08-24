@@ -36,7 +36,7 @@ module Curry.Syntax.Type
   , Literal (..), Pattern (..), Expression (..), InfixOp (..)
   , Statement (..), CaseType (..), Alt (..), Field (..), Var (..)
     -- * Type classes
-  , Context, Constraint (..), InstanceType
+  , Context, Constraint (..), InstanceType, FunDep (..)
     -- * Goals
   , Goal (..)
   ) where
@@ -130,8 +130,8 @@ data IDecl
   | INewtypeDecl    Position QualIdent (Maybe KindExpr) [Ident] NewConstrDecl [Ident]
   | ITypeDecl       Position QualIdent (Maybe KindExpr) [Ident] TypeExpr
   | IFunctionDecl   Position QualIdent (Maybe [Ident]) Arity QualTypeExpr
-  | HidingClassDecl Position Context QualIdent (Maybe KindExpr) [Ident]
-  | IClassDecl      Position Context QualIdent (Maybe KindExpr) [Ident] [IMethodDecl] [Ident]
+  | HidingClassDecl Position Context QualIdent (Maybe KindExpr) [Ident] [FunDep]
+  | IClassDecl      Position Context QualIdent (Maybe KindExpr) [Ident] [FunDep] [IMethodDecl] [Ident]
   | IInstanceDecl   Position Context QualIdent [InstanceType] [IMethodImpl] (Maybe ModuleIdent)
     deriving (Eq, Read, Show)
 
@@ -166,7 +166,7 @@ data Decl a
   | PatternDecl      SpanInfo (Pattern a) (Rhs a)                                  -- Just x = ...
   | FreeDecl         SpanInfo [Var a]                                              -- x, y free
   | DefaultDecl      SpanInfo [TypeExpr]                                           -- default (Int, Float)
-  | ClassDecl        SpanInfo LayoutInfo Context Ident [Ident] [Decl a]            -- class C a => D a where {TypeSig|InfixDecl|FunctionDecl}
+  | ClassDecl        SpanInfo LayoutInfo Context Ident [Ident] [FunDep] [Decl a]   -- class C a => D a b | a -> b where {TypeSig|InfixDecl|FunctionDecl}
   | InstanceDecl     SpanInfo LayoutInfo Context QualIdent [InstanceType] [Decl a] -- instance C a => M.D (N.T a b c) where {FunctionDecl}
     deriving (Eq, Read, Show)
 
@@ -227,6 +227,9 @@ data Constraint = Constraint SpanInfo QualIdent [TypeExpr]
     deriving (Eq, Read, Show)
 
 type InstanceType = TypeExpr
+
+data FunDep = FunDep SpanInfo [Ident] [Ident]
+    deriving (Eq, Read, Show)
 
 -- ---------------------------------------------------------------------------
 -- Functions
@@ -364,8 +367,8 @@ instance Functor Decl where
   fmap f (PatternDecl sp t rhs) = PatternDecl sp (fmap f t) (fmap f rhs)
   fmap f (FreeDecl sp vs) = FreeDecl sp (map (fmap f) vs)
   fmap _ (DefaultDecl sp tys) = DefaultDecl sp tys
-  fmap f (ClassDecl sp li cx cls clsvars ds) =
-    ClassDecl sp li cx cls clsvars (map (fmap f) ds)
+  fmap f (ClassDecl sp li cx cls clsvars fds ds) =
+    ClassDecl sp li cx cls clsvars fds (map (fmap f) ds)
   fmap f (InstanceDecl sp li cx qcls inst ds) =
     InstanceDecl sp li cx qcls inst (map (fmap f) ds)
 
@@ -488,8 +491,8 @@ instance HasSpanInfo (Decl a) where
   getSpanInfo (PatternDecl      sp _ _)     = sp
   getSpanInfo (FreeDecl         sp _)       = sp
   getSpanInfo (DefaultDecl      sp _)       = sp
-  getSpanInfo (ClassDecl        sp _ _ _ _ _) = sp
-  getSpanInfo (InstanceDecl     sp _ _ _ _ _) = sp
+  getSpanInfo (ClassDecl        sp _ _ _ _ _ _) = sp
+  getSpanInfo (InstanceDecl     sp _ _ _ _ _)   = sp
 
   setSpanInfo sp (InfixDecl _ fix prec ops) = InfixDecl sp fix prec ops
   setSpanInfo sp (DataDecl _ tc tvs cs clss) = DataDecl sp tc tvs cs clss
@@ -502,7 +505,7 @@ instance HasSpanInfo (Decl a) where
   setSpanInfo sp (PatternDecl _ t rhs) = PatternDecl sp t rhs
   setSpanInfo sp (FreeDecl _ vs) = FreeDecl sp vs
   setSpanInfo sp (DefaultDecl _ tys) = DefaultDecl sp tys
-  setSpanInfo sp (ClassDecl _ li cx cls clsvars ds) = ClassDecl sp li cx cls clsvars ds
+  setSpanInfo sp (ClassDecl _ li cx cls clsvars fds ds) = ClassDecl sp li cx cls clsvars fds ds
   setSpanInfo sp (InstanceDecl _ li cx qcls inst ds) = InstanceDecl sp li cx qcls inst ds
 
   updateEndPos d@(InfixDecl _ _ _ ops) =
@@ -545,21 +548,22 @@ instance HasSpanInfo (Decl a) where
   updateEndPos d@(DefaultDecl (SpanInfo _ ss) _) =
     setEndPosition (end (last ss)) d
   updateEndPos d@(DefaultDecl _ _) = d
-  updateEndPos d@(ClassDecl _ _ _ _ _ (d':ds)) =
+  updateEndPos d@(ClassDecl _ _ _ _ _ _ (d':ds)) =
     setEndPosition (getSrcSpanEnd (last (d':ds))) d
-  updateEndPos d@(ClassDecl spi _ _ cls clsvars _) =
+  updateEndPos d@(ClassDecl spi _ _ cls clsvars fds _) =
     let sipEnd = map end $ take 1 $ reverse $ getSrcInfoPoints spi
-        ends = filter (/= NoPos) $ getSrcSpanEnd (last (cls : clsvars)) : sipEnd
+        oEnd = last $ map getSrcSpanEnd (cls : clsvars) ++ map getSrcSpanEnd fds
+        ends = filter (/= NoPos) $ oEnd : sipEnd
     in if null ends then d else setEndPosition (maximum ends) d
   updateEndPos d@(InstanceDecl _ _ _ _ _ (d':ds)) =
     setEndPosition (getSrcSpanEnd (last (d':ds))) d
   updateEndPos d@(InstanceDecl spi _ _ qcls inst _) =
     let sipEnd = map end $ take 1 $ reverse $ getSrcInfoPoints spi
-        ends = filter (/= NoPos) $
-                 last (getSrcSpanEnd qcls : map getSrcSpanEnd inst) : sipEnd
+        oEnd = last $ getSrcSpanEnd qcls : map getSrcSpanEnd inst
+        ends = filter (/= NoPos) $ oEnd : sipEnd
     in if null ends then d else setEndPosition (maximum ends) d
 
-  getLayoutInfo (ClassDecl _ li _ _ _ _) = li
+  getLayoutInfo (ClassDecl _ li _ _ _ _ _) = li
   getLayoutInfo (InstanceDecl _ li _ _ _ _) = li
   getLayoutInfo _ = WhitespaceLayout
 
@@ -746,6 +750,15 @@ instance HasSpanInfo Constraint where
     setEndPosition (getSrcSpanEnd (last (t:ts))) c
   updateEndPos c@(Constraint _ qid _) =
     setEndPosition (incr (getPosition qid) (qIdentLength qid - 1)) c
+
+instance HasSpanInfo FunDep where
+  getSpanInfo (FunDep sp _ _) = sp
+  setSpanInfo sp (FunDep _ ltvs rtvs) = FunDep sp ltvs rtvs
+  updateEndPos fd@(FunDep _ _ (rtv:rtvs)) =
+    setEndPosition (getSrcSpanEnd (last (rtv:rtvs))) fd
+  updateEndPos fd@(FunDep (SpanInfo _ (s:ss)) _ _) =
+    setEndPosition (end (last (s:ss))) fd
+  updateEndPos fd = fd
 
 instance HasSpanInfo (Lhs a) where
   getSpanInfo (FunLhs sp _ _)   = sp
@@ -1078,6 +1091,10 @@ instance HasPosition Constraint where
   getPosition = getStartPosition
   setPosition = setStartPosition
 
+instance HasPosition FunDep where
+  getPosition = getStartPosition
+  setPosition = setStartPosition
+
 instance HasPosition FieldDecl where
   getPosition = getStartPosition
   setPosition = setStartPosition
@@ -1211,8 +1228,9 @@ instance Binary a => Binary (Decl a) where
     putWord8 9 >> put spi >> put vs
   put (DefaultDecl spi tys) =
     putWord8 10 >> put spi >> put tys
-  put (ClassDecl spi li cx cls vs ds) =
-    putWord8 11 >> put spi >> put li >> put cx >> put cls >> put vs >> put ds
+  put (ClassDecl spi li cx cls vs fds ds) =
+    putWord8 11 >> put spi >> put li >> put cx >> put cls >> put vs >> put fds
+                >> put ds
   put (InstanceDecl spi li cx cls tys ds) =
     putWord8 12 >> put spi >> put li >> put cx >> put cls >> put tys >> put ds
 
@@ -1230,7 +1248,7 @@ instance Binary a => Binary (Decl a) where
       8  -> PatternDecl <$> get <*> get <*> get
       9  -> FreeDecl <$> get <*> get
       10 -> DefaultDecl <$> get <*> get
-      11 -> ClassDecl <$> get <*> get <*> get <*> get <*> get <*> get
+      11 -> ClassDecl <$> get <*> get <*> get <*> get <*> get <*> get <*> get
       12 -> InstanceDecl <$> get <*> get <*> get <*> get <*> get <*> get
       _  -> fail "Invalid encoding for Decl"
 
@@ -1318,6 +1336,10 @@ instance Binary TypeExpr where
 instance Binary Constraint where
   put (Constraint spi cls tys) = put spi >> put cls >> put tys
   get = liftM3 Constraint get get get
+
+instance Binary FunDep where
+  put (FunDep spi ltvs rtvs) = put spi >> put ltvs >> put rtvs
+  get = liftM3 FunDep get get get
 
 instance Binary a => Binary (Equation a) where
   put (Equation spi lhs rhs) = put spi >> put lhs >> put rhs
