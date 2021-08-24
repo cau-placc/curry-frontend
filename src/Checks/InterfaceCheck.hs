@@ -162,21 +162,19 @@ checkImport (IFunctionDecl _ f Nothing n ty) = do
         toQualPredType m [] OPred ty == ty'
       check _ = False
   checkValueInfo "function" check f f
-checkImport (HidingClassDecl _ cx cls k clsvars funDeps) = do
+checkImport (HidingClassDecl _ cx cls k clsvars) = do
   clsEnv <- getClassEnv
   let check (TypeClass cls' k' _)
         | cls == cls' && toClassKind k (length clsvars) == k' &&
-          map (constraintToSuperClass clsvars) cx == superClasses cls' clsEnv &&
-          map (toFunDep clsvars) funDeps == classFunDeps cls' clsEnv
+          map (constraintToSuperClass clsvars) cx == superClasses cls' clsEnv
         = Just ok
       check _ = Nothing
   checkTypeInfo "hidden type class" check cls cls
-checkImport (IClassDecl _ cx cls k clsvars funDeps ms _) = do
+checkImport (IClassDecl _ cx cls k clsvars ms _) = do
   clsEnv <- getClassEnv
   let check (TypeClass cls' k' fs)
         | cls == cls' && toClassKind k (length clsvars) == k' &&
           map (constraintToSuperClass clsvars) cx == superClasses cls' clsEnv &&
-          map (toFunDep clsvars) funDeps == classFunDeps cls' clsEnv &&
           map (\m -> (imethod m, imethodArity m)) ms ==
             map (\f -> (methodName f, methodArity f)) fs
         = Just $ mapM_ (checkMethodImport cls clsvars) ms

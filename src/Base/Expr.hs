@@ -69,18 +69,18 @@ instance (QuantExpr e1, QuantExpr e2) => QuantExpr (e1, e2) where
 instance QualExpr (Decl a) where
   qfv m (FunctionDecl    _ _ _ eqs) = qfv m eqs
   qfv m (PatternDecl       _ _ rhs) = qfv m rhs
-  qfv m (ClassDecl  _ _ _ _ _ _ ds) = qfv m ds
+  qfv m (ClassDecl    _ _ _ _ _ ds) = qfv m ds
   qfv m (InstanceDecl _ _ _ _ _ ds) = qfv m ds
   qfv _ _                           = []
 
 instance QuantExpr (Decl a) where
-  bv (TypeSig           _ vs _) = vs
-  bv (FunctionDecl     _ _ f _) = [f]
-  bv (ExternalDecl        _ vs) = bv vs
-  bv (PatternDecl        _ t _) = bv t
-  bv (FreeDecl            _ vs) = bv vs
-  bv (ClassDecl _ _ _ _ _ _ ds) = concatMap methods ds
-  bv _                          = []
+  bv (TypeSig         _ vs _) = vs
+  bv (FunctionDecl   _ _ f _) = [f]
+  bv (ExternalDecl      _ vs) = bv vs
+  bv (PatternDecl      _ t _) = bv t
+  bv (FreeDecl          _ vs) = bv vs
+  bv (ClassDecl _ _ _ _ _ ds) = concatMap methods ds
+  bv _                        = []
 
 instance QualExpr (Equation a) where
   qfv m (Equation _ lhs rhs) = filterBv lhs $ qfv m lhs ++ qfv m rhs

@@ -88,8 +88,8 @@ isDefaultDecl _                 = False
 
 -- |Is the declaration a class declaration?
 isClassDecl :: Decl a -> Bool
-isClassDecl (ClassDecl _ _ _ _ _ _ _) = True
-isClassDecl _                         = False
+isClassDecl (ClassDecl _ _ _ _ _ _) = True
+isClassDecl _                       = False
 
 -- |Is the declaration a type or a class declaration?
 isTypeOrClassDecl :: Decl a -> Bool
@@ -318,8 +318,8 @@ instance ShortenAST (Module a) where
 instance ShortenAST (Decl a) where
   shortenAST (FunctionDecl spi a idt _) =
     FunctionDecl spi a idt []
-  shortenAST (ClassDecl spi li cx cls tvs fds ds) =
-    ClassDecl spi li cx cls tvs fds (map shortenAST ds)
+  shortenAST (ClassDecl spi li cx cls tvs ds) =
+    ClassDecl spi li cx cls tvs (map shortenAST ds)
   shortenAST (InstanceDecl spi li cx cls tvs ds) =
     InstanceDecl spi li cx cls tvs (map shortenAST ds)
   shortenAST d = d

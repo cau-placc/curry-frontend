@@ -204,14 +204,13 @@ showsDecl (DefaultDecl spi types)
   . showsSpanInfo spi . space
   . showsList showsTypeExpr types
   . showsString ")"
-showsDecl (ClassDecl spi li context cls clsvars funDeps decls)
+showsDecl (ClassDecl spi li context cls clsvars decls)
   = showsString "(ClassDecl "
   . showsSpanInfo spi . space
   . showsLayoutInfo li . space
   . showsContext context . space
   . showsIdent cls . space
   . showsList showsIdent clsvars . space
-  . showsList showsFunDep funDeps . space
   . showsList showsDecl decls
   . showsString ")"
 showsDecl (InstanceDecl spi li context qcls inst decls)
@@ -237,14 +236,6 @@ showsConstraint (Constraint spi qcls tys)
 
 showsInstanceType :: InstanceType -> ShowS
 showsInstanceType = showsTypeExpr
-
-showsFunDep :: FunDep -> ShowS
-showsFunDep (FunDep spi ltvs rtvs)
-  = showsString "(FunDep "
-  . showsSpanInfo spi . space
-  . showsList showsIdent ltvs . space
-  . showsList showsIdent rtvs
-  . showsString ")"
 
 showsConsDecl :: ConstrDecl -> ShowS
 showsConsDecl (ConstrDecl spi ident types)

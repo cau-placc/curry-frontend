@@ -324,10 +324,9 @@ idsDecl (PatternDecl          _ p rhs) = idsPat p ++ idsRhs rhs
 idsDecl (FreeDecl                _ vs) =
   map (Identifier IdDeclare False . qualify . varIdent) vs
 idsDecl (DefaultDecl            _ tys) = concatMap idsTypeExpr tys
-idsDecl (ClassDecl _ _ cx c vs fds ds) =
+idsDecl (ClassDecl     _ _ cx c vs ds) =
   idsContext cx ++ TypeCons TypeDeclare False (qualify c) :
-    map (Identifier IdDeclare False . qualify) vs ++ concatMap idsFunDep fds ++
-    concatMap idsClassDecl ds
+    map (Identifier IdDeclare False . qualify) vs ++ concatMap idsClassDecl ds
 idsDecl (InstanceDecl _ _ cx c tys ds) = idsContext cx ++
   TypeCons TypeRefer False c : concatMap idsTypeExpr tys ++
   concatMap idsInstanceDecl ds
@@ -368,10 +367,6 @@ idsContext = concatMap idsConstraint
 idsConstraint :: Constraint -> [Code]
 idsConstraint (Constraint _ qcls tys) =
   TypeCons TypeRefer False qcls : concatMap idsTypeExpr tys
-
-idsFunDep :: FunDep -> [Code]
-idsFunDep (FunDep _ ltvs rtvs) =
-  map (Identifier IdRefer False . qualify) (ltvs ++ rtvs)
 
 idsTypeExpr :: TypeExpr -> [Code]
 idsTypeExpr (ConstructorType _ qid) = [TypeCons TypeRefer False qid]

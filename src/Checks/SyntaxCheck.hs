@@ -92,7 +92,7 @@ syntaxCheck exts tcEnv vEnv mdl@(Module _ _ _ m _ _ ds) =
     cons  = concatMap constrs tds
     ls    = nub $ concatMap recLabels tds
     fs    = nub $ concatMap vars vds
-    cs    = [mtd | ClassDecl _ _ _ _ _ _ ds' <- cds, d <- ds', mtd <- methods d]
+    cs    = concatMap (concatMap methods) [ds' | ClassDecl _ _ _ _ _ ds' <- cds]
     rEnv  = globalEnv $ fmap renameInfo vEnv
     state = initState exts m tcEnv rEnv vEnv
 
@@ -396,8 +396,8 @@ bindFuncDecl _   _ _ env = env
 
 -- |Bind type class information, i.e. class methods
 bindClassDecl :: Decl a -> SCM ()
-bindClassDecl (ClassDecl _ _ _ _ _ _ ds) = mapM_ bindClassMethod ds
-bindClassDecl _                          = ok
+bindClassDecl (ClassDecl _ _ _ _ _ ds) = mapM_ bindClassMethod ds
+bindClassDecl _                        = ok
 
 bindClassMethod :: Decl a -> SCM ()
 bindClassMethod ts@(TypeSig _ _ _) = do
@@ -492,9 +492,9 @@ checkTopDecls ds = do
   checkDeclGroup (bindFuncDecl tcc m) ds
 
 checkClassDecl :: Decl () -> SCM (Decl ())
-checkClassDecl (ClassDecl p li cx cls tvs fds ds) = do
+checkClassDecl (ClassDecl p li cx cls tvs ds) = do
   checkMethods (qualify cls) (concatMap methods ds) ds
-  ClassDecl p li cx cls tvs fds <$> checkTopDecls ds
+  ClassDecl p li cx cls tvs <$> checkTopDecls ds
 checkClassDecl _ =
   internalError "SyntaxCheck.checkClassDecl: no class declaration"
 
@@ -541,7 +541,7 @@ checkMethods qcls ms ds =
 
 updateClassAndInstanceDecls :: [Decl a] -> [Decl a] -> [Decl a] -> [Decl a]
 updateClassAndInstanceDecls [] [] ds = ds
-updateClassAndInstanceDecls (c:cs) is (ClassDecl _ _ _ _ _ _ _:ds) =
+updateClassAndInstanceDecls (c:cs) is (ClassDecl _ _ _ _ _ _:ds) =
   c : updateClassAndInstanceDecls cs is ds
 updateClassAndInstanceDecls cs (i:is) (InstanceDecl _ _ _ _ _ _:ds) =
   i : updateClassAndInstanceDecls cs is ds
