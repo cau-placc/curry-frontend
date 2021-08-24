@@ -44,7 +44,6 @@ import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.TopEnv
 import Base.Utils (findMultiples, findDouble)
 
-import Env.Class (funDepCoverage, toFunDep)
 import Env.TypeConstructor (TCEnv)
 import Env.Type
 
@@ -176,7 +175,6 @@ checkDecl (ClassDecl p li cx cls clsvars funDeps ds) = do
   checkSimpleContext cx'
   funDeps' <- filterM (checkClosedFunDep clsvars) funDeps
   ds' <- mapM checkDecl ds
-  mapM_ (checkClassMethod clsvars funDeps') ds'
   return $ ClassDecl p li cx' cls clsvars funDeps' ds'
 checkDecl (InstanceDecl p li cx qcls inst ds) = do
   checkMPTCExtInstance p qcls inst
@@ -217,19 +215,6 @@ checkSimpleContext = mapM_ checkSimpleConstraint
 checkSimpleConstraint :: Constraint -> TSCM ()
 checkSimpleConstraint c@(Constraint _ _ tys) =
   unless (all isVariableType tys) $ report $ errIllegalSimpleConstraint c
-
--- Class method's type signatures have to obey a few additional restrictions.
--- The class variables must all appear in the method's type and the method's
--- context must not contain any additional constraints for these class
--- variables.
-
-checkClassMethod :: [Ident] -> [FunDep] -> Decl a -> TSCM ()
-checkClassMethod tvs funDeps (TypeSig spi _ qty@(QualTypeExpr _ cx _)) = do
-  let covVars = funDepCoverage tvs (map (toFunDep tvs) funDeps) (fv qty)
-  mapM_ (report . errAmbiguousType spi) (filter (`notElem` covVars) tvs)
-  mapM_ (report . errConstrainedClassVariables spi)
-        (filter ((\vs -> not (null vs) && all (`elem` tvs) vs) . fv) cx)
-checkClassMethod _ _ _ = ok
 
 checkInstanceType :: SpanInfo -> InstanceType -> TSCM ()
 checkInstanceType p inst = do
@@ -332,18 +317,17 @@ checkFieldExpr (Field spi l e) = Field spi l <$> checkExpr e
 -- interpret the identifier as such.
 
 checkQualType :: QualTypeExpr -> TSCM QualTypeExpr
-checkQualType (QualTypeExpr spi cx ty) = do
-  (cx', ty') <- checkQualTypes cx [ty]
-  return $ QualTypeExpr spi cx' (head ty')
+checkQualType (QualTypeExpr spi cx ty) =
+  QualTypeExpr spi <$> checkContext cx <*> checkType ty
 
 checkQualTypes :: Context -> [TypeExpr] -> TSCM (Context, [TypeExpr])
-checkQualTypes cx tys = do
-  tys' <- mapM checkType tys
-  cx'  <- checkClosedContext (fv tys') cx
-  return (cx', tys')
+checkQualTypes cx tys = (,) <$> checkContext cx <*> mapM checkType tys
 
 checkClosedContext :: [Ident] -> Context -> TSCM Context
 checkClosedContext tvs = mapM (checkClosedConstraint tvs)
+
+checkContext :: Context -> TSCM Context
+checkContext = mapM checkConstraint
 
 checkClosedConstraint :: [Ident] -> Constraint -> TSCM Constraint
 checkClosedConstraint tvs c = do
@@ -500,16 +484,6 @@ errAmbiguousIdent :: QualIdent -> [QualIdent] -> Message
 errAmbiguousIdent qident qidents = spanInfoMessage qident $
   text "Ambiguous identifier" <+> text (escQualName qident) $+$
     text "It could refer to:" $+$ nest 2 (vcat (map (text . qualName) qidents))
-
-errAmbiguousType :: SpanInfo -> Ident -> Message
-errAmbiguousType spi ident = spanInfoMessage spi $ hsep $ map text
-  [ "Method type does not mention class variable", idName ident ]
-
-errConstrainedClassVariables :: SpanInfo -> Constraint -> Message
-errConstrainedClassVariables spi c = spanInfoMessage spi $ vcat
-  [ text "Constraint" <+> pPrint c
-  , text "in method context constrains only class variables"
-  ]
 
 errNonLinear :: Ident -> String -> Message
 errNonLinear tv what = spanInfoMessage tv $ hsep $ map text

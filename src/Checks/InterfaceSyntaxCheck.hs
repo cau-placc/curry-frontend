@@ -37,7 +37,6 @@ import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.TopEnv
 import Base.Utils    (findMultiples, findDouble)
 
-import Env.Class (funDepCoverage, toFunDep)
 import Env.TypeConstructor
 import Env.Type
 
@@ -122,7 +121,7 @@ checkIDecl (IClassDecl p cx qcls k clsvars funDeps ms hs) = do
   cx' <- checkClosedContext clsvars cx
   checkSimpleContext cx'
   funDeps' <- filterM (checkClosedFunDep clsvars) funDeps
-  ms' <- mapM (checkIMethodDecl clsvars funDeps') ms
+  ms' <- mapM checkIMethodDecl ms
   checkHidden (errNoElement "method" "class") qcls (map imethod ms') hs
   return $ IClassDecl p cx' qcls k clsvars funDeps' ms' hs
 checkIDecl (IInstanceDecl p cx qcls inst is m) = do
@@ -180,14 +179,9 @@ checkSimpleConstraint :: Constraint -> ISC ()
 checkSimpleConstraint c@(Constraint _ _ tys) =
   unless (all isVariableType tys) $ report $ errIllegalSimpleConstraint c
 
-checkIMethodDecl :: [Ident] -> [FunDep] -> IMethodDecl -> ISC IMethodDecl
-checkIMethodDecl tvs funDeps (IMethodDecl p f a qty) = do
-  qty'@(QualTypeExpr _ cx _) <- checkQualType qty
-  let covVars = funDepCoverage tvs (map (toFunDep tvs) funDeps) (fv qty')
-  mapM_ (report . errAmbiguousType f) (filter (`notElem` covVars) tvs)
-  mapM_ (report . errConstrainedClassVariables f)
-        (filter ((\vs -> not (null vs) && all (`elem` tvs) vs) . fv) cx)
-  return $ IMethodDecl p f a qty'
+checkIMethodDecl :: IMethodDecl -> ISC IMethodDecl
+checkIMethodDecl (IMethodDecl p f a qty) =
+  IMethodDecl p f a <$> checkQualType qty
 
 checkInstanceType :: InstanceType -> ISC ()
 checkInstanceType inst = do
@@ -199,18 +193,18 @@ checkInstanceType inst = do
       report $ errIllegalInstanceType inst inst
 
 checkQualType :: QualTypeExpr -> ISC QualTypeExpr
-checkQualType (QualTypeExpr spi cx ty) = do
-  (cx', ty') <- checkQualTypes cx [ty]
-  return $ QualTypeExpr spi cx' (head ty')
+checkQualType (QualTypeExpr spi cx ty) =
+  QualTypeExpr spi <$> checkContext cx <*> checkType ty
 
+-- TODO: Maybe apply instance termination checks here.
 checkQualTypes :: Context -> [TypeExpr] -> ISC (Context, [TypeExpr])
-checkQualTypes cx tys = do
-  tys' <- mapM checkType tys
-  cx'  <- checkClosedContext (fv tys') cx
-  return (cx', tys')
+checkQualTypes cx tys = (,) <$> checkContext cx <*> mapM checkType tys
 
 checkClosedContext :: [Ident] -> Context -> ISC Context
 checkClosedContext tvs = mapM (checkClosedConstraint tvs)
+
+checkContext :: Context -> ISC Context
+checkContext = mapM checkConstraint
 
 checkClosedConstraint :: [Ident] -> Constraint -> ISC Constraint
 checkClosedConstraint tvs c = do
@@ -321,16 +315,6 @@ errUndefinedType = errUndefined "type"
 errMultipleImplementation :: Ident -> Message
 errMultipleImplementation f = spanInfoMessage f $ hsep $ map text
   ["Arity information for method", idName f, "occurs more than once"]
-
-errAmbiguousType :: HasSpanInfo s => s -> Ident -> Message
-errAmbiguousType p ident = spanInfoMessage p $ hsep $ map text
-  [ "Method type does not mention class variable", idName ident ]
-
-errConstrainedClassVariables :: HasSpanInfo s => s -> Constraint -> Message
-errConstrainedClassVariables p c = spanInfoMessage p $ vcat
-  [ text "Constraint" <+> pPrint c
-  , text "in method context constrains only class variables"
-  ]
 
 errNonLinear :: Ident -> String -> Message
 errNonLinear tv what = spanInfoMessage tv $ hsep $ map text
