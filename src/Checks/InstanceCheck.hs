@@ -20,9 +20,11 @@
 module Checks.InstanceCheck (instanceCheck) where
 
 import           Control.Monad.Extra        ( concatMapM, maybeM, unless, when
-                                            , whenM, whileM )
+                                            , whileM )
 import qualified Control.Monad.State as S   (State, execState, gets, modify)
-import           Data.List                  ((\\), nub, partition, sortBy)
+import           Data.List                  ( (\\), nub, partition, sortBy
+                                            , tails )
+import qualified Data.Map            as Map (toList)
 import           Data.Maybe                 (isJust)
 import qualified Data.Set.Extra      as Set
 
@@ -48,12 +50,16 @@ import Env.TypeConstructor
 instanceCheck :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Decl a]
               -> (InstEnv, [Message])
 instanceCheck m tcEnv clsEnv inEnv ds =
-  case findMultiples (local ++ imported) of
-    [] -> execINCM (checkDecls tcEnv clsEnv ds) state
-    iss -> (inEnv, map (errMultipleInstances tcEnv) iss)
+  case multipleErrs ++ funDepConflictErrs of
+    []   -> execINCM (checkDecls tcEnv clsEnv ds) state
+    errs -> (inEnv, errs)
   where
-    local = map (flip InstSource m) $ concatMap (genInstIdents m tcEnv) ds
-    imported = map (uncurry InstSource . fmap fst3) $ instEnvList inEnv
+    localInsts = concatMap (genInstIdents m tcEnv) ds
+    importedISs = map (uncurry InstSource . fmap fst3) $ instEnvList inEnv
+    multipleErrs = map (errMultipleInstances tcEnv) $ findMultiples $
+                     map (flip InstSource m) localInsts ++ importedISs
+    funDepConflictErrs = map (errFunDepConflict tcEnv) $
+                           findFunDepConflicts m clsEnv inEnv localInsts
     state = INCState m inEnv []
 
 -- In order to provide better error messages, we use the following data type
@@ -63,6 +69,54 @@ data InstSource = InstSource InstIdent ModuleIdent
 
 instance Eq InstSource where
   InstSource i1 _ == InstSource i2 _ = i1 == i2
+
+findFunDepConflicts :: ModuleIdent -> ClassEnv -> InstEnv -> [InstIdent]
+                    -> [(InstSource, InstSource)]
+findFunDepConflicts m clsEnv inEnv localInsts =
+  [ (InstSource (cls, itys1) m1, InstSource (cls, itys2) m2)
+  | let inEnv' = foldr (flip bindInstInfo (m, Set.empty, [])) inEnv localInsts
+  , (cls, instMap) <- Map.toList inEnv'
+  , funDep <- classFunDeps cls clsEnv
+  , (itys1, (m1, _, _)) : remInsts <- tails (Map.toList instMap)
+  , (itys2, (m2, _, _)) <- remInsts
+  , m1 /= m2 || m1 == m
+  , let (lhs1, rhs1) = (getFunDepLhs funDep itys1, getFunDepRhs funDep itys1)
+        maxIdLhs1 = maximum (-1 : typeVars lhs1) + 1
+        itys2' = expandAliasType (map TypeVariable [maxIdLhs1 ..]) itys2
+        (lhs2, rhs2) = (getFunDepLhs funDep itys2', getFunDepRhs funDep itys2')
+  , Just sigma <- [unifyTypeLists lhs1 lhs2]
+  , subst sigma rhs1 /= subst sigma rhs2
+  ]
+
+unifyTypeLists :: [Type] -> [Type] -> Maybe TypeSubst
+unifyTypeLists []           []           = Just idSubst
+unifyTypeLists (ty1 : tys1) (ty2 : tys2) = do
+  sigma1 <- unifyTypeLists tys1 tys2
+  sigma2 <- unifyTypes (subst sigma1 ty1) (subst sigma1 ty2)
+  return $ sigma2 `compose` sigma1
+unifyTypeLists _            _            = Nothing
+
+unifyTypes :: Type -> Type -> Maybe TypeSubst
+unifyTypes (TypeVariable tv1) (TypeVariable tv2)
+  | tv1 == tv2            = Just idSubst
+  | otherwise             = Just (singleSubst tv1 (TypeVariable tv2))
+unifyTypes (TypeVariable tv) ty
+  | tv `elem` typeVars ty = Nothing
+  | otherwise             = Just (singleSubst tv ty)
+unifyTypes ty (TypeVariable tv)
+  | tv `elem` typeVars ty = Nothing
+  | otherwise             = Just (singleSubst tv ty)
+unifyTypes (TypeConstructor tc1) (TypeConstructor tc2)
+  | tc1 == tc2 = Just idSubst
+unifyTypes (TypeApply ty11 ty12) (TypeApply ty21 ty22) =
+  unifyTypeLists [ty11, ty12] [ty21, ty22]
+unifyTypes ty1@(TypeApply _ _) (TypeArrow ty21 ty22) =
+  unifyTypes ty1 (TypeApply (TypeApply (TypeConstructor qArrowId) ty21) ty22)
+unifyTypes (TypeArrow ty11 ty12) ty2@(TypeApply _ _) =
+  unifyTypes (TypeApply (TypeApply (TypeConstructor qArrowId) ty11) ty12) ty2
+unifyTypes (TypeArrow ty11 ty12) (TypeArrow ty21 ty22) =
+  unifyTypeLists [ty11, ty12] [ty21, ty22]
+unifyTypes _ _ = Nothing
 
 -- |Instance Check Monad
 type INCM = S.State INCState
@@ -132,9 +186,10 @@ bindInstance tcEnv clsEnv (InstanceDecl p _ cx qcls inst ds) = do
                        unqualInstIdent tcEnv (pcls, ptys)) ps
       otys = map (unqualType tcEnv) tys
       PredTypes ips itys = normalize 0 $ PredTypes ps tys
-  whenM (checkInstanceTermination m False (nub $ fv inst) p ops qcls otys) $
-    modifyInstEnv $ bindInstInfo (getOrigName m qcls tcEnv, itys)
-                                 (m, ips, impls [] ds)
+  term <- checkInstanceTermination m False (nub $ fv (inst, cx)) p ops qcls otys
+  fdCov <- checkFunDepCoverage clsEnv p qcls (getOrigName m qcls tcEnv) inst
+  when (term && fdCov) $ modifyInstEnv $
+    bindInstInfo (getOrigName m qcls tcEnv, itys) (m, ips, impls [] ds)
   where impls is [] = is
         impls is (FunctionDecl _ _ f eqs:ds')
           | f' `elem` map fst is = impls is ds'
@@ -356,6 +411,18 @@ typeSize (TypeApply   ty1 ty2) = typeSize ty1 + typeSize ty2
 typeSize (TypeArrow   ty1 ty2) = 1 + typeSize ty1 + typeSize ty2
 typeSize (TypeForall     _ ty) = typeSize ty
 
+checkFunDepCoverage :: HasSpanInfo p => ClassEnv -> p -> QualIdent -> QualIdent
+                                     -> [InstanceType] -> INCM Bool
+checkFunDepCoverage clsEnv p cls qcls itys =
+  let coverageErrors =
+        [ errFunDepCoverage p cls itys lhs rhs uncoveredVs
+        | funDep <- classFunDeps qcls clsEnv
+        , let (lhs, rhs) = (getFunDepLhs funDep itys, getFunDepRhs funDep itys)
+              uncoveredVs = nub (fv rhs) \\ fv lhs
+        , not (null uncoveredVs)
+        ]
+  in mapM_ report coverageErrors >> return (null coverageErrors)
+
 -- Then, the compiler checks the contexts of all explicit instance declarations
 -- to detect missing super class instances. For a class declaration
 --
@@ -514,18 +581,23 @@ isFunType _                       = False
 -- ---------------------------------------------------------------------------
 
 errMultipleInstances :: TCEnv -> [InstSource] -> Message
-errMultipleInstances _     []         = internalError
+errMultipleInstances _     []                       = internalError
   "InstanceCheck.errMultipleInstances: Empty instance list"
-errMultipleInstances tcEnv iss@(is:_) = message $
+errMultipleInstances tcEnv iss@(InstSource i _ : _) = message $
   text "Multiple instances for the same class" <+> text typeText $+$
-    nest 2 (vcat (map ppInstSource iss))
-  where
-    ppInstSource (InstSource i m) = ppInstIdent (unqualInstIdent tcEnv i) <+>
-      parens (text "defined in" <+> ppMIdent m)
-    typeText = case (length . snd . \(InstSource i' _) -> i') is of
-                 0 -> ""
-                 1 -> "and type"
-                 _ -> "and types"
+    nest 2 (vcat (map (ppInstSource tcEnv) iss))
+  where typeText = case length (snd i) of 0 -> ""
+                                          1 -> "and type"
+                                          _ -> "and types"
+
+errFunDepConflict :: TCEnv -> (InstSource, InstSource) -> Message
+errFunDepConflict tcEnv (is1, is2) = message $
+  text "Functional dependency conflict between instances" $+$
+    nest 2 (vcat (map (ppInstSource tcEnv) [is1, is2]))
+
+ppInstSource :: TCEnv -> InstSource -> Doc
+ppInstSource tcEnv (InstSource i m) = ppInstIdent (unqualInstIdent tcEnv i) <+>
+  parens (text "defined in" <+> ppMIdent m)
 
 errMissingInstance :: HasSpanInfo s => ModuleIdent -> s -> String -> Doc -> Pred
                    -> Message
@@ -571,3 +643,25 @@ errNonDecreasingConstraint d spi cDoc iDoc = spanInfoMessage spi $ vcat
  where
   endDoc = if d then text "than the head of the derived instance" $$ iDoc
                 else text "than the instance head" <+> iDoc
+
+errFunDepCoverage :: HasSpanInfo p => p -> QualIdent -> [InstanceType]
+                  -> [InstanceType] -> [InstanceType] -> [Ident] -> Message
+errFunDepCoverage p cls itys lhs rhs uncoveredVs = spanInfoMessage p $ vcat
+  [ text "Violation of a functional dependency in instance declaration for"
+  , pPrint (Constraint NoSpanInfo cls itys)
+  , text "The left-hand side instance type" <+> lhsDoc1
+    <+> hsep (map (pPrintPrec 2) lhs)
+  , lhsDoc2 <+> text "not uniquely determine the right-hand side instance type"
+    <+> rhsDoc <+> hsep (map (pPrintPrec 2) rhs)
+  , text "because the type" <+> varDoc <+> text "not occur in the former."
+  ]
+ where
+  (lhsDoc1, lhsDoc2) = if length lhs == 1 then (text "type", text "does")
+                                          else (text "types", text "do")
+  rhsDoc = if length rhs == 1 then text "type" else text "types"
+  varDoc = case uncoveredVs of
+    []  -> text "variables do" -- This case should not be able to occur
+    [var] -> text "variable" <+> text (escName var) <+> text "does"
+    _   -> text "variables"
+           <+> hsep (punctuate comma (map (text . escName) (init uncoveredVs)))
+           <+> text "and" <+> text (escName (last uncoveredVs)) <+> text "do"
