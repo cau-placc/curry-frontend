@@ -22,15 +22,19 @@ module Env.Class
   , ClassInfo, SuperClassInfo, FunDep, bindClassInfo, mergeClassInfo
   , constraintToSuperClass, lookupClassInfo, superClasses, classFunDeps
   , classMethods, hasDefaultImpl, applySuperClass, allSuperClasses
-  , applyAllSuperClasses, toFunDep, fromFunDep, funDepCoverage
+  , applyAllSuperClasses, toFunDep, fromFunDep, getFunDepLhs, getFunDepRhs
+  , deleteVarFunDep, renameVarFunDep, renameFunDep, removeTrivialFunDeps
+  , getRhsOnLhsMatch, funDepCoverage
   ) where
 
 import           Data.Containers.ListUtils (nubOrd)
 import           Data.List                 (elemIndex, partition, sort)
 import qualified Data.Map as Map           (Map, empty, insertWith, lookup)
-import           Data.Maybe                (fromMaybe, mapMaybe)
-import qualified Data.Set as Set           ( Set, fromList, isSubsetOf, unions
-                                           , size, toList )
+import           Data.Maybe                (fromMaybe)
+import qualified Data.Set as Set           ( Set, delete, difference, fromList
+                                           , insert, isSubsetOf, lookupMax, map
+                                           , member, null, size, toList
+                                           , unions )
 
 import           Curry.Base.Ident
 import           Curry.Base.SpanInfo
@@ -195,29 +199,51 @@ fromFunDep clsvars (lset, rset) =
   at _        _         =
     internalError $ "Env.Classes.fromFunDep: " ++ show (clsvars, (lset, rset))
 
--- 'funDepCoverage' takes a complete and correctly ordered list of arguments
--- applied to a type class, for example all class variables, the functional
--- dependencies of that class, and a list containing a subset of the type class
--- arguments and returns the list containing all type class arguments that are
--- uniquely determined by the given subset according to the functional
--- dependencies.
-
-funDepCoverage :: (Ord a, Show a) => [a] -> [FunDep] -> [a] -> [a]
-funDepCoverage fullCov funDeps cov =
-  let covSet0 = Set.fromList $ mapMaybe (`elemIndex` fullCov) cov
-  in nubOrd $ cov ++ (map (fullCov `at`) $
-                          Set.toList $ funDepCoverage' funDeps covSet0)
+getFunDepLhs :: Show a => FunDep -> [a] -> [a]
+getFunDepLhs (lhsSet, _) ls = getFunDepLhs' 0 ls
  where
-  funDepCoverage' :: [FunDep] -> Set.Set Int -> Set.Set Int
-  funDepCoverage' fds covSet =
-    let (useFds, oFds) = partition ((`Set.isSubsetOf` covSet) . fst) fds
-        covSet' = Set.unions $ covSet : (map snd useFds)
-    in if Set.size covSet == Set.size covSet' then covSet
-                                              else funDepCoverage' oFds covSet'
+  maxIndex = fromMaybe (-1) (Set.lookupMax lhsSet)
 
-  -- Like (!!), but with a different error message.
-  at :: [a] -> Int -> a
-  at (x : _ ) 0         = x
-  at (_ : xs) n | n > 0 = xs `at` (n - 1)
-  at _        _         =
-    internalError $ "Env.Classes.funDepCoverage: " ++ show (fullCov, funDeps)
+  getFunDepLhs' :: Show a => Int -> [a] -> [a]
+  getFunDepLhs' i _      | i > maxIndex          = []
+  getFunDepLhs' i (x:xs) | i `Set.member` lhsSet = x : getFunDepLhs' (i + 1) xs
+                         | otherwise             =     getFunDepLhs' (i + 1) xs
+  getFunDepLhs' _ [] = internalError $ "Env.Classes.getFunDepLhs: Maximum " ++
+    "fundep index " ++ show maxIndex ++ " exceeds length of list " ++ show ls
+
+getFunDepRhs :: Show a => FunDep -> [a] -> [a]
+getFunDepRhs (lhsSet, rhsSet) = getFunDepLhs (rhsSet, lhsSet)
+
+deleteVarFunDep :: Int -> FunDep -> FunDep
+deleteVarFunDep tv (lhsSet, rhsSet) =
+  (Set.delete tv lhsSet, Set.delete tv rhsSet)
+
+renameVarFunDep :: Int -> Int -> FunDep -> FunDep
+renameVarFunDep tv tv' (lhsSet, rhsSet) =
+  let rename set = if Set.member tv set then Set.insert tv' (Set.delete tv set)
+                                        else set
+  in (rename lhsSet, rename rhsSet)
+
+renameFunDep :: Int -> FunDep -> FunDep
+renameFunDep n (lhsSet, rhsSet) = (Set.map (+ n) lhsSet, Set.map (+ n) rhsSet)
+
+removeTrivialFunDeps :: [FunDep] -> [FunDep]
+removeTrivialFunDeps = nubOrd . filter (not . Set.null . snd) .
+  map (\(lhsSet, rhsSet) -> (lhsSet, rhsSet `Set.difference` lhsSet))
+
+getRhsOnLhsMatch :: (Eq a, Show a) => FunDep -> [a] -> [a] -> Maybe ([a], [a])
+getRhsOnLhsMatch funDep xs ys =
+  if getFunDepLhs funDep xs == getFunDepLhs funDep ys
+    then Just (getFunDepRhs funDep xs, getFunDepRhs funDep ys)
+    else Nothing
+
+-- 'funDepCoverage' calculates the set of all type variables that are uniquely
+-- determined by the given set of type variables by recursively applying the
+-- given list of functional dependencies.
+
+funDepCoverage :: [FunDep] -> Set.Set Int -> Set.Set Int
+funDepCoverage fds covSet =
+  let (useFds, oFds) = partition ((`Set.isSubsetOf` covSet) . fst) fds
+      covSet' = Set.unions $ covSet : (map snd useFds)
+  in if Set.size covSet == Set.size covSet' then covSet
+                                            else funDepCoverage oFds covSet'
