@@ -31,8 +31,8 @@ testExp1 = coerce (coerce True :: Int)
 
 -- Expected result: [(1, False), (0, True)]
 testExp2 :: [(Int, Bool)]
-testExp2 = coerce [(True, 0), (False, 42)]
+testExp2 = coerce [(True, 0 :: Int), (False, 42)]
 
 -- Expected result: [True, False, False, True]
 testExp3 :: [Bool]
-testExp3 = uncoerce [1, 0, 0, 1]
+testExp3 = uncoerce [1 :: Int, 0, 0, 1]

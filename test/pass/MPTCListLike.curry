@@ -86,7 +86,8 @@ testExp3 = mapLGeneral id [True, False, True]
 
 -- Expected result: [False, True, False, False, True]
 testExp4 :: [Bool]
-testExp4 = mapLGeneral id (mapLGeneral (> 0) [0, 10, -5, -1, 42] :: IntDummy Bool)
+testExp4 =
+  mapLGeneral id (mapLGeneral (> 0) [0 :: Int, 10, -5, -1, 42] :: IntDummy Bool)
 
 -- Expected result: [[1, 2, 3], [2, 3], [3], []]
 testExp5 :: [[Int]]

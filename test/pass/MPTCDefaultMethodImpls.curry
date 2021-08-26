@@ -24,7 +24,7 @@ instance C Bool Bool where
 
 -- Expected result: True
 testExp1 :: Bool
-testExp1 = methodC2 False 0
+testExp1 = methodC2 False (0 :: Int)
 
 -- Expected result: Right (-2)
 testExp2 :: Either Bool Int

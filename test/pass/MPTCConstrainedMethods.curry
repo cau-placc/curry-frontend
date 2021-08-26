@@ -33,8 +33,8 @@ instance C Bool Int Bool where
 
 -- Expected result: False
 testExp1 :: Bool
-testExp1 = methodC3 True True True 5
+testExp1 = methodC3 True True True (5 :: Int)
 
 -- Expected result: True
 testExp2 :: Bool
-testExp2 = methodC3 True 5 True True
+testExp2 = methodC3 True (5 :: Int) True True

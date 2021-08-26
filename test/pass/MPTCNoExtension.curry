@@ -25,4 +25,4 @@ testExp1 = doubleIdentityCoerce [1, 2, 3, 4]
 
 -- Expected result: ([(1, 0), (0, 42)], [(1, False), (0, True)])
 testExp2 :: ([(Int, Int)], [(Int, Bool)])
-testExp2 = doubleCoerceWithStep [(True, 0), (False, 42)]
+testExp2 = doubleCoerceWithStep [(True, 0 :: Int), (False, 42)]
