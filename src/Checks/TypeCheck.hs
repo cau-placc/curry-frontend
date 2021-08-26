@@ -1017,6 +1017,11 @@ tcExternal f = do
 -- constructor itself. Overloaded (numeric) literals are not supported in
 -- patterns.
 
+-- TODO: Check if the 'poly' flag of this function can be removed by always
+--         using 'freshNumType' or 'freshFractionalType' respectively for
+--         numeric literals. This would allow for the removal of
+--         'TypeConstrained', but the overloading of patterns, which would then
+--         be possible, might lead to problems with suspension.
 tcLiteral :: Bool -> Literal -> TCM (PredSet, Type)
 tcLiteral _ (Char _) = return (emptyPredSet, charType)
 tcLiteral poly (Int _)
@@ -1656,14 +1661,13 @@ reportMissingInstance :: ModuleIdent -> InstEnv' -> TypeSubst -> LPred
                       -> TCM TypeSubst
 reportMissingInstance m inEnv theta (LPred (Pred _ qcls tys) p what doc) =
   case subst theta tys of
-    -- TODO: Here, only unary constraints are taken into account. Reworking this
-    --         to work with n-ary constraints would be difficult, but it also
-    --         probably isn't necessary since Haskell doesn't take into account
-    --         these constraints either. Actually, Haskell checks if all
-    --         constraints are of the form C v with C being a Prelude class and
-    --         v being an ambiguous type variable and if one of these classes is
-    --         'Num' or a subclass of it. This test could be implemented in
-    --         Curry. 
+    -- TODO: If 'TypeConstrained' has to stay (see the TODO comment of
+    --         'tcLiteral'), check if there is any possibility of the current
+    --         handling of 'TypeConstrained's here to cause internal errors or
+    --         other unwanted behaviour. If so, implement defaulting
+    --         restrictions for 'TypeConstrained's, so that they are only
+    --         defaulted if they do not occur in any predicate for a non-Prelude
+    --         class.
     tys'@[TypeConstrained tyOpts tv] ->
       case concat (filter (hasInstance inEnv qcls) (map (: []) tyOpts)) of
         [] -> do
@@ -1746,10 +1750,13 @@ reportFlexibleContextPattern _ (InfixFuncPattern  _ _ _ _ _) =
 -- use.
 --
 -- In the case of expressions with an ambiguous numeric type, i.e., a type that
--- must be an instance of 'Num' or one of its subclasses, the compiler tries to
--- resolve the ambiguity by choosing the first type from the list of default
--- types that satisfies all constraints for the ambiguous type variable. An
--- error is reported if no such type exists.
+-- must be an instance of 'Num' or one of its subclasses, the compiler first
+-- checks whether the ambiguous type variable only appears in constraints for
+-- Prelude classes (like 'Eq', 'Num' and 'Show'). If so, it tries to resolve the
+-- ambiguity by choosing the first type from the list of default types that
+-- satisfies all constraints for the ambiguous type variable. An error is
+-- reported if no such type exists or if the type variable could not be
+-- defaulted for some other reason.
 
 applyDefaults :: HasSpanInfo p => p -> String -> Doc -> Set.Set Int -> LPredSet
               -> Type -> TCM LPredSet
@@ -1761,8 +1768,10 @@ applyDefaults p what doc fvs ps ty = do
   defs <- getDefaultTypes
   let ps'   = Set.map getPred ps
       theta = foldr (bindDefault defs inEnv ps') idSubst $ nub
-                [ tv | Pred _ qcls [TypeVariable tv] <- Set.toList ps'
-                     , tv `Set.notMember` fvs, isSimpleNumClass clsEnv qcls ]
+        [ tv | Pred _ qcls [TypeVariable tv] <- Set.toList ps'
+             , tv `Set.notMember` fvs, isSimpleNumClass clsEnv qcls
+             , all (\(Pred _ qcls' tys) -> isPreludeClass qcls' ||
+                                           tv `notElem` typeVars tys) ps' ]
       ps''  = Set.filter (\pr -> pr `psMember` exPs || not (null (typeVars pr)))
                          (subst theta ps)
       ty'   = subst theta ty
@@ -1777,19 +1786,23 @@ bindDefault defs inEnv ps tv =
     [] -> id
     ty:_ -> bindSubst tv ty
 
--- TODO: The second TODO comment of 'reportMissingInstance' applies here too.
 defaultType :: InstEnv' -> Int -> Pred -> [Type] -> [Type]
 defaultType inEnv tv (Pred _ qcls [TypeVariable tv'])
   | tv == tv' = concat . filter (hasInstance inEnv qcls) . map (: [])
   | otherwise = id
 defaultType _ _ _ = id
 
--- TODO: Check if a more generalized version of this working with
---         multi-parameter type classes would be useful.
---       In the other direction, restricting this to Prelude subclasses of 'Num'
---         might be useful.
+-- Checks whether the given 'QualIdent' belongs to the 'Num' class or to a class
+-- which has 'Num' as a super class. For multi-parameter type classes, only the
+-- first parameter is considered.
 isSimpleNumClass :: ClassEnv -> QualIdent -> Bool
 isSimpleNumClass = (elem (qNumId, [0]) .) . flip allSuperClasses
+
+isPreludeClass :: QualIdent -> Bool
+isPreludeClass qcls = qcls `elem`
+  [ qEqId, qOrdId, qEnumId, qBoundedId, qReadId, qShowId, qNumId, qFractionalId
+  , qRealId, qIntegralId, qRealFracId, qFloatingId, qMonoidId, qFunctorId
+  , qApplicativeId, qAlternativeId, qMonadId, qMonadFailId, qDataId ]
 
 -- Instantiation and Generalization:
 -- We use negative offsets for fresh type variables.
