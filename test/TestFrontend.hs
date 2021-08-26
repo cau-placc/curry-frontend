@@ -323,6 +323,17 @@ failInfos = map (uncurry mkFailTest)
   , ("MultiplePrecedence",
       ["More than one fixity declaration for `f'"]
     )
+  , ("NoDefaulting",
+      -- Many parts in these error message are left out due to possible variable
+      -- name changes. Example of an actual error message:
+      --   Ambiguous type variable _4
+      --   in type (C _4, Prelude.Num _4, Prelude.Show _4) => [Prelude.Char]
+      --   inferred for function `testExp1'
+      [ "Ambiguous type variable", "inferred for function `testExp1'"
+      , "inferred for function `testExp2'"
+      , "Missing instance for D [", "arising from variable", "methodD"
+      ]
+    )
   , ("PatternRestrictions",
       [ "Lazy patterns are not supported inside a functional pattern"]
     )
@@ -369,6 +380,7 @@ passInfos = map mkPassTest
   , "AnonymVar"
   , "CaseComplete"
   , "DataPass"
+  , "Defaulting"
   , "DefaultPrecedence"
   , "Dequeue"
   , "EmptyWhere"
