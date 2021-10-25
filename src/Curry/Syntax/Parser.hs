@@ -583,22 +583,9 @@ context = (\c -> ([c], [])) <$> constraint
   where combine ((ctx, ss), sp1, sp2) = (ctx, sp1 : (ss ++ [sp2]))
 
 constraint :: Parser a Token Constraint
-constraint = mkConstraint <$> spanPosition <*> qtycls <*> conType
+constraint = mkConstraint <$> spanPosition <*> qtycls <*> many type2
   where mkConstraint sp qtc tys = updateEndPos $
           Constraint (fromSrcSpan sp) qtc tys
-        conType = many (varType <|> aplType)
-
-        varType = mkVariableType <$> spanPosition <*> clsvar
-        mkVariableType sp = VariableType (fromSrcSpan sp)
-
-        aplType = mkParensType <$>
-          parensSp (foldl mkApplyType <$> varType <*> many1 type2)
-        mkParensType (apl, sp1, sp2) =
-          ParenType (spanInfo (combineSpans sp1 sp2) [sp1, sp2]) apl
-        mkApplyType t1 t2 =
-          ApplyType (fromSrcSpan (combineSpans (getSrcSpan t1)
-                                               (getSrcSpan t2)))
-                    t1 t2
 
 -- ---------------------------------------------------------------------------
 -- Kinds
