@@ -321,6 +321,10 @@ extensions =
     , "run C preprocessor"                                   )
   , ( FunctionalPatterns       , "FunctionalPatterns"
     , "enable functional patterns"                           )
+  , ( FlexibleContexts         , "FlexibleContexts"
+    , "loosen restrictions on type constraints"              )
+  , ( FlexibleInstances        , "FlexibleInstances"
+    , "loosen restrictions on instance types"                )
   , ( MultiParamTypeClasses    , "MultiParamTypeClasses"
     , "enable type classes with none or multiple parameters" )
   , ( NegativeLiterals         , "NegativeLiterals"
