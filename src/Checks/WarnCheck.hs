@@ -47,16 +47,17 @@ import Curry.Syntax
 import Curry.Syntax.Utils  (typeVariables)
 import Curry.Syntax.Pretty (pPrint)
 
-import Base.CurryTypes (ppTypeScheme, fromPred, toPredSet)
+import Base.CurryTypes (ppTypeScheme, fromPred, toPredSet, toTypes)
 import Base.Messages   (Message, spanInfoMessage, internalError)
 import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                        , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv
                        , qualModifyNestEnv)
 
+import Base.TypeExpansion
 import Base.Types
 import Base.Utils (findMultiples)
 import Env.ModuleAlias
-import Env.Class (ClassEnv, classMethods, hasDefaultImpl)
+import Env.Class (ClassEnv, classMethods, hasDefaultImpl, minPredSet)
 import Env.TypeConstructor ( TCEnv, TypeInfo (..), lookupTypeInfo
                            , qualLookupTypeInfo, getOrigName )
 import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
@@ -461,7 +462,7 @@ checkOrphanInstance p cx cls tys = warnFor WarnOrphanInstances $ do
   m <- getModuleIdent
   tcEnv <- gets tyConsEnv
   let ocls = getOrigName m cls tcEnv
-      otcs = map (flip (getOrigName m) tcEnv . typeConstr) tys
+      otcs = concatMap (typeConstrs . expandType m tcEnv) (toTypes [] tys)
   unless (isLocalIdent m ocls || any (isLocalIdent m) otcs) $ report $
     warnOrphanInstance p $ pPrint $
     InstanceDecl p WhitespaceLayout cx cls tys []
@@ -1477,11 +1478,11 @@ checkRedContext = warnFor WarnRedundantContext . mapM_ checkRedContextDecl
 
 getRedPredSet :: ModuleIdent -> ClassEnv -> TCEnv -> PredSet -> PredSet
 getRedPredSet m cenv tcEnv ps =
-  Set.map (pm Map.!) $ Set.difference qps $ minPredSet cenv qps --or fromJust $ Map.lookup
-  where (qps, pm) = Set.foldr qualifyAndAddPred (Set.empty, Map.empty) ps
-        qualifyAndAddPred p@(Pred isIcc qid tys) (ps', pm') =
-          let qp = Pred isIcc (getOrigName m qid tcEnv) tys
-          in (Set.insert qp ps', Map.insert qp p pm')
+  Set.map (pm Map.!) $ Set.difference eps $ minPredSet cenv eps --or fromJust $ Map.lookup
+  where (eps, pm) = Set.foldr expandAndAddPred (Set.empty, Map.empty) ps
+        expandAndAddPred p (ps', pm') =
+          let ep = expandPred m tcEnv p
+          in (Set.insert ep ps', Map.insert ep p pm')
 
 getPredFromContext :: Context -> ([Ident], PredSet)
 getPredFromContext cx =
