@@ -17,7 +17,7 @@
 -}
 module Imports (importInterfaces, importModules, qualifyEnv) where
 
-import           Data.List                  (nub, nubBy)
+import           Data.List                  (nubBy)
 import qualified Data.Map            as Map
 import           Data.Maybe                 (catMaybes, fromMaybe, isJust)
 import qualified Data.Set            as Set
@@ -28,7 +28,7 @@ import Curry.Base.Monad
 import Curry.Syntax
 
 import Base.CurryKinds (toKind', toClassKind)
-import Base.CurryTypes ( toQualType, toQualTypes, toQualPredType
+import Base.CurryTypes ( toQualType, toQualTypes, toQualPredSet, toQualPredType
                        , toQualPredTypes, toConstrType, toMethodType )
 
 import Base.Kinds
@@ -167,10 +167,7 @@ bindClass m (HidingClassDecl p cx cls k tvs) =
 bindClass m (IClassDecl _ cx cls _ tvs ds ids) =
   bindClassInfo (qualQualify m cls) (ar, sclss, ms)
   where ar = length tvs
-        sclss = nub $ map (constraintToSuperClass tvs) cx'
-        cx' = map
-          (\(Constraint p scls tys) -> Constraint p (qualQualify m scls) tys)
-          cx
+        sclss = toQualPredSet m tvs OPred cx
         ms = map (\d -> (imethod d, isJust $ imethodArity d)) $ filter isVis ds
         isVis (IMethodDecl _ idt _ _ ) = idt `notElem` ids
 bindClass _ _ = id
