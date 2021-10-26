@@ -204,18 +204,21 @@ failInfos = map (uncurry mkFailTest)
       , "than in the head of the derived instance" -- Prelude.Eq (T1 a)
       , "Missing instance for C [a] [b]", "in derived instance Prelude.Eq (T2 a b)"
       , "Instance overlap for C (a, b) (b, b)"
-      , "arising in derived instance", "Prelude.Show (T3 a b)"
+      , "arising from derived instance", "Prelude.Show (T3 a b)"
       , "Matching instances:", "C (a, b) (b, c) (defined in MPTCDeriving)"
       , "C (a, b) (c, b) (defined in MPTCDeriving)"
       ]
     )
   , ("MPTCFlexibleContext",
       [ "Constraint with non-variable argument C Prelude.Bool" -- C Prelude.Bool a
-      , "occurring in the context of the inferred type for function declaration `f1'"
-      , "occurring in the context of the inferred type for function declaration `f2a'"
+      , "occurring in the context of the inferred type for"
+      , "function declaration `f1'"
+      , "occurring in the context of the inferred type for"
+      , "function declaration `f2a'"
       , "Type error in application", "f3a (1 :: Int)"
       , "Types Prelude.Bool and Prelude.Int are incompatible"
-      , "occurring in the context of the inferred type for function declaration `f4a'"
+      , "occurring in the context of the inferred type for"
+      , "function declaration `f4a'"
       ]
     )
   , ("MPTCInstanceOverlap",
@@ -224,15 +227,25 @@ failInfos = map (uncurry mkFailTest)
       -- messages that differentiates them.
       [ "MPTCInstanceOverlap.curry:14:6-14:12 Error:"
       , "Instance overlap for C [Prelude.Bool] [Prelude.Bool] [Prelude.Bool]"
-      , "arising from variable", "methodC"
+      , "arising from variable methodC"
       , "Matching instances:", "C [a] [a] [b] from MPTCInstanceOverlap"
-      , "C [a] [b] [b] from MPTCInstanceOverlap"
+      ,                        "C [a] [b] [b] from MPTCInstanceOverlap"
       , "MPTCInstanceOverlap.curry:17:12-17:18 Error:"
-      , "MPTCInstanceOverlap.curry:19:18-19:24 Error:"
-      , "MPTCInstanceOverlap.curry:21:12-21:18 Error:"
-      , "Missing instance for C [" -- C [a] [b] [c]
+      , "MPTCInstanceOverlap.curry:19:1-19:51 Error:"
+      , "Constraint with non-variable argument C [" -- C [a] [a] [a]
+      , "occurring in the context of the inferred type for"
+      , "function declaration `f3'"
+      , "MPTCInstanceOverlap.curry:21:1-21:30 Error:"
+      -- Constraint with non-variable argument C [a] [b] [c]
+      -- occurring in the context of the inferred type for
+      , "function declaration `f4'"
       , "MPTCInstanceOverlap.curry:25:19-25:25 Error:"
-      , "MPTCInstanceOverlap.curry:29:11-29:12 Error:", "f'"
+      , "MPTCInstanceOverlap.curry:28:12-28:37 Error:"
+      -- Constraint with non-variable argument C [_54] [a] [a]
+      -- occurring in the context of the inferred type for
+      , "function declaration `f''"
+      , "MPTCInstanceOverlap.curry:29:11-29:12 Error:"
+      , "arising from variable f'"
       ]
     )
   , ("MPTCInstanceTermination",
@@ -252,10 +265,14 @@ failInfos = map (uncurry mkFailTest)
     )
   , ("MPTCMissingInstance",
       [ "Missing instance for C Prelude.Bool [Prelude.Bool]" -- f1 = methodC True [True]
-      , "arising from variable", "methodC"
-      , "Missing instance for D", {- arising from variable -} "methodD" -- f2 = methodD
-      , "Missing instance for E [[Prelude.Bool]] [Prelude.Bool] [" -- E [[Bool]] [Bool] a
-      , {- arising from variable -} "methodE"
+      , "arising from variable methodC"
+      , "Missing instance for D", "arising from variable methodD" -- f2 = methodD
+      -- Note: For 'f3', a missing instance error would be preferred, but the
+      -- following error is acceptable as well
+      , "Ambiguous type variable" -- a
+      , "in type E [[Prelude.Bool]] [Prelude.Bool] ["
+              -- E [[Bool]] [Bool] [a] => [Bool] -> [Bool]
+      , "inferred for function `f3'"
       ]
     )
   , ("MPTCMissingSuperClassInstance",
@@ -264,7 +281,7 @@ failInfos = map (uncurry mkFailTest)
       , "Missing instance for C (b, a) (a, b)"
       , "in instance declaration D (a, b) (b, a)"
       , "Instance overlap for C (a, b) (a, b)"
-      , "arising in instance declaration", "D (a, b) (a, b)"
+      , "arising from instance declaration", "D (a, b) (a, b)"
       , "Matching instances:"
       , "C (a, b) (a, c) (defined in MPTCMissingSuperClassInstance)"
       , "C (a, b) (c, b) (defined in MPTCMissingSuperClassInstance)"
@@ -331,7 +348,10 @@ failInfos = map (uncurry mkFailTest)
       --   inferred for function `testExp1'
       [ "Ambiguous type variable", "inferred for function `testExp1'"
       , "inferred for function `testExp2'"
-      , "Missing instance for D [", "arising from variable", "methodD"
+      , "inferred for function `testExp3'"
+      , "Constraint with non-variable argument D [" -- D [a] [b]
+      , "occurring in the context of the inferred type for"
+      , "function declaration `testExp3'"
       ]
     )
   , ("PatternRestrictions",
