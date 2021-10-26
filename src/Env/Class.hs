@@ -18,18 +18,18 @@
 
 module Env.Class
   ( ClassEnv, initClassEnv
-  , ClassInfo, SuperClassInfo, bindClassInfo, mergeClassInfo
-  , constraintToSuperClass, lookupClassInfo, superClasses, classMethods
-  , hasDefaultImpl, applySuperClass, allSuperClasses, applyAllSuperClasses
+  , ClassInfo, SuperClassInfo, bindClassInfo, mergeClassInfo, lookupClassInfo
+  , superClasses, classMethods, hasDefaultImpl, allSuperClasses
+  , minPredSet, maxPredSet
   ) where
 
-import           Data.Containers.ListUtils (nubOrd)
-import           Data.List                 (elemIndex, sort)
 import qualified Data.Map as Map           (Map, empty, insertWith, lookup)
-import           Data.Maybe                (fromMaybe)
+import qualified Data.Set.Extra as Set     ( Set, concatMap, delete, difference
+                                           , insert, map, union )
 
+import Base.Types
+import Base.TypeSubst                      (expandAliasType)
 import Curry.Base.Ident
-import Curry.Syntax.Type (Constraint (Constraint), TypeExpr (VariableType))
 
 import Base.Messages (internalError)
 
@@ -39,7 +39,7 @@ import Base.Messages (internalError)
 -- Type Synonyms
 -- ---------------------------------------------------------------------------
 
-type ClassInfo = (Int, [SuperClassInfo], [(Ident, Bool)])
+type ClassInfo = (Int, PredSet, [(Ident, Bool)])
 
 -- The list represents the type variables of the superclass from left to right.
 -- The integers within this list are the indices of these variables in the
@@ -60,7 +60,7 @@ initClassEnv = Map.empty
 
 bindClassInfo :: QualIdent -> ClassInfo -> ClassEnv -> ClassEnv
 bindClassInfo cls (arity, sclss, ms) =
-  Map.insertWith mergeClassInfo cls (arity, sort sclss, ms)
+  Map.insertWith mergeClassInfo cls (arity, sclss, ms)
 
 -- We have to be careful when merging two class infos into one as hidden class
 -- declarations in interfaces provide no information about class methods. If
@@ -69,24 +69,8 @@ bindClassInfo cls (arity, sclss, ms) =
 -- the class environment before with an empty list.
 
 mergeClassInfo :: ClassInfo -> ClassInfo -> ClassInfo
-mergeClassInfo (arity, sclss1, ms1) (_, _, ms2) =
-  (arity, sclss1, if null ms1 then ms2 else ms1)
-
--- Transforms a list of class variables and a super class constraint into super
--- class information.
--- TODO: Check if un-qualification of the class is necessary.
-constraintToSuperClass :: [Ident] -> Constraint -> SuperClassInfo
-constraintToSuperClass clsvars (Constraint _ cls tys) = (cls, map getIndex tys)
- where
-  getIndex :: TypeExpr -> Int
-  getIndex (VariableType _ idt) =
-    fromMaybe (internalError $ errMsg1 idt) (elemIndex idt clsvars)
-  getIndex _                    = internalError errMsg2
-  
-  errMsgLoc   = "Env.Classes.constraintToSuperClass: "
-  errMsg1 idt = errMsgLoc ++ "Variable " ++ show idt ++
-                " missing in class variables of " ++ show cls
-  errMsg2     = errMsgLoc ++ "Non-variable type in context of " ++ show cls
+mergeClassInfo (arity1, sclss1, ms1) (_, _, ms2) =
+  (arity1, sclss1, if null ms1 then ms2 else ms1)
 
 -- ---------------------------------------------------------------------------
 -- Simple Lookup Functions
@@ -95,12 +79,13 @@ constraintToSuperClass clsvars (Constraint _ cls tys) = (cls, map getIndex tys)
 lookupClassInfo :: QualIdent -> ClassEnv -> Maybe ClassInfo
 lookupClassInfo = Map.lookup
 
+-- TODO: Replace 'kindArity' with 'classArity' where possible
 classArity :: QualIdent -> ClassEnv -> Int
 classArity cls clsEnv = case lookupClassInfo cls clsEnv of
   Just (arity, _, _) -> arity
   _ -> internalError $ "Env.Classes.classArity: " ++ show cls
 
-superClasses :: QualIdent -> ClassEnv -> [SuperClassInfo]
+superClasses :: QualIdent -> ClassEnv -> PredSet
 superClasses cls clsEnv = case lookupClassInfo cls clsEnv of
   Just (_, sclss, _) -> sclss
   _ -> internalError $ "Env.Classes.superClasses: " ++ show cls
@@ -121,28 +106,32 @@ hasDefaultImpl cls f clsEnv = case lookupClassInfo cls clsEnv of
 -- Super Class Application
 -- ---------------------------------------------------------------------------
 
-applySuperClass :: [a] -> SuperClassInfo -> (QualIdent, [a])
-applySuperClass tys (scls, varIs) = (scls, reorderTypes varIs)
+allSuperClasses :: QualIdent -> ClassEnv -> PredSet
+allSuperClasses cls clsEnv = allSuperClasses' $
+  Pred OPred cls $ map TypeVariable [0 .. classArity cls clsEnv - 1]
  where
-  -- reorderTypes :: [Int] -> [a]
-  reorderTypes []                   = []
-  reorderTypes (nextVarIx : remVIs) = tys `at` nextVarIx : reorderTypes remVIs
+  allSuperClasses' pr@(Pred _ scls tys) =
+    pr `Set.insert` Set.concatMap (allSuperClasses' . expandAliasType tys)
+                                  (superClasses scls clsEnv)
 
-  -- Like (!!), but with a different error message.
-  at :: [a] -> Int -> a
-  at (x : _ ) 0         = x
-  at (_ : xs) n | n > 0 = xs `at` (n - 1)
-  at _        _         =
-    internalError $ "Env.Classes.applySuperClass: " ++ show scls
+-- The function 'minPredSet' transforms a predicate set by removing all
+-- predicates from the predicate set which are implied by other predicates
+-- according to the super class hierarchy. Inversely, the function 'maxPredSet'
+-- adds all predicates to a predicate set which are implied by the predicates
+-- in the given predicate set.
 
-allSuperClasses :: QualIdent -> ClassEnv -> [SuperClassInfo]
-allSuperClasses cls clsEnv =
-  nubOrd $ allSuperClasses' (cls, [0 .. classArity cls clsEnv - 1])
- where
-  allSuperClasses' sclsInfo@(scls, varIs) =
-    sclsInfo : concatMap (allSuperClasses' . applySuperClass varIs)
-                         (superClasses scls clsEnv)
+minPredSet :: IsPred a => ClassEnv -> Set.Set a -> Set.Set a
+minPredSet clsEnv ps =
+  ps `Set.difference` Set.concatMap (impliedPredicates clsEnv) ps
 
-applyAllSuperClasses :: QualIdent -> [a] -> ClassEnv -> [(QualIdent, [a])]
-applyAllSuperClasses cls tys clsEnv =
-  map (applySuperClass tys) (allSuperClasses cls clsEnv)
+maxPredSet :: IsPred a => ClassEnv -> Set.Set a -> Set.Set a
+maxPredSet clsEnv ps =
+  ps `Set.union` Set.concatMap (impliedPredicates clsEnv) ps
+
+-- Returns the set of all predicates implied by the given predicate, excluding
+-- the given predicate.
+impliedPredicates :: IsPred a => ClassEnv -> a -> Set.Set a
+impliedPredicates clsEnv pr = Set.delete (getFromPred (Pred OPred cls tys)) $
+  Set.map (flip modifyPred pr . const . expandAliasType tys)
+          (allSuperClasses cls clsEnv)
+  where Pred _ cls tys = getPred pr

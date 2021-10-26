@@ -27,8 +27,8 @@ module Base.Types
   , Pred (..), PredIsICC (..), IsPred (..), LPred (..), qualifyPred
   , unqualifyPred
   , PredSet, emptyPredSet, LPredSet, emptyLPredSet, psMember, removeICCFlag
-  , partitionPredSetSomeVars, partitionPredSetOnlyVars, minPredSet, maxPredSet
-  , qualifyPredSet, unqualifyPredSet
+  , partitionPredSetSomeVars, partitionPredSetOnlyVars, qualifyPredSet
+  , unqualifyPredSet
   , PredType (..), predType, unpredType, qualifyPredType, unqualifyPredType
   , PredTypes (..), qualifyPredTypes, unqualifyPredTypes
     -- * Representation of data constructors
@@ -55,8 +55,6 @@ import Curry.Base.Pretty
 import Curry.Base.SpanInfo
 
 import Base.Messages (internalError)
-
-import Env.Class (ClassEnv, applyAllSuperClasses)
 
 -- ---------------------------------------------------------------------------
 -- Types
@@ -369,27 +367,6 @@ partitionPredSet f ps = Set.partition $
     isTypeVariable (TypeVariable _) = True
     isTypeVariable (TypeApply ty _) = isTypeVariable ty
     isTypeVariable _                = False
-
--- The function 'minPredSet' transforms a predicate set by removing all
--- predicates from the predicate set which are implied by other predicates
--- according to the super class hierarchy. Inversely, the function 'maxPredSet'
--- adds all predicates to a predicate set which are implied by the predicates
--- in the given predicate set.
-
-minPredSet :: IsPred a => ClassEnv -> Set.Set a -> Set.Set a
-minPredSet clsEnv ps =
-  ps `Set.difference` Set.concatMap (impliedPredicates clsEnv) ps
-
-maxPredSet :: IsPred a => ClassEnv -> Set.Set a -> Set.Set a
-maxPredSet clsEnv ps =
-  ps `Set.union` Set.concatMap (impliedPredicates clsEnv) ps
-
--- Returns the set of all predicates implied by the given predicate, excluding
--- the given predicate.
-impliedPredicates :: IsPred a => ClassEnv -> a -> Set.Set a
-impliedPredicates clsEnv pr =
-  Set.fromList $ tail $ map (flip modifyPred pr . const . uncurry (Pred OPred))
-    ((\(Pred _ qcls tys) -> applyAllSuperClasses qcls tys clsEnv) (getPred pr))
 
 qualifyPredSet :: IsPred a => ModuleIdent -> Set.Set a -> Set.Set a
 qualifyPredSet m = Set.map (qualifyPred m)
