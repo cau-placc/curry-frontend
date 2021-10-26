@@ -209,7 +209,8 @@ checkNewConstrDecl tvs (NewRecordDecl p c (l, ty)) = do
   return $ NewRecordDecl p c (l, ty')
 
 checkSimpleContext :: Context -> TSCM ()
-checkSimpleContext = mapM_ checkSimpleConstraint
+checkSimpleContext cx = do flex <- elem FlexibleContexts <$> getExtensions
+                           unless flex $ mapM_ checkSimpleConstraint cx
 
 checkSimpleConstraint :: Constraint -> TSCM ()
 checkSimpleConstraint c@(Constraint _ _ tys) =
@@ -229,11 +230,12 @@ checkClassMethod _ _ = ok
 
 checkInstanceType :: SpanInfo -> InstanceType -> TSCM ()
 checkInstanceType p inst = do
+  flex <- elem FlexibleInstances <$> getExtensions
   tEnv <- getTypeEnv
-  unless (isSimpleType inst &&
-    not (isTypeSyn (typeConstr inst) tEnv) &&
-    not (any isAnonId $ typeVariables inst) &&
-    isNothing (findDouble $ fv inst)) $
+  unless (not (any isAnonId $ typeVariables inst) &&
+    (flex || isSimpleType inst &&
+             not (isTypeSyn (typeConstr inst) tEnv) &&
+             isNothing (findDouble $ fv inst))) $
       report $ errIllegalInstanceType p inst
 
 checkTypeLhs :: [Ident] -> TSCM ()
@@ -351,8 +353,9 @@ checkConstraint :: Constraint -> TSCM Constraint
 checkConstraint c@(Constraint spi qcls tys) = do
   checkClass False qcls
   tys' <- mapM checkType tys
-  unless (all (isVariableType . rootType) tys') $ report $
-    errIllegalConstraint c
+  flex <- elem FlexibleContexts <$> getExtensions
+  unless (flex || all (isVariableType . rootType) tys') $
+    report $ errIllegalConstraint c
   return $ Constraint spi qcls tys'
   where
     rootType (ApplyType _ ty _) = rootType ty
@@ -513,6 +516,8 @@ errIllegalConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
   , text "Constraints must be of the form C u_1 ... u_n,"
   , text "where C is a type class and u_1, ..., u_n are type variables"
   , text "or type variables applied to types."
+  , text "(Use the FlexibleContexts extension to"
+  , text "loosen these restrictions on constraints.)"
   ]
 
 errIllegalSimpleConstraint :: Constraint -> Message
@@ -521,6 +526,8 @@ errIllegalSimpleConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
   , text "Constraints in class and instance declarations must be of"
   , text "the form C u_1 ... u_n, where C is a type class"
   , text "and u_1, ..., u_n are type variables."
+  , text "(Use the FlexibleContexts extension to"
+  , text "loosen these restrictions on constraints.)"
   ]
 
 errIllegalInstanceType :: SpanInfo -> InstanceType -> Message
@@ -529,6 +536,8 @@ errIllegalInstanceType spi inst = spanInfoMessage spi $ vcat
   , text "Each instance type must be of the form (T u_1 ... u_n),"
   , text "where T is not a type synonym and u_1, ..., u_n are"
   , text "mutually distinct, non-anonymous type variables."
+  , text "(Use the FlexibleInstances extension to"
+  , text "loosen these restrictions on instance types.)"
   ]
 
 errIllegalDataInstance :: QualIdent -> Message
