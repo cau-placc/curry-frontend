@@ -166,7 +166,8 @@ checkImport (HidingClassDecl _ cx cls k clsvars) = do
   clsEnv <- getClassEnv
   let check (TypeClass cls' k' _)
         | cls == cls' && toClassKind k (length clsvars) == k' &&
-          map (constraintToSuperClass clsvars) cx == superClasses cls' clsEnv
+          -- TODO: Qualify here (and for 'IClassDecl' and 'IInstanceDecl')?
+          toPredSet clsvars OPred cx == superClasses cls' clsEnv
         = Just ok
       check _ = Nothing
   checkTypeInfo "hidden type class" check cls cls
@@ -174,7 +175,7 @@ checkImport (IClassDecl _ cx cls k clsvars ms _) = do
   clsEnv <- getClassEnv
   let check (TypeClass cls' k' fs)
         | cls == cls' && toClassKind k (length clsvars) == k' &&
-          map (constraintToSuperClass clsvars) cx == superClasses cls' clsEnv &&
+          toPredSet clsvars OPred cx == superClasses cls' clsEnv &&
           map (\m -> (imethod m, imethodArity m)) ms ==
             map (\f -> (methodName f, methodArity f)) fs
         = Just $ mapM_ (checkMethodImport cls clsvars) ms
