@@ -21,7 +21,7 @@ module Base.Types
   ( -- * Representation of types
     Type (..), applyType, unapplyType, rootOfType
   , isArrowType, arrowArity, arrowArgs, arrowBase, arrowUnapply
-  , IsType (..), typeConstrs
+  , IsType (..), typeConstrs, removeTypeConstrained
   , qualifyType, unqualifyType, qualifyTC
     -- * Representation of predicates, predicate sets and predicated types
   , Pred (..), PredIsICC (..), IsPred (..), LPred (..), qualifyPred
@@ -163,6 +163,17 @@ typeConstrs ty = constrs ty [] where
   constrs (TypeConstrained _ _) tcs = tcs
   constrs (TypeArrow   ty1 ty2) tcs = constrs ty1 (constrs ty2 tcs)
   constrs (TypeForall    _ ty') tcs = constrs ty' tcs
+
+removeTypeConstrained :: Type -> Type
+removeTypeConstrained t@(TypeConstructor  _) = t
+removeTypeConstrained t@(TypeVariable     _) = t
+removeTypeConstrained (TypeConstrained _ tv) = TypeVariable tv
+removeTypeConstrained (TypeApply      t1 t2) =
+  TypeApply (removeTypeConstrained t1) (removeTypeConstrained t2)
+removeTypeConstrained (TypeArrow      t1 t2) =
+  TypeArrow (removeTypeConstrained t1) (removeTypeConstrained t2)
+removeTypeConstrained (TypeForall     tvs t) =
+  TypeForall tvs (removeTypeConstrained t)
 
 -- The method 'typeVars' returns a list of all type variables occurring in a
 -- type t. Note that 'TypeConstrained' variables are not included in the set of

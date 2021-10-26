@@ -21,7 +21,7 @@
 -}
 
 module Env.Instance
-  ( InstIdent, ppInstIdent, InstInfo, InstMatchInfo
+  ( InstIdent, ppInstIdent, InstInfo, InstMatchInfo, InstLookupResult
   , InstEnv, initInstEnv, bindInstInfo, removeInstInfo, instEnvList
   , lookupInstExact, lookupInstMatch
   ) where
@@ -59,6 +59,8 @@ type InstInfo = (ModuleIdent, PredSet, [(Ident, Int)])
 -- substitution mapping instance types to the the requested types.
 type InstMatchInfo = (ModuleIdent, PredSet, [Type], [(Ident, Int)], TypeSubst)
 
+type InstLookupResult = ([InstMatchInfo], [InstMatchInfo])
+
 type InstEnv = Map.Map QualIdent (Map.Map [Type] InstInfo)
 
 initInstEnv :: InstEnv
@@ -90,13 +92,21 @@ lookupInstExact (qcls, tys) = Map.lookup tys <=< Map.lookup qcls
 
 -- Looks up all instances of the given class in the instance environment that
 -- match the given types and returns them as 'InstMatchInfo's.
-lookupInstMatch :: QualIdent -> [Type] -> InstEnv -> [InstMatchInfo]
+lookupInstMatch :: QualIdent -> [Type] -> InstEnv -> InstLookupResult
 lookupInstMatch qcls tys inEnv =
   case Map.lookup qcls inEnv of
-    Nothing      -> []
+    Nothing      -> ([], [])
     Just instMap ->
-      [ (m, ps, itys, is, sigma) | (itys, (m, ps, is)) <- Map.toList instMap
-                                 , Just sigma <- [matchInstTypes itys tys] ]
+      ( [ (m, ps, itys, is, sigma) | (itys, (m, ps, is)) <- Map.toList instMap
+                                   , Just sigma <- [matchInstTypes itys tys] ]
+      , [ (m, ps, itys, is, sigma)
+        | (itys, (m, ps, is)) <- Map.toList instMap
+        , let tys' = map removeTypeConstrained tys
+              maxIdTys = maximum (-1 : typeVars tys') + 1
+              itys' = expandAliasType (map TypeVariable [maxIdTys ..]) itys
+        , Just sigma <- [unifyTypeLists itys' tys']
+        ]
+      )
 
 -- Tries to match the given instance types (first argument) with the given
 -- requested types (second argument) and returns the respective type
@@ -135,3 +145,33 @@ matchType (TypeForall _ ty1) (TypeForall _ ty2) = matchType ty1 ty2
 matchType (TypeForall _ ty1) ty2                = matchType ty1 ty2
 matchType ty1                (TypeForall _ ty2) = matchType ty1 ty2
 matchType _                  _                  = const Nothing
+
+unifyTypeLists :: [Type] -> [Type] -> Maybe TypeSubst
+unifyTypeLists []           []           = Just idSubst
+unifyTypeLists (ty1 : tys1) (ty2 : tys2) = do
+  sigma1 <- unifyTypeLists tys1 tys2
+  sigma2 <- unifyTypes (subst sigma1 ty1) (subst sigma1 ty2)
+  return $ sigma2 `compose` sigma1
+unifyTypeLists _            _            = Nothing
+
+unifyTypes :: Type -> Type -> Maybe TypeSubst
+unifyTypes (TypeVariable tv1) (TypeVariable tv2)
+  | tv1 == tv2            = Just idSubst
+  | otherwise             = Just (singleSubst tv1 (TypeVariable tv2))
+unifyTypes (TypeVariable tv) ty
+  | tv `elem` typeVars ty = Nothing
+  | otherwise             = Just (singleSubst tv ty)
+unifyTypes ty (TypeVariable tv)
+  | tv `elem` typeVars ty = Nothing
+  | otherwise             = Just (singleSubst tv ty)
+unifyTypes (TypeConstructor tc1) (TypeConstructor tc2)
+  | tc1 == tc2 = Just idSubst
+unifyTypes (TypeApply ty11 ty12) (TypeApply ty21 ty22) =
+  unifyTypeLists [ty11, ty12] [ty21, ty22]
+unifyTypes ty1@(TypeApply _ _) (TypeArrow ty21 ty22) =
+  unifyTypes ty1 (TypeApply (TypeApply (TypeConstructor qArrowId) ty21) ty22)
+unifyTypes (TypeArrow ty11 ty12) ty2@(TypeApply _ _) =
+  unifyTypes (TypeApply (TypeApply (TypeConstructor qArrowId) ty11) ty12) ty2
+unifyTypes (TypeArrow ty11 ty12) (TypeArrow ty21 ty22) =
+  unifyTypeLists [ty11, ty12] [ty21, ty22]
+unifyTypes _ _ = Nothing
