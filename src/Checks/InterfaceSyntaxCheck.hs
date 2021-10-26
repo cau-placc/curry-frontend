@@ -30,12 +30,11 @@ import Prelude hiding ((<>))
 import           Control.Monad            (liftM, liftM2, unless, when)
 import qualified Control.Monad.State as S
 import           Data.List                (nub, partition)
-import           Data.Maybe               (isNothing)
 
 import Base.Expr
 import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.TopEnv
-import Base.Utils    (findMultiples, findDouble)
+import Base.Utils    (findMultiples)
 
 import Env.TypeConstructor
 import Env.Type
@@ -44,7 +43,7 @@ import Curry.Base.Ident
 import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
-import Curry.Syntax.Pretty
+import Curry.Syntax.Pretty ()
 
 data ISCState = ISCState
   { typeEnv :: TypeEnv
@@ -114,19 +113,16 @@ checkIDecl (IFunctionDecl p f cm n qty) =
 checkIDecl (HidingClassDecl p cx qcls k clsvars) = do
   checkTypeVars "hiding class declaration" clsvars
   cx' <- checkClosedContext clsvars cx
-  checkSimpleContext cx'
   return $ HidingClassDecl p cx' qcls k clsvars
 checkIDecl (IClassDecl p cx qcls k clsvars ms hs) = do
   checkTypeVars "class declaration" clsvars
   cx' <- checkClosedContext clsvars cx
-  checkSimpleContext cx'
   ms' <- mapM (checkIMethodDecl clsvars) ms
   checkHidden (errNoElement "method" "class") qcls (map imethod ms') hs
   return $ IClassDecl p cx' qcls k clsvars ms' hs
 checkIDecl (IInstanceDecl p cx qcls inst is m) = do
   checkClass qcls
   (cx', inst') <- checkQualTypes cx inst
-  checkSimpleContext cx'
   mapM_ checkInstanceType inst'
   mapM_ (report . errMultipleImplementation . head) $ findMultiples $ map fst is
   return $ IInstanceDecl p cx' qcls inst' is m
@@ -171,13 +167,6 @@ checkNewConstrDecl tvs (NewRecordDecl p c (l, ty)) = do
   ty' <- checkClosedType tvs ty
   return $ NewRecordDecl p c (l, ty')
 
-checkSimpleContext :: Context -> ISC ()
-checkSimpleContext = mapM_ checkSimpleConstraint
-
-checkSimpleConstraint :: Constraint -> ISC ()
-checkSimpleConstraint c@(Constraint _ _ tys) =
-  unless (all isVariableType tys) $ report $ errIllegalSimpleConstraint c
-
 checkIMethodDecl :: [Ident] -> IMethodDecl -> ISC IMethodDecl
 checkIMethodDecl tvs (IMethodDecl p f a qty) = do
   qty'@(QualTypeExpr _ cx _) <- checkQualType qty
@@ -187,13 +176,8 @@ checkIMethodDecl tvs (IMethodDecl p f a qty) = do
   return $ IMethodDecl p f a qty'
 
 checkInstanceType :: InstanceType -> ISC ()
-checkInstanceType inst = do
-  tEnv <- getTypeEnv
-  unless (isSimpleType inst &&
-    not (isTypeSyn (typeConstr inst) tEnv) &&
-    null (filter isAnonId $ typeVars inst) &&
-    isNothing (findDouble $ fv inst)) $
-      report $ errIllegalInstanceType inst inst
+checkInstanceType inst = unless (null (filter isAnonId $ typeVars inst)) $
+  report $ errIllegalInstanceType inst inst
 
 checkQualType :: QualTypeExpr -> ISC QualTypeExpr
 checkQualType (QualTypeExpr spi cx ty) = do
@@ -290,11 +274,6 @@ typeVars (ArrowType      _ ty1 ty2) = typeVars ty1 ++ typeVars ty2
 typeVars (ParenType           _ ty) = typeVars ty
 typeVars (ForallType       _ vs ty) = vs ++ typeVars ty
 
-isTypeSyn :: QualIdent -> TypeEnv -> Bool
-isTypeSyn tc tEnv = case qualLookupTypeKind tc tEnv of
-  [Alias _] -> True
-  _ -> False
-
 -- ---------------------------------------------------------------------------
 -- Error messages
 -- ---------------------------------------------------------------------------
@@ -343,18 +322,8 @@ errNoElement :: String -> String -> QualIdent -> Ident -> Message
 errNoElement what for tc x = spanInfoMessage x $ hsep $ map text
   [ "Hidden", what, escName x, "is not defined for", for, qualName tc ]
 
-errIllegalSimpleConstraint :: Constraint -> Message
-errIllegalSimpleConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
-  [ text "Illegal class constraint" <+> pPrint c
-  , text "Constraints in class and instance declarations must be of"
-  , text "the form C u_1 ... u_n, where C is a type class"
-  , text "and u_1, ..., u_n are type variables."
-  ]
-
 errIllegalInstanceType :: HasSpanInfo s => s -> InstanceType -> Message
 errIllegalInstanceType p inst = spanInfoMessage p $ vcat
   [ text "Illegal instance type" <+> pPrint inst
-  , text "Each instance type must be of the form (T u_1 ... u_n),"
-  , text "where T is not a type synonym and u_1, ..., u_n are"
-  , text "mutually distinct, non-anonymous type variables."
+  , text "Instance types must not contain anonymous type variables."
   ]
