@@ -136,9 +136,9 @@ typeCheck :: Monad m => Options -> CompEnv (Module a)
 typeCheck _ (env, Module spi li ps m es is ds)
   | null msgs = ok (env { valueEnv = vEnv' }, Module spi li ps m es is ds')
   | otherwise = failMessages msgs
-  where (ds', vEnv', msgs) = TC.typeCheck (moduleIdent env) (tyConsEnv env)
-                                          (valueEnv env) (classEnv env)
-                                          (instEnv env) ds
+  where (ds', vEnv', msgs) = TC.typeCheck (extensions env) (moduleIdent env)
+                                          (tyConsEnv env) (valueEnv env)
+                                          (classEnv env) (instEnv env) ds
 
 -- |Check the export specification
 exportCheck :: Monad m => Check m (Module a)
