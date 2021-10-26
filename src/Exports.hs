@@ -32,7 +32,8 @@ import Curry.Base.Ident
 import Curry.Syntax
 
 import Base.CurryKinds (fromKind', fromClassKind)
-import Base.CurryTypes (fromQualType, fromQualPredType, fromQualPredTypes)
+import Base.CurryTypes ( fromQualType, fromQualPredSet, fromQualPredType
+                       , fromQualPredTypes )
 import Base.Messages
 import Base.Types
 
@@ -129,10 +130,7 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
             ty'  = fromQualType m tvs' ty
     [TypeClass qcls k ms] -> IClassDecl NoPos cx qcls' k' clsvars ms' hs : ds
       where qcls'   = qualUnqualify m qcls
-            cx      = [ Constraint NoSpanInfo (qualUnqualify m qscls)
-                          (map (VariableType NoSpanInfo) sclsvars)
-                      | sclsInfo <- superClasses qcls clsEnv
-                      , let (qscls, sclsvars) = applySuperClass tvs sclsInfo ]
+            cx      = fromQualPredSet m clsvars (superClasses qcls clsEnv)
             n       = kindArity k
             k'      = fromClassKind k n
             clsvars = take n tvs
@@ -398,10 +396,7 @@ hiddenTypes m tcEnv clsEnv tvs d =
                            k' = fromKind' k n
                        in  HidingDataDecl NoPos tc k' $ take n tvs
     hidingClassDecl k sclss =
-      let cx       = [ Constraint NoSpanInfo (qualUnqualify m qscls)
-                         (map (VariableType NoSpanInfo) sclsvars)
-                     | sclsInfo <- sclss
-                     , let (qscls, sclsvars) = applySuperClass tvs sclsInfo ]
+      let cx      = fromQualPredSet m clsvars sclss
           n       = kindArity k
           k'      = fromClassKind k n
           clsvars = take n tvs
