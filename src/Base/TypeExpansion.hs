@@ -96,6 +96,11 @@ expandInst
 expandInst m tcEnv clsEnv cx =
   normalize 0 . expandPredTypes m tcEnv clsEnv . toPredTypes [] OPred cx
 
+-- TODO: Use 'expandPredSet' here (converts to minimal predicate set)?
+expandClassContext :: ModuleIdent -> TCEnv -> [Ident] -> Context -> PredSet
+expandClassContext m tcEnv clsvars =
+  Set.map (expandPred m tcEnv) . toPredSet clsvars OPred
+
 -- The function 'expandConstrType' computes the predicated type for a data
 -- or newtype constructor. Similar to 'toConstrType' from 'CurryTypes', the
 -- type's context is restricted to those type variables which are free in

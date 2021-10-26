@@ -393,14 +393,11 @@ bindTypeVar ident k = bindTopEnv ident (TypeVar k)
 bindClass :: ModuleIdent -> TCEnv -> ClassEnv -> Decl a -> ClassEnv
 bindClass m tcEnv clsEnv (ClassDecl _ _ cx cls tvs ds) =
   bindClassInfo qcls (ar, sclss, ms) clsEnv
-  where qcls = qualifyWith m cls
-        ar = length tvs
-        sclss = nub $ map (constraintToSuperClass tvs) cx'
-        cx' = map (\(Constraint p scls tys) ->
-                     Constraint p (getOrigName m scls tcEnv) tys)
-                  cx
-        ms = map (\f -> (f, f `elem` fs)) $ concatMap methods ds
-        fs = concatMap impls ds
+  where qcls  = qualifyWith m cls
+        ar    = length tvs
+        sclss = expandClassContext m tcEnv tvs cx
+        ms    = map (\f -> (f, f `elem` fs)) $ concatMap methods ds
+        fs    = concatMap impls ds
 bindClass _ _ clsEnv _ = clsEnv
 
 instantiateWithDefaultKind :: TypeInfo -> TypeInfo
