@@ -1619,7 +1619,7 @@ reducePredSet reportPreds ps = do
         Map.partitionWithKey (const . not . isDefaultable) pm'
       (pmReportable, pm''') = Map.partitionWithKey (const . isReportable) pm''
   mapM_ report (Map.elems pmReportable)
-  theta' <- foldM (reportMissingInstance m inEnv) idSubst psDefaultable
+  theta' <- foldM (defaultTypeConstrained m inEnv) idSubst psDefaultable
   modifyTypeSubst $ compose theta'
   return $ Map.keysSet pm'''
   where
@@ -1664,9 +1664,9 @@ instPredSet m (LPred (Pred _ qcls tys) p what doc) inEnv =
              Right $ Set.map (\pr -> LPred pr p what doc) (subst sigma ps)
   where lpr = LPred (Pred OPred qcls (map removeTypeConstrained tys)) p what doc
 
-reportMissingInstance :: ModuleIdent -> InstEnv' -> TypeSubst -> LPred
-                      -> TCM TypeSubst
-reportMissingInstance m inEnv theta (LPred (Pred _ qcls tys) p what doc) =
+defaultTypeConstrained :: ModuleIdent -> InstEnv' -> TypeSubst -> LPred
+                       -> TCM TypeSubst
+defaultTypeConstrained m inEnv theta (LPred (Pred _ qcls tys) p what doc) =
   case subst theta tys of
     tys'@[TypeConstrained tyOpts tv] ->
       case concat (filter (hasInstance inEnv qcls) (map (: []) tyOpts)) of
