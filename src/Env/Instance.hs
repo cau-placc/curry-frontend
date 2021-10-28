@@ -15,15 +15,15 @@
     as given in the instance declaration, and a list of the class methods
     implemented in the specific instance along with their arity. A flat
     environment is sufficient because instances are visible globally and cannot
-    be hidden. Instances are recorded with normalized and fully expanded types
-    and only use the original names of the type class and type constructors
-    involved. The context also uses original names and is already minimized.
+    be hidden. Instances are recorded with fully expanded and normalized
+    instance types and contexts and only use the original names of the class and
+    type constructors involved. In addition, the context is already minimized.
 -}
 
 module Env.Instance
-  ( InstIdent, ppInstIdent, InstInfo, InstMatchInfo, InstLookupResult
-  , InstEnv, initInstEnv, bindInstInfo, removeInstInfo, instEnvList
-  , lookupInstExact, lookupInstMatch
+  ( InstIdent, ppInstIdent, InstInfo, InstEnv, instEnvList
+  , initInstEnv, bindInstInfo, removeInstInfo
+  , lookupInstExact, InstMatchInfo, InstLookupResult, lookupInstMatch
   ) where
 
 import qualified Data.Map as Map ( Map, adjust, empty, delete, insertWith
@@ -40,6 +40,10 @@ import Base.Subst
 import Base.Types
 import Base.TypeSubst
 
+-- -----------------------------------------------------------------------------
+-- Environment Components with Helper Functions
+-- -----------------------------------------------------------------------------
+
 -- An 'InstIdent' uniquely identifies an instance by its class name and instance
 -- types.
 type InstIdent = (QualIdent, [Type])
@@ -53,15 +57,22 @@ ppInstIdent (qcls, tys) =
 -- the implemented methods with their arity.
 type InstInfo = (ModuleIdent, PredSet, [(Ident, Int)])
 
--- An 'InstMatchInfo' is represents a successful result when searching for a
--- matching instance. In addition to the information of an 'InstInfo', it
--- contains the original instance types of the matching instance and a type
--- substitution mapping instance types to the the requested types.
-type InstMatchInfo = (ModuleIdent, PredSet, [Type], [(Ident, Int)], TypeSubst)
-
-type InstLookupResult = ([InstMatchInfo], [InstMatchInfo])
-
+-- The instance environment is represented by a nested map to make both the
+-- lookup of instances with their exact identificators and the search for
+-- matching instances efficient.
 type InstEnv = Map.Map QualIdent (Map.Map [Type] InstInfo)
+
+-- Converts the instance environment from a map to a list. For easier usage, the
+-- nesting of the instance environment map is removed, such that the returned
+-- list represents a map where 'InstIdent's are mapped to 'InstInfo's.
+instEnvList :: InstEnv -> [(InstIdent, InstInfo)]
+instEnvList inEnv = [ ((qcls, tys), instInfo)
+                    | (qcls, instMap) <- Map.toList inEnv
+                    , (tys, instInfo) <- Map.toList instMap ]
+
+-- ---------------------------------------------------------------------------
+-- Environment Building Functions
+-- ---------------------------------------------------------------------------
 
 initInstEnv :: InstEnv
 initInstEnv = Map.empty
@@ -76,13 +87,9 @@ bindInstInfo (qcls, tys) instInfo =
 removeInstInfo :: InstIdent -> InstEnv -> InstEnv
 removeInstInfo (qcls, tys) = Map.adjust (Map.delete tys) qcls
 
--- Converts the instance environment from a map to a list. For easier usage, the
--- nesting of the instance environment map is removed, such that the returned
--- list represents a map where 'InstIdent's are mapped to 'InstInfo's.
-instEnvList :: InstEnv -> [(InstIdent, InstInfo)]
-instEnvList inEnv = [ ((qcls, tys), instInfo)
-                    | (qcls, instMap) <- Map.toList inEnv
-                    , (tys, instInfo) <- Map.toList instMap ]
+-- ---------------------------------------------------------------------------
+-- Lookup of Instances
+-- ---------------------------------------------------------------------------
 
 -- Looks up the instance identified by the given 'InstIdent' in the instance
 -- environment. Note that no type matching is performed, so only the instance
@@ -90,23 +97,62 @@ instEnvList inEnv = [ ((qcls, tys), instInfo)
 lookupInstExact :: InstIdent -> InstEnv -> Maybe InstInfo
 lookupInstExact (qcls, tys) = Map.lookup tys <=< Map.lookup qcls
 
--- Looks up all instances of the given class in the instance environment that
--- match the given types and returns them as 'InstMatchInfo's.
+-- When we are not looking up an instance with its exact identifier, but search
+-- for all instances fitting to some predicate, we differentiate between
+-- matching and unifiable instances:
+-- For a predicate P, an instance with the head H is considered matching, when
+-- there is some substitution s with s(H) = P, and it is considered unifiable,
+-- when there is s(H) = s(P) for some substitution s. Notice that we assume the
+-- instance head and the predicate to not share type variables here and that
+-- therefore every matching instance is also unifiable.
+
+-- For example, for a predicate C [Int] [Int] [a],
+-- instance C [b] [b] [c] is matching with s = {b -> Int, c -> a}
+-- instance C [b] [c] [c] is unifiable with s = {a -> Int, b -> Int, c -> Int}
+
+-- The reason for considering unifiable instances in the first place is that
+-- they might become matching instances in practice. For example, if both
+-- instances from above exist and there is a function f with the inferred type
+-- C [Int] [Int] [a] => a -> Int, then we could accurately report an overlapping
+-- instance error if f is applied to an Int. However, if we reduced the
+-- predicate of f with the first instance above, then we would not be able to
+-- detect that overlap, even though it still exists.
+
+-- An 'InstMatchInfo' represents an instance matching or being unifiable to a
+-- requested predicate. In addition to the information of an 'InstInfo', it
+-- contains the instance types and a type substitution mapping these types to
+-- the requested ones. Notice that for unifiable instances, the predicate set
+-- and the instance types in an 'InstMatchInfo' might not be equal to the ones
+-- in the instance environment because of the renaming of type variables.
+type InstMatchInfo = (ModuleIdent, PredSet, [Type], [(Ident, Int)], TypeSubst)
+
+-- For a requested predicate, an 'InstLookupResult' contains all matching
+-- instances in the first element and all unfiable instances in the second.
+type InstLookupResult = ([InstMatchInfo], [InstMatchInfo])
+
+-- Looks up all instances in the environment matching or being unifiable to the
+-- predicate represented by the given class and types.
 lookupInstMatch :: QualIdent -> [Type] -> InstEnv -> InstLookupResult
 lookupInstMatch qcls tys inEnv =
-  case Map.lookup qcls inEnv of
-    Nothing      -> ([], [])
-    Just instMap ->
-      ( [ (m, ps, itys, is, sigma) | (itys, (m, ps, is)) <- Map.toList instMap
+  case fmap Map.toList (Map.lookup qcls inEnv) of
+    Nothing       -> ([], [])
+    Just instList ->
+      ( [ (m, ps, itys, is, sigma) | (itys, (m, ps, is)) <- instList
                                    , Just sigma <- [matchInstTypes itys tys] ]
-      , [ (m, ps, itys, is, sigma)
-        | (itys, (m, ps, is)) <- Map.toList instMap
+      , [ (m, ps', itys', is, sigma)
+        | (itys, (m, ps, is)) <- instList
+        -- 'TypeConstrained's, which are special type variables standing for
+        -- Int or Float, are converted to regular type variables here. They are
+        -- treated specially in 'defaultTypeConstrained' in the type check.
         , let tys' = map removeTypeConstrained tys
-              maxIdTys = maximum (-1 : typeVars tys') + 1
-              itys' = expandAliasType (map TypeVariable [maxIdTys ..]) itys
-        , Just sigma <- [unifyTypeLists itys' tys']
-        ]
+              rnTvs = map TypeVariable [maximum (-1 : typeVars tys') + 1 ..]
+              PredTypes ps' itys' = expandAliasType rnTvs $ PredTypes ps itys
+        , Just sigma <- [unifyTypeLists itys' tys'] ]
       )
+
+-- ---------------------------------------------------------------------------
+-- Type Matching
+-- ---------------------------------------------------------------------------
 
 -- Tries to match the given instance types (first argument) with the given
 -- requested types (second argument) and returns the respective type
@@ -146,6 +192,12 @@ matchType (TypeForall _ ty1) ty2                = matchType ty1 ty2
 matchType ty1                (TypeForall _ ty2) = matchType ty1 ty2
 matchType _                  _                  = const Nothing
 
+-- ---------------------------------------------------------------------------
+-- Type Unification
+-- ---------------------------------------------------------------------------
+
+-- Tries to unify the two given lists of types and returns the unifying
+-- substitution, if successful.
 unifyTypeLists :: [Type] -> [Type] -> Maybe TypeSubst
 unifyTypeLists []           []           = Just idSubst
 unifyTypeLists (ty1 : tys1) (ty2 : tys2) = do
