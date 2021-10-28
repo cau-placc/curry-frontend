@@ -8,17 +8,18 @@
     Stability   :  experimental
     Portability :  portable
 
-    The compiler maintains information about all type classes in an
-    environment that maps type classes to a sorted list of their direct
-    superclasses and all their associated class methods with an additional
-    flag stating whether an default implementation has been provided or not.
-    For both the type class identifier and the list of super classes original
+    The compiler maintains information about all type classes in an environment
+    that maps type classes to their arity, a predicate set representing their
+    direct super classes, and all their associated class methods. The latter
+    consist of the method name and a flag stating whether an default
+    implementation has been provided or not.
+    For both the type class identifier and the super class predicates, original
     names are used. Thus, the use of a flat environment is sufficient.
 -}
 
 module Env.Class
   ( ClassEnv, initClassEnv
-  , ClassInfo, SuperClassInfo, bindClassInfo, mergeClassInfo, lookupClassInfo
+  , ClassInfo, bindClassInfo, mergeClassInfo, lookupClassInfo
   , superClasses, classMethods, hasDefaultImpl, allSuperClasses
   , minPredSet, maxPredSet
   ) where
@@ -33,27 +34,25 @@ import Curry.Base.Ident
 
 import Base.Messages (internalError)
 
--- TODO: Add and update comments, if this approach works
-
--- ---------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
 -- Type Synonyms
--- ---------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
+
+-- Type synonyms in super class constraints, which are allowed with the
+-- FlexibleContexts extension, are fully expanded when entering a class into the
+-- class environment. Type variables in constraints receive indices based on the
+-- order of class variables in the declaration head.
+-- For example, the context of the class declaration
+--   class M.C b a String => D a b
+-- is represented by the predicate set {M.C 1 0 [Prelude.Char]} (simplified).
 
 type ClassInfo = (Int, PredSet, [(Ident, Bool)])
 
--- The list represents the type variables of the superclass from left to right.
--- The integers within this list are the indices of these variables in the
--- subclass.
--- examples: class C b => D a b c  -->  (D, [1])
---           class C b a => D a b  -->  (D, [1, 0])
--- Note, that for FlexibleContexts, this has to be (QualIdent, [Type])
-type SuperClassInfo = (QualIdent, [Int])
-
 type ClassEnv = Map.Map QualIdent ClassInfo
 
--- ---------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
 -- Environment Building Functions
--- ---------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
 
 initClassEnv :: ClassEnv
 initClassEnv = Map.empty
@@ -72,9 +71,9 @@ mergeClassInfo :: ClassInfo -> ClassInfo -> ClassInfo
 mergeClassInfo (arity1, sclss1, ms1) (_, _, ms2) =
   (arity1, sclss1, if null ms1 then ms2 else ms1)
 
--- ---------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
 -- Simple Lookup Functions
--- ---------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
 
 lookupClassInfo :: QualIdent -> ClassEnv -> Maybe ClassInfo
 lookupClassInfo = Map.lookup
@@ -102,10 +101,12 @@ hasDefaultImpl cls f clsEnv = case lookupClassInfo cls clsEnv of
     Nothing -> internalError $ "Env.Classes.hasDefaultImpl: " ++ show f
   _ -> internalError $ "Env.Classes.hasDefaultImpl: " ++ show cls
 
--- ---------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
 -- Super Class Application
--- ---------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
 
+-- Computes the set of all super class predicates of a class, including the
+-- indirect super class predicates and a predicate for the given class itself.
 allSuperClasses :: QualIdent -> ClassEnv -> PredSet
 allSuperClasses cls clsEnv = allSuperClasses' $
   Pred OPred cls $ map TypeVariable [0 .. classArity cls clsEnv - 1]
