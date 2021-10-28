@@ -40,7 +40,7 @@ import Base.Types
 import Env.Class
 import Env.OpPrec          (OpPrecEnv, PrecInfo (..), OpPrec (..), qualLookupP)
 import Env.Instance
-import Env.TypeConstructor (TCEnv, TypeInfo (..), clsKind, qualLookupTypeInfo)
+import Env.TypeConstructor (TCEnv, TypeInfo (..), qualLookupTypeInfo)
 import Env.Value           (ValueEnv, ValueInfo (..), qualLookupValue)
 
 import CompilerEnv
@@ -79,7 +79,7 @@ exportInterface' m es pEnv tcEnv vEnv clsEnv inEnv = Interface m imports decls'
   imports = map (IImportDecl NoPos) $ usedModules decls'
   precs   = foldr (infixDecl m pEnv) [] es
   types   = foldr (typeDecl m tcEnv clsEnv tvs) [] es
-  values  = foldr (valueDecl m tcEnv vEnv tvs) [] es
+  values  = foldr (valueDecl m clsEnv vEnv tvs) [] es
   (inExps, insts) = getExportedInsts (initInstExports m inEnv)
   decls   = map ID (precs ++ types ++ values) ++ insts
   decls'  = closeInterface m tcEnv clsEnv inEnv tvs Set.empty inExps decls
@@ -174,12 +174,12 @@ methodDecl :: ModuleIdent -> [Ident] -> ClassMethod -> IMethodDecl
 methodDecl m tvs (ClassMethod f a (PredType ps ty)) = IMethodDecl NoPos f a $
   fromQualPredType m tvs $ PredType (Set.deleteMin ps) ty
 
-valueDecl
-  :: ModuleIdent -> TCEnv -> ValueEnv -> [Ident] -> Export -> [IDecl] -> [IDecl]
-valueDecl m tcEnv vEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
+valueDecl :: ModuleIdent -> ClassEnv -> ValueEnv -> [Ident] -> Export -> [IDecl]
+          -> [IDecl]
+valueDecl m clsEnv vEnv tvs (Export _ f) ds = case qualLookupValue f vEnv of
   [Value _ cm a (ForAll _ pty)] ->
     IFunctionDecl NoPos (qualUnqualify m f)
-      (fmap (flip take tvs . kindArity . flip (clsKind m) tcEnv) cm) a
+      (fmap (flip take tvs . flip classArity clsEnv) cm) a
       (fromQualPredType m tvs pty) : ds
   [Label _ _ _ ] -> ds -- Record labels are collected somewhere else.
   _ -> internalError $ "Exports.valueDecl: " ++ show f

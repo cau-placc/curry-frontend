@@ -20,8 +20,8 @@
 module Env.Class
   ( ClassEnv, initClassEnv
   , ClassInfo, bindClassInfo, mergeClassInfo, lookupClassInfo
-  , superClasses, classMethods, hasDefaultImpl, allSuperClasses
-  , minPredSet, maxPredSet
+  , classArity, superClasses, classMethods, hasDefaultImpl
+  , allSuperClasses, minPredSet, maxPredSet
   ) where
 
 import qualified Data.Map as Map           (Map, empty, insertWith, lookup)
@@ -78,7 +78,6 @@ mergeClassInfo (arity1, sclss1, ms1) (_, _, ms2) =
 lookupClassInfo :: QualIdent -> ClassEnv -> Maybe ClassInfo
 lookupClassInfo = Map.lookup
 
--- TODO: Replace 'kindArity' with 'classArity' where possible
 classArity :: QualIdent -> ClassEnv -> Int
 classArity cls clsEnv = case lookupClassInfo cls clsEnv of
   Just (arity, _, _) -> arity

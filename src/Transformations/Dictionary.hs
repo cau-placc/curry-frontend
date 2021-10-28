@@ -211,17 +211,11 @@ createClassDictConstrDecl cls tvs ds = do
                  [toMethodType cls tvs qty | TypeSig _ fs qty <- ds, _ <- fs]
   return $ ConstrDecl NoSpanInfo (dictConstrId cls) mtys
 
--- TODO: Decide whether storing the arity of type classes in the class
---         environment should stay. Using 'classArity' instead of the class kind
---         would allow reducing the arity of 'bindClassEntities',
---         'bindClassDict' and this function, as the type constructor
---         environment would no longer be needed.
-classDictConstrPredType :: ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv
-                        -> QualIdent -> PredType
-classDictConstrPredType m tcEnv vEnv clsEnv cls =
+classDictConstrPredType :: ValueEnv -> ClassEnv -> QualIdent -> PredType
+classDictConstrPredType vEnv clsEnv cls =
   PredType ps $ foldr TypeArrow ty mtys
  where
-  varTys = map TypeVariable [0 .. kindArity (clsKind m cls tcEnv) - 1]
+  varTys = map TypeVariable [0 .. classArity cls clsEnv - 1]
   ps     = superClasses cls clsEnv
   fs     = classMethods cls clsEnv
   mptys  = map (classMethodType vEnv cls) fs
@@ -245,13 +239,11 @@ createInstDictExpr cls tys = do
              (zipWith (Variable NoSpanInfo . predType) (arrowArgs ty) fs)
 
 getInstDictConstrType :: QualIdent -> [Type] -> DTM Type
-getInstDictConstrType cls tys =  do
-  m <- getModuleIdent
-  tcEnv <- getTyConsEnv
+getInstDictConstrType cls tys = do
   vEnv <- getValueEnv
   clsEnv <- getClassEnv
   return $ instanceTypes tys $ unpredType $
-    classDictConstrPredType m tcEnv vEnv clsEnv cls
+    classDictConstrPredType vEnv clsEnv cls
 
 createClassMethodDecl :: QualIdent -> MethodMap -> Ident -> DTM (Decl PredType)
 createClassMethodDecl cls =
@@ -325,13 +317,12 @@ renameDecl _ _ = internalError "Dictionary.renameDecl"
 createStubs :: Decl PredType -> DTM [Decl Type]
 createStubs (ClassDecl _ _ _ cls _ _) = do
   m <- getModuleIdent
-  tcEnv <- getTyConsEnv
   vEnv <- getValueEnv
   clsEnv <- getClassEnv
   let ocls  = qualifyWith m cls
       fs    = classMethods ocls clsEnv
       sclss = Set.toAscList (superClasses ocls clsEnv)
-      dictConstrPty = classDictConstrPredType m tcEnv vEnv clsEnv ocls
+      dictConstrPty = classDictConstrPredType vEnv clsEnv ocls
       (superDictAndMethodTys, dictTy) =
         arrowUnapply $ transformPredType dictConstrPty
       (superDictTys, methodTys)       =
@@ -397,7 +388,7 @@ bindDictType _ _      _                     = id
 
 bindClassDecls :: ModuleIdent -> TCEnv -> ClassEnv -> ValueEnv -> ValueEnv
 bindClassDecls m tcEnv clsEnv =
-  flip (foldr $ bindClassEntities m tcEnv clsEnv) $ allEntities tcEnv
+  flip (foldr $ bindClassEntities m clsEnv) $ allEntities tcEnv
 
 -- It is safe to use 'fromMaybe 0' in 'bindClassEntities', because the
 -- augmentation has already replaced the 'Nothing' value for the arity
@@ -405,23 +396,21 @@ bindClassDecls m tcEnv clsEnv =
 -- maybe no default implementation has been provided) if the method has
 -- been augmented.
 
-bindClassEntities :: ModuleIdent -> TCEnv -> ClassEnv -> TypeInfo -> ValueEnv
-                  -> ValueEnv
-bindClassEntities m tcEnv clsEnv (TypeClass cls _ ms) =
-  bindClassDict m tcEnv clsEnv cls . bindSuperStubs m tcEnv cls sclss .
+bindClassEntities :: ModuleIdent -> ClassEnv -> TypeInfo -> ValueEnv -> ValueEnv
+bindClassEntities m clsEnv (TypeClass cls _ ms) =
+  bindClassDict m clsEnv cls . bindSuperStubs m clsEnv cls sclss .
     bindDefaultMethods m cls fs
   where fs    = zip (map methodName ms) (map (fromMaybe 0 . methodArity) ms)
         sclss = superClasses cls clsEnv
-bindClassEntities _ _ _ _ = id
+bindClassEntities _ _ _ = id
 
-bindClassDict :: ModuleIdent -> TCEnv -> ClassEnv -> QualIdent -> ValueEnv
-              -> ValueEnv
-bindClassDict m tcEnv clsEnv cls vEnv = bindEntity m c dc vEnv
+bindClassDict :: ModuleIdent -> ClassEnv -> QualIdent -> ValueEnv -> ValueEnv
+bindClassDict m clsEnv cls vEnv = bindEntity m c dc vEnv
   where c  = qDictConstrId cls
         dc = DataConstructor c a (replicate a anonId) tySc
         a  = Set.size ps + arrowArity ty
-        pty@(PredType ps ty) = classDictConstrPredType m tcEnv vEnv clsEnv cls
-        tySc = ForAll (kindArity (clsKind m cls tcEnv)) pty
+        pty@(PredType ps ty) = classDictConstrPredType vEnv clsEnv cls
+        tySc = ForAll (classArity cls clsEnv) pty
 
 bindDefaultMethods :: ModuleIdent -> QualIdent -> [(Ident, Int)] -> ValueEnv
                    -> ValueEnv
@@ -434,16 +423,15 @@ bindDefaultMethod :: ModuleIdent -> QualIdent -> (Ident, Int) -> ValueEnv
 bindDefaultMethod m cls (f, n) vEnv =
   bindMethod m (qDefaultMethodId cls f) n (classMethodType vEnv cls f) vEnv
 
-bindSuperStubs :: ModuleIdent -> TCEnv -> QualIdent -> PredSet -> ValueEnv
+bindSuperStubs :: ModuleIdent -> ClassEnv -> QualIdent -> PredSet -> ValueEnv
                -> ValueEnv
-bindSuperStubs m tcEnv = flip . foldr . bindSuperStub m tcEnv
+bindSuperStubs m clsEnv = flip . foldr . bindSuperStub m clsEnv
 
-bindSuperStub :: ModuleIdent -> TCEnv -> QualIdent -> Pred -> ValueEnv
-              -> ValueEnv
-bindSuperStub m tcEnv cls sclsPred =
+bindSuperStub :: ModuleIdent -> ClassEnv -> QualIdent -> Pred -> ValueEnv -> ValueEnv
+bindSuperStub m clsEnv cls sclsPred =
   bindEntity m f $ Value f Nothing 1 $ polyType ty
   where f  = qSuperDictStubId cls sclsPred
-        ar = kindArity (clsKind m cls tcEnv)
+        ar = classArity cls clsEnv
         ty = superDictStubType cls sclsPred (map TypeVariable [0 .. ar])
 
 bindInstDecls :: ModuleIdent -> ClassEnv -> InstEnv -> ValueEnv -> ValueEnv
