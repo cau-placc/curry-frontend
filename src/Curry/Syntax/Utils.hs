@@ -23,7 +23,7 @@ module Curry.Syntax.Utils
   , isDefaultDecl, isClassDecl, isTypeOrClassDecl, isInstanceDecl
   , isFunctionDecl, isExternalDecl, patchModuleId
   , isVariablePattern
-  , isVariableType, isSimpleType
+  , isVariableType, isSimpleType, containsForall
   , typeConstr, typeVariables, varIdent
   , flatLhs, eqnArity, fieldLabel, fieldTerm, field2Tuple, opName
   , funDecl, mkEquation, simpleRhs, patDecl, varDecl, constrPattern, caseAlt
@@ -147,6 +147,17 @@ isSimpleType (ListType      _  ty) = isVariableType ty
 isSimpleType (ArrowType _ ty1 ty2) = isVariableType ty1 && isVariableType ty2
 isSimpleType (ParenType     _  ty) = isSimpleType ty
 isSimpleType (ForallType    _ _ _) = False
+
+-- |Does a type expression contain an explicit forall type quantifier?
+containsForall :: TypeExpr -> Bool
+containsForall (ConstructorType _ _) = False
+containsForall (ApplyType _ ty1 ty2) = containsForall ty1 || containsForall ty2
+containsForall (VariableType   _  _) = False
+containsForall (TupleType    _  tys) = any containsForall tys
+containsForall (ListType      _  ty) = containsForall ty
+containsForall (ArrowType _ ty1 ty2) = containsForall ty1 || containsForall ty2
+containsForall (ParenType     _  ty) = containsForall ty
+containsForall (ForallType    _ _ _) = True
 
 -- |Return the qualified type constructor of a type expression.
 typeConstr :: TypeExpr -> QualIdent

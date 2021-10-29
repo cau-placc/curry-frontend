@@ -232,11 +232,11 @@ checkInstanceType :: SpanInfo -> InstanceType -> TSCM ()
 checkInstanceType p inst = do
   flex <- elem FlexibleInstances <$> getExtensions
   tEnv <- getTypeEnv
-  unless (not (any isAnonId $ typeVariables inst) &&
-    (flex || isSimpleType inst &&
-             not (isTypeSyn (typeConstr inst) tEnv) &&
-             isNothing (findDouble $ fv inst))) $
-      report $ errIllegalInstanceType p inst
+  if any isAnonId (typeVariables inst) || containsForall inst
+    then report $ errIllegalFlexibleInstanceType p inst
+    else unless (flex || isSimpleType inst && isNothing (findDouble $ fv inst)
+                         && not (isTypeSyn (typeConstr inst) tEnv)) $
+           report $ errIllegalInstanceType p inst
 
 checkTypeLhs :: [Ident] -> TSCM ()
 checkTypeLhs = checkTypeVars "left hand side of type declaration"
@@ -354,8 +354,10 @@ checkConstraint c@(Constraint spi qcls tys) = do
   checkClass False qcls
   tys' <- mapM checkType tys
   flex <- elem FlexibleContexts <$> getExtensions
-  unless (flex || all (isVariableType . rootType) tys') $
-    report $ errIllegalConstraint c
+  if any containsForall tys'
+    then report $ errIllegalFlexibleConstraint c
+    else unless (flex || all (isVariableType . rootType) tys') $
+           report $ errIllegalConstraint c
   return $ Constraint spi qcls tys'
   where
     rootType (ApplyType _ ty _) = rootType ty
@@ -530,6 +532,12 @@ errIllegalSimpleConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
   , text "loosen these restrictions on constraints.)"
   ]
 
+errIllegalFlexibleConstraint :: Constraint -> Message
+errIllegalFlexibleConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
+  [ text "Illegal class constraint" <+> pPrint c
+  , text "Constraints must not contain type quantifiers."
+  ]
+
 errIllegalInstanceType :: SpanInfo -> InstanceType -> Message
 errIllegalInstanceType spi inst = spanInfoMessage spi $ vcat
   [ text "Illegal instance type" <+> ppInstanceType inst
@@ -538,6 +546,13 @@ errIllegalInstanceType spi inst = spanInfoMessage spi $ vcat
   , text "mutually distinct, non-anonymous type variables."
   , text "(Use the FlexibleInstances extension to"
   , text "loosen these restrictions on instance types.)"
+  ]
+
+errIllegalFlexibleInstanceType :: SpanInfo -> InstanceType -> Message
+errIllegalFlexibleInstanceType spi inst = spanInfoMessage spi $ vcat
+  [ text "Illegal instance type" <+> ppInstanceType inst
+  , text "An instance type must not contain anonymous"
+  , text "type variables or type quantifiers."
   ]
 
 errIllegalDataInstance :: QualIdent -> Message
