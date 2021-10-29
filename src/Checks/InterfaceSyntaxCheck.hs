@@ -27,7 +27,7 @@ module Checks.InterfaceSyntaxCheck (intfSyntaxCheck) where
 import Prelude hiding ((<>))
 #endif
 
-import           Control.Monad            (liftM, liftM2, unless, when)
+import           Control.Monad            (liftM, liftM2, when)
 import qualified Control.Monad.State as S
 import           Data.List                (nub, partition)
 
@@ -176,8 +176,9 @@ checkIMethodDecl tvs (IMethodDecl p f a qty) = do
   return $ IMethodDecl p f a qty'
 
 checkInstanceType :: InstanceType -> ISC ()
-checkInstanceType inst = unless (null (filter isAnonId $ typeVars inst)) $
-  report $ errIllegalInstanceType inst inst
+checkInstanceType inst =
+  when (any isAnonId (typeVars inst) || containsForall inst) $
+    report $ errIllegalInstanceType inst inst
 
 checkQualType :: QualTypeExpr -> ISC QualTypeExpr
 checkQualType (QualTypeExpr spi cx ty) = do
@@ -200,9 +201,10 @@ checkClosedConstraint tvs c = do
   return c'
 
 checkConstraint :: Constraint -> ISC Constraint
-checkConstraint (Constraint spi qcls tys) = do
+checkConstraint c@(Constraint spi qcls tys) = do
   checkClass qcls
-  Constraint spi qcls `liftM` (mapM checkType tys)
+  when (any containsForall tys) $ report $ errIllegalConstraint c
+  Constraint spi qcls `liftM` mapM checkType tys
 
 checkClass :: QualIdent -> ISC ()
 checkClass qcls = do
@@ -322,8 +324,15 @@ errNoElement :: String -> String -> QualIdent -> Ident -> Message
 errNoElement what for tc x = spanInfoMessage x $ hsep $ map text
   [ "Hidden", what, escName x, "is not defined for", for, qualName tc ]
 
+errIllegalConstraint :: Constraint -> Message
+errIllegalConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
+  [ text "Illegal class constraint" <+> pPrint c
+  , text "Constraints must not contain type quantifiers."
+  ]
+
 errIllegalInstanceType :: HasSpanInfo s => s -> InstanceType -> Message
 errIllegalInstanceType p inst = spanInfoMessage p $ vcat
   [ text "Illegal instance type" <+> pPrint inst
-  , text "Instance types must not contain anonymous type variables."
+  , text "An instance type must not contain anonymous"
+  , text "type variables or type quantifiers."
   ]
