@@ -178,7 +178,7 @@ checkIMethodDecl tvs (IMethodDecl p f a qty) = do
 checkInstanceType :: InstanceType -> ISC ()
 checkInstanceType inst =
   when (any isAnonId (typeVars inst) || containsForall inst) $
-    report $ errIllegalInstanceType inst inst
+    report $ errIllegalInstanceType inst
 
 checkQualType :: QualTypeExpr -> ISC QualTypeExpr
 checkQualType (QualTypeExpr spi cx ty) = do
@@ -301,7 +301,7 @@ errAmbiguousType p ident = spanInfoMessage p $ hsep $ map text
 errConstrainedClassVariables :: HasSpanInfo s => s -> Constraint -> Message
 errConstrainedClassVariables p c = spanInfoMessage p $ vcat
   [ text "Constraint" <+> pPrint c
-  , text "in method context constrains only class variables"
+  , text "in method context constrains only class variables."
   ]
 
 errNonLinear :: Ident -> String -> Message
@@ -325,13 +325,13 @@ errNoElement what for tc x = spanInfoMessage x $ hsep $ map text
   [ "Hidden", what, escName x, "is not defined for", for, qualName tc ]
 
 errIllegalConstraint :: Constraint -> Message
-errIllegalConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
+errIllegalConstraint c = spanInfoMessage c $ vcat
   [ text "Illegal class constraint" <+> pPrint c
   , text "Constraints must not contain type quantifiers."
   ]
 
-errIllegalInstanceType :: HasSpanInfo s => s -> InstanceType -> Message
-errIllegalInstanceType p inst = spanInfoMessage p $ vcat
+errIllegalInstanceType :: InstanceType -> Message
+errIllegalInstanceType inst = spanInfoMessage inst $ vcat
   [ text "Illegal instance type" <+> pPrint inst
   , text "An instance type must not contain anonymous"
   , text "type variables or type quantifiers."

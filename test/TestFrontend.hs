@@ -258,9 +258,9 @@ failInfos = map (uncurry mkFailTest)
         -- methodC1 :: a -> c -> a
       [ "Method type does not mention class variable b"
         -- methodC2 :: Eq b => a -> b -> c
-      , "Constraint Eq b", "in method context constrains only class variables"
+      , "Constraint Eq b", "in method context constrains only class variables."
         -- methodC3 :: D b c a b => a -> b -> c
-      , "Constraint D b c a b" -- "in method context constrains only class variables"
+      , "Constraint D b c a b" -- "in method context constrains only class variables."
       ]
     )
   , ("MPTCMissingInstance",
