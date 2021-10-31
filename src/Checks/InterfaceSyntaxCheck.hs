@@ -175,6 +175,11 @@ checkIMethodDecl tvs (IMethodDecl p f a qty) = do
         (filter ((\vs -> not (null vs) && all (`elem` tvs) vs) . fv) cx)
   return $ IMethodDecl p f a qty'
 
+-- In the interface syntax check, we currently cannot access the enabled
+-- language extensions. We therefore must assume that MultiParamTypeClasses,
+-- FlexibleInstances and FlexibleContexts are enabled and can only apply basic
+-- checks to instance types and constraints.
+
 checkInstanceType :: InstanceType -> ISC ()
 checkInstanceType inst =
   when (any isAnonId (typeVars inst) || containsForall inst) $

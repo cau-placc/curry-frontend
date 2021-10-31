@@ -208,8 +208,10 @@ checkNewConstrDecl tvs (NewRecordDecl p c (l, ty)) = do
 
 -- Class method's type signatures have to obey a few additional restrictions.
 -- The class variables must all appear in the method's type and the method's
--- context must not contain any additional constraints for these class
--- variables.
+-- context must not contain any constraint besides the implicit class constraint
+-- that only constrains class variables. Constraints containing no type
+-- variables at all or at least one type variable apart from the class variables
+-- are accepted though.
 
 checkClassMethod :: [Ident] -> Decl a -> TSCM ()
 checkClassMethod tvs (TypeSig spi _ qty@(QualTypeExpr _ cx _)) = do
@@ -217,6 +219,11 @@ checkClassMethod tvs (TypeSig spi _ qty@(QualTypeExpr _ cx _)) = do
   mapM_ (report . errConstrainedClassVariables spi)
         (filter ((\vs -> not (null vs) && all (`elem` tvs) vs) . fv) cx)
 checkClassMethod _ _ = ok
+
+-- Instance types must be of a specific form (a data type constructor applied to
+-- distinct type variables) if the FlexibleInstances extension is not enabled.
+-- Even with this extension enabled though, they must not contain anonymous type
+-- variables or type quantifiers (forall).
 
 checkInstanceType :: InstanceType -> TSCM ()
 checkInstanceType inst = do
@@ -338,6 +345,13 @@ checkClosedConstraint simplecx tvs c = do
   c'@(Constraint _ _ tys) <- checkConstraint simplecx c
   mapM_ (checkClosed tvs) tys
   return c'
+
+-- Like instance types, type constraints must be of a specific form if the
+-- respective flexible extension is not enabled and must not contain type
+-- quantifiers (forall). In class and instance contexts, each constraint must be
+-- a class name being applied to type variables. In constraints occurring in the
+-- contexts of type signatures, each of these type variables may be applied to
+-- arbitrary types.
 
 checkConstraint :: Bool -> Constraint -> TSCM Constraint
 checkConstraint simplecx c@(Constraint spi qcls tys) = do
@@ -555,23 +569,21 @@ errIllegalDataInstance qcls = spanInfoMessage qcls $ vcat
   ]
 
 errMultiParamClassNoExt :: SpanInfo -> Ident -> [Ident] -> Message
-errMultiParamClassNoExt spi cls clsvars =
-  let arity = if null clsvars then "Nullary" else "Multi-parameter"
-  in spanInfoMessage spi $ vcat
-     [ text arity <+> text "type class declaration"
-       <+> hsep (pPrint cls : map pPrint clsvars)
-     , text "A type class must have exactly one type parameter."
-     , text "(Use the MultiParamTypeClasses extension to enable"
-     , text "nullary and multi-parameter type classes.)"
-     ]
+errMultiParamClassNoExt spi cls clsvars = spanInfoMessage spi $ vcat
+  [ text arity <+> text "type class declaration"
+    <+> hsep (pPrint cls : map pPrint clsvars)
+  , text "A type class must have exactly one type parameter."
+  , text "(Use the MultiParamTypeClasses extension to enable"
+  , text "nullary and multi-parameter type classes.)"
+  ]
+  where arity = if null clsvars then "Nullary" else "Multi-parameter"
 
 errMultiParamInstanceNoExt :: SpanInfo -> QualIdent -> [InstanceType] -> Message
-errMultiParamInstanceNoExt spi qcls inst =
-  let quantity = if null inst then "Zero" else "Multiple"
-  in spanInfoMessage spi $ vcat
-     [ text quantity <+> text "types in instance declaration"
-       <+> hsep (pPrint qcls : map ppInstanceType inst)
-     , text "An instance head must have exactly one type."
-     , text "(Use the MultiParamTypeClasses extension to enable"
-     , text "instance declarations with zero or multiple types.)"
-     ]
+errMultiParamInstanceNoExt spi qcls inst = spanInfoMessage spi $ vcat
+  [ text quantity <+> text "types in instance declaration"
+    <+> hsep (pPrint qcls : map ppInstanceType inst)
+  , text "An instance head must have exactly one type."
+  , text "(Use the MultiParamTypeClasses extension to enable"
+  , text "instance declarations with zero or multiple types.)"
+  ]
+  where quantity = if null inst then "Zero" else "Multiple"
