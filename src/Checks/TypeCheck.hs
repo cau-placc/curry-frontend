@@ -1629,10 +1629,6 @@ reducePredSet reportPreds ps = do
     reducePred :: ModuleIdent -> InstEnv' -> LPred -> Map.Map LPred Message
     reducePred m inEnv pr@(LPred (Pred OPred _ _) _ _ _) =
       either (Map.singleton pr) (reducePreds m inEnv) (instPredSet m pr inEnv)
-    -- TODO: Check if there is any possibility of this method being applied to
-    --         an implicit class constraint. (With FlexibleInstances or nullary
-    --         type classes, instances for reducing ICCs could exist.)
-    --         If so, add the 'removeDoubleICC' predicate set reduction.
     reducePred _ _ pr@(LPred (Pred ICC _ _) _ _ _) =
       internalError $ "TypeCheck.reducePredSet: " ++
         "tried to reduce the implicit class constraint " ++ show pr
@@ -1644,13 +1640,8 @@ reducePredSet reportPreds ps = do
 
     isReportable :: LPred -> Bool
     isReportable (LPred (Pred _ _ tys) _ _ _) = null (typeVars tys) ||
-      reportPreds && not (all isTypeVariable tys) ||
+      reportPreds && not (all isAppliedTypeVariable tys) ||
       map removeTypeConstrained tys /= tys
-    
-    isTypeVariable :: Type -> Bool
-    isTypeVariable (TypeVariable _) = True
-    isTypeVariable (TypeApply ty _) = isTypeVariable ty
-    isTypeVariable _                = False
 
 instPredSet :: ModuleIdent -> LPred -> InstEnv' -> Either Message LPredSet
 instPredSet m (LPred (Pred _ qcls tys) p what doc) inEnv =
@@ -1700,7 +1691,7 @@ hasInstance inEnv qcls tys = isJust (lookupInstExact (qcls, tys) (fst inEnv)) ||
 
 reportFlexibleContextDecl :: ModuleIdent -> PDecl PredType -> TCM ()
 reportFlexibleContextDecl m (_, FunctionDecl spi (PredType ps _) f _) =
-  let flexCs = Set.toList $ snd $ partitionPredSetOnlyVars ps
+  let flexCs = Set.toList $ snd $ partitionPredSet ps
       what   = "function declaration"
   in mapM_ (report . errFlexibleContext m spi what f) flexCs
 reportFlexibleContextDecl m (_, PatternDecl _ t _) =
@@ -1712,7 +1703,7 @@ reportFlexibleContextPattern :: ModuleIdent -> Pattern PredType -> TCM ()
 reportFlexibleContextPattern _ (LiteralPattern  _ _ _) = ok
 reportFlexibleContextPattern _ (NegativePattern _ _ _) = ok
 reportFlexibleContextPattern m (VariablePattern spi (PredType ps _) v) =
-  let flexCs = Set.toList $ snd $ partitionPredSetOnlyVars ps
+  let flexCs = Set.toList $ snd $ partitionPredSet ps
       what   = "variable"
   in mapM_ (report . errFlexibleContext m spi what v) flexCs
 reportFlexibleContextPattern m (ConstructorPattern _ _ _ ts) =

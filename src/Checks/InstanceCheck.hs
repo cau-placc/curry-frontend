@@ -275,10 +275,8 @@ inferPredSet clsEnv p (PredType ps inst) tys cls = do
     then return    (((cls, [inst]), ps4), False)
     else do term <- checkInstanceTermination m True [] p ps4 cls [inst]
             return (((cls, [inst]), if term then ps4 else emptyPredSet), True)
-  where
-    noPolyPred (Pred _ _ tys') = any (not . isSimpleTypeVar) tys'
-    isSimpleTypeVar (TypeVariable _) = True
-    isSimpleTypeVar _                = False
+ where
+  noPolyPred (Pred _ _ tys') = any (not . isTypeVariable) tys'
 
 updatePredSets :: [((InstIdent, PredSet), Bool)] -> INCM Bool
 updatePredSets = fmap or . mapM (uncurry updatePredSet)
@@ -465,7 +463,7 @@ reducePredSet rm p doc clsEnv ps = do
   inEnv <- getInstEnv
   let pm  = reducePreds m inEnv ps
       ps' = minPredSet clsEnv (Map.keysSet pm)
-      (ps1, ps2) = partitionPredSetOnlyVars ps'
+      (ps1, ps2) = partitionPredSet ps'
       psNoPoly = ps2 `Set.union` Set.filter noPolyPred ps1
       psReport = case rm of Derive True  -> Set.filter isNotDataPred psNoPoly
                             Derive False -> psNoPoly
@@ -473,9 +471,7 @@ reducePredSet rm p doc clsEnv ps = do
   mapM_ report (Map.elems (Map.restrictKeys pm psReport))
   return (ps1, ps2)
  where
-  noPolyPred (Pred _ _ tys') = any (not . isSimpleTypeVar) tys'
-  isSimpleTypeVar (TypeVariable _) = True
-  isSimpleTypeVar _                = False
+  noPolyPred (Pred _ _ tys') = any (not . isTypeVariable) tys'
   isNotDataPred (Pred _ qid _) = qid /= qDataId
 
   reducePreds :: ModuleIdent -> InstEnv -> PredSet -> Map.Map Pred Message

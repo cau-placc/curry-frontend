@@ -20,6 +20,7 @@
 module Base.Types
   ( -- * Representation of types
     Type (..), applyType, unapplyType, rootOfType
+  , isTypeVariable, isAppliedTypeVariable
   , isArrowType, arrowArity, arrowArgs, arrowBase, arrowUnapply
   , IsType (..), typeConstrs, removeTypeConstrained
   , qualifyType, unqualifyType, qualifyTC
@@ -27,8 +28,7 @@ module Base.Types
   , Pred (..), PredIsICC (..), IsPred (..), LPred (..), qualifyPred
   , unqualifyPred
   , PredSet, emptyPredSet, LPredSet, emptyLPredSet, psMember, removeICCFlag
-  , partitionPredSetSomeVars, partitionPredSetOnlyVars, qualifyPredSet
-  , unqualifyPredSet
+  , deleteDoubleICC, partitionPredSet, qualifyPredSet, unqualifyPredSet
   , PredType (..), predType, unpredType, qualifyPredType, unqualifyPredType
   , PredTypes (..), qualifyPredTypes, unqualifyPredTypes
     -- * Representation of data constructors
@@ -80,11 +80,6 @@ import Base.Messages (internalError)
 -- Note that even though 'TypeConstrained' variables use indices
 -- as well, these variables must never be quantified.
 
--- Note further that the order of constructors is important for the derived
--- 'Ord' instance. In particular, it is essential that the type variable
--- is considered less than the type application (see predicates and predicate
--- sets below for more information).
-
 data Type
   = TypeConstructor QualIdent
   | TypeVariable Int
@@ -127,6 +122,15 @@ rootOfType :: Type -> QualIdent
 rootOfType ty = case fst (unapplyType True ty) of
   TypeConstructor tc -> tc
   _ -> internalError $ "Base.Types.rootOfType: " ++ show ty
+
+-- Checks if a type is a simple type variable.
+isTypeVariable :: Type -> Bool
+isTypeVariable (TypeVariable _) = True
+isTypeVariable _                = False
+
+-- Checks if a type is a type variable or a type variable applied to types.
+isAppliedTypeVariable :: Type -> Bool
+isAppliedTypeVariable = isTypeVariable . fst . unapplyType False
 
 -- The function 'isArrowType' checks whether a type is a function
 -- type t_1 -> t_2 -> ... -> t_n. The function 'arrowArity' computes
@@ -231,7 +235,7 @@ qualifyTC m tc | isPrimTypeId tc = tc
 -- constraint of a class method. This flag is positioned as the first field of
 -- the predicate data constructor, which ensures such an implicit class
 -- constraint is always the minimum w.r.t. the order of the derived 'Ord'
--- instance (see predicate sets below for more information why this order is
+-- instance (see predicate sets below for more information on why this order is
 -- relevant).
 
 data Pred = Pred PredIsICC QualIdent [Type]
@@ -337,47 +341,21 @@ removeICCFlag ps = case Set.lookupMin ps of
                (Set.deleteMin ps)
   _ -> ps
 
--- TODO: Is the following function actually useful? Reducing a predicate set
---         might only be needed where types need to be inferred (and not just
---         checked) and implicit class constraints might not be able to appear
---         in these cases.
 -- Deletes duplicates of implicit class constraints from predicate sets.
+-- This function is currently unused, as we only use 'OPred's in contexts where
+-- such duplicates could occur, but it might be useful with future adaptations.
 deleteDoubleICC :: IsPred a => Set.Set a -> Set.Set a
 deleteDoubleICC ps = case fmap getPred (Set.lookupMin ps) of
   Just (Pred ICC qcls tys) -> Set.delete (getFromPred (Pred OPred qcls tys)) ps
   _                        -> ps
 
--- Partitions the predicate set given as the second argument such that all
--- predicates in the first element of the returned tuple are elements of the
--- predicate set given as the first argument or have at least one predicate type
--- that is a type variable (or a type variable applied to types).
---
--- This function is used during the type check to report missing instances when
--- it is possible that only some of the predicate types have been inferred. The
--- first predicate set given is used to not report predicates without fitting
--- instances, if they are mentioned as constraints of an explicit type
--- signature.
-partitionPredSetSomeVars :: (IsPred a, IsPred b) => Set.Set a -> Set.Set b
-                                                 -> (Set.Set b, Set.Set b)
-partitionPredSetSomeVars = partitionPredSet any
-
 -- Partitions the given predicate set such that all predicates in the first
--- element of the returned tuple have only type variables (or type variables
--- applied to types) as predicate types.
---
--- This function is used to report constraints that would only be allowed with
--- a FlexibleContexts language extension when all predicate types are known.
-partitionPredSetOnlyVars :: IsPred a => Set.Set a -> (Set.Set a, Set.Set a)
-partitionPredSetOnlyVars = partitionPredSet all emptyPredSet
-
-partitionPredSet :: (IsPred a, IsPred b) => ((Type -> Bool) -> [Type] -> Bool)
-                 -> Set.Set a -> Set.Set b -> (Set.Set b, Set.Set b)
-partitionPredSet f ps = Set.partition $
-  (\pr@(Pred _ _ tys) -> pr `psMember` ps || f isTypeVariable tys) . getPred
-  where
-    isTypeVariable (TypeVariable _) = True
-    isTypeVariable (TypeApply ty _) = isTypeVariable ty
-    isTypeVariable _                = False
+-- element of the returned tuple have only type variables or type variables
+-- applied to types as predicate types, which are exactly the predicates allowed
+-- to appear in contexts of type signatures without enabling FlexibleContexts.
+partitionPredSet :: IsPred a => Set.Set a -> (Set.Set a, Set.Set a)
+partitionPredSet =
+  Set.partition $ (\(Pred _ _ tys) -> all isAppliedTypeVariable tys) . getPred
 
 qualifyPredSet :: IsPred a => ModuleIdent -> Set.Set a -> Set.Set a
 qualifyPredSet m = Set.map (qualifyPred m)
