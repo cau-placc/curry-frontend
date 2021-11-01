@@ -202,9 +202,10 @@ failInfos = map (uncurry mkFailTest)
       , "than the head of the derived instance", "Prelude.Eq (T1 a)"
       , "The type variable `a' occurs more often", "in the constraint C a a"
       , "than in the head of the derived instance" -- Prelude.Eq (T1 a)
-      , "Missing instance for C [a] [b]", "in derived instance Prelude.Eq (T2 a b)"
+      , "Missing instance for C [a] [b]"
+      , "arising from derived instance for", "Prelude.Eq (T2 a b)"
       , "Instance overlap for C (a, b) (b, b)"
-      , "arising from derived instance", "Prelude.Show (T3 a b)"
+      , "arising from derived instance for", "Prelude.Show (T3 a b)"
       , "Matching instances:", "C (a, b) (b, c) (defined in MPTCDeriving)"
       , "C (a, b) (c, b) (defined in MPTCDeriving)"
       ]
@@ -277,17 +278,18 @@ failInfos = map (uncurry mkFailTest)
     )
   , ("MPTCMissingSuperClassInstance",
       [ "Missing instance for C Prelude.Int Prelude.Bool"
-      , "in instance declaration D Prelude.Bool Prelude.Int"
+      , "arising from instance declaration for", "D Prelude.Bool Prelude.Int"
       , "Missing instance for C (b, a) (a, b)"
-      , "in instance declaration D (a, b) (b, a)"
+      , {- arising from instance declaration for -} "D (a, b) (b, a)"
       , "Instance overlap for C (a, b) (a, b)"
-      , "arising from instance declaration", "D (a, b) (a, b)"
+      , {- arising from instance declaration for -} "D (a, b) (a, b)"
       , "Matching instances:"
       , "C (a, b) (a, c) (defined in MPTCMissingSuperClassInstance)"
       , "C (a, b) (c, b) (defined in MPTCMissingSuperClassInstance)"
       , "Missing instance for D Prelude.Bool Prelude.Bool"
-      , "in instance declaration F Prelude.Bool"
-      , "Missing instance for E" -- "in instance declaration F Prelude.Bool"
+      , {- arising from instance declaration for -} "F Prelude.Bool"
+      , "Missing instance for E"
+      -- arising from instance declaration for F Prelude.Bool
       ]
     )
   , ("MPTCNoExtension",
