@@ -687,6 +687,7 @@ unify p what doc k1 k2 = do
 
 -- Notice that 'KindConstraint's should not be able to appear in the kinds that
 -- 'unifyKinds' is applied to, which is why they are not covered here.
+
 unifyKinds :: Kind -> Kind -> Maybe KindSubst
 unifyKinds KindStar KindStar = Just idSubst
 unifyKinds (KindVariable kv1) (KindVariable kv2)
@@ -790,12 +791,11 @@ errKindMismatch p what doc k1 k2 = spanInfoMessage p $ vcat
   ]
 
 errClassKindMismatch :: String -> Doc -> QualIdent -> Int -> Int -> Message
-errClassKindMismatch what doc qcls wrongAr clsAr =
-  let aplTyText  = text $ "type"           ++ if wrongAr == 1 then "" else "s"
-      clsParText = text $ "type parameter" ++ if clsAr   == 1 then "" else "s"
-  in spanInfoMessage qcls $ vcat
-     [ text "Kind error in" <+> text what, doc 
-     , text "The type class" <+> text (escQualName qcls)
-       <+> text "has been applied to" <+> pPrint wrongAr <+> aplTyText <> comma
-     , text "but it has" <+> pPrint clsAr <+> clsParText <> dot
-     ]
+errClassKindMismatch what doc qcls wrongAr clsAr = spanInfoMessage qcls $ vcat
+  [ text "Kind error in" <+> text what, doc 
+  , text "The type class" <+> text (escQualName qcls)
+    <+> text "has been applied to" <+> pPrint wrongAr <+> aplTyText <> comma
+  , text "but it has" <+> pPrint clsAr <+> clsParText <> dot
+  ]
+  where aplTyText  = text $ "type"           ++ if wrongAr == 1 then "" else "s"
+        clsParText = text $ "type parameter" ++ if clsAr   == 1 then "" else "s"
