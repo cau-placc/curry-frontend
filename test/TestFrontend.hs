@@ -354,6 +354,10 @@ failInfos = map (uncurry mkFailTest)
       , "Constraint with non-variable argument D [" -- D [a] [b]
       , "occurring in the context of the inferred type for"
       , "function declaration `testExp3'"
+      -- Ambiguous type variable a in type (Enum a, Fractional a, Show a)
+      , "=> Prelude.Float -> [Prelude.Char]", "inferred for function `testFunc'"
+      , "Missing instance for Prelude.Enum Prelude.Float"
+      , "arising from variable succ"
       ]
     )
   , ("PatternRestrictions",

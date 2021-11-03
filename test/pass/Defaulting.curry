@@ -1,6 +1,8 @@
+{-# OPTIONS_FRONTEND -Wno-missing-methods -Wno-missing-signatures #-}
+
 module Defaulting where
 
-default (Int, Complex)
+default (Int, Complex Int, Complex Float)
 
 class C a where
   methodC :: a -> Bool
@@ -8,22 +10,19 @@ class C a where
 instance C [a] where
   methodC _ = True
 
-data Complex = Complex Float Float
+data Complex a = Complex a a
   deriving Show
 
-instance Num Complex where
+instance Num a => Num (Complex a) where
   Complex a b + Complex c d = Complex (a + c) (b + d)
   Complex a b - Complex c d = Complex (a - c) (b - d)
   Complex a b * Complex c d = Complex (a * c - b * d) (a * d + b * c)
-  abs (Complex a b) = Complex (sqrt (a * a + b * b)) 0.0
-  signum z@(Complex a b) | a == 0.0 && b == 0.0 = Complex 0.0 0.0
-                         | otherwise            = z / abs z
-  fromInt a = Complex (fromInt a) 0.0
+  fromInt a = Complex (fromInt a) 0
 
-instance Fractional Complex where
+instance Fractional a => Fractional (Complex a) where
   Complex a b / Complex c d = Complex ((a * c + b * d) / (c * c + d * d))
                                       ((b * c - a * d) / (c * c + d * d))
-  fromFloat a = Complex a 0.0
+  fromFloat a = Complex (fromFloat a) 0.0
 
 -- Expected result: "1"
 testExp1 :: String
@@ -36,3 +35,6 @@ testExp2 = let x = 1 in (show x, methodC [x])
 -- Expected result: "Complex 1.0 0.0"
 testExp3 :: String
 testExp3 = show (1 / 1)
+
+-- Expected type: C a => a -> ([Char], Bool)
+testFunc x = (show 1, methodC x)

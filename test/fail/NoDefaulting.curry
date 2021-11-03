@@ -21,3 +21,11 @@ testExp2 = let x   = 1
            in (length [methodC x], str)
 
 testExp3 = methodD [1] [2] 
+
+class E
+
+instance E => Fractional Int where
+  fromFloat = round
+
+testFunc x = case x of 1.0 -> show (succ x)
+                       _   -> show (succ 1.0)

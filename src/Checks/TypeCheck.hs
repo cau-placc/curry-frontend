@@ -55,7 +55,7 @@ import qualified Data.Map            as Map ( Map, elems, empty, keysSet, insert
                                             , insertWith, lookup
                                             , partitionWithKey, restrictKeys
                                             , singleton, unions )
-import           Data.Maybe                 (fromJust, fromMaybe, isJust)
+import           Data.Maybe                 (fromJust, fromMaybe)
 import qualified Data.Set.Extra      as Set ( Set, deleteMin, empty, filter
                                             , fromList, insert, map, member
                                             , notMember, partition, singleton
@@ -1622,26 +1622,26 @@ reducePredSet reportPreds ps = do
   theta' <- foldM (defaultTypeConstrained m inEnv) idSubst psDefaultable
   modifyTypeSubst $ compose theta'
   return $ Map.keysSet pm'''
-  where
-    reducePreds :: ModuleIdent -> InstEnv' -> LPredSet -> Map.Map LPred Message
-    reducePreds m inEnv = Map.unions . map (reducePred m inEnv) . Set.toList
+ where
+  isDefaultable :: LPred -> Bool
+  isDefaultable (LPred (Pred _ qcls [TypeConstrained _ _]) _ _ _) =
+    isPreludeClass qcls
+  isDefaultable _ = False
 
-    reducePred :: ModuleIdent -> InstEnv' -> LPred -> Map.Map LPred Message
-    reducePred m inEnv pr@(LPred (Pred OPred _ _) _ _ _) =
-      either (Map.singleton pr) (reducePreds m inEnv) (instPredSet m pr inEnv)
-    reducePred _ _ pr@(LPred (Pred ICC _ _) _ _ _) =
-      internalError $ "TypeCheck.reducePredSet: " ++
-        "tried to reduce the implicit class constraint " ++ show pr
-    
-    isDefaultable :: LPred -> Bool
-    isDefaultable (LPred (Pred _ qcls [TypeConstrained _ _]) _ _ _) =
-      isPreludeClass qcls
-    isDefaultable _ = False
+  isReportable :: LPred -> Bool
+  isReportable (LPred (Pred _ _ tys) _ _ _) = null (typeVars tys) ||
+    reportPreds && not (all isAppliedTypeVariable tys) ||
+    map removeTypeConstrained tys /= tys
 
-    isReportable :: LPred -> Bool
-    isReportable (LPred (Pred _ _ tys) _ _ _) = null (typeVars tys) ||
-      reportPreds && not (all isAppliedTypeVariable tys) ||
-      map removeTypeConstrained tys /= tys
+reducePreds :: ModuleIdent -> InstEnv' -> LPredSet -> Map.Map LPred Message
+reducePreds m inEnv = Map.unions . map reducePred . Set.toList
+ where
+  reducePred :: LPred -> Map.Map LPred Message
+  reducePred pr@(LPred (Pred OPred _ _) _ _ _) =
+    either (Map.singleton pr) (reducePreds m inEnv) (instPredSet m pr inEnv)
+  reducePred pr@(LPred (Pred ICC   _ _) _ _ _) =
+    internalError $ "TypeCheck.reducePredSet: " ++
+      "tried to reduce the implicit class constraint " ++ show pr
 
 instPredSet :: ModuleIdent -> LPred -> InstEnv' -> Either Message LPredSet
 instPredSet m (LPred (Pred _ qcls tys) p what doc) inEnv =
@@ -1660,7 +1660,7 @@ defaultTypeConstrained :: ModuleIdent -> InstEnv' -> TypeSubst -> LPred
 defaultTypeConstrained m inEnv theta (LPred (Pred _ qcls tys) p what doc) =
   case subst theta tys of
     tys'@[TypeConstrained tyOpts tv] ->
-      case concat (filter (hasInstance inEnv qcls) (map (: []) tyOpts)) of
+      case concat (filter (hasInstance m inEnv qcls) (map (: []) tyOpts)) of
         [] -> do
           report $
             errMissingInstance m (LPred (Pred OPred qcls tys') p what doc)
@@ -1671,15 +1671,14 @@ defaultTypeConstrained m inEnv theta (LPred (Pred _ qcls tys) p what doc) =
           | otherwise ->
               liftM (flip (bindSubst tv) theta) (freshConstrained tyOpts')
     tys'
-      | hasInstance inEnv qcls tys' -> return theta
+      | hasInstance m inEnv qcls tys' -> return theta
       | otherwise -> do
         report $ errMissingInstance m (LPred (Pred OPred qcls tys') p what doc)
         return theta
 
--- TODO: Is 'lookupInstExact' sufficient here?
-hasInstance :: InstEnv' -> QualIdent -> [Type] -> Bool
-hasInstance inEnv qcls tys = isJust (lookupInstExact (qcls, tys) (fst inEnv)) ||
-  maybe False (tys `elem`) (Map.lookup qcls (snd inEnv))
+hasInstance :: ModuleIdent -> InstEnv' -> QualIdent -> [Type] -> Bool
+hasInstance m inEnv qcls =
+  null . reducePreds m inEnv . Set.singleton . getFromPred . Pred OPred qcls
 
 -- Predicates which have both type variables and other types as predicate types
 -- (like @C Bool a@) cannot be reported in 'reducePredSet', because that would
@@ -1758,29 +1757,33 @@ applyDefaults p what doc fvs ps ty = do
   inEnv <- getInstEnv
   defs <- getDefaultTypes
   let ps'   = Set.map getPred ps
-      theta = foldr (bindDefault defs inEnv ps') idSubst $ nub
+      theta = foldr (bindDefault m defs inEnv ps') idSubst $ nub
         [ tv | Pred _ qcls [TypeVariable tv] <- Set.toList ps'
              , tv `Set.notMember` fvs, isSimpleNumClass clsEnv qcls
-             , all (\(Pred _ qcls' tys) -> isPreludeClass qcls' ||
-                                           tv `notElem` typeVars tys) ps' ]
+             , all (\pr -> isDefaultable pr || tv `notElem` typeVars pr) ps' ]
       ps''  = Set.filter (not . null . typeVars) (subst theta ps)
       ty'   = subst theta ty
       tvs'  = nub $ filter (`Set.notMember` fvs) (typeVars ps'')
   mapM_ (report . errAmbiguousTypeVariable m p what doc ps'' ty') tvs'
   modifyTypeSubst $ compose theta
   return ps''
+ where
+  isDefaultable :: Pred -> Bool
+  isDefaultable (Pred _ qcls [TypeVariable _]) = isPreludeClass qcls
+  isDefaultable _                              = False
 
-bindDefault :: [Type] -> InstEnv' -> PredSet -> Int -> TypeSubst -> TypeSubst
-bindDefault defs inEnv ps tv =
-  case foldr (defaultType inEnv tv) defs (Set.toList ps) of
+bindDefault :: ModuleIdent -> [Type] -> InstEnv' -> PredSet -> Int -> TypeSubst
+            -> TypeSubst
+bindDefault m defs inEnv ps tv =
+  case foldr (defaultType m inEnv tv) defs (Set.toList ps) of
     [] -> id
     ty:_ -> bindSubst tv ty
 
-defaultType :: InstEnv' -> Int -> Pred -> [Type] -> [Type]
-defaultType inEnv tv (Pred _ qcls [TypeVariable tv'])
-  | tv == tv' = concat . filter (hasInstance inEnv qcls) . map (: [])
+defaultType :: ModuleIdent -> InstEnv' -> Int -> Pred -> [Type] -> [Type]
+defaultType m inEnv tv (Pred _ qcls [TypeVariable tv'])
+  | tv == tv' = concat . filter (hasInstance m inEnv qcls) . map (: [])
   | otherwise = id
-defaultType _ _ _ = id
+defaultType _ _ _ _ = id
 
 -- Checks whether the given 'QualIdent' belongs to the 'Num' class or to a class
 -- which has 'Num' as a super class. For multi-parameter type classes, only the
