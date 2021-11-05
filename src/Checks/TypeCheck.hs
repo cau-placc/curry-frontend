@@ -52,8 +52,7 @@ import qualified Control.Monad.State as S
 import           Data.Function       (on)
 import           Data.List           (nub, nubBy, partition, sortBy, (\\))
 import qualified Data.Map            as Map ( Map, elems, empty, keysSet, insert
-                                            , insertWith, lookup
-                                            , partitionWithKey, restrictKeys
+                                            , insertWith, lookup, restrictKeys
                                             , singleton, unions )
 import           Data.Maybe                 (fromJust, fromMaybe)
 import qualified Data.Set.Extra      as Set ( Set, deleteMin, empty, filter
@@ -83,9 +82,6 @@ import Env.Instance
 import Env.TypeConstructor
 import Env.Value
 
--- TODO: Check if the set operations on predicate sets (like union) could be
---         problematic with the 'PredIsICC' field.
-
 -- Type checking proceeds as follows. First, the types of all data
 -- constructors, field labels and class methods are entered into the
 -- value environment and then a type inference for all function and
@@ -113,14 +109,14 @@ checkDecls ds = do
 -- environment, the current substitution, and a counter which is used for
 -- generating fresh type variables.
 
--- Additionally, an extended instance environment is used in order to handle
--- the introduction of local instances when matching a data constructor with a
--- non-empty context. This extended instance environment is composed of the
--- static top-level environment and a dynamic environment that maps each class
--- on the instances which are in scope for it. The rationale behind using this
--- representation is that it makes it easy to apply the current substitution to
--- the dynamic part of the environment.
-
+-- Additionally, an extended instance environment is used in order to handle the
+-- introduction of local instances through constraints given in an explicit type
+-- signature or when matching a data constructor with a non-empty context. This
+-- extended instance environment is composed of the static top-level environment
+-- and a dynamic environment that maps each class on the instances which are in
+-- scope for it. The rationale behind using this representation is that it makes
+-- it easy to apply the current substitution to the dynamic part of the
+-- environment.
 
 type TCM = S.State TcState
 
@@ -564,6 +560,14 @@ tcDeclVar poly v = do
         lambdaVar v
     Nothing -> lambdaVar v
 
+-- The functions 'tcPDecl' and 'tcFunctionPDecl' add the context of a variable
+-- or function declaration to the dynamic instance environment. This context can
+-- only be non-empty in the case of explicitly typed declarations and therefore
+-- consists of explicitly given constraints, which can be used to reduce
+-- required predicates. For such declarations, a local instance environment is
+-- introduced in 'tcCheckPDecl' to ensure that the given constraints cannot be
+-- used outside of their scope.
+
 tcPDecl :: LPredSet -> PDecl a -> TCM (LPredSet, (Type, PDecl PredType))
 tcPDecl ps (i, FunctionDecl p _ f eqs) = do
   vEnv <- getValueEnv
@@ -571,12 +575,12 @@ tcPDecl ps (i, FunctionDecl p _ f eqs) = do
 tcPDecl ps (i, d@(PatternDecl p (VariablePattern p' _ v) rhs)) = do
   clsEnv <- getClassEnv
   vEnv <- getValueEnv
-  (ps', ty) <- inst (varType v vEnv)
-  modifyInstEnv $ flip (foldr bindDynamicInst) $ maxPredSet clsEnv ps'
-  (ps'', rhs') <- tcRhs rhs >>-
+  (exPs, ty) <- inst (varType v vEnv)
+  modifyInstEnv $ flip (foldr bindDynamicInst) $ maxPredSet clsEnv exPs
+  (ps', rhs') <- tcRhs rhs >>-
     unify p "variable declaration" (pPrint d) ps ty
   let t' = VariablePattern p' (predType ty) v
-  return (ps'', (ty, (i, PatternDecl p t' rhs')))
+  return (ps', (ty, (i, PatternDecl p t' rhs')))
 tcPDecl ps (i, d@(PatternDecl p t rhs)) = do
   (ps', ty', t') <- tcPattern p t
   (ps'', rhs') <- tcRhs rhs >>-
@@ -584,18 +588,14 @@ tcPDecl ps (i, d@(PatternDecl p t rhs)) = do
   return (ps'', (ty', (i, PatternDecl p t' rhs')))
 tcPDecl _ _ = internalError "TypeCheck.tcPDecl"
 
--- The function 'tcFunctionPDecl' ignores the context of a function's type
--- signature. This prevents missing instance errors when the inferred type
--- of a function is less general than the declared type.
-
 tcFunctionPDecl :: Int -> LPredSet -> TypeScheme -> SpanInfo -> Ident
                 -> [Equation a] -> TCM (LPredSet, (Type, PDecl PredType))
 tcFunctionPDecl i ps tySc@(ForAll _ pty) p f eqs = do
   clsEnv <- getClassEnv
-  (ps', ty) <- inst tySc
-  modifyInstEnv $ flip (foldr bindDynamicInst) $ maxPredSet clsEnv ps'
-  (ps'', eqs') <- mapAccumM (tcEquation ty) ps eqs
-  return (ps'', (ty, (i, FunctionDecl p pty f eqs')))
+  (exPs, ty) <- inst tySc
+  modifyInstEnv $ flip (foldr bindDynamicInst) $ maxPredSet clsEnv exPs
+  (ps', eqs') <- mapAccumM (tcEquation ty) ps eqs
+  return (ps', (ty, (i, FunctionDecl p pty f eqs')))
 
 tcEquation :: Type -> LPredSet -> Equation a
            -> TCM (LPredSet, Equation PredType)
@@ -677,9 +677,8 @@ declVars _ = internalError "TypeCheck.declVars"
 -- of an explicitly typed function or variable declaration is automatically an
 -- instance of its type signature, the type signature is correct only if the
 -- inferred type matches the type signature exactly except for the inferred
--- predicate set, which may contain only a subset of the declared context
--- because the context of a function's type signature is ignored in the
--- function 'tcFunctionPDecl' above.
+-- predicate set, which should be empty since the constraints in the explicit
+-- type signature have been used to reduce required predicates.
 
 tcCheckPDecl :: LPredSet -> QualTypeExpr -> PDecl a
              -> TCM (LPredSet, PDecl PredType)
@@ -888,8 +887,8 @@ bindArity v n = bindTopEnv v (Value (qualify v) Nothing n undefined)
 -- function with an explicit type signature is that a class method's type
 -- signature is composed of its declared type signature and the context
 -- from the class declaration), but a little bit more complicated for
--- instance declarations because the instance type must be substituted
--- for the type variable used in the type class declaration.
+-- instance declarations because the instance types must be substituted
+-- for the type variables used in the type class declaration.
 --
 -- When checking inferred method types against their expected types, we have to
 -- be careful because the class' n type variables are always assigned indices 0
@@ -989,8 +988,8 @@ classMethodType qual f = do
   return $ funType False m (qual $ unRenameIdent f) vEnv
 
 -- Due to the sorting of the predicate set, we can simply remove the minimum
--- element as this is guaranteed to be the class constraint (see module 'Types'
--- for more information).
+-- element as this is guaranteed to be the implicit class constraint (see module
+-- 'Base.Types' for more information).
 
 instMethodType :: (Ident -> QualIdent) -> PredTypes -> Ident -> TCM PredType
 instMethodType qual (PredTypes ps tys) f = do
@@ -1017,11 +1016,10 @@ tcExternal f = do
 -- constructor itself. Overloaded (numeric) literals are not supported in
 -- patterns.
 
--- TODO: Check if the 'poly' flag of this function can be removed by always
---         using 'freshNumType' or 'freshFractionalType' respectively for
---         numeric literals. This would allow for the removal of
---         'TypeConstrained', but the overloading of patterns, which would then
---         be possible, might lead to problems with suspension.
+-- TODO: 'TypeConstrained' could potentially be removed either by using regular
+--       defaulting for numeric literals in patterns or by simply not allowing
+--       any kind of overload with such literals. Notice that the former
+--       solution might lead to problems with suspension.
 tcLiteral :: Bool -> Literal -> TCM (PredSet, Type)
 tcLiteral _ (Char _) = return (emptyPredSet, charType)
 tcLiteral poly (Int _)
@@ -1045,12 +1043,12 @@ tcLhs p (ApLhs spi lhs ts) = do
   (pss, tys2, ts') <- unzip3 <$> mapM (tcPatternHelper p) ts
   return (Set.unions (ps:pss), tys1 ++ tys2, ApLhs spi lhs' ts')
 
--- When computing the type of a variable in a pattern, we ignore the
--- predicate set of the variable's type (which can only be due to a type
--- signature in the same declaration group) for just the same reason as
--- in 'tcFunctionPDecl'. Infix and infix functional patterns are currently
--- checked as constructor and functional patterns, respectively, resulting
--- in slighty misleading error messages if the type check fails.
+-- Since simple variable declarations, which are the only kind of patterns that
+-- can have a type signature with explicitly given constraints, are already
+-- covered in 'tcPDecl', we can ignore the necessarily empty predicate sets in
+-- the types of other pattern variables. Infix and infix functional patterns are
+-- currently checked as constructor and functional patterns, respectively,
+-- resulting in slighty misleading error messages if the type check fails.
 
 -- We also keep track of already used variables,
 -- in order to add a Data constraint for non-linear patterns
@@ -1208,11 +1206,11 @@ tcExpr e@(Literal spi _ l) = do
 tcExpr e@(Variable spi _ v) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
-  (ps, ty) <- if isAnonId (unqualify v) then freshDataType
-                                        else inst (funType True m v vEnv)
-  -- TODO: Maybe use a different "what" for anonymous variables
-  let ps' = Set.map (\pr -> LPred pr spi "variable" (pPrint e)) ps
-  return (ps', ty, Variable spi (predType ty) v)
+  let anon  = isAnonId (unqualify v)
+      toLpr = if anon then \pr -> LPred pr spi "an anonymous variable" empty
+                      else \pr -> LPred pr spi "variable" (pPrint e)
+  (ps, ty) <- if anon then freshDataType else inst (funType True m v vEnv)
+  return (Set.map toLpr ps, ty, Variable spi (predType ty) v)
 tcExpr e@(Constructor spi _ c) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
@@ -1226,13 +1224,13 @@ tcExpr te@(Typed spi e qty) = withLocalInstEnv $ do
   let what = "explicitly typed expression"
   clsEnv <- getClassEnv
   pty <- expandPoly qty
-  (ps, ty) <- inst (typeScheme pty)
-  modifyInstEnv $ flip (foldr bindDynamicInst) $ maxPredSet clsEnv ps
-  let ps' = Set.map (\pr -> LPred pr spi what (pPrint te)) ps
-  (ps'', e') <- tcExpr e >>- unify spi what (pPrintPrec 0 e) emptyLPredSet ty
+  (exPs, ty) <- inst (typeScheme pty)
+  modifyInstEnv $ flip (foldr bindDynamicInst) $ maxPredSet clsEnv exPs
+  let exPs' = Set.map (\pr -> LPred pr spi what (pPrint te)) exPs
+  (ps, e') <- tcExpr e >>- unify spi what (pPrintPrec 0 e) emptyLPredSet ty
   fvs <- computeFvEnv
   theta <- getTypeSubst
-  let (gps, lps) = splitPredSetAny fvs (subst theta ps'')
+  let (gps, lps) = splitPredSetAny fvs (subst theta ps)
   lps' <- reducePredSet True lps
   lps'' <- applyDefaultsDecl spi what (pPrint te) fvs lps' ty
   let tySc = gen fvs lps'' (subst theta ty)
@@ -1240,7 +1238,7 @@ tcExpr te@(Typed spi e qty) = withLocalInstEnv $ do
     m <- getModuleIdent
     report $
       errTypeSigTooGeneral m (text "Expression:" <+> pPrintPrec 0 e) qty tySc
-  return (ps' `Set.union` gps, ty, Typed spi e' qty)
+  return (exPs' `Set.union` gps, ty, Typed spi e' qty)
 tcExpr e@(Record spi _ c fs) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
@@ -1594,18 +1592,34 @@ unifyTypeLists m (ty1 : tys1) (ty2 : tys2) =
       either Left (Right . flip compose theta)
                   (unifyTypes m (subst theta ty1) (subst theta ty2))
 
--- After performing a unification, the resulting substitution is applied
--- to the current predicate set and the resulting predicate set is subject
--- to a reduction. This predicate set reduction retains all predicates whose
--- types are all simple variables and which are not implied by other
--- predicates in the predicate set. For all other predicates, the compiler
--- checks whether an instance exists and replaces them by applying the
--- instances' predicate set to the respective types. A minor complication
--- arises due to constrained types, which at present are used to
--- implement overloading of guard expressions and of numeric literals in
--- patterns. The set of admissible types of a constrained type may be
--- restricted by the current predicate set after the reduction and thus
--- may cause a further extension of the current type substitution.
+-- -----------------------------------------------------------------------------
+-- Context Reduction
+-- -----------------------------------------------------------------------------
+
+-- After inferring all predicates required by implicitly typed declarations in a
+-- declaration group, an explicitly typed function or variable declaration, a
+-- class method implementation, or an explictly typed expression, we apply
+-- context reduction to the subset of these predicates that do not contain any
+-- type variables bound by other declarations (free type variables).
+
+-- Predicate sets are reduced by recursively applying the following steps in the
+-- given order until no further reduction is possible:
+-- * Remove predicates that are implied by the local instances in the dynamic
+--   instance environment, which are mainly the explicitly given constraints.
+-- * Replace each predicate by the correctly substituted instance context of a
+--   matching instance from the static instance environment. Predicates where no
+--   instance matches or where there is an overlap between unifiable instances
+--   are not reduced (see the 'Env.Instance' module for an explanation of
+--   matching and unifiable instances).
+
+-- The reduced predicate set is then minimized and used for defaulting
+-- 'TypeConstrained's. After that, we report remaining predicates where a
+-- further reduction was likely intended, but not possible for an also reported
+-- reason. For implicitly typed declarations, these are predicates without type
+-- variables. For the other cases marked by a flag, where an explicit type
+-- signature exists, we additionally report predicates with at least one
+-- predicate type that is not an (applied) type variable. Finally, the remaining
+-- predicates which have not been reported are returned.
 
 reducePredSet :: Bool -> LPredSet -> TCM LPredSet
 reducePredSet reportPreds ps = do
@@ -1613,15 +1627,13 @@ reducePredSet reportPreds ps = do
   clsEnv <- getClassEnv
   theta <- getTypeSubst
   inEnv <- fmap (fmap (subst theta)) <$> getInstEnv
-  let pm  = reducePreds m inEnv (subst theta ps)
-      pm' = Map.restrictKeys pm (minPredSet clsEnv (Map.keysSet pm))
-      (pm'', psDefaultable) = fmap Map.keysSet $
-        Map.partitionWithKey (const . not . isDefaultable) pm'
-      (pmReportable, pm''') = Map.partitionWithKey (const . isReportable) pm''
-  mapM_ report (Map.elems pmReportable)
+  let pm = reducePreds m inEnv (subst theta ps)
+      (psDefaultable, (psReportable, ps')) = fmap (Set.partition isReportable) $
+        Set.partition isDefaultable $ minPredSet clsEnv (Map.keysSet pm)
   theta' <- foldM (defaultTypeConstrained m inEnv) idSubst psDefaultable
   modifyTypeSubst $ compose theta'
-  return $ Map.keysSet pm'''
+  mapM_ report $ Map.elems $ Map.restrictKeys pm psReportable
+  return ps'
  where
   isDefaultable :: LPred -> Bool
   isDefaultable (LPred (Pred _ qcls [TypeConstrained _ _]) _ _ _) =
@@ -1631,6 +1643,9 @@ reducePredSet reportPreds ps = do
   isReportable :: LPred -> Bool
   isReportable (LPred (Pred _ _ tys) _ _ _) = null (typeVars tys) ||
     reportPreds && not (all isAppliedTypeVariable tys) ||
+    -- We additionally report predicates containing 'TypeConstrained's that have
+    -- not already been filtered out by 'isDefaultable', as they do not satisfy
+    -- the defaulting restrictions described in a comment below.
     map removeTypeConstrained tys /= tys
 
 reducePreds :: ModuleIdent -> InstEnv' -> LPredSet -> Map.Map LPred Message
@@ -1638,13 +1653,20 @@ reducePreds m inEnv = Map.unions . map reducePred . Set.toList
  where
   reducePred :: LPred -> Map.Map LPred Message
   reducePred pr@(LPred (Pred OPred _ _) _ _ _) =
-    either (Map.singleton pr) (reducePreds m inEnv) (instPredSet m pr inEnv)
+    either (Map.singleton pr) (reducePreds m inEnv) (instPredSet m inEnv pr)
   reducePred pr@(LPred (Pred ICC   _ _) _ _ _) =
     internalError $ "TypeCheck.reducePredSet: " ++
       "tried to reduce the implicit class constraint " ++ show pr
 
-instPredSet :: ModuleIdent -> LPred -> InstEnv' -> Either Message LPredSet
-instPredSet m (LPred (Pred _ qcls tys) p what doc) inEnv =
+-- 'instPredSet' applies a single reduction step to the given predicate or
+-- returns an error message explaining why it could not be reduced. Notice that
+-- these messages are not reported here, but added to a predicate map in
+-- 'reducePreds'. After deciding which of these irreducible predicates should be
+-- reported (see the comment for 'reducePredSet' above), this map allows for an
+-- easy access to the respective error messages.
+
+instPredSet :: ModuleIdent -> InstEnv' -> LPred -> Either Message LPredSet
+instPredSet m inEnv (LPred (Pred _ qcls tys) p what doc) =
   case Map.lookup qcls $ snd inEnv of
     Just tyss | tys `elem` tyss -> Right emptyLPredSet
     _ -> case lookupInstMatch qcls tys (fst inEnv) of
@@ -1654,6 +1676,33 @@ instPredSet m (LPred (Pred _ qcls tys) p what doc) inEnv =
            ([(_, ps, _, _, sigma)], _) ->
              Right $ Set.map (\pr -> LPred pr p what doc) (subst sigma ps)
   where lpr = LPred (Pred OPred qcls (map removeTypeConstrained tys)) p what doc
+
+-- -----------------------------------------------------------------------------
+-- Defaulting
+-- -----------------------------------------------------------------------------
+
+-- There are two different defaulting mechanisms in the type check, which are
+-- both applied after the main part of context reduction and before generalizing
+-- the inferred type to a type scheme:
+
+-- * The type of a numeric literal appearing in a pattern is represented by a
+--   'TypeConstrained', which is a special type variable annotated with a list
+--   of possible types. If multiple of these types remain after the type
+--   inference, they are further restricted to those that satisfy the predicates
+--   on them in 'defaultTypeConstrained'. An error is reported if no such type
+--   belongs to the possible types. Otherwise, the type variable is later
+--   defaulted to the first of the remaining types.
+
+-- * Regular type variables are defaulted in 'applyDefaults', if they are
+--   ambiguous. This is explained in detail in the comment for that function.
+--   In constrast to the defaulting of 'TypeConstrained's, the priority list for
+--   the regular defaulting mechanism can be defined in a default declaration
+--   and can therefore contain user-defined types.
+
+-- Both defaulting mechanisms only default 'TypeConstrained's or ambiguous type
+-- variables that only occur in simple predicates of the form C a, where C is
+-- a Prelude class (like 'Eq', 'Num' or 'Show'). This restriction allows for a
+-- simple defaulting mechanism and prevents unexpected defaulting behaviour.
 
 defaultTypeConstrained :: ModuleIdent -> InstEnv' -> TypeSubst -> LPred
                        -> TCM TypeSubst
@@ -1676,17 +1725,93 @@ defaultTypeConstrained m inEnv theta (LPred (Pred _ qcls tys) p what doc) =
         report $ errMissingInstance m (LPred (Pred OPred qcls tys') p what doc)
         return theta
 
+-- When a constrained type variable that is not free in the type environment
+-- disappears from the current type, the type becomes ambiguous. For instance,
+-- the type of the expression
+--
+-- let x = read "" in show x
+--
+-- is ambiguous assuming that 'read' and 'show' have types
+--
+-- read :: Read a => String -> a
+-- show :: Show a => a -> String
+--
+-- because the compiler cannot determine which 'Read' and 'Show' instances to
+-- use.
+--
+-- In the case of expressions with an ambiguous numeric type, i.e., a type that
+-- must be an instance of 'Num' or one of its subclasses, the compiler first
+-- checks whether the type variable satisfies the defaulting restrictions
+-- explained previously. If so, it tries to resolve the ambiguity by choosing
+-- the first type from the list of default types that satisfies all predicates
+-- for the ambiguous type variable, if there is such a type. All type variables
+-- which remain ambiguous after defaulting are reported as errors.
+
+applyDefaults :: HasSpanInfo p => p -> String -> Doc -> Set.Set Int -> LPredSet
+              -> Type -> TCM LPredSet
+applyDefaults p what doc fvs ps ty = do
+  m <- getModuleIdent
+  clsEnv <- getClassEnv
+  inEnv <- getInstEnv
+  defs <- getDefaultTypes
+  let ps'   = Set.map getPred ps
+      theta = foldr (bindDefault m defs inEnv ps') idSubst $ nub
+        [ tv | Pred _ qcls [TypeVariable tv] <- Set.toList ps'
+             , tv `Set.notMember` fvs, isSimpleNumClass clsEnv qcls
+             , all (\pr -> isDefaultable pr || tv `notElem` typeVars pr) ps' ]
+      ps''  = Set.filter (not . null . typeVars) (subst theta ps)
+      ty'   = subst theta ty
+      tvs'  = nub $ filter (`Set.notMember` fvs) (typeVars ps'')
+  mapM_ (report . errAmbiguousTypeVariable m p what doc ps'' ty') tvs'
+  modifyTypeSubst $ compose theta
+  return ps''
+ where
+  isDefaultable :: Pred -> Bool
+  isDefaultable (Pred _ qcls [TypeVariable _]) = isPreludeClass qcls
+  isDefaultable _                              = False
+
+bindDefault :: ModuleIdent -> [Type] -> InstEnv' -> PredSet -> Int -> TypeSubst
+            -> TypeSubst
+bindDefault m defs inEnv ps tv =
+  case foldr (defaultType m inEnv tv) defs (Set.toList ps) of
+    [] -> id
+    ty:_ -> bindSubst tv ty
+
+defaultType :: ModuleIdent -> InstEnv' -> Int -> Pred -> [Type] -> [Type]
+defaultType m inEnv tv (Pred _ qcls [TypeVariable tv'])
+  | tv == tv' = concat . filter (hasInstance m inEnv qcls) . map (: [])
+  | otherwise = id
+defaultType _ _ _ _ = id
+
+-- Checks if there is an instance with satisfied instance context for the
+-- given class and types in the instance environment, i.e., if the corresponding
+-- predicate can be reduced to the empty predicate set.
 hasInstance :: ModuleIdent -> InstEnv' -> QualIdent -> [Type] -> Bool
 hasInstance m inEnv qcls =
   null . reducePreds m inEnv . Set.singleton . getFromPred . Pred OPred qcls
 
--- Predicates which have both type variables and other types as predicate types
--- (like @C Bool a@) cannot be reported in 'reducePredSet', because that would
--- lead to incorrect missing instance errors when 'reducePredSet' is called when
--- some, but not all predicate types have been inferred.
--- Therefore, to report such predicates which would only be allowed with a
--- FlexibleContexts language extension, 'reportFlexibleContextDecl' is called at
--- the end of inferring types for a declaration group.
+-- Checks whether the given 'QualIdent' belongs to the 'Num' class or to a class
+-- which has 'Num' as a super class. For multi-parameter type classes, only the
+-- first parameter is considered.
+isSimpleNumClass :: ClassEnv -> QualIdent -> Bool
+isSimpleNumClass =
+  (psMember (Pred OPred qNumId [TypeVariable 0]) .) . flip allSuperClasses
+
+isPreludeClass :: QualIdent -> Bool
+isPreludeClass qcls = qcls `elem`
+  [ qEqId, qOrdId, qEnumId, qBoundedId, qReadId, qShowId, qNumId, qFractionalId
+  , qRealId, qIntegralId, qRealFracId, qFloatingId, qMonoidId, qFunctorId
+  , qApplicativeId, qAlternativeId, qMonadId, qMonadFailId, qDataId ]
+
+-- -----------------------------------------------------------------------------
+-- Flexible Contexts
+-- -----------------------------------------------------------------------------
+
+-- Reduced predicate sets for implicitly typed declarations may contain
+-- predicates like @C Bool [a]@ where some predicate types are not (applied)
+-- type variables. Such predicates are not allowed to appear as constraints in
+-- type signatures without the FlexibleContexts extension and are therefore
+-- reported if this extension is not enabled.
 
 reportFlexibleContextDecl :: ModuleIdent -> PDecl PredType -> TCM ()
 reportFlexibleContextDecl m (_, FunctionDecl spi (PredType ps _) f _) =
@@ -1726,79 +1851,10 @@ reportFlexibleContextPattern _ (FunctionPattern     _ _ _ _) =
 reportFlexibleContextPattern _ (InfixFuncPattern  _ _ _ _ _) =
   report $ internalError "TypeCheck.reportFlexibleContextPattern"
 
--- When a constrained type variable that is not free in the type environment
--- disappears from the current type, the type becomes ambiguous. For instance,
--- the type of the expression
---
--- let x = read "" in show x
---
--- is ambiguous assuming that 'read' and 'show' have types
---
--- read :: Read a => String -> a
--- show :: Show a => a -> String
---
--- because the compiler cannot determine which 'Read' and 'Show' instances to
--- use.
---
--- In the case of expressions with an ambiguous numeric type, i.e., a type that
--- must be an instance of 'Num' or one of its subclasses, the compiler first
--- checks whether the ambiguous type variable only appears in constraints for
--- Prelude classes (like 'Eq', 'Num' and 'Show'). If so, it tries to resolve the
--- ambiguity by choosing the first type from the list of default types that
--- satisfies all constraints for the ambiguous type variable. An error is
--- reported if no such type exists or if the type variable could not be
--- defaulted for some other reason.
+-- -----------------------------------------------------------------------------
+-- Instantiation and Generalization
+-- -----------------------------------------------------------------------------
 
-applyDefaults :: HasSpanInfo p => p -> String -> Doc -> Set.Set Int -> LPredSet
-              -> Type -> TCM LPredSet
-applyDefaults p what doc fvs ps ty = do
-  m <- getModuleIdent
-  clsEnv <- getClassEnv
-  inEnv <- getInstEnv
-  defs <- getDefaultTypes
-  let ps'   = Set.map getPred ps
-      theta = foldr (bindDefault m defs inEnv ps') idSubst $ nub
-        [ tv | Pred _ qcls [TypeVariable tv] <- Set.toList ps'
-             , tv `Set.notMember` fvs, isSimpleNumClass clsEnv qcls
-             , all (\pr -> isDefaultable pr || tv `notElem` typeVars pr) ps' ]
-      ps''  = Set.filter (not . null . typeVars) (subst theta ps)
-      ty'   = subst theta ty
-      tvs'  = nub $ filter (`Set.notMember` fvs) (typeVars ps'')
-  mapM_ (report . errAmbiguousTypeVariable m p what doc ps'' ty') tvs'
-  modifyTypeSubst $ compose theta
-  return ps''
- where
-  isDefaultable :: Pred -> Bool
-  isDefaultable (Pred _ qcls [TypeVariable _]) = isPreludeClass qcls
-  isDefaultable _                              = False
-
-bindDefault :: ModuleIdent -> [Type] -> InstEnv' -> PredSet -> Int -> TypeSubst
-            -> TypeSubst
-bindDefault m defs inEnv ps tv =
-  case foldr (defaultType m inEnv tv) defs (Set.toList ps) of
-    [] -> id
-    ty:_ -> bindSubst tv ty
-
-defaultType :: ModuleIdent -> InstEnv' -> Int -> Pred -> [Type] -> [Type]
-defaultType m inEnv tv (Pred _ qcls [TypeVariable tv'])
-  | tv == tv' = concat . filter (hasInstance m inEnv qcls) . map (: [])
-  | otherwise = id
-defaultType _ _ _ _ = id
-
--- Checks whether the given 'QualIdent' belongs to the 'Num' class or to a class
--- which has 'Num' as a super class. For multi-parameter type classes, only the
--- first parameter is considered.
-isSimpleNumClass :: ClassEnv -> QualIdent -> Bool
-isSimpleNumClass =
-  (psMember (Pred OPred qNumId [TypeVariable 0]) .) . flip allSuperClasses
-
-isPreludeClass :: QualIdent -> Bool
-isPreludeClass qcls = qcls `elem`
-  [ qEqId, qOrdId, qEnumId, qBoundedId, qReadId, qShowId, qNumId, qFractionalId
-  , qRealId, qIntegralId, qRealFracId, qFloatingId, qMonoidId, qFunctorId
-  , qApplicativeId, qAlternativeId, qMonadId, qMonadFailId, qDataId ]
-
--- Instantiation and Generalization:
 -- We use negative offsets for fresh type variables.
 
 fresh :: (Int -> a) -> TCM a
@@ -1878,7 +1934,10 @@ gen gvs ps ty = ForAll (length tvs) (subst theta (PredType ps' ty))
         theta = foldr2 bindSubst idSubst tvs tvs'
         ps' = Set.map getPred ps
 
--- Auxiliary Functions:
+-- -----------------------------------------------------------------------------
+-- Auxiliary Functions
+-- -----------------------------------------------------------------------------
+
 -- The functions 'constrType', 'varType', 'funType' and 'labelType' are used
 -- to retrieve the type of constructors, pattern variables, variables and
 -- labels in expressions, respectively, from the value environment. Because
@@ -2000,9 +2059,9 @@ computeFvEnv = do
 localTypes :: ValueEnv -> [TypeScheme]
 localTypes vEnv = [tySc | (_, Value _ _ _ tySc) <- localBindings vEnv]
 
--- ---------------------------------------------------------------------------
--- Error functions
--- ---------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
+-- Error Functions
+-- -----------------------------------------------------------------------------
 
 errPolymorphicVar :: Ident -> Message
 errPolymorphicVar v = spanInfoMessage v $ hsep $ map text
