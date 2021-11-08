@@ -280,8 +280,8 @@ defaultInstMethodDecl ps cls tys f = do
 -- Returns the type for a given instance's method of a given class. To this
 -- end, the class method's type is stripped of its first predicate (which is
 -- the implicit class constraint) and the class variables are replaced with the
--- instance's types. The remaining predicate set is then united with the
--- instance's predicate set.
+-- instance types. The remaining predicate set is then united with the instance
+-- context.
 
 instMethodType :: ValueEnv -> PredSet -> QualIdent -> [Type] -> Ident
                -> PredType
@@ -416,8 +416,6 @@ bindDefaultMethods :: ModuleIdent -> QualIdent -> [(Ident, Int)] -> ValueEnv
                    -> ValueEnv
 bindDefaultMethods m = flip . foldr . bindDefaultMethod m
 
--- TODO: Should the implicit class constraint of a default method implementation
---         be marked as such?
 bindDefaultMethod :: ModuleIdent -> QualIdent -> (Ident, Int) -> ValueEnv
                   -> ValueEnv
 bindDefaultMethod m cls (f, n) vEnv =
@@ -721,15 +719,11 @@ addDictArgs pls ts = do
 -- from the predicates of a class method or an overloaded function. It checks
 -- whether a dictionary for the predicate is available in the dictionary
 -- environment, which is the case when the predicate is mentioned in the type
--- signature or is not reducible, and uses 'instDict' otherwise in order to
--- supply a new dictionary using the appropriate instance dictionary
--- construction function. If the corresponding instance declaration has a
--- non-empty context, the dictionary construction function is applied to the
--- dictionaries computed for the context instantiated at the appropriate types.
-
--- TODO: With FlexibleInstances, there could exist instances even for predicates
---         with only variable types. The comment above has to be updated for
---         that (as well as possibly the implementation below).
+-- signature or is irreducible, and uses 'instDict' otherwise in order to supply
+-- a new dictionary using the appropriate instance dictionary construction
+-- function. If the corresponding instance declaration has a non-empty context,
+-- 'dictArg' is applied recursively to construct the dictionary arguments for
+-- the appropriately instantiated instance context.
 
 dictArg :: Pred -> DTM (Expression Type)
 dictArg p = maybeM (instDict p) return (lookup p <$> getDictEnv)
@@ -802,8 +796,9 @@ splits xs = zip (inits xs) (tails xs)
 -- Optimizing method calls
 -- -----------------------------------------------------------------------------
 
--- Whenever a type class method is applied to known types only, the compiler can
--- apply the type instance's implementation directly.
+-- Whenever a class method is applied to an instance dictionary function after
+-- the dictionary insertion, the compiler can instead apply the respective
+-- instance's implementation directly.
 
 type SpecEnv = Map.Map (QualIdent, QualIdent) QualIdent
 
@@ -1021,38 +1016,36 @@ iConstrDeclFromDataConstructor m vEnv c = case qualLookupValue c vEnv of
 -- unqualified.
 --
 -- In these identifiers, type variables are displayed as numbers to avoid name
--- clashes with type constructors and type arguments (needed for super class
--- relations and instance types) are always parenthesized to circumvent the need
--- for other separators. With the exception of the dictionary data type and
--- constructor identifiers, all classes and data types are represented by their
--- original names, which are always unique.
+-- clashes with type constructors and type arguments in super class constraints
+-- and instance types are always parenthesized to unambiguously depict the
+-- corresponding type expression. With the exception of the dictionary data type
+-- and constructor identifiers, all classes and data types are represented by
+-- their original names, which are always unique.
 --
--- For some examples of these identifiers, we consider a class with the
--- qualified name M.C and a class method cf. For these, we get:
+-- For some examples of these identifiers, we consider a class with the original
+-- name M.C and a class method cf. For these, we get:
 --
 -- Dictionary data type and constructor:  _Dict#C
 -- Default method implementation:         _def#cf#M.C
 --
--- Super class dictionary stubs consist of the name of the subclass, the super
--- class name and information about the type variables that the super class is
--- applied to in the class definition. More concretely, for each super class
--- type argument, the index of the respective subclass variable is added to the
--- identifier in parentheses. As an example, we consider the super class
--- relation shown in the class declaration class N.D b b a => C a b c
+-- The identifiers for super class dictionary stubs consist of the original name
+-- of the subclass and the fully expanded super class constraint, where all type
+-- constructors, including the super class, are displayed with their original
+-- names, type variables are displayed with their indices, and type arguments
+-- are parenthesized each. As an example, we consider the super class constraint
+-- shown in the class declaration @class N.D String b a => C a b@:
 --
--- Super class dictionary stub:  _super#M.C#N.D(1)(1)(0)
+-- Super class dictionary stub:  _super#M.C#N.D([](Prelude.Char))(1)(0)
 --
--- Instance dictionary functions consist of the full instance head, where all
--- type constructors, including the class, are displayed with their name, type
--- variables are displayed as with their indices, and type arguments are
--- parenthesized each. Instance method implementations are identified like the
--- dictionary functions, but with the method name added before the class name.
--- For both kinds of functions, it is important that their identifiers are
--- generated using the instance types from the instance environment.
--- Examples are shown for the instance declaration instance M.C Int [a] (b, a):
+-- Similarly, the instance dictionary function identifiers consist of the fully
+-- expanded instance head. Instance method implementations are identified like
+-- the dictionary functions, but with the method name added before the class
+-- name. For both kinds of functions, it is important that their identifiers are
+-- generated using the instance types from the instance environment. Examples
+-- are shown for the instance declaration @instance M.C Int [(a, b, a)]@:
 --
--- Instance dictionary function:    _inst#M.C(Prelude.Int)([](0))((,)(1)(0))
--- Instance method implementation:  _impl#cf#M.C(Prelude.Int)([](0))((,)(1)(0))
+-- Instance dictionary function:    _inst#M.C(Prelude.Int)([]((,,)(0)(1)(0)))
+-- Instance method implementation:  _impl#cf#M.C(Prelude.Int)([]((,,)(0)(1)(0)))
 
 dictTypeId :: QualIdent -> Ident
 dictTypeId cls = mkIdent $ "_Dict#" ++ idName (unqualify cls)
@@ -1115,7 +1108,7 @@ freshVar name ty = ((,) ty) . mkIdent . (name ++) . show <$> getNextId
 -- -----------------------------------------------------------------------------
 
 -- The function 'dictType' returns the type of the dictionary corresponding to
--- a particular C-T instance.
+-- a particular predicate.
 
 rtDictType :: Pred -> Type
 rtDictType = TypeArrow unitType . dictType
@@ -1150,17 +1143,16 @@ transformMethodPredType (PredType ps ty) =
   let iccAr = maybe 0 (\(Pred _ _ tys) -> length tys) (Set.lookupMin ps)
   in (transformPredType $ PredType (Set.deleteMin ps) ty, iccAr)
 
--- The function 'generalizeMethodType' generalizes an already transformed
--- method type to a forall type by quantifying all occurring type variables
--- except for the class variables whose indices are between 0 (inclusive) and
--- the given class arity (exclusive). This function is uncurried by default so
--- it can more easily be combined with 'transformMethodPredType'.
--- TODO: Check if the < 0 test can be removed.
+-- The function 'generalizeMethodType' generalizes an already transformed method
+-- type to a forall type by quantifying all occurring type variables with
+-- non-negative indices except for the class variables whose indices are below
+-- the given class arity. This function is uncurried by default so it can more
+-- easily be combined with 'transformMethodPredType'.
 generalizeMethodType :: (Type, Int) -> Type
 generalizeMethodType (ty, clsAr)
   | null tvs  = ty
   | otherwise = TypeForall tvs ty
-  where tvs = nub $ filter (\i -> i >= clsAr || i < 0) $ typeVars ty
+  where tvs = nub $ filter (>= clsAr) $ typeVars ty
 
 instTypeVar :: Int -> Int
 instTypeVar tv = -1 - tv
@@ -1174,7 +1166,7 @@ instType (TypeForall  tvs ty) = TypeForall (map instTypeVar tvs) (instType ty)
 instType ty = ty
 
 instPred :: Pred -> Pred
-instPred (Pred isIcc cls ty) = Pred isIcc cls (map instType ty)
+instPred (Pred isIcc cls tys) = Pred isIcc cls (map instType tys)
 
 unRenameIdentIf :: Bool -> Ident -> Ident
 unRenameIdentIf b = if b then unRenameIdent else id
@@ -1199,19 +1191,14 @@ stringExpr = foldr (consExpr . Literal NoSpanInfo (predType charType) . Char)
 -- The function 'varType' is able to lookup both local and global identifiers.
 -- Since the environments have been qualified before, global declarations are
 -- only visible under their original name whereas local declarations are always
--- entered unqualified. 'varType' transforms the implicit class constraint of
--- the requested variable, if it has any, to a regular predicate. This is
--- necessary because 'varType' is used in the module transformation to retrieve
--- the types of functions with implicit class constraints like default method
--- implementations.
+-- entered unqualified.
 
--- The function 'funType' has a boolean parameter which marks whether the
--- implicit class constraint of the requested function, if it has any, should be
--- transformed into a regular predicate. This functionality should be used when
--- using this type information to check the types of expressions that could
--- contain class methods (here, this is the case for the module transformation).
--- It should only be disabled if the implicit class constraint of a requested 
--- class method has to be treated differently than other predicates.
+-- Notice that the type schemes returned by these functions for class methods
+-- and default method implementations contain implicit class constraints. To
+-- retain the correct predicate order while still being able to easily assign
+-- dictionaries for regular given predicates to required implicit class
+-- constraints and vice-versa, the flags marking implicit class constraints
+-- are removed after converting the predicate set to a list in 'matchPredList'.
 
 varType :: ModuleIdent -> Ident -> ValueEnv -> TypeScheme
 varType m v vEnv = case qualLookupValue (qualify v) vEnv of
