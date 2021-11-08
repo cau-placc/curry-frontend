@@ -262,7 +262,7 @@ getClassMethodType cls f = do
 
 classMethodType :: ValueEnv -> QualIdent -> Ident -> PredType
 classMethodType vEnv cls f = pty
-  where ForAll _ pty = funType False (qualifyLike cls f) vEnv
+  where ForAll _ pty = funType (qualifyLike cls f) vEnv
 
 createInstMethodDecl :: PredSet -> QualIdent -> [Type] -> MethodMap -> Ident
                      -> DTM (Decl PredType)
@@ -659,7 +659,7 @@ instance DictTrans Expression where
   dictTrans (Literal     _ pty l) =
     return $ Literal NoSpanInfo (unpredType pty) l
   dictTrans (Variable    _ pty v) = do
-    pls <- matchPredList (funType True v) (unpredType pty)
+    pls <- matchPredList (funType v) (unpredType pty)
     es <- mapM dictArg pls
     let ty = foldr (TypeArrow . typeOf) (unpredType pty) es
     return $ apply (Variable NoSpanInfo ty v) es
@@ -774,7 +774,14 @@ matchPredList tySc ty2 = do
   return $ foldr (\(pls1, pls2) pls' ->
                    fromMaybe pls' $ qualMatch pls1 ty1 pls2 ty2)
                  (internalError $ "Dictionary.matchPredList: " ++ show ps)
-                 (splits $ Set.toAscList ps)
+                 (splits $ removeICCFlagList $ Set.toAscList ps)
+ where
+  -- Converts any implicit class constraint to a regular predicate so that given
+  -- predicates from the dictionary environment can be easily assigned to
+  -- required predicates.
+  removeICCFlagList :: [Pred] -> [Pred]
+  removeICCFlagList (Pred ICC qcls tys : pls) = Pred OPred qcls tys : pls
+  removeICCFlagList pls                       = pls
 
 qualMatch :: [Pred] -> Type -> [Pred] -> Type -> Maybe [Pred]
 qualMatch pls1 ty1 pls2 ty2 = case predListMatch pls2 ty2 of
@@ -1207,11 +1214,7 @@ stringExpr = foldr (consExpr . Literal NoSpanInfo (predType charType) . Char)
 -- class method has to be treated differently than other predicates.
 
 varType :: ModuleIdent -> Ident -> ValueEnv -> TypeScheme
-varType m v vEnv = let ForAll n (PredType ps ty) = varType' m v vEnv
-                   in  ForAll n (PredType (removeICCFlag ps) ty)
-
-varType' :: ModuleIdent -> Ident -> ValueEnv -> TypeScheme
-varType' m v vEnv = case qualLookupValue (qualify v) vEnv of
+varType m v vEnv = case qualLookupValue (qualify v) vEnv of
   Value _ _ _ tySc : _ -> tySc
   Label _ _   tySc : _ -> tySc
   _ -> case qualLookupValue (qualifyWith m v) vEnv of
@@ -1225,13 +1228,11 @@ conType c vEnv = case qualLookupValue c vEnv of
   [NewtypeConstructor _ _ (ForAll n pty)] -> ForAll n pty
   _ -> internalError $ "Dictionary.conType: " ++ show c
 
-funType :: Bool -> QualIdent -> ValueEnv -> TypeScheme
-funType False f vEnv = case qualLookupValue f vEnv of
+funType :: QualIdent -> ValueEnv -> TypeScheme
+funType f vEnv = case qualLookupValue f vEnv of
   [Value _ _ _ tySc] -> tySc
   [Label _ _   tySc] -> tySc
   _ -> internalError $ "Dictionary.funType " ++ show f
-funType True  f vEnv = let ForAll n (PredType ps ty) = funType False f vEnv
-                       in  ForAll n (PredType (removeICCFlag ps) ty)
 
 opType :: QualIdent -> ValueEnv -> TypeScheme
 opType op vEnv = case qualLookupValue op vEnv of
