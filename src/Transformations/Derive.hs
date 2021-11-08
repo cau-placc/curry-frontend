@@ -38,10 +38,6 @@ import Env.OpPrec
 import Env.TypeConstructor
 import Env.Value
 
--- TODO: Check whether it is possible for derived instances to violate the
---         instance termination rules, especially considering FlexibleInstances
---         and FlexibleContexts.
-
 data DVState = DVState
   { moduleIdent :: ModuleIdent
   , tyConsEnv   :: TCEnv
@@ -99,8 +95,6 @@ deriveAllInstances ds = do
 hasDataInstance :: InstEnv -> ModuleIdent -> Decl PredType -> Bool
 hasDataInstance inst mid (DataDecl    _ tc tvs _ _) =
   maybe False ((== mid) . fst3) (lookupInstExact (qDataId, [ty]) inst)
-  -- TODO: An alternative would be to use 'expandConstrType' or 'toConstrType',
-  --         but that probably isn't needed.
   where ty = applyType (TypeConstructor (qualifyWith mid tc))
                (map TypeVariable [0 .. length tvs - 1])
 hasDataInstance inst mid (NewtypeDecl p tc tvs _ _) =
@@ -600,8 +594,8 @@ instType ty = ty
 -- Returns the type for a given instance's method of a given class. To this
 -- end, the class method's type is stripped of its first predicate (which is
 -- the implicit class constraint) and the class variable is replaced with the
--- instance's type. The remaining predicate set is then united with the
--- instance's predicate set.
+-- instance type. The remaining predicate set is then united with the instance
+-- context.
 
 getInstMethodType :: PredSet -> QualIdent -> Type -> Ident -> DVM PredType
 getInstMethodType ps cls ty f = do
