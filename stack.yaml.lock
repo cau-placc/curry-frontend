@@ -7,13 +7,13 @@ packages:
 - completed:
     hackage: set-extra-1.4.1@sha256:c58aa620704f609f289953e7c1f9c1653fd1498f0984b0f03a3f8f38f7ed5a84,533
     pantry-tree:
-      size: 268
       sha256: 3b6f94160b9d868f341d841de0e3e9f354ae90b5817b171e2bb68fd67cf2790c
+      size: 268
   original:
     hackage: set-extra-1.4.1
 snapshots:
 - completed:
-    size: 532380
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/16/9.yaml
-    sha256: 14a7cec114424e4286adde73364438927a553ed248cc50f069a30a67e3ee1e69
-  original: lts-16.9
+    sha256: 87842ecbaa8ca9cee59a7e6be52369dbed82ed075cb4e0d152614a627e8fd488
+    size: 586069
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/18/14.yaml
+  original: lts-18.14
