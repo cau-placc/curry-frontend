@@ -52,7 +52,8 @@
   As we are going to insert references to real prelude entities,
   all names must be properly qualified before calling this module.
 -}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP           #-}
+{-# LANGUAGE TupleSections #-}
 module Transformations.Desugar (desugar) where
 
 #if __GLASGOW_HASKELL__ < 710
@@ -63,7 +64,7 @@ import           Control.Monad              (liftM2)
 import           Control.Monad.Extra        (concatMapM)
 import qualified Control.Monad.State as S   (State, runState, gets, modify)
 import           Data.Foldable              (foldrM)
-import           Data.List                  ( (\\), elemIndex, nub, partition
+import           Data.List                  ( elemIndex, nub, partition
                                             , tails )
 import           Data.Maybe                 (fromMaybe)
 import qualified Data.Set            as Set (Set, empty, member, insert)
@@ -169,10 +170,10 @@ desugarModuleDecls ds = do
 dsTypeDecl :: Decl PredType -> DsM [Decl PredType]
 dsTypeDecl (DataDecl si tc tvs cs clss) = do
   cs' <- mapM dsConstrDecl cs
-  return $ [DataDecl si tc tvs cs' clss]
+  return [DataDecl si tc tvs cs' clss]
 dsTypeDecl (NewtypeDecl si tc tvs nc clss) = do
   nc' <- dsNewConstrDecl nc
-  return $ [NewtypeDecl si tc tvs nc' clss]
+  return [NewtypeDecl si tc tvs nc' clss]
 dsTypeDecl (TypeDecl _ _ _ _) = return []
 dsTypeDecl d = return [d]
 
@@ -280,16 +281,6 @@ dsDeclLhs (PatternDecl p t rhs) = do
   return $ PatternDecl p t' rhs : concat dss'
 dsDeclLhs d                     = return [d]
 
--- TODO: Check if obsolete and remove
--- After desugaring its right hand side, each equation is eta-expanded
--- by adding as many variables as necessary to the argument list and
--- applying the right hand side to those variables (Note: eta-expansion
--- is disabled in the version for PAKCS).
--- Furthermore every occurrence of a record type within the type of a function
--- is simplified to the corresponding type constructor from the record
--- declaration. This is possible because currently records must not be empty
--- and a record label belongs to only one record declaration.
-
 -- Desugaring of the right-hand-side of declarations
 dsDeclRhs :: Decl PredType -> DsM (Decl PredType)
 dsDeclRhs (FunctionDecl p pty f eqs) =
@@ -301,13 +292,17 @@ dsDeclRhs _                          =
   error "Desugar.dsDeclRhs: no pattern match"
 
 -- Desugaring of an equation
+-- Desugaring of equations first handles functional patterns.
+-- In doing so, we also take the non-linearity in conjunction with other patterns into account.
+-- Desugaring of equations then continues to take care of non-linear arguments in non-functional patterns.
+-- At last, we desugar the rhs of the equation.
+-- More details and an example can be found below.
 dsEquation :: Equation PredType -> DsM (Equation PredType)
 dsEquation (Equation p lhs rhs) = do
-  (     cs1, ts1) <- dsNonLinearity         ts
-  (ds1, cs2, ts2) <- dsFunctionalPatterns p ts1
-  (ds2,      ts3) <- mapAccumM (dsPat p) [] ts2
-  rhs'            <- dsRhs (constrain cs2 . constrain cs1)
-                           (addDecls (ds1 ++ ds2) rhs)
+  (ds1, cs1, ts1) <- dsFunctionalPatterns p ts
+  (     cs2, ts2) <- dsNonLinearity ts1  
+  (ds2     , ts3) <- mapAccumM (dsPat p) [] ts2 --TODO: Remove position arguments in transformation phases
+  rhs' <- dsRhs (constrain cs1 . constrain cs2) (addDecls (ds1 ++ ds2) rhs)
   return $ Equation p (FunLhs NoSpanInfo f ts3) rhs'
   where (f, ts) = flatLhs lhs
 
@@ -360,6 +355,173 @@ addDecls ds (SimpleRhs p li e ds') = SimpleRhs p li e (ds ++ ds')
 addDecls ds (GuardedRhs spi li es ds') = GuardedRhs spi li es (ds ++ ds')
 
 -- -----------------------------------------------------------------------------
+-- Desugaring of functional patterns
+-- -----------------------------------------------------------------------------
+
+-- Desugaring of functional patterns works in the following way:
+--  1. The patterns are recursively traversed from left to right
+--     to extract every functional pattern. Note that functional patterns
+--     can be nested, but the transformation only sees the top-most functional pattern 
+--     where nested functional patterns are transformed into expressions. 
+--     Each functional pattern is replaced by a fresh variable and a pair
+--     (variable, functional pattern) is generated.
+--
+--     Consider the following function as an example.
+--     f x (x, y) [(_ ++ [y])] = ...
+--     f x (x, y) [#funpat1]   = ... -- #funpat1 -> [(_ ++ [y])]
+--  2. Next, we replace all variables in the other patterns that occur in at least one of the
+--     collected functional patterns with fresh variables and generate pairs of variable and
+--     variable pattern (similar to the variable-functional pattern pairs from above).
+--
+--     f x (x, #nonlinear2) [#funpat1] = ... -- #funpat1    -> [(_ ++ [y])]
+--                                           -- #nonlinear2 -> y
+--  2. The variable-pattern pairs of the form @(vi, pi)@ are then transformed into a single
+--     constraint of the form @(p1, ..., pn) =:<= (v1, ..., vn)@, where the pattern @pi@ is
+--     converted to the corresponding expression. This way, non-linearity is properly accounted for.
+--     In addition, any variable occurring in the functional patterns is declared as a fresh
+--     free variable. Multiple constraints will later be combined using the @&>@-operator
+--     such that the patterns are evaluated from left to right.
+--
+--     f x (x, #nonlinear2) [#funpat1] | (y, _ ++ [y]) =:<= (arg2, arg1) = ...
+--     Any remaining non-linearity is transformed later on.
+
+dsFunctionalPatterns
+  :: SpanInfo -> [Pattern PredType]
+  -> DsM ([Decl PredType], [Expression PredType], [Pattern PredType])
+dsFunctionalPatterns p ts = do
+  -- Gather all functional patterns (also nested ones)
+  (bss1, ts1) <- unzip <$> mapM funPats ts
+  -- Get all pattern variables in functional patterns
+  let funPatVars = nub $ concatMap (patternVars . snd) (concat bss1)
+  -- Replace all pattern variables in ts' that are in funPatVars with fresh variables to account for the non-linearity
+  (bss2, ts2) <- unzip <$> mapM (dsFunctionalPatternsNonLinear (map fst3 funPatVars)) ts1
+  -- Convert patterns of lazy binds to expressions
+  let (vs, ts') = unzip $ concat $ bss1 ++ bss2
+      (es, css) = unzip $ map fp2Expr ts'
+  -- Create (desugared) functional pattern expression
+  let cs = [mkTuple es =:<= mkTuple (map (uncurry mkVar) vs) | not $ null vs]
+  -- Create free variable declarations for non-anonymous funPatVars
+  let ds = map (\ (v, _, pty) -> FreeDecl p [Var pty v]) $
+             filter (not . isAnonId . fst3) $ funPatVars
+  -- Return (declarations, constraints, desugared patterns)
+  return (ds, concat (cs : css), ts2)
+  where
+    mkTuple es | length es >= 2 = Tuple NoSpanInfo es
+               | otherwise      = head es
+
+dsFunctionalPatternsNonLinear :: [Ident] -> Pattern PredType 
+                              -> DsM ([((PredType, Ident), Pattern PredType)], Pattern PredType)
+dsFunctionalPatternsNonLinear _ p@(LiteralPattern _ _ _) = return ([], p)
+dsFunctionalPatternsNonLinear _ p@(NegativePattern         _ _ _) = return ([], p)
+dsFunctionalPatternsNonLinear fvs p@(VariablePattern         _ _ v)
+  | v `elem` fvs = do
+    v' <- freshVar "#nonlinear" p
+    return ([(v', p)], uncurry (VariablePattern NoSpanInfo) v')
+  | otherwise = return ([], p)
+dsFunctionalPatternsNonLinear fvs (ConstructorPattern spi pty qid ts) = do 
+  (bss, ts') <- unzip <$> mapM (dsFunctionalPatternsNonLinear fvs) ts
+  return (concat bss, ConstructorPattern spi pty qid ts')
+dsFunctionalPatternsNonLinear fvs (InfixPattern      spi pty t1 qid t2) = do
+  (bs1, t1') <- dsFunctionalPatternsNonLinear fvs t1
+  (bs2, t2') <- dsFunctionalPatternsNonLinear fvs t2
+  return (bs1 ++ bs2, InfixPattern spi pty t1' qid t2')
+dsFunctionalPatternsNonLinear fvs (ParenPattern              _ t) = dsFunctionalPatternsNonLinear fvs t
+dsFunctionalPatternsNonLinear fvs (RecordPattern  spi pty qid fs) = do 
+  (bss, fs') <- unzip <$> mapM (\(Field spi' pty' a) -> second (Field spi' pty') 
+                                  <$> dsFunctionalPatternsNonLinear fvs a) fs
+  return (concat bss, RecordPattern spi pty qid fs')
+dsFunctionalPatternsNonLinear fvs (TuplePattern spi ts) = do
+  (bss, ts') <- unzip <$> mapM (dsFunctionalPatternsNonLinear fvs) ts
+  return (concat bss, TuplePattern spi ts')
+dsFunctionalPatternsNonLinear fvs (ListPattern spi pty ts) = do
+  (bss, ts') <- unzip <$> mapM (dsFunctionalPatternsNonLinear fvs) ts
+  return (concat bss, ListPattern spi pty ts')
+dsFunctionalPatternsNonLinear fvs p@(AsPattern               spi v t)
+  | v `elem` fvs = do
+    v' <- freshVar "#nonlinear" p
+    return ([(v', p)], uncurry (VariablePattern NoSpanInfo) v')
+  | otherwise = do
+    (bs, t') <- dsFunctionalPatternsNonLinear fvs t
+    return (bs, AsPattern spi v t')
+dsFunctionalPatternsNonLinear fvs (LazyPattern               _ t) = dsFunctionalPatternsNonLinear fvs t
+dsFunctionalPatternsNonLinear _ p@(FunctionPattern    _ _ _ _) = internalError $ "Desugar.dsFunctionalPatternsNonLinear: functional pattern " ++ show p
+dsFunctionalPatternsNonLinear _ p@(InfixFuncPattern _ _ _ _ _) = internalError $ "Desugar.dsFunctionalPatternsNonLinear: functional pattern " ++ show p
+
+funPats :: Pattern PredType -> DsM ([((PredType, Ident), Pattern PredType)], Pattern PredType)
+funPats p@(LiteralPattern          _ _ _) = return ([], p)
+funPats p@(NegativePattern         _ _ _) = return ([], p)
+funPats p@(VariablePattern         _ _ _) = return ([], p)
+funPats (ConstructorPattern   spi pty qid ts) = do 
+  (bss, ts') <- unzip <$> mapM funPats ts
+  return (concat bss, ConstructorPattern spi pty qid ts')
+funPats (InfixPattern      spi pty t1 qid t2) = do
+  (bs1, t1') <- funPats t1
+  (bs2, t2') <- funPats t2
+  return (bs1 ++ bs2, InfixPattern spi pty t1' qid t2')
+funPats (ParenPattern              _ t) = funPats t
+funPats (RecordPattern  spi pty qid fs) = do 
+  (bss, fs') <- unzip <$> mapM (\(Field spi' pty' a) -> second (Field spi' pty') 
+                                    <$> funPats a) fs
+  return (concat bss, RecordPattern spi pty qid fs')
+funPats (TuplePattern spi ts) = do
+  (bss, ts') <- unzip <$> mapM funPats ts
+  return (concat bss, TuplePattern spi ts')
+funPats (ListPattern spi pty ts) = do
+  (bss, ts') <- unzip <$> mapM funPats ts
+  return (concat bss, ListPattern spi pty ts')
+funPats (AsPattern             spi v t) = do
+  (bs, t') <- funPats t
+  return (bs, AsPattern spi v t')
+funPats (LazyPattern               _ t) = funPats t
+funPats fp@(FunctionPattern    _ _ _ _) = do
+  v <- freshVar "#funpat" fp
+  return ([(v, fp)], uncurry (VariablePattern NoSpanInfo) v)
+funPats fp@(InfixFuncPattern _ _ _ _ _) = do
+  v <- freshVar "#funpat" fp
+  return ([(v, fp)], uncurry (VariablePattern NoSpanInfo) v)
+
+fp2Expr :: Pattern PredType -> (Expression PredType, [Expression PredType])
+fp2Expr (LiteralPattern          _ pty l) = (Literal NoSpanInfo  pty l, [])
+fp2Expr (NegativePattern         _ pty l) =
+  (Literal NoSpanInfo pty (negateLiteral l), [])
+fp2Expr (VariablePattern         _ pty v) = (mkVar pty v, [])
+fp2Expr (ConstructorPattern  _  pty c ts) =
+  let (ts', ess) = unzip $ map fp2Expr ts
+      pty' = predType $ foldr TypeArrow (unpredType pty) $ map typeOf ts
+  in  (apply (Constructor NoSpanInfo pty' c) ts', concat ess)
+fp2Expr (InfixPattern   _ pty t1 op t2) =
+  let (t1', es1) = fp2Expr t1
+      (t2', es2) = fp2Expr t2
+      pty' = predType $ foldr TypeArrow (unpredType pty) [typeOf t1, typeOf t2]
+  in  (InfixApply NoSpanInfo t1' (InfixConstr pty' op) t2', es1 ++ es2)
+fp2Expr (ParenPattern                _ t) = first (Paren NoSpanInfo) (fp2Expr t)
+fp2Expr (TuplePattern               _ ts) =
+  let (ts', ess) = unzip $ map fp2Expr ts
+  in  (Tuple NoSpanInfo ts', concat ess)
+fp2Expr (ListPattern            _ pty ts) =
+  let (ts', ess) = unzip $ map fp2Expr ts
+  in  (List NoSpanInfo pty ts', concat ess)
+fp2Expr (FunctionPattern      _ pty f ts) =
+  let (ts', ess) = unzip $ map fp2Expr ts
+      pty' = predType $ foldr TypeArrow (unpredType pty) $ map typeOf ts
+  in  (apply (Variable NoSpanInfo pty' f) ts', concat ess)
+fp2Expr (InfixFuncPattern _ pty t1 op t2) =
+  let (t1', es1) = fp2Expr t1
+      (t2', es2) = fp2Expr t2
+      pty' = predType $ foldr TypeArrow (unpredType pty) $ map typeOf [t1, t2]
+  in  (InfixApply NoSpanInfo t1' (InfixOp pty' op) t2', es1 ++ es2)
+fp2Expr (AsPattern                 _ v t) =
+  let (t', es) = fp2Expr t
+      pty = predType $ typeOf t
+  in  (mkVar pty v, (t' =:<= mkVar pty v) : es)
+fp2Expr (RecordPattern        _ pty c fs) =
+  let (fs', ess) = unzip [ (Field p f e, es) | Field p f t <- fs
+                                             , let (e, es) = fp2Expr t]
+  in  (Record NoSpanInfo pty c fs', concat ess)
+fp2Expr t                               = internalError $
+  "Desugar.fp2Expr: Unexpected constructor term: " ++ show t
+
+-- -----------------------------------------------------------------------------
 -- Desugaring of non-linear patterns
 -- -----------------------------------------------------------------------------
 
@@ -367,8 +529,8 @@ addDecls ds (GuardedRhs spi li es ds') = GuardedRhs spi li es (ds ++ ds')
 -- all variables. If it encounters a variable which has been previously
 -- introduced, the second occurrence is changed to a fresh variable
 -- and a new pair (newvar, oldvar) is saved to generate constraints later.
--- Non-linear patterns inside single functional patterns are not desugared,
--- as this special case is handled later.
+-- Non-linear patterns inside functional patterns are not desugared,
+-- as functional patterns are handled before.
 dsNonLinearity :: [Pattern PredType]
                -> DsM ([Expression PredType], [Pattern PredType])
 dsNonLinearity ts = do
@@ -412,164 +574,11 @@ dsNonLinear env (AsPattern               _ v t) = do
   return (env2, AsPattern NoSpanInfo v' t')
 dsNonLinear env (LazyPattern               _ t) =
   second (LazyPattern NoSpanInfo) <$> dsNonLinear env t
-dsNonLinear env fp@(FunctionPattern    _ _ _ _) = dsNonLinearFuncPat env fp
-dsNonLinear env fp@(InfixFuncPattern _ _ _ _ _) = dsNonLinearFuncPat env fp
-
-dsNonLinearFuncPat :: NonLinearEnv -> Pattern PredType
-                   -> DsM (NonLinearEnv, Pattern PredType)
-dsNonLinearFuncPat (vis, eqs) fp = do
-  let fpVars = map (\(v, _, pty) -> (pty, v)) $ patternVars fp
-      vs     = filter ((`Set.member` vis) . snd) fpVars
-  vs' <- mapM (freshVar "_#nonlinear" . uncurry (VariablePattern NoSpanInfo)) vs
-  let vis' = foldr (Set.insert . snd) vis fpVars
-      fp'  = substPat (zip (map snd vs) (map snd vs')) fp
-  return ((vis', zipWith mkStrictEquality (map snd vs) vs' ++ eqs), fp')
+dsNonLinear _   (FunctionPattern    _ _ _ _) = internalError "Desugar.dsNonLinear: function pattern"
+dsNonLinear _   (InfixFuncPattern _ _ _ _ _) = internalError "Desugar.dsNonLinear: infix function pattern"
 
 mkStrictEquality :: Ident -> (PredType, Ident) -> Expression PredType
 mkStrictEquality x (pty, y) = mkVar pty x =:= mkVar pty y
-
-substPat :: [(Ident, Ident)] -> Pattern a -> Pattern a
-substPat _ l@(LiteralPattern        _ _ _) = l
-substPat _ n@(NegativePattern       _ _ _) = n
-substPat s (VariablePattern         _ a v) =
-  VariablePattern NoSpanInfo a $ fromMaybe v (lookup v s)
-
-substPat s (ConstructorPattern   _ a c ps) =
-  ConstructorPattern NoSpanInfo a c $ map (substPat s) ps
-substPat s (InfixPattern     _ a p1 op p2) =
-  InfixPattern NoSpanInfo a (substPat s p1) op (substPat s p2)
-substPat s (ParenPattern              _ p) =
-  ParenPattern NoSpanInfo (substPat s p)
-substPat s (RecordPattern        _ a c fs) =
-  RecordPattern NoSpanInfo a c (map substField fs)
-  where substField (Field pos l pat) = Field pos l (substPat s pat)
-substPat s (TuplePattern             _ ps) =
-  TuplePattern NoSpanInfo $ map (substPat s) ps
-substPat s (ListPattern            _ a ps) =
-  ListPattern NoSpanInfo a $ map (substPat s) ps
-substPat s (AsPattern               _ v p) =
-  AsPattern NoSpanInfo (fromMaybe v (lookup v s)) (substPat s p)
-substPat s (LazyPattern               _ p) =
-  LazyPattern NoSpanInfo (substPat s p)
-substPat s (FunctionPattern      _ a f ps) =
-  FunctionPattern NoSpanInfo a f $ map (substPat s) ps
-substPat s (InfixFuncPattern _ a p1 op p2) =
-  InfixFuncPattern NoSpanInfo a (substPat s p1) op (substPat s p2)
-
--- -----------------------------------------------------------------------------
--- Desugaring of functional patterns
--- -----------------------------------------------------------------------------
-
--- Desugaring of functional patterns works in the following way:
---  1. The patterns are recursively traversed from left to right
---     to extract every functional pattern (note that functional patterns
---     can not be nested).
---     Each pattern is replaced by a fresh variable and a pair
---     (variable, functional pattern) is generated.
---  2. The variable-pattern pairs of the form @(v, p)@ are collected and
---     transformed into additional constraints of the form @p =:<= v@,
---     where the pattern @p@ is converted to the corresponding expression.
---     In addition, any variable occurring in @p@ is declared as a fresh
---     free variable.
---     Multiple constraints will later be combined using the @&>@-operator
---     such that the patterns are evaluated from left to right.
-
-dsFunctionalPatterns
-  :: SpanInfo -> [Pattern PredType]
-  -> DsM ([Decl PredType], [Expression PredType], [Pattern PredType])
-dsFunctionalPatterns p ts = do
-  -- extract functional patterns
-  (bs, ts') <- mapAccumM elimFP [] ts
-  -- generate declarations of free variables and constraints
-  let (ds, cs) = genFPExpr p (concatMap patternVars ts') (reverse bs)
-  -- return (declarations, constraints, desugared patterns)
-  return (ds, cs, ts')
-
-type LazyBinding = (Pattern PredType, (PredType, Ident))
-
-elimFP :: [LazyBinding] -> Pattern PredType
-       -> DsM ([LazyBinding], Pattern PredType)
-elimFP bs p@(LiteralPattern        _ _ _) = return (bs, p)
-elimFP bs p@(NegativePattern       _ _ _) = return (bs, p)
-elimFP bs p@(VariablePattern       _ _ _) = return (bs, p)
-elimFP bs (ConstructorPattern _ pty c ts) =
-  second (ConstructorPattern NoSpanInfo  pty c) <$> mapAccumM elimFP bs ts
-elimFP bs (InfixPattern   _ pty t1 op t2) = do
-  (bs1, t1') <- elimFP bs  t1
-  (bs2, t2') <- elimFP bs1 t2
-  return (bs2, InfixPattern NoSpanInfo pty t1' op t2')
-elimFP bs (ParenPattern              _ t) =
-  second (ParenPattern NoSpanInfo) <$> elimFP bs t
-elimFP bs (RecordPattern      _ pty c fs) =
-  second (RecordPattern NoSpanInfo pty c) <$> mapAccumM (dsField elimFP) bs fs
-elimFP bs (TuplePattern             _ ts) =
-  second (TuplePattern NoSpanInfo) <$> mapAccumM elimFP bs ts
-elimFP bs (ListPattern          _ pty ts) =
-  second (ListPattern NoSpanInfo pty) <$> mapAccumM elimFP bs ts
-elimFP bs (AsPattern               _ v t) =
-  second (AsPattern NoSpanInfo v) <$> elimFP bs t
-elimFP bs (LazyPattern               _ t) =
-  second (LazyPattern NoSpanInfo) <$> elimFP bs t
-elimFP bs p@(FunctionPattern    _  _ _ _) = do
- (pty, v) <- freshVar "_#funpatt" p
- return ((p, (pty, v)) : bs, VariablePattern NoSpanInfo pty v)
-elimFP bs p@(InfixFuncPattern  _ _ _ _ _) = do
- (pty, v) <- freshVar "_#funpatt" p
- return ((p, (pty, v)) : bs, VariablePattern NoSpanInfo pty v)
-
-genFPExpr :: SpanInfo -> [(Ident, Int, PredType)] -> [LazyBinding]
-          -> ([Decl PredType], [Expression PredType])
-genFPExpr p vs bs
-  | null bs   = ([]               , [])
-  | null free = ([]               , cs)
-  | otherwise = ([FreeDecl p (map (\(v, _, pty) -> Var pty v) free)], cs)
-  where
-  mkLB (t, (pty, v)) = let (t', es) = fp2Expr t
-                       in  (t' =:<= mkVar pty v) : es
-  cs   = concatMap mkLB bs
-  free = nub $ filter (not . isAnonId . fst3) $
-                 concatMap patternVars (map fst bs) \\ vs
-
-fp2Expr :: Pattern PredType -> (Expression PredType, [Expression PredType])
-fp2Expr (LiteralPattern          _ pty l) = (Literal NoSpanInfo  pty l, [])
-fp2Expr (NegativePattern         _ pty l) =
-  (Literal NoSpanInfo pty (negateLiteral l), [])
-fp2Expr (VariablePattern         _ pty v) = (mkVar pty v, [])
-fp2Expr (ConstructorPattern  _  pty c ts) =
-  let (ts', ess) = unzip $ map fp2Expr ts
-      pty' = predType $ foldr TypeArrow (unpredType pty) $ map typeOf ts
-  in  (apply (Constructor NoSpanInfo pty' c) ts', concat ess)
-fp2Expr (InfixPattern   _ pty t1 op t2) =
-  let (t1', es1) = fp2Expr t1
-      (t2', es2) = fp2Expr t2
-      pty' = predType $ foldr TypeArrow (unpredType pty) [typeOf t1, typeOf t2]
-  in  (InfixApply NoSpanInfo t1' (InfixConstr pty' op) t2', es1 ++ es2)
-fp2Expr (ParenPattern                _ t) = first (Paren NoSpanInfo) (fp2Expr t)
-fp2Expr (TuplePattern               _ ts) =
-  let (ts', ess) = unzip $ map fp2Expr ts
-  in  (Tuple NoSpanInfo ts', concat ess)
-fp2Expr (ListPattern            _ pty ts) =
-  let (ts', ess) = unzip $ map fp2Expr ts
-  in  (List NoSpanInfo pty ts', concat ess)
-fp2Expr (FunctionPattern      _ pty f ts) =
-  let (ts', ess) = unzip $ map fp2Expr ts
-      pty' = predType $ foldr TypeArrow (unpredType pty) $ map typeOf ts
-  in  (apply (Variable NoSpanInfo pty' f) ts', concat ess)
-fp2Expr (InfixFuncPattern _ pty t1 op t2) =
-  let (t1', es1) = fp2Expr t1
-      (t2', es2) = fp2Expr t2
-      pty' = predType $ foldr TypeArrow (unpredType pty) $ map typeOf [t1, t2]
-  in  (InfixApply NoSpanInfo t1' (InfixOp pty' op) t2', es1 ++ es2)
-fp2Expr (AsPattern                 _ v t) =
-  let (t', es) = fp2Expr t
-      pty = predType $ typeOf t
-  in  (mkVar pty v, (t' =:<= mkVar pty v) : es)
-fp2Expr (RecordPattern        _ pty c fs) =
-  let (fs', ess) = unzip [ (Field p f e, es) | Field p f t <- fs
-                                             , let (e, es) = fp2Expr t]
-  in  (Record NoSpanInfo pty c fs', concat ess)
-fp2Expr t                               = internalError $
-  "Desugar.fp2Expr: Unexpected constructor term: " ++ show t
 
 -- -----------------------------------------------------------------------------
 -- Desugaring of ordinary patterns

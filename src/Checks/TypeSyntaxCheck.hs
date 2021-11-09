@@ -332,7 +332,7 @@ checkConstraint c@(Constraint spi qcls ty) = do
   unless (isVariableType $ rootType ty') $ report $ errIllegalConstraint c
   return $ Constraint spi qcls ty'
   where
-    rootType (ApplyType _ ty' _) = ty'
+    rootType (ApplyType _ ty' _) = rootType ty'
     rootType ty'                 = ty'
 
 checkClass :: Bool -> QualIdent -> TSCM ()
