@@ -141,9 +141,6 @@ normalize n ty = expandAliasType [TypeVariable (occur tv) | tv <- [0..]] ty
 -- argument so that they do not conflict with the type variables of the first
 -- argument.
 
--- TODO: Implement 'polyTypes' or at least update the comment of the 'polyType'
---         function as the type variables of each type don't necessarily start
---         with 0 anymore.
 instanceTypes :: ExpandAliasType a => [Type] -> a -> a
-instanceTypes tys = expandAliasType (tys ++ map TypeVariable [nMax ..])
-  where nMax = maximum (0 : [n | ForAll n _ <- map polyType tys])
+instanceTypes tys = expandAliasType (tys ++ rnTvs)
+  where rnTvs = map TypeVariable [maximum (-1 : typeVars tys) + 1 ..]

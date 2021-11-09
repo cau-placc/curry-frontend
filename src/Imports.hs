@@ -268,10 +268,10 @@ values m (INewtypeDecl _ tc _ tvs nc hs) =
         ty' = constrType tc' tvs
 values m (IFunctionDecl _ f Nothing a qty) =
   [Value (qualQualify m f) Nothing a (typeScheme (toQualPredType m [] OPred qty))]
--- TODO: Previously, a function was used here to find the correct constraint by
---         comparing the constraint type to the type variable of the pragma.
---         Check if there is any possibility of the implicit class constraint
---         not being the first constraint of the context. 
+-- Because 'IFunctionDecl's are constructed using the type scheme from the value
+-- environment in the 'Exports' module, where the implicit class constraint is
+-- the minimum element of the predicate set, it must also be the first element
+-- of the context here.
 values m (IFunctionDecl _ f (Just tvs) _ qty@(QualTypeExpr _ cx _)) =
   let mcls = case cx of []                      -> Nothing
                         Constraint _ qcls _ : _ -> Just qcls

@@ -49,11 +49,6 @@ import Env.Type
 
 -- TODO Use span info for err messages
 
--- TODO: If we decide to not allow repeating type variables in MPTC instance
---         heads, this can be checked here.
---       Could some functions which are almost identical in the type interface
---         check and the interface syntax check be unified?
-
 -- In order to check type constructor applications, the compiler
 -- maintains an environment containing all known type constructors and
 -- type classes. The function 'typeSyntaxCheck' expects a type constructor
