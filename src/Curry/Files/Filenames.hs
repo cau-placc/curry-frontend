@@ -157,7 +157,7 @@ typedFlatExt = ".tfcy"
 
 -- |Filename extension for type-annotated flat-curry files
 annotatedFlatExt :: String
-annotatedFlatExt = ".tafcy"
+annotatedFlatExt = ".afcy"
 
 -- |Filename extension for flat-curry files
 flatExt :: String
