@@ -3,3 +3,4 @@ packages:
   - .
 extra-deps:
   - set-extra-1.4.1
+allow-different-user: true
