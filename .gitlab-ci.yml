@@ -1,0 +1,13 @@
+image:
+  name: "haskell:8.10.7"
+  entrypoint: [""]
+
+stages:
+  - make
+
+make:
+  stage: make
+  tags:
+    - docker2
+  script:
+    - make
