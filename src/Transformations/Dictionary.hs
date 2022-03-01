@@ -23,12 +23,11 @@ module Transformations.Dictionary
 import           Control.Applicative      ((<$>), (<*>))
 import           Data.Traversable         (traverse)
 #endif
-import           Control.Monad.Extra      ( concatMapM, liftM, maybeM, when
-                                          , zipWithM )
+import           Control.Monad.Extra      ( concatMapM, liftM, maybeM, when )
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 
-import           Data.List         (inits, nub, partition, tails, zipWith4)
-import qualified Data.Map   as Map ( Map, empty, insert, lookup, mapWithKey
+import           Data.List         (inits, nub, partition, tails)
+import qualified Data.Map   as Map ( Map, empty, insert, lookup
                                    , toList )
 import           Data.Maybe        (fromMaybe, isJust)
 import qualified Data.Set   as Set ( deleteMin, fromList, null, size, toAscList
