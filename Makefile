@@ -8,21 +8,23 @@ export ROOT=$(CURDIR)
 export BINDIR=$(ROOT)/bin
 # The frontend binary
 export CYMAKE = $(BINDIR)/curry-frontend
+# The stack binary
+STACK = stack
 
 # install front end (if sources are present):
 .PHONY: frontend
 frontend:
-	stack install --local-bin-path $(BINDIR)
+	$(STACK) install --local-bin-path $(BINDIR)
 
 .PHONY: clean
 clean:
-	stack clean
+	$(STACK) clean
 
 .PHONY: cleanall
 cleanall:
-	stack clean --full
+	$(STACK) clean --full
 	rm -f $(CYMAKE) && rm -rf bin
 
 .PHONY: runtests
 runtests:
-	stack test
+	$(STACK) test
