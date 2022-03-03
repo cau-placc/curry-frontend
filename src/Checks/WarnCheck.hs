@@ -1148,11 +1148,13 @@ shadows qid s = do
 
 importShadows :: QualIdent -> WcState -> Maybe Ident
 importShadows qid s = do
+  guard $ not (qualInLocalNestEnv qid sc)
   let qids = allBoundQualIdents $ valueEnv s
   listToMaybe $ map unqualify $ filter isMatchingImport qids
-  where isMatchingImport qid' = unqualify qid' == unqualify qid
-                            && isJust (qidModule qid')
-                            && qidModule qid' /= Just (moduleId s)
+  where sc = scope s
+        isMatchingImport qid' = unqualify qid' == unqualify qid
+                             && isJust (qidModule qid')
+                             && qidModule qid' /= Just (moduleId s)
 
 shadowsVar :: Ident -> WCM (Maybe Ident)
 shadowsVar v = gets (shadows $ commonId v)
