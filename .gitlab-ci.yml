@@ -4,6 +4,7 @@ image:
 
 stages:
   - make
+  - test
 
 make:
   stage: make
@@ -11,3 +12,10 @@ make:
     - docker2
   script:
     - make
+
+test:
+  stage: test
+  tags:
+    - docker2
+  script:
+    - make runtests
