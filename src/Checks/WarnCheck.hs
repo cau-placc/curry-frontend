@@ -32,7 +32,7 @@ import qualified Data.Map            as Map    (empty, insert, lookup, (!))
 import           Data.Maybe
   (catMaybes, fromMaybe, listToMaybe)
 import           Data.List
-  ((\\), intersect, intersectBy, nub, sort, unionBy)
+  ((\\), intersect, intersectBy, nub, sort, unionBy, find)
 import           Data.Char
   (isLower, isUpper, toLower, toUpper, isAlpha)
 import qualified Data.Set.Extra as Set
@@ -52,6 +52,7 @@ import Base.Messages   (Message, spanInfoMessage, internalError)
 import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                        , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv
                        , qualModifyNestEnv)
+import Base.TopEnv     (allBoundQualIdents)
 
 import Base.Types
 import Base.Utils (findMultiples)
@@ -116,9 +117,12 @@ getModuleIdent = gets moduleId
 modifyScope :: (ScopeEnv -> ScopeEnv) -> WCM ()
 modifyScope f = modify $ \s -> s { scope = f $ scope s }
 
+warnsFor :: WarnFlag -> WCM Bool
+warnsFor f = gets $ \s -> f `elem` warnFlags s
+
 warnFor :: WarnFlag -> WCM () -> WCM ()
 warnFor f act = do
-  warn <- gets $ \s -> f `elem` warnFlags s
+  warn <- warnsFor f
   when warn act
 
 report :: Message -> WCM ()
@@ -978,8 +982,13 @@ warnNondetOverlapping spi loc = spanInfoMessage spi $
 -- -----------------------------------------------------------------------------
 
 checkShadowing :: Ident -> WCM ()
-checkShadowing x = warnFor WarnNameShadowing $
-  shadowsVar x >>= maybe ok (report . warnShadowing x)
+checkShadowing x = do
+  warnAll <- warnsFor WarnImportNameShadowing
+  if warnAll
+    -- FIXME: When import name shadowing is enabled, we won't get local shadows right now
+    then shadowsImportOrVar x >>= maybe ok (report . warnShadowing x)
+    else warnFor WarnNameShadowing $
+      shadowsVar x >>= maybe ok (report . warnShadowing x)
 
 reportUnusedVars :: WCM ()
 reportUnusedVars = reportAllUnusedVars WarnUnusedBindings
@@ -1139,8 +1148,16 @@ shadows qid s = do
   getVariable info
   where sc = scope s
 
+allShadows :: QualIdent -> WcState -> Maybe Ident
+allShadows qid s = do
+  let qids = allBoundQualIdents $ valueEnv s
+  find (== unqualify qid) $ map unqualify qids
+
 shadowsVar :: Ident -> WCM (Maybe Ident)
 shadowsVar v = gets (shadows $ commonId v)
+
+shadowsImportOrVar :: Ident -> WCM (Maybe Ident)
+shadowsImportOrVar v = gets (allShadows $ commonId v)
 
 visitId :: Ident -> WCM ()
 visitId v = modifyScope (qualModifyNestEnv visitVariable (commonId v))
