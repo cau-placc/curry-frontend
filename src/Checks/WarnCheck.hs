@@ -30,7 +30,7 @@ import qualified Data.IntSet         as IntSet
   (IntSet, empty, insert, notMember, singleton, union, unions)
 import qualified Data.Map            as Map    (empty, insert, lookup, (!))
 import           Data.Maybe
-  (catMaybes, fromMaybe, listToMaybe)
+  (catMaybes, fromMaybe, listToMaybe, isJust)
 import           Data.List
   ((\\), intersect, intersectBy, nub, sort, unionBy, find)
 import           Data.Char
@@ -983,12 +983,10 @@ warnNondetOverlapping spi loc = spanInfoMessage spi $
 
 checkShadowing :: Ident -> WCM ()
 checkShadowing x = do
-  warnAll <- warnsFor WarnImportNameShadowing
-  if warnAll
-    -- FIXME: When import name shadowing is enabled, we won't get local shadows right now
-    then shadowsImportOrVar x >>= maybe ok (report . warnShadowing x)
-    else warnFor WarnNameShadowing $
-      shadowsVar x >>= maybe ok (report . warnShadowing x)
+  warnFor WarnNameShadowing $
+    shadowsVar x >>= maybe ok (report . warnShadowing x)
+  warnFor WarnImportNameShadowing $
+    shadowsImport x >>= maybe ok (report . warnShadowing x)
 
 reportUnusedVars :: WCM ()
 reportUnusedVars = reportAllUnusedVars WarnUnusedBindings
@@ -1148,16 +1146,19 @@ shadows qid s = do
   getVariable info
   where sc = scope s
 
-allShadows :: QualIdent -> WcState -> Maybe Ident
-allShadows qid s = do
+importShadows :: QualIdent -> WcState -> Maybe Ident
+importShadows qid s = do
   let qids = allBoundQualIdents $ valueEnv s
-  find (== unqualify qid) $ map unqualify qids
+  listToMaybe $ map unqualify $ filter isMatchingImport qids
+  where isMatchingImport qid' = unqualify qid' == unqualify qid
+                            && isJust (qidModule qid')
+                            && qidModule qid' /= Just (moduleId s)
 
 shadowsVar :: Ident -> WCM (Maybe Ident)
 shadowsVar v = gets (shadows $ commonId v)
 
-shadowsImportOrVar :: Ident -> WCM (Maybe Ident)
-shadowsImportOrVar v = gets (allShadows $ commonId v)
+shadowsImport :: Ident -> WCM (Maybe Ident)
+shadowsImport v = gets (importShadows $ commonId v)
 
 visitId :: Ident -> WCM ()
 visitId v = modifyScope (qualModifyNestEnv visitVariable (commonId v))
