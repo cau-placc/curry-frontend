@@ -124,8 +124,9 @@ instanceCheck :: Monad m => Check m (Module a)
 instanceCheck _ (env, Module spi li ps m es is ds)
   | null msgs = ok (env { instEnv = inEnv' }, Module spi li ps m es is ds)
   | otherwise = failMessages msgs
-  where (inEnv', msgs) = INC.instanceCheck (moduleIdent env) (tyConsEnv env)
-                                           (classEnv env) (instEnv env) ds
+  where (inEnv', msgs) = INC.instanceCheck (extensions env) (moduleIdent env)
+                                           (tyConsEnv env) (classEnv env)
+                                           (instEnv env) ds
 
 -- |Apply the correct typing of the module.
 --
