@@ -20,7 +20,7 @@ module Curry.Syntax.Type
   ( -- * Module header
     Module (..)
     -- ** Module pragmas
-  , ModulePragma (..), Extension (..), KnownExtension (..), Tool (..)
+  , ModulePragma (..), Extension (..), KnownExtension (..), Tool (..), KnownTool (..)
     -- ** Export specification
   , ExportSpec (..), Export (..)
     -- ** Import declarations
