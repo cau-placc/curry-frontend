@@ -18,8 +18,10 @@
 -}
 
 module Modules
-  ( compileModule, loadAndCheckModule, loadModule, checkModule
-  , parseModule, checkModuleHeader
+  ( compileModule, loadAndCheckModule
+  , loadModule, parseModule, checkModule, transModule
+  , checkModuleHeader, dumpWith
+  , writeFlat, writeInterface
   ) where
 
 import qualified Control.Exception as C   (catch, IOException)

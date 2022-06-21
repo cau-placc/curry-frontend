@@ -14,9 +14,11 @@
     This module contains functions to generate Curry representations for a
     Curry source file including all imported modules.
 -}
-module CurryBuilder (buildCurry, findCurry) where
+{-# LANGUAGE FlexibleContexts #-}
+module CurryBuilder (buildCurry, findCurry, processPragmas, adjustOptions, smake, compMessage) where
 
 import Control.Monad   (foldM, liftM)
+import Control.Monad.Except ( MonadError(..) )
 import Data.Char       (isSpace)
 import Data.Maybe      (catMaybes, fromMaybe, mapMaybe)
 import System.FilePath ((</>), normalise)
@@ -166,16 +168,17 @@ process opts idx m fn deps
 
   destFiles = [ gen fn | (t, gen) <- nameGens, t `elem` optTargetTypes opts]
   nameGens  =
-    [ (Tokens              , tgtDir . tokensName       )
-    , (Comments            , tgtDir . commentsName)
-    , (Parsed              , tgtDir . sourceRepName    )
-    , (FlatCurry           , tgtDir . flatName         )
-    , (TypedFlatCurry      , tgtDir . typedFlatName    )
-    , (AnnotatedFlatCurry  , tgtDir . annotatedFlatName)
-    , (AbstractCurry       , tgtDir . acyName          )
-    , (UntypedAbstractCurry, tgtDir . uacyName         )
-    , (AST                 , tgtDir . astName          )
-    , (ShortAST            , tgtDir . shortASTName     )
+    [ (Tokens              , tgtDir . tokensName         )
+    , (Comments            , tgtDir . commentsName       )
+    , (Parsed              , tgtDir . sourceRepName      )
+    , (FlatCurry           , tgtDir . flatName           )
+    , (TypedFlatCurry      , tgtDir . typedFlatName      )
+    , (TypedBinaryFlatCurry, tgtDir . typedBinaryFlatName)
+    , (AnnotatedFlatCurry  , tgtDir . annotatedFlatName  )
+    , (AbstractCurry       , tgtDir . acyName            )
+    , (UntypedAbstractCurry, tgtDir . uacyName           )
+    , (AST                 , tgtDir . astName            )
+    , (ShortAST            , tgtDir . shortASTName       )
     , (Html                , const (fromMaybe "." (optHtmlDir opts) </> htmlName m))
     ]
 
@@ -193,11 +196,12 @@ compMessage (curNum, maxNum) what m (src, dst)
   rpad n s = s ++ replicate (n - length s) ' '
 
 -- |A simple make function
-smake :: [FilePath] -- ^ destination files
+smake :: (Monad m, MonadError [Message] m, MonadIO m)
+      => [FilePath] -- ^ destination files
       -> [FilePath] -- ^ dependency files
-      -> CYIO a     -- ^ action to perform if depedency files are newer
-      -> CYIO a     -- ^ action to perform if destination files are newer
-      -> CYIO a
+      -> m a     -- ^ action to perform if depedency files are newer
+      -> m a     -- ^ action to perform if destination files are newer
+      -> m a
 smake dests deps actOutdated actUpToDate = do
   destTimes <- catMaybes `liftM` mapM (liftIO . getModuleModTime) dests
   depTimes  <- mapM (cancelMissing getModuleModTime) deps
@@ -210,10 +214,10 @@ smake dests deps actOutdated actUpToDate = do
 
   outOfDate tgtimes dptimes = or [ tg < dp | tg <- tgtimes, dp <- dptimes]
 
-cancelMissing :: (FilePath -> IO (Maybe a)) -> FilePath -> CYIO a
+cancelMissing :: (Monad m, MonadIO m, MonadError [Message] m) => (FilePath -> IO (Maybe a)) -> FilePath -> m a
 cancelMissing act f = liftIO (act f) >>= \res -> case res of
-  Nothing  -> failMessages [errModificationTime f]
-  Just val -> ok val
+  Nothing  -> throwError [errModificationTime f]
+  Just val -> return val
 
 errUnknownOptions :: SpanInfo -> [String] -> Message
 errUnknownOptions spi errs = spanInfoMessage spi $
