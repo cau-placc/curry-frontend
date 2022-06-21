@@ -29,7 +29,7 @@ module Curry.Files.Filenames
   , curryExt, lcurryExt, icurryExt
 
     -- ** FlatCurry files
-  , annotatedFlatExt, typedFlatExt, flatExt, flatIntExt
+  , annotatedFlatExt, typedFlatExt, typedBinaryFlatExt, flatExt, flatIntExt
 
     -- ** AbstractCurry files
   , acyExt, uacyExt
@@ -38,7 +38,8 @@ module Curry.Files.Filenames
   , sourceRepExt, sourceExts, moduleExts
 
     -- * Functions for computing file names
-  , interfName, typedFlatName, annotatedFlatName, flatName, flatIntName
+  , interfName, typedFlatName, typedBinaryFlatName, annotatedFlatName
+  , flatName, flatIntName
   , acyName, uacyName, sourceRepName, tokensName, commentsName
   , astName, shortASTName, htmlName
   ) where
@@ -155,6 +156,10 @@ moduleExts = sourceExts ++ [icurryExt]
 typedFlatExt :: String
 typedFlatExt = ".tfcy"
 
+-- |Filename extension for typed flat-curry files
+typedBinaryFlatExt :: String
+typedBinaryFlatExt = ".tbfcy"
+
 -- |Filename extension for type-annotated flat-curry files
 annotatedFlatExt :: String
 annotatedFlatExt = ".afcy"
@@ -206,6 +211,10 @@ interfName = replaceExtensionWith icurryExt
 -- |Compute the filename of the typed flat curry file for a source file
 typedFlatName :: FilePath -> FilePath
 typedFlatName = replaceExtensionWith typedFlatExt
+
+-- |Compute the filename of the typed binary flat curry file for a source file
+typedBinaryFlatName :: FilePath -> FilePath
+typedBinaryFlatName = replaceExtensionWith typedBinaryFlatExt
 
 -- |Compute the filename of the typed flat curry file for a source file
 annotatedFlatName :: FilePath -> FilePath

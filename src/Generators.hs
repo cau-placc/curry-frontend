@@ -14,6 +14,9 @@
 -}
 module Generators where
 
+import Data.ByteString.Lazy
+import Data.Binary
+
 import qualified Curry.AbstractCurry            as AC   (CurryProg)
 import qualified Curry.FlatCurry.Type           as FC   (Prog, TypeExpr)
 import qualified Curry.FlatCurry.Annotated.Type as AFC  (AProg)
@@ -44,6 +47,10 @@ genUntypedAbstractCurry = GAC.genAbstractCurry True
 -- |Generate typed FlatCurry
 genTypedFlatCurry :: AFC.AProg FC.TypeExpr -> TFC.TProg
 genTypedFlatCurry = GTFC.genTypedFlatCurry
+
+-- |Generate typed FlatCurry
+genTypedBinaryFlatCurry :: AFC.AProg FC.TypeExpr -> ByteString
+genTypedBinaryFlatCurry = encode . GTFC.genTypedFlatCurry
 
 -- |Generate type-annotated FlatCurry
 genAnnotatedFlatCurry :: CompilerEnv -> CS.Module Type -> IL.Module

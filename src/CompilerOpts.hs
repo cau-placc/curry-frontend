@@ -199,6 +199,7 @@ data TargetType
   | FlatCurry            -- ^ FlatCurry
   | AnnotatedFlatCurry   -- ^ Annotated FlatCurry
   | TypedFlatCurry       -- ^ Typed FlatCurry
+  | TypedBinaryFlatCurry -- ^ Typed FlatCurry
   | AbstractCurry        -- ^ AbstractCurry
   | UntypedAbstractCurry -- ^ Untyped AbstractCurry
   | Html                 -- ^ HTML documentation
