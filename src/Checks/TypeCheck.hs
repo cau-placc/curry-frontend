@@ -1041,8 +1041,10 @@ tcPatternHelper p t@(ConstructorPattern spi _ c ts) = do
   return (ps', ty', ConstructorPattern spi (predType ty') c ts')
 tcPatternHelper p (InfixPattern spi a t1 op t2) = do
   (ps, ty, t') <- tcPatternHelper p (ConstructorPattern NoSpanInfo a op [t1,t2])
-  let ConstructorPattern _ a' op' [t1', t2'] = t'
-  return (ps, ty, InfixPattern spi a' t1' op' t2')
+  case t' of
+    ConstructorPattern _ a' op' [t1', t2']
+      -> return (ps, ty, InfixPattern spi a' t1' op' t2')
+    _ -> internalError "TypeCheck.tcPatternHelper: Not a constructor pattern"
 tcPatternHelper p (ParenPattern spi t) = do
   (ps, ty, t') <- tcPatternHelper p t
   return (ps, ty, ParenPattern spi t')
@@ -1086,8 +1088,10 @@ tcPatternHelper p t@(FunctionPattern spi _ f ts) = do
   tcFuncPattern p spi (pPrintPrec 0 t) f id ps ty ts
 tcPatternHelper p (InfixFuncPattern spi a t1 op t2) = do
   (ps, ty, t') <- tcPatternHelper p (FunctionPattern spi a op [t1, t2])
-  let FunctionPattern _ a' op' [t1', t2'] = t'
-  return (ps, ty, InfixFuncPattern spi a' t1' op' t2')
+  case t' of
+    FunctionPattern _ a' op' [t1', t2']
+      -> return (ps, ty, InfixFuncPattern spi a' t1' op' t2')
+    _ -> internalError "TypeCheck.tcPatternHelper: Not a function pattern"
 
 tcFuncPattern :: HasSpanInfo p => p -> SpanInfo -> Doc -> QualIdent
               -> ([Pattern PredType] -> [Pattern PredType])
@@ -1395,20 +1399,24 @@ tcField check what doc ty ps (Field p l x) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps', ty') <- inst (labelType m l vEnv)
-  let TypeArrow ty1 ty2 = ty'
-  _ <- unify p "field label" empty emptyPredSet ty emptyPredSet ty1
-  (ps'', x') <- check p x >>-
-    unify p ("record " ++ what) (doc x) (ps `Set.union` ps') ty2
-  return (ps'', Field p l x')
+  case ty' of
+    TypeArrow ty1 ty2 -> do
+      _ <- unify p "field label" empty emptyPredSet ty emptyPredSet ty1
+      (ps'', x') <- check p x >>-
+        unify p ("record " ++ what) (doc x) (ps `Set.union` ps') ty2
+      return (ps'', Field p l x')
+    _ -> internalError "TypeCheck.tcField: Not an arrow type"
 
 tcMissingField :: HasSpanInfo p => p -> Type -> QualIdent -> TCM PredSet
 tcMissingField p ty l = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (ps, ty') <- inst (labelType m l vEnv)
-  let TypeArrow _ ty2 = ty'
-  let ps' = Set.singleton (Pred qDataId ty2)
-  unify p "field label" empty ps ty' ps' (TypeArrow ty ty2)
+  case ty' of
+    TypeArrow _ ty2 -> unify p "field label" empty ps ty' ps' (TypeArrow ty ty2)
+      where ps' = Set.singleton (Pred qDataId ty2)
+    _ -> internalError "TypeCheck.tcMissingField: Not an arrow type"
+
 
 -- | Checks that it's argument can be used as an arrow type @a -> b@ and returns
 -- the pair @(a, b)@.

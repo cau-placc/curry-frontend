@@ -45,7 +45,7 @@ instance Entity TypeKind where
   merge (Alias tc) (Alias tc')
     | tc == tc' = Just $ Alias tc
   merge (Class cls ms) (Class cls' ms')
-    | cls == cls' = Just $Class cls $ ms `union` ms'
+    | cls == cls' = Just $ Class cls $ ms `union` ms'
   merge _ _ = Nothing
 
 toTypeKind :: TypeInfo -> TypeKind

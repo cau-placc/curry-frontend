@@ -865,9 +865,9 @@ checkInfixPattern p spi t1 op t2 = do
   funcPattern r qop = do
     checkFuncPatsExtension p
     checkFuncPatCall r qop
-    ts' <- mapM (checkPattern p) [t1,t2]
-    let [t1',t2'] = ts'
-    mapM_ (checkFPTerm p) ts'
+    t1' <- checkPattern p t1
+    t2' <- checkPattern p t2
+    mapM_ (checkFPTerm p) [t1', t2']
     return $ InfixFuncPattern spi () t1' qop t2'
 
 checkRecordPattern :: SpanInfo -> SpanInfo -> QualIdent -> [Field (Pattern ())]

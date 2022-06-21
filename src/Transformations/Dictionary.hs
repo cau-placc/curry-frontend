@@ -23,13 +23,11 @@ module Transformations.Dictionary
 import           Control.Applicative      ((<$>), (<*>))
 import           Data.Traversable         (traverse)
 #endif
-import           Control.Monad.Extra      ( concatMapM, liftM, maybeM, when
-                                          , zipWithM )
+import           Control.Monad.Extra      ( concatMapM, liftM, maybeM, when )
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 
-import           Data.List         (inits, nub, partition, tails, zipWith4)
-import qualified Data.Map   as Map ( Map, empty, insert, lookup, mapWithKey
-                                   , toList )
+import           Data.List         (inits, nub, partition, tails)
+import qualified Data.Map   as Map ( Map, empty, insert, lookup, toList )
 import           Data.Maybe        (fromMaybe, isJust)
 import qualified Data.Set   as Set ( deleteMin, fromList, null, size, toAscList
                                    , toList, union )
@@ -111,9 +109,6 @@ getClassEnv = S.gets classEnv
 
 getInstEnv :: DTM InstEnv
 getInstEnv = S.gets instEnv
-
-modifyInstEnv :: (InstEnv -> InstEnv) -> DTM ()
-modifyInstEnv f = S.modify $ \s -> s { instEnv = f $ instEnv s }
 
 getPrecEnv :: DTM OpPrecEnv
 getPrecEnv = S.gets opPrecEnv
@@ -349,7 +344,7 @@ createStubDecl t a f v =
   FunctionDecl NoSpanInfo a f [createStubEquation t f v]
 
 createStubEquation :: Pattern Type -> Ident -> (Type, Ident) -> Equation Type
-createStubEquation t f v = 
+createStubEquation t f v =
   mkEquation NoSpanInfo f [VariablePattern NoSpanInfo (TypeArrow unitType (typeOf t)) (mkIdent "_#temp")] $
     mkLet [FunctionDecl NoSpanInfo (TypeArrow (typeOf t) (fst v)) (mkIdent "_#lambda")
       [mkEquation NoSpanInfo (mkIdent "_#lambda") [t] $ uncurry mkVar v]]
@@ -591,8 +586,10 @@ instance DictTrans Decl where
   dictTrans (DataDecl        p tc tvs cs _) = do
     m <- getModuleIdent
     tcEnv <- getTyConsEnv
-    let DataType _ _ cs' = head $ qualLookupTypeInfo (qualifyWith m tc) tcEnv
-    return $ DataDecl p tc tvs (zipWith (dictTransConstrDecl tvs) cs cs') []
+    case qualLookupTypeInfo (qualifyWith m tc) tcEnv of
+      DataType _ _ cs' : _
+        -> return $ DataDecl p tc tvs (zipWith (dictTransConstrDecl tvs) cs cs') []
+      _ -> internalError "Dictionary.dictTrans@Decl: Type does not exist or is not a data type"
   dictTrans (ExternalDataDecl     p tc tvs) = return $ ExternalDataDecl p tc tvs
   dictTrans (NewtypeDecl     p tc tvs nc _) =
     return $ NewtypeDecl p tc tvs nc []
@@ -827,14 +824,13 @@ instance Specialize Expression where
 
 specialize' :: Expression Type -> [Expression Type] -> DTM (Expression Type)
 specialize' l@(Literal     _ _ _) es = return $ apply l es
-specialize' v@(Variable   _ _ v') es = do
+specialize' v@(Variable   _ _ v') es
+  | (d:es') <- es, (Variable _ _ f, es'') <- unapply d [] = do
+  let ty' = foldr (TypeArrow . typeOf) (typeOf $ Apply NoSpanInfo v d) es''
   spEnv <- getSpEnv
   return $ case Map.lookup (v', f) spEnv of
     Just f' -> apply (Variable NoSpanInfo ty' f') $ es'' ++ es'
     Nothing -> apply v es
-  where d:es' = es
-        (Variable _ _ f, es'') = unapply d []
-        ty' = foldr (TypeArrow . typeOf) (typeOf $ Apply NoSpanInfo v d) es''
 specialize' c@(Constructor _ _ _) es = return $ apply c es
 specialize' (Typed       _ e qty) es = do
   e' <- specialize e
@@ -1087,9 +1083,6 @@ instType ty = ty
 
 instPred :: Pred -> Pred
 instPred (Pred cls ty) = Pred cls (instType ty)
-
-unRenameIdentIf :: Bool -> Ident -> Ident
-unRenameIdentIf b = if b then unRenameIdent else id
 
 -- The string for the error message for a class method's default method
 -- implementation has to be constructed in its desugared form since the

@@ -1002,7 +1002,7 @@ instance HasSpanInfo (Field a) where
   setSpanInfo sp (Field _ qid a) = Field sp qid a
   updateEndPos f@(Field (SpanInfo _ ss) _ _) =
     setEndPosition (end (last ss)) f
-  updateEndPos f@ (Field _ _ _) = f
+  updateEndPos f@(Field _ _ _) = f
 
 instance HasSpanInfo (Goal a) where
   getSpanInfo (Goal sp _ _ _) = sp

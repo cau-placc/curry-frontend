@@ -277,7 +277,9 @@ fc m = foldr fc' []
 checkAcyclicSuperClasses :: [Decl a] -> KCM ()
 checkAcyclicSuperClasses ds = do
   m <- getModuleIdent
-  mapM_ checkClassDecl $ scc bt (\(ClassDecl _ _ cx _ _ _) -> fc m cx) ds
+  let go (ClassDecl _ _ cx _ _ _) = fc m cx
+      go _                        = internalError "KindCheck.checkAcyclicSuperClasses: Not a class"
+  mapM_ checkClassDecl $ scc bt go ds
 
 checkClassDecl :: [Decl a] -> KCM ()
 checkClassDecl [] =
@@ -381,10 +383,12 @@ bindFreshKind tcEnv tv = do
 bindTypeVars :: Ident -> [Ident] -> TCEnv -> KCM (Kind, TCEnv)
 bindTypeVars tc tvs tcEnv = do
   m <- getModuleIdent
-  return $ foldl (\(KindArrow k1 k2, tcEnv') tv ->
-                   (k2, bindTypeVar tv k1 tcEnv'))
-                 (tcKind m (qualifyWith m tc) tcEnv, tcEnv)
-                 tvs
+  return $ foldl go (tcKind m (qualifyWith m tc) tcEnv, tcEnv) tvs
+  where
+    go (KindArrow k1 k2, tcEnv') tv =
+      (k2, bindTypeVar tv k1 tcEnv')
+    go _                         _  =
+      internalError "KindCheck.bindTypeVars: Not an Arrow Kind"
 
 bindTypeVar :: Ident -> Kind -> TCEnv -> TCEnv
 bindTypeVar ident k = bindTopEnv ident (TypeVar k)
