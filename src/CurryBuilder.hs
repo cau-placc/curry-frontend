@@ -159,9 +159,9 @@ process opts idx m fn deps
   | optForce opts = compile
   | otherwise     = smake (tgtDir (interfName fn) : destFiles) deps compile skip
   where
-  skip    = status opts $ compMessage idx "Skipping" m (fn, head destFiles)
+  skip    = status opts $ compMessage idx (9, 16) "Skipping" m (fn, head destFiles)
   compile = do
-    status opts $ compMessage idx "Compiling" m (fn, head destFiles)
+    status opts $ compMessage idx (9, 16) "Compiling" m (fn, head destFiles)
     compileModule opts m fn
 
   tgtDir = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
@@ -184,11 +184,11 @@ process opts idx m fn deps
 
 -- |Create a status message like
 -- @[m of n] Compiling Module          ( M.curry, .curry/M.fcy )@
-compMessage :: (Int, Int) -> String -> ModuleIdent
+compMessage :: (Int, Int) -> (Int, Int) -> String -> ModuleIdent
             -> (FilePath, FilePath) -> String
-compMessage (curNum, maxNum) what m (src, dst)
+compMessage (curNum, maxNum) (padLeft, padRight) what m (src, dst)
   =  '[' : lpad (length sMaxNum) (show curNum) ++ " of " ++ sMaxNum  ++ "]"
-  ++ ' ' : rpad 9 what ++ ' ' : rpad 16 (moduleName m)
+  ++ ' ' : rpad padLeft what ++ ' ' : rpad padRight (moduleName m)
   ++ " ( " ++ normalise src ++ ", " ++ normalise dst ++ " )"
   where
   sMaxNum  = show maxNum
