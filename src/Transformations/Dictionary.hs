@@ -826,11 +826,12 @@ specialize' :: Expression Type -> [Expression Type] -> DTM (Expression Type)
 specialize' l@(Literal     _ _ _) es = return $ apply l es
 specialize' v@(Variable   _ _ v') es
   | (d:es') <- es, (Variable _ _ f, es'') <- unapply d [] = do
-  let ty' = foldr (TypeArrow . typeOf) (typeOf $ Apply NoSpanInfo v d) es''
-  spEnv <- getSpEnv
-  return $ case Map.lookup (v', f) spEnv of
-    Just f' -> apply (Variable NoSpanInfo ty' f') $ es'' ++ es'
-    Nothing -> apply v es
+    let ty' = foldr (TypeArrow . typeOf) (typeOf $ Apply NoSpanInfo v d) es''
+    spEnv <- getSpEnv
+    return $ case Map.lookup (v', f) spEnv of
+      Just f' -> apply (Variable NoSpanInfo ty' f') $ es'' ++ es'
+      Nothing -> apply v es
+  | otherwise = return $ apply v es
 specialize' c@(Constructor _ _ _) es = return $ apply c es
 specialize' (Typed       _ e qty) es = do
   e' <- specialize e
@@ -849,8 +850,8 @@ specialize' (Case    _ _ ct e as) es = do
   e' <- specialize e
   as' <- mapM specialize as
   return $ apply (mkCase ct e' as') es
-specialize' e                   _  =
-  internalError $ "Dictionary.specialize': " ++ show e
+specialize' e                   es =
+  internalError $ "Dictionary.specialize': " ++ show (e, es)
 
 instance Specialize Alt where
   specialize (Alt p t rhs) = Alt p t <$> specialize rhs
