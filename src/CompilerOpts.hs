@@ -21,7 +21,7 @@ module CompilerOpts
   , OptimizationOpts(..), CaseMode (..), CymakeMode (..), Verbosity (..)
   , TargetType (..), WarnFlag (..), KnownExtension (..), DumpLevel (..)
   , dumpLevel
-  , defaultOptions, defaultPrepOpts, defaultWarnOpts, defaultDebugOpts
+  , defaultOptions, defaultPrepOpts, defaultWarnOpts, defaultDebugOpts, defaultCppOpts
   , getCompilerOpts, updateOpts, usage
   ) where
 
