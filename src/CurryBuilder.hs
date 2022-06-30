@@ -15,9 +15,10 @@
     Curry source file including all imported modules.
 -}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase       #-}
 module CurryBuilder (buildCurry, findCurry, processPragmas, adjustOptions, smake, compMessage) where
 
-import Control.Monad   (foldM, liftM)
+import Control.Monad   (foldM)
 import Control.Monad.Except ( MonadError(..) )
 import Data.Char       (isSpace)
 import Data.Maybe      (catMaybes, fromMaybe, mapMaybe)
@@ -143,11 +144,11 @@ quotedWords :: String -> [String]
 quotedWords str = case dropWhile isSpace str of
   []        -> []
   s@('\'' : cs) -> case break (== '\'') cs of
-    (_     , []      ) -> def s
-    (quoted, (_:rest)) -> quoted : quotedWords rest
+    (_     , []    ) -> def s
+    (quoted, _:rest) -> quoted : quotedWords rest
   s@('"'  : cs) -> case break (== '"') cs of
-    (_     , []      ) -> def s
-    (quoted, (_:rest)) -> quoted : quotedWords rest
+    (_     , []    ) -> def s
+    (quoted, _:rest) -> quoted : quotedWords rest
   s         -> def s
   where
   def s = let (w, rest) = break isSpace s in  w : quotedWords rest
@@ -203,7 +204,7 @@ smake :: (Monad m, MonadError [Message] m, MonadIO m)
       -> m a     -- ^ action to perform if destination files are newer
       -> m a
 smake dests deps actOutdated actUpToDate = do
-  destTimes <- catMaybes `liftM` mapM (liftIO . getModuleModTime) dests
+  destTimes <- catMaybes <$> mapM (liftIO . getModuleModTime) dests
   depTimes  <- mapM (cancelMissing getModuleModTime) deps
   make destTimes depTimes
   where
@@ -215,7 +216,7 @@ smake dests deps actOutdated actUpToDate = do
   outOfDate tgtimes dptimes = or [ tg < dp | tg <- tgtimes, dp <- dptimes]
 
 cancelMissing :: (Monad m, MonadIO m, MonadError [Message] m) => (FilePath -> IO (Maybe a)) -> FilePath -> m a
-cancelMissing act f = liftIO (act f) >>= \res -> case res of
+cancelMissing act f = liftIO (act f) >>= \case
   Nothing  -> throwError [errModificationTime f]
   Just val -> return val
 
