@@ -11,7 +11,8 @@
 
     This module provides the data structures for Curry language extensions.
 -}
-
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric  #-}
 module Curry.Syntax.Extension
   ( -- * Extensions
     Extension (..), KnownExtension (..), classifyExtension, kielExtensions
@@ -21,7 +22,7 @@ module Curry.Syntax.Extension
 
 import Data.Binary
 import Data.Char           (toUpper)
-import Control.Monad
+import GHC.Generics
 
 import Curry.Base.Ident    (Ident (..))
 import Curry.Base.Position
@@ -31,46 +32,18 @@ import Curry.Base.SpanInfo
 data Extension
   = KnownExtension   SpanInfo KnownExtension -- ^ a known extension
   | UnknownExtension SpanInfo String         -- ^ an unknown extension
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 instance HasSpanInfo Extension where
   getSpanInfo (KnownExtension   spi _) = spi
   getSpanInfo (UnknownExtension spi _) = spi
-  
+
   setSpanInfo spi (KnownExtension   _ ke) = KnownExtension spi ke
   setSpanInfo spi (UnknownExtension _ s)  = UnknownExtension spi s
 
 instance HasPosition Extension where
   getPosition = getStartPosition
   setPosition = setStartPosition
-
-instance Binary Extension where
-  put (KnownExtension   p e) = putWord8 0 >> put p >> put e
-  put (UnknownExtension p e) = putWord8 1 >> put p >> put e
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> liftM2 KnownExtension get get
-      1 -> liftM2 UnknownExtension get get
-      _ -> fail "Invalid encoding for Extension"
-
-instance Binary KnownExtension where
-  put AnonFreeVars       = putWord8 0
-  put CPP                = putWord8 1
-  put FunctionalPatterns = putWord8 2
-  put NegativeLiterals   = putWord8 3
-  put NoImplicitPrelude  = putWord8 4
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> return AnonFreeVars
-      1 -> return CPP
-      2 -> return FunctionalPatterns
-      3 -> return NegativeLiterals
-      4 -> return NoImplicitPrelude
-      _ -> fail "Invalid encoding for KnownExtension"
 
 -- |Known language extensions of Curry.
 data KnownExtension
@@ -79,7 +52,7 @@ data KnownExtension
   | FunctionalPatterns        -- ^ functional patterns
   | NegativeLiterals          -- ^ negative literals
   | NoImplicitPrelude         -- ^ no implicit import of the prelude
-    deriving (Eq, Read, Show, Enum, Bounded)
+    deriving (Eq, Read, Show, Enum, Bounded, Generic, Binary)
 
 -- |Classifies a 'String' as an 'Extension'
 classifyExtension :: Ident -> Extension
@@ -94,24 +67,7 @@ kielExtensions = [AnonFreeVars, FunctionalPatterns]
 
 -- |Different Curry tools which may accept compiler options.
 data Tool = KICS2 | PAKCS | CYMAKE | FRONTEND | UnknownTool String
-    deriving (Eq, Read, Show)
-
-instance Binary Tool where
-  put KICS2           = putWord8 0
-  put PAKCS           = putWord8 1
-  put CYMAKE          = putWord8 2
-  put FRONTEND        = putWord8 3
-  put (UnknownTool s) = putWord8 4 >> put s
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> return KICS2
-      1 -> return PAKCS
-      2 -> return CYMAKE
-      3 -> return FRONTEND
-      4 -> fmap UnknownTool get
-      _ -> fail "Invalid encoding for Tool"
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Classifies a 'String' as a 'Tool'
 classifyTool :: String -> Tool

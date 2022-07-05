@@ -17,13 +17,15 @@
     the abstract syntax tree by argument positions, which is used for
     debugging purposes.
 -}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric  #-}
 module Curry.Base.Span where
 
 import Prelude hiding ((<>))
 
 import Data.Binary
 import Data.List (transpose)
-import Control.Monad
+import GHC.Generics
 import System.FilePath
 
 import Curry.Base.Position hiding (file)
@@ -38,7 +40,7 @@ data Span
     }
   -- |no span
   | NoSpan
-    deriving (Eq, Ord, Read, Show)
+    deriving (Eq, Ord, Read, Show, Generic, Binary)
 
 instance Pretty Span where
   pPrint = ppSpan
@@ -49,17 +51,6 @@ instance HasPosition Span where
 
   getPosition NoSpan       = NoPos
   getPosition (Span _ p _) = p
-
-instance Binary Span where
-  put (Span _ s e) = putWord8 0 >> put s >> put e
-  put NoSpan       = putWord8 1
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> liftM2 (Span "") get get
-      1 -> return NoSpan
-      _ -> fail "Not a valid encoding for a Span"
 
 -- |Show a 'Span' as a 'String'
 showSpan :: Span -> String
@@ -90,12 +81,12 @@ ppSpanPreview (Span f (Position _ sl sc) (Position _ el ec))
       let lns = lines fileContents
           lnContent | sl <= 0 || sl > length lns = ""
                     | otherwise = lns !! (sl - 1)
-          lnNum = text <$> lPadStr lnNumWidth <$> (vPad ++ [show sl] ++ vPad)
+          lnNum = text . lPadStr lnNumWidth <$> (vPad ++ [show sl] ++ vPad)
           ec' = if isMultiline then length lnContent else ec
           gutter = text <$> replicate (1 + 2 * vPadCount) "|"
           highlight = replicate (sc - 1) ' ' ++ replicate (1 + ec' - sc) '^' ++ if isMultiline then "..." else ""
           previews = text <$> (vPad ++ [lnContent, highlight] ++ replicate (vPadCount - 1) "")
-      
+
       return $ vcat $ map hsep $ transpose [lnNum, gutter, previews]
   where vPadCount = 1 -- Number of padding lines at the top and bottom
         isMultiline = el - sl > 0

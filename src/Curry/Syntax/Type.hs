@@ -15,7 +15,8 @@
     This module provides the necessary data structures to maintain the
     parsed representation of a Curry program.
 -}
-
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric  #-}
 module Curry.Syntax.Type
   ( -- * Module header
     Module (..)
@@ -41,8 +42,8 @@ module Curry.Syntax.Type
   , Goal (..)
   ) where
 
-import Data.Binary
-import Control.Monad
+import Data.Binary            (Binary)
+import GHC.Generics           (Generic)
 
 import Curry.Base.Ident
 import Curry.Base.Position
@@ -61,17 +62,17 @@ import Text.PrettyPrint
 -- |Curry module
 data Module a = Module SpanInfo LayoutInfo [ModulePragma] ModuleIdent
                        (Maybe ExportSpec) [ImportDecl] [Decl a]
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Module pragma
 data ModulePragma
   = LanguagePragma SpanInfo [Extension]         -- ^ language pragma
   | OptionsPragma  SpanInfo (Maybe Tool) String -- ^ options pragma
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Export specification
 data ExportSpec = Exporting SpanInfo [Export]
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Single exported entity
 data Export
@@ -79,12 +80,12 @@ data Export
   | ExportTypeWith SpanInfo QualIdent [Ident] -- T (C1,...,Cn)
   | ExportTypeAll  SpanInfo QualIdent         -- T (..)
   | ExportModule   SpanInfo ModuleIdent       -- module M
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Import declaration
 data ImportDecl = ImportDecl SpanInfo ModuleIdent Qualified
                              (Maybe ModuleIdent) (Maybe ImportSpec)
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Flag to signal qualified import
 type Qualified = Bool
@@ -93,14 +94,14 @@ type Qualified = Bool
 data ImportSpec
   = Importing SpanInfo [Import]
   | Hiding    SpanInfo [Import]
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Single imported entity
 data Import
   = Import         SpanInfo Ident            -- f/T
   | ImportTypeWith SpanInfo Ident [Ident]    -- T (C1,...,Cn)
   | ImportTypeAll  SpanInfo Ident            -- T (..)
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- ---------------------------------------------------------------------------
 -- Module interfaces
@@ -113,11 +114,11 @@ data Import
 -- function arity (= number of parameters) in order to generate
 -- correct FlatCurry function applications.
 data Interface = Interface ModuleIdent [IImportDecl] [IDecl]
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Interface import declaration
 data IImportDecl = IImportDecl Position ModuleIdent
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Arity of a function
 type Arity = Int
@@ -133,11 +134,11 @@ data IDecl
   | HidingClassDecl Position Context QualIdent (Maybe KindExpr) Ident
   | IClassDecl      Position Context QualIdent (Maybe KindExpr) Ident [IMethodDecl] [Ident]
   | IInstanceDecl   Position Context QualIdent InstanceType [IMethodImpl] (Maybe ModuleIdent)
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Class methods
 data IMethodDecl = IMethodDecl Position Ident (Maybe Arity) QualTypeExpr
-  deriving (Eq, Read, Show)
+  deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Class method implementations
 type IMethodImpl = (Ident, Arity)
@@ -146,7 +147,7 @@ type IMethodImpl = (Ident, Arity)
 data KindExpr
   = Star
   | ArrowKind KindExpr KindExpr
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- ---------------------------------------------------------------------------
 -- Declarations (local or top-level)
@@ -167,7 +168,7 @@ data Decl a
   | DefaultDecl      SpanInfo [TypeExpr]                                         -- default (Int, Float)
   | ClassDecl        SpanInfo LayoutInfo Context Ident Ident [Decl a]            -- class C a => D a where {TypeSig|InfixDecl|FunctionDecl}
   | InstanceDecl     SpanInfo LayoutInfo Context QualIdent InstanceType [Decl a] -- instance C a => M.D (N.T a b c) where {FunctionDecl}
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- ---------------------------------------------------------------------------
 -- Infix declaration
@@ -181,24 +182,24 @@ data Infix
   = InfixL -- ^ left-associative
   | InfixR -- ^ right-associative
   | Infix  -- ^ no associativity
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Constructor declaration for algebraic data types
 data ConstrDecl
   = ConstrDecl SpanInfo Ident [TypeExpr]
   | ConOpDecl  SpanInfo TypeExpr Ident TypeExpr
   | RecordDecl SpanInfo Ident [FieldDecl]
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Constructor declaration for renaming types (newtypes)
 data NewConstrDecl
   = NewConstrDecl SpanInfo Ident TypeExpr
   | NewRecordDecl SpanInfo Ident (Ident, TypeExpr)
-   deriving (Eq, Read, Show)
+   deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Declaration for labelled fields
 data FieldDecl = FieldDecl SpanInfo [Ident] TypeExpr
-  deriving (Eq, Read, Show)
+  deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Type expressions
 data TypeExpr
@@ -210,11 +211,11 @@ data TypeExpr
   | ArrowType       SpanInfo TypeExpr TypeExpr
   | ParenType       SpanInfo TypeExpr
   | ForallType      SpanInfo [Ident] TypeExpr
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Qualified type expressions
 data QualTypeExpr = QualTypeExpr SpanInfo Context TypeExpr
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- ---------------------------------------------------------------------------
 -- Type classes
@@ -223,7 +224,7 @@ data QualTypeExpr = QualTypeExpr SpanInfo Context TypeExpr
 type Context = [Constraint]
 
 data Constraint = Constraint SpanInfo QualIdent TypeExpr
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 type InstanceType = TypeExpr
 
@@ -233,24 +234,24 @@ type InstanceType = TypeExpr
 
 -- |Function defining equation
 data Equation a = Equation SpanInfo (Lhs a) (Rhs a)
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Left-hand-side of an 'Equation' (function identifier and patterns)
 data Lhs a
   = FunLhs SpanInfo Ident [Pattern a]             -- f x y
   | OpLhs  SpanInfo (Pattern a) Ident (Pattern a) -- x $ y
   | ApLhs  SpanInfo (Lhs a) [Pattern a]           -- ($) x y
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Right-hand-side of an 'Equation'
 data Rhs a
   = SimpleRhs  SpanInfo LayoutInfo (Expression a) [Decl a] -- @expr where decls@
   | GuardedRhs SpanInfo LayoutInfo [CondExpr a]   [Decl a] -- @| cond = expr where decls@
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Conditional expression (expression conditioned by a guard)
 data CondExpr a = CondExpr SpanInfo (Expression a) (Expression a)
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Literal
 data Literal
@@ -258,7 +259,7 @@ data Literal
   | Int    Integer
   | Float  Double
   | String String
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Constructor term (used for patterns)
 data Pattern a
@@ -275,7 +276,7 @@ data Pattern a
   | LazyPattern        SpanInfo (Pattern a)
   | FunctionPattern    SpanInfo a QualIdent [Pattern a]
   | InfixFuncPattern   SpanInfo a (Pattern a) QualIdent (Pattern a)
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Expression
 data Expression a
@@ -303,38 +304,38 @@ data Expression a
   | Do                SpanInfo LayoutInfo [Statement a] (Expression a)
   | IfThenElse        SpanInfo (Expression a) (Expression a) (Expression a)
   | Case              SpanInfo LayoutInfo CaseType (Expression a) [Alt a]
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Infix operation
 data InfixOp a
   = InfixOp     a QualIdent
   | InfixConstr a QualIdent
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Statement (used for do-sequence and list comprehensions)
 data Statement a
   = StmtExpr SpanInfo (Expression a)
   | StmtDecl SpanInfo LayoutInfo [Decl a]
   | StmtBind SpanInfo (Pattern a) (Expression a)
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Type of case expressions
 data CaseType
   = Rigid
   | Flex
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Single case alternative
 data Alt a = Alt SpanInfo (Pattern a) (Rhs a)
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Record field
 data Field a = Field SpanInfo QualIdent a
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Annotated identifier
 data Var a = Var a Ident
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- ---------------------------------------------------------------------------
 -- Goals
@@ -342,7 +343,7 @@ data Var a = Var a Ident
 
 -- |Goal in REPL (expression to evaluate)
 data Goal a = Goal SpanInfo LayoutInfo (Expression a) [Decl a]
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- ---------------------------------------------------------------------------
 -- instances
@@ -1117,424 +1118,5 @@ instance HasPosition (InfixOp a) where
 
   setPosition p (InfixOp     a q) = InfixOp     a (setPosition p q)
   setPosition p (InfixConstr a q) = InfixConstr a (setPosition p q)
-
-instance Binary a => Binary (Module a) where
-  put (Module spi li ps mid ex im ds) = put spi >> put li >> put ps >>
-                                        put mid >> put ex >> put im >> put ds
-  get = Module <$> get <*> get <*> get <*> get <*> get <*> get <*> get
-
-instance Binary ModulePragma where
-  put (LanguagePragma spi ex  ) = putWord8 0 >> put spi >> put ex
-  put (OptionsPragma  spi t  s) = putWord8 1 >> put spi >> put t >> put s
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> liftM2 LanguagePragma get get
-      1 -> liftM3 OptionsPragma get get get
-      _ -> fail "Invalid encoding for ModulePragma"
-
-instance Binary ExportSpec where
-  put (Exporting spi es) = put spi >> put es
-  get = liftM2 Exporting get get
-
-instance Binary Export where
-  put (Export         spi qid   ) = putWord8 0 >> put spi >> put qid
-  put (ExportTypeWith spi qid is) = putWord8 1 >> put spi >> put qid >> put is
-  put (ExportTypeAll  spi qid   ) = putWord8 2 >> put spi >> put qid
-  put (ExportModule   spi mid   ) = putWord8 3 >> put spi >> put mid
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> liftM2 Export get get
-      1 -> liftM3 ExportTypeWith get get get
-      2 -> liftM2 ExportTypeAll get get
-      3 -> liftM2 ExportModule get get
-      _ -> fail "Invalid encoding for Export"
-
-instance Binary ImportDecl where
-  put (ImportDecl spi mid q al im) = put spi >> put mid >> put q >>
-                                     put al >> put im
-  get = ImportDecl <$> get <*> get <*> get <*> get <*> get
-
-instance Binary ImportSpec where
-  put (Importing spi im) = putWord8 0 >> put spi >> put im
-  put (Hiding    spi im) = putWord8 1 >> put spi >> put im
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> liftM2 Importing get get
-      1 -> liftM2 Hiding get get
-      _ -> fail "Invalid encoding for ImportSpec"
-
-instance Binary Import where
-  put (Import         spi idt   ) = putWord8 0 >> put spi >> put idt
-  put (ImportTypeWith spi idt is) = putWord8 1 >> put spi >> put idt >> put is
-  put (ImportTypeAll  spi idt   ) = putWord8 2 >> put spi >> put idt
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> liftM2 Import get get
-      1 -> liftM3 ImportTypeWith get get get
-      2 -> liftM2 ImportTypeAll get get
-      _ -> fail "Invalid encoding for Import"
-
-instance Binary a => Binary (Decl a) where
-  put (InfixDecl spi i pr is) =
-    putWord8 0 >> put spi >> put i >> put pr >> put is
-  put (DataDecl spi idt vs cns clss) =
-    putWord8 1 >> put spi >> put idt >> put vs >> put cns >> put clss
-  put (ExternalDataDecl spi idt vs) =
-    putWord8 2 >> put spi >> put idt >> put vs
-  put (NewtypeDecl spi idt vs cn clss) =
-    putWord8 3 >> put spi >> put idt >> put vs  >> put cn >> put clss
-  put (TypeDecl spi idt vs ty) =
-    putWord8 4 >> put spi >> put idt >> put vs  >> put ty
-  put (TypeSig spi fs ty) =
-    putWord8 5 >> put spi >> put fs >> put ty
-  put (FunctionDecl spi a f eqs) =
-    putWord8 6 >> put spi >> put a >> put f >> put eqs
-  put (ExternalDecl spi vs) =
-    putWord8 7 >> put spi >> put vs
-  put (PatternDecl spi p rhs) =
-    putWord8 8 >> put spi >> put p >> put rhs
-  put (FreeDecl spi vs) =
-    putWord8 9 >> put spi >> put vs
-  put (DefaultDecl spi tys) =
-    putWord8 10 >> put spi >> put tys
-  put (ClassDecl spi li cx cls v ds) =
-    putWord8 11 >> put spi >> put li >> put cx >> put cls >> put v >> put ds
-  put (InstanceDecl spi li cx cls ty ds) =
-    putWord8 12 >> put spi >> put li >> put cx >> put cls >> put ty >> put ds
-
-  get = do
-    x <- getWord8
-    case x of
-      0  -> InfixDecl <$> get <*> get <*> get <*> get
-      1  -> DataDecl <$> get <*> get <*> get <*> get <*> get
-      2  -> ExternalDataDecl <$> get <*> get <*> get
-      3  -> NewtypeDecl <$> get <*> get <*> get <*> get <*> get
-      4  -> TypeDecl <$> get <*> get <*> get <*> get
-      5  -> TypeSig <$> get <*> get <*> get
-      6  -> FunctionDecl <$> get <*> get <*> get <*> get
-      7  -> ExternalDecl <$> get <*> get
-      8  -> PatternDecl <$> get <*> get <*> get
-      9  -> FreeDecl <$> get <*> get
-      10 -> DefaultDecl <$> get <*> get
-      11 -> ClassDecl <$> get <*> get <*> get <*> get <*> get <*> get
-      12 -> InstanceDecl <$> get <*> get <*> get <*> get <*> get <*> get
-      _  -> fail "Invalid encoding for Decl"
-
-instance Binary Infix where
-  put InfixL = putWord8 0
-  put InfixR = putWord8 1
-  put Infix  = putWord8 2
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> return InfixL
-      1 -> return InfixR
-      2 -> return Infix
-      _ -> fail "Invalid encoding for Infix"
-
-instance Binary ConstrDecl where
-  put (ConstrDecl spi idt tys) =
-    putWord8 0 >> put spi >> put idt >> put tys
-  put (ConOpDecl spi ty1 idt ty2) =
-    putWord8 1 >> put spi >> put ty1 >> put idt >> put ty2
-  put (RecordDecl spi idt fs) =
-    putWord8 2 >> put spi >> put idt >> put fs
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> liftM3 ConstrDecl get get get
-      1 -> ConOpDecl <$> get <*> get <*> get <*> get
-      2 -> liftM3 RecordDecl get get get
-      _ -> fail "Invalid encoding for ConstrDecl"
-
-instance Binary NewConstrDecl where
-  put (NewConstrDecl spi c ty) =
-    putWord8 0 >> put spi >> put c >> put ty
-  put (NewRecordDecl spi c fs) =
-    putWord8 1 >> put spi >> put c >> put fs
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> liftM3 NewConstrDecl get get get
-      1 -> liftM3 NewRecordDecl get get get
-      _ -> fail "Invalid encoding for NewConstrDecl"
-
-instance Binary FieldDecl where
-  put (FieldDecl spi is ty) = put spi >> put is >> put ty
-  get = liftM3 FieldDecl get get get
-
-instance Binary QualTypeExpr where
-  put (QualTypeExpr spi ctx te) = put spi >> put ctx >> put te
-  get = liftM3 QualTypeExpr get get get
-
-instance Binary TypeExpr where
-  put (ConstructorType spi qid) =
-    putWord8 0 >> put spi >> put qid
-  put (ApplyType spi ty1 ty2) =
-    putWord8 1 >> put spi >> put ty1 >> put ty2
-  put (VariableType spi idt) =
-    putWord8 2 >> put spi >> put idt
-  put (TupleType spi tys) =
-    putWord8 3 >> put spi >> put tys
-  put (ListType spi ty) =
-    putWord8 4 >> put spi >> put ty
-  put (ArrowType spi ty1 ty2) =
-    putWord8 5 >> put spi >> put ty1 >> put ty2
-  put (ParenType spi ty) =
-    putWord8 6 >> put spi >> put ty
-  put (ForallType spi is ty) =
-    putWord8 7 >> put spi >> put is >> put ty
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> liftM2 ConstructorType get get
-      1 -> liftM3 ApplyType get get get
-      2 -> liftM2 VariableType get get
-      3 -> liftM2 TupleType get get
-      4 -> liftM2 ListType get get
-      5 -> liftM3 ArrowType get get get
-      6 -> liftM2 ParenType get get
-      7 -> liftM3 ForallType get get get
-      _ -> fail "Invalid encoding for TypeExpr"
-
-instance Binary Constraint where
-  put (Constraint spi cls ty) = put spi >> put cls >> put ty
-  get = liftM3 Constraint get get get
-
-instance Binary a => Binary (Equation a) where
-  put (Equation spi lhs rhs) = put spi >> put lhs >> put rhs
-  get = liftM3 Equation get get get
-
-instance Binary a => Binary (Lhs a) where
-  put (FunLhs spi f ps) =
-    putWord8 0 >> put spi >> put f >> put ps
-  put (OpLhs spi p1 op p2) =
-    putWord8 1 >> put spi >> put p1 >> put op >> put p2
-  put (ApLhs spi lhs ps) =
-    putWord8 2 >> put spi >> put lhs >> put ps
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> liftM3 FunLhs get get get
-      1 -> OpLhs <$> get <*> get <*> get <*> get
-      2 -> liftM3 ApLhs get get get
-      _ -> fail "Invalid encoding for Lhs"
-
-instance Binary a => Binary (Rhs a) where
-  put (SimpleRhs spi li e ds) =
-    putWord8 0 >> put spi >> put li >> put e >> put ds
-  put (GuardedRhs spi li gs ds) =
-    putWord8 1 >> put spi >> put li >> put gs >> put ds
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> SimpleRhs <$> get <*> get <*> get <*> get
-      1 -> GuardedRhs <$> get <*> get <*> get <*> get
-      _ -> fail "Invalid encoding for Rhs"
-
-instance Binary a => Binary (CondExpr a) where
-  put (CondExpr spi g e) = put spi >> put g >> put e
-  get = liftM3 CondExpr get get get
-
-instance Binary Literal where
-  put (Char   c) = putWord8 0 >> put c
-  put (Int    i) = putWord8 1 >> put i
-  put (Float  f) = putWord8 2 >> put (show f)
-  put (String s) = putWord8 3 >> put s
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> fmap Char get
-      1 -> fmap Int get
-      2 -> fmap (Float . read) get
-      3 -> fmap String get
-      _ -> fail "Invalid encoding for Literal"
-
-instance Binary a => Binary (Pattern a) where
-  put (LiteralPattern  spi a l) =
-    putWord8 0 >> put spi >> put a >> put l
-  put (NegativePattern spi a l) =
-    putWord8 1 >> put spi >> put a >> put l
-  put (VariablePattern spi a idt) =
-    putWord8 2 >> put spi >> put a >> put idt
-  put (ConstructorPattern spi a qid ps) =
-    putWord8 3 >> put spi >> put a >> put qid >> put ps
-  put (InfixPattern spi a p1 qid p2) =
-    putWord8 4 >> put spi >> put a >> put p1 >> put qid >> put p2
-  put (ParenPattern spi p) =
-    putWord8 5 >> put spi >> put p
-  put (RecordPattern spi a qid fs) =
-    putWord8 6 >> put spi >> put a >> put qid >> put fs
-  put (TuplePattern spi ps) =
-    putWord8 7 >> put spi >> put ps
-  put (ListPattern spi a ps) =
-    putWord8 8 >> put spi >> put a >> put ps
-  put (AsPattern spi idt p) =
-    putWord8 9 >> put spi >> put idt >> put p
-  put (LazyPattern spi p) =
-    putWord8 10 >> put spi >> put p
-  put (FunctionPattern spi a qid ps) =
-    putWord8 11 >> put spi >> put a >> put qid >> put ps
-  put (InfixFuncPattern spi a p1 qid p2) =
-    putWord8 12 >> put spi >> put a >> put p1 >> put qid >> put p2
-
-  get = do
-    x <- getWord8
-    case x of
-      0  -> liftM3 LiteralPattern get get get
-      1  -> liftM3 NegativePattern get get get
-      2  -> liftM3 VariablePattern get get get
-      3  -> ConstructorPattern <$> get <*> get <*> get <*> get
-      4  -> InfixPattern <$> get <*> get <*> get <*> get <*> get
-      5  -> liftM2 ParenPattern get get
-      6  -> RecordPattern <$> get <*> get <*> get <*> get
-      7  -> liftM2 TuplePattern get get
-      8  -> liftM3 ListPattern get get get
-      9  -> liftM3 AsPattern get get get
-      10 -> liftM2 LazyPattern get get
-      11 -> FunctionPattern <$> get <*> get <*> get <*> get
-      12 -> InfixFuncPattern <$> get <*> get <*> get <*> get <*> get
-      _  -> fail "Invalid encoding for Pattern"
-
-instance Binary a => Binary (Expression a) where
-  put (Literal spi a l) =
-    putWord8 0 >> put spi >> put a >> put l
-  put (Variable spi a qid) =
-    putWord8 1 >> put spi >> put a >> put qid
-  put (Constructor spi a qid) =
-    putWord8 2 >> put spi >> put a >> put qid
-  put (Paren spi e) =
-    putWord8 3 >> put spi >> put e
-  put (Typed spi e ty) =
-    putWord8 4 >> put spi >> put e >> put ty
-  put (Record spi a qid fs) =
-    putWord8 5 >> put spi >> put a >> put qid >> put fs
-  put (RecordUpdate spi e fs) =
-    putWord8 6 >> put spi >> put e >> put fs
-  put (Tuple spi es) =
-    putWord8 7 >> put spi >> put es
-  put (List spi a es) =
-    putWord8 8 >> put spi >> put a >> put es
-  put (ListCompr spi e stms) =
-    putWord8 9 >> put spi >> put e >> put stms
-  put (EnumFrom spi e1) =
-    putWord8 10 >> put spi >> put e1
-  put (EnumFromThen spi e1 e2) =
-    putWord8 11 >> put spi >> put e1 >> put e2
-  put (EnumFromTo spi e1 e2) =
-    putWord8 12 >> put spi >> put e1 >> put e2
-  put (EnumFromThenTo spi e1 e2 e3) =
-    putWord8 13 >> put spi >> put e1 >> put e2 >> put e3
-  put (UnaryMinus spi e) =
-    putWord8 14 >> put spi >> put e
-  put (Apply spi e1 e2) =
-    putWord8 15 >> put spi >> put e1 >> put e2
-  put (InfixApply spi e1 op e2) =
-    putWord8 16 >> put spi >> put e1 >> put op >> put e2
-  put (LeftSection spi e op) =
-    putWord8 17 >> put spi >> put e >> put op
-  put (RightSection spi op e) =
-    putWord8 18 >> put spi >> put op >> put e
-  put (Lambda spi ps e) =
-    putWord8 19 >> put spi >> put ps >> put e
-  put (Let spi li ds e) =
-    putWord8 20 >> put spi >> put li >> put ds >> put e
-  put (Do spi li stms e) =
-    putWord8 21 >> put spi >> put li >> put stms >> put e
-  put (IfThenElse spi e1 e2 e3) =
-    putWord8 22 >> put spi >> put e1 >> put e2 >> put e3
-  put (Case spi li cty e as) =
-    putWord8 23 >> put spi >> put li >> put cty >> put e >> put as
-
-  get = do
-    x <- getWord8
-    case x of
-      0  -> liftM3 Literal get get get
-      1  -> liftM3 Variable get get get
-      2  -> liftM3 Constructor get get get
-      3  -> liftM2 Paren get get
-      4  -> liftM3 Typed get get get
-      5  -> Record <$> get <*> get <*> get <*> get
-      6  -> RecordUpdate <$> get <*> get <*> get
-      7  -> liftM2 Tuple get get
-      8  -> liftM3 List get get get
-      9  -> liftM3 ListCompr get get get
-      10 -> liftM2 EnumFrom get get
-      11 -> liftM3 EnumFromThen get get get
-      12 -> liftM3 EnumFromTo get get get
-      13 -> EnumFromThenTo <$> get <*> get <*> get <*> get
-      14 -> liftM2 UnaryMinus get get
-      15 -> liftM3 Apply get get get
-      16 -> InfixApply <$> get <*> get <*> get <*> get
-      17 -> liftM3 LeftSection get get get
-      18 -> liftM3 RightSection get get get
-      19 -> liftM3 Lambda get get get
-      20 -> Let <$> get <*> get <*> get <*> get
-      21 -> Do <$> get <*> get <*> get <*> get
-      22 -> IfThenElse <$> get <*> get <*> get <*> get
-      23 -> Case <$> get <*> get <*> get <*> get <*> get
-      _  -> fail "Invalid encoding for Expression"
-
-instance Binary a => Binary (InfixOp a) where
-  put (InfixOp     a qid) = putWord8 0 >> put a >> put qid
-  put (InfixConstr a qid) = putWord8 1 >> put a >> put qid
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> liftM2 InfixOp get get
-      1 -> liftM2 InfixConstr get get
-      _ -> fail "Invalid encoding for InfixOp"
-
-instance Binary a => Binary (Statement a) where
-  put (StmtExpr spi     e) = putWord8 0 >> put spi >> put e
-  put (StmtDecl spi li ds) = putWord8 1 >> put spi >> put li >> put ds
-  put (StmtBind spi p   e) = putWord8 2 >> put spi >> put p >> put e
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> liftM2 StmtExpr get get
-      1 -> liftM3 StmtDecl get get get
-      2 -> liftM3 StmtBind get get get
-      _ -> fail "Invalid encoding for Statement"
-
-instance Binary CaseType where
-  put Rigid = putWord8 0
-  put Flex  = putWord8 1
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> return Rigid
-      1 -> return Flex
-      _ -> fail "Invalid encoding for CaseType"
-
-instance Binary a => Binary (Alt a) where
-  put (Alt spi p rhs) = put spi >> put p >> put rhs
-  get = liftM3 Alt get get get
-
-instance Binary a => Binary (Field a) where
-  put (Field spi qid a) = put spi >> put qid >> put a
-  get = liftM3 Field get get get
-
-instance Binary a => Binary (Var a) where
-  put (Var a idt) = put a >> put idt
-  get = liftM2 Var get get
 
 {- HLINT ignore "Use record patterns"-}
