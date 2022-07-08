@@ -82,7 +82,7 @@ data KnownExtension
   | NegativeLiterals          -- ^ negative literals
   | NoImplicitPrelude         -- ^ no implicit import of the prelude
   | NoDataDeriving            -- ^ no implicit deriving of the Data class
-    deriving (Eq, Read, Show, Enum, Bounded)
+    deriving (Eq, Read, Show, Enum, Bounded, Ord)
 
 -- |Classifies a 'String' as an 'Extension'
 classifyExtension :: Ident -> Extension

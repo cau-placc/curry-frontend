@@ -9,11 +9,15 @@
     Portability :  portable
 
    First of all, the compiler scans a source file for file-header pragmas
-   that may activate language extensions.
+   that may activate language extensions. The extension check then adds
+   all, possibly transitively, implied extensions to the set of enabled
+   extensions.
 -}
 module Checks.ExtensionCheck (extensionCheck) where
 
 import qualified Control.Monad.State as S (State, execState, modify)
+import qualified Data.Set as Set
+import qualified Data.Set.Extra as Set
 
 import Curry.Base.SpanInfo
 import Curry.Base.Pretty
@@ -26,21 +30,21 @@ import CompilerOpts
 extensionCheck :: Options -> Module a -> ([KnownExtension], [Message])
 extensionCheck opts mdl = execEXC (checkModule mdl) initState
   where
-    initState = EXCState (optExtensions opts) []
+    initState = EXCState (Set.fromList $ optExtensions opts) []
 
 type EXCM = S.State EXCState
 
 data EXCState = EXCState
-  { extensions :: [KnownExtension]
+  { extensions :: Set.Set KnownExtension
   , errors     :: [Message]
   }
 
 execEXC :: EXCM a -> EXCState -> ([KnownExtension], [Message])
 execEXC ecm s =
-  let s' = S.execState ecm s in (extensions s', reverse $ errors s')
+  let s' = S.execState ecm s in (Set.toList $ extensions s', reverse $ errors s')
 
-enableExtension :: KnownExtension -> EXCM ()
-enableExtension e = S.modify $ \s -> s { extensions = e : extensions s }
+enableExtensions :: Set.Set KnownExtension -> EXCM ()
+enableExtensions es = S.modify $ \s -> s { extensions = Set.union es $ extensions s }
 
 report :: Message -> EXCM ()
 report msg = S.modify $ \s -> s { errors = msg : errors s }
@@ -60,8 +64,23 @@ checkPragma (LanguagePragma _ exts) = mapM_ checkExtension exts
 checkPragma (OptionsPragma  _  _ _) = ok
 
 checkExtension :: Extension -> EXCM ()
-checkExtension (KnownExtension   _ e) = enableExtension e
+checkExtension (KnownExtension   _ e) = enableExtensions $ impliedClosure $ Set.singleton e
 checkExtension (UnknownExtension p e) = report $ errUnknownExtension p e
+
+-- ---------------------------------------------------------------------------
+-- Implied extensions
+-- ---------------------------------------------------------------------------
+
+-- |Extensions implied by the given extension.
+impliedExtensions :: KnownExtension -> Set.Set KnownExtension
+impliedExtensions NoImplicitPrelude = Set.singleton NoDataDeriving
+impliedExtensions _                 = Set.empty
+
+-- |Extensions implied (possibly transitively) by the given extensions.
+impliedClosure :: Set.Set KnownExtension -> Set.Set KnownExtension
+impliedClosure exts | exts == exts' = exts
+                    | otherwise     = impliedClosure exts'
+  where exts' = Set.union exts $ Set.concatMap impliedExtensions exts
 
 -- ---------------------------------------------------------------------------
 -- Error messages
