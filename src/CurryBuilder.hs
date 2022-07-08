@@ -28,7 +28,7 @@ import Curry.Base.Pretty
 import Curry.Files.Filenames
 import Curry.Files.PathUtils
 import Curry.Syntax ( ModulePragma (..), Extension (KnownExtension)
-                    , KnownExtension (CPP), Tool (CYMAKE, FRONTEND) )
+                    , KnownExtension (CPP), Tool (KnownTool), KnownTool (CYMAKE, FRONTEND) )
 
 import Base.Messages
 
@@ -113,8 +113,8 @@ processPragmas opts0 ps = do
   let opts1 = foldl processLanguagePragma opts0
                 [ e | LanguagePragma _ es <- ps, KnownExtension _ e <- es ]
   foldM processOptionPragma opts1 $
-    [ (p, s) | OptionsPragma p (Just FRONTEND) s <- ps ] ++
-      [ (p, s) | OptionsPragma p (Just CYMAKE) s <- ps ]
+    [ (p, s) | OptionsPragma p (Just (KnownTool FRONTEND)) s <- ps ] ++
+      [ (p, s) | OptionsPragma p (Just (KnownTool CYMAKE)) s <- ps ]
   where
   processLanguagePragma opts CPP
     = opts { optCppOpts = (optCppOpts opts) { cppRun = True } }

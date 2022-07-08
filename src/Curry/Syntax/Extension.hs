@@ -16,7 +16,7 @@ module Curry.Syntax.Extension
   ( -- * Extensions
     Extension (..), KnownExtension (..), classifyExtension, kielExtensions
     -- * Tools
-  , Tool (..), classifyTool
+  , Tool (..), KnownTool (..), classifyTool
   ) where
 
 import Data.Binary
@@ -95,29 +95,33 @@ classifyExtension i = case reads extName of
 kielExtensions :: [KnownExtension]
 kielExtensions = [AnonFreeVars, FunctionalPatterns]
 
+-- |Known Curry tools which may accept compiler options.
+data KnownTool = KICS2 | PAKCS | CYMAKE | FRONTEND
+    deriving (Eq, Read, Show, Enum, Bounded)
+
 -- |Different Curry tools which may accept compiler options.
-data Tool = KICS2 | PAKCS | CYMAKE | FRONTEND | UnknownTool String
+data Tool = KnownTool KnownTool | UnknownTool String
     deriving (Eq, Read, Show)
 
 instance Binary Tool where
-  put KICS2           = putWord8 0
-  put PAKCS           = putWord8 1
-  put CYMAKE          = putWord8 2
-  put FRONTEND        = putWord8 3
-  put (UnknownTool s) = putWord8 4 >> put s
+  put (KnownTool KICS2)    = putWord8 0
+  put (KnownTool PAKCS)    = putWord8 1
+  put (KnownTool CYMAKE)   = putWord8 2
+  put (KnownTool FRONTEND) = putWord8 3
+  put (UnknownTool s)      = putWord8 4 >> put s
 
   get = do
     x <- getWord8
     case x of
-      0 -> return KICS2
-      1 -> return PAKCS
-      2 -> return CYMAKE
-      3 -> return FRONTEND
+      0 -> return (KnownTool KICS2)
+      1 -> return (KnownTool PAKCS)
+      2 -> return (KnownTool CYMAKE)
+      3 -> return (KnownTool FRONTEND)
       4 -> fmap UnknownTool get
       _ -> fail "Invalid encoding for Tool"
 
 -- |Classifies a 'String' as a 'Tool'
 classifyTool :: String -> Tool
 classifyTool str = case reads (map toUpper str) of
-  [(t, "")] -> t
+  [(t, "")] -> KnownTool t
   _         -> UnknownTool str
