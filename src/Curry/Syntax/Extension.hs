@@ -17,7 +17,7 @@ module Curry.Syntax.Extension
   ( -- * Extensions
     Extension (..), KnownExtension (..), classifyExtension, kielExtensions
     -- * Tools
-  , Tool (..), classifyTool
+  , Tool (..), KnownTool (..), classifyTool
   ) where
 
 import Data.Binary
@@ -52,7 +52,8 @@ data KnownExtension
   | FunctionalPatterns        -- ^ functional patterns
   | NegativeLiterals          -- ^ negative literals
   | NoImplicitPrelude         -- ^ no implicit import of the prelude
-    deriving (Eq, Read, Show, Enum, Bounded, Generic, Binary)
+  | NoDataDeriving            -- ^ no implicit deriving of the Data class
+    deriving (Eq, Ord, Read, Show, Enum, Bounded, Generic, Binary)
 
 -- |Classifies a 'String' as an 'Extension'
 classifyExtension :: Ident -> Extension
@@ -65,12 +66,16 @@ classifyExtension i = case reads extName of
 kielExtensions :: [KnownExtension]
 kielExtensions = [AnonFreeVars, FunctionalPatterns]
 
+-- |Known Curry tools which may accept compiler options.
+data KnownTool = KICS2 | PAKCS | CYMAKE | FRONTEND
+    deriving (Eq, Read, Show, Enum, Bounded, Generic, Binary)
+
 -- |Different Curry tools which may accept compiler options.
-data Tool = KICS2 | PAKCS | CYMAKE | FRONTEND | UnknownTool String
+data Tool = KnownTool KnownTool | UnknownTool String
     deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Classifies a 'String' as a 'Tool'
 classifyTool :: String -> Tool
 classifyTool str = case reads (map toUpper str) of
-  [(t, "")] -> t
+  [(t, "")] -> KnownTool t
   _         -> UnknownTool str
