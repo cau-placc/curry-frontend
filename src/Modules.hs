@@ -21,7 +21,7 @@ module Modules
   ( compileModule, loadAndCheckModule
   , loadModule, parseModule, checkModule, transModule
   , checkModuleHeader, dumpWith
-  , writeFlat, writeInterface
+  , writeFlat, writeInterface, exportInterface
   ) where
 
 import qualified Control.Exception as C   (catch, IOException)
