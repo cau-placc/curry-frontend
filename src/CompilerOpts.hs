@@ -22,7 +22,7 @@ module CompilerOpts
   , TargetType (..), WarnFlag (..), KnownExtension (..), DumpLevel (..)
   , dumpLevel
   , defaultOptions, defaultPrepOpts, defaultWarnOpts, defaultDebugOpts, defaultCppOpts
-  , getCompilerOpts, updateOpts, usage
+  , getCompilerOpts, updateOpts, usage, parseOpts
   ) where
 
 import           Data.List             (intercalate, nub)
