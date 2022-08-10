@@ -11,6 +11,7 @@
     TODO
 -}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveFunctor  #-}
 {-# LANGUAGE DeriveGeneric  #-}
 module Curry.FlatCurry.Annotated.Type
   ( module Curry.FlatCurry.Annotated.Type
@@ -48,15 +49,15 @@ data AExpr a
   | AOr    a (AExpr a) (AExpr a)
   | ACase  a CaseType (AExpr a) [ABranchExpr a]
   | ATyped a (AExpr a) TypeExpr
-  deriving (Eq, Read, Show, Generic, Binary)
+  deriving (Eq, Read, Show, Generic, Binary, Functor)
 
 data ABranchExpr a = ABranch (APattern a) (AExpr a)
-  deriving (Eq, Read, Show, Generic, Binary)
+  deriving (Eq, Read, Show, Generic, Binary, Functor)
 
 data APattern a
   = APattern  a (QName, a) [(VarIndex, a)]
   | ALPattern a Literal
-  deriving (Eq, Read, Show, Generic, Binary)
+  deriving (Eq, Read, Show, Generic, Binary, Functor)
 
 instance Typeable a => Typeable (AExpr a) where
   typeOf (AVar a _) = typeOf a
