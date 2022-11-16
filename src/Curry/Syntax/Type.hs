@@ -131,7 +131,7 @@ data IDecl
   | ITypeDecl       Position QualIdent (Maybe KindExpr) [Ident] TypeExpr
   | IFunctionDecl   Position QualIdent (Maybe Ident) Arity QualTypeExpr
   | HidingClassDecl Position Context QualIdent (Maybe KindExpr) Ident
-  | IClassDecl      Position Context QualIdent (Maybe KindExpr) Ident [IMethodDecl] [Ident]
+  | IClassDecl      Position Context QualIdent (Maybe KindExpr) [Ident] [IMethodDecl] [Ident]
   | IInstanceDecl   Position Context QualIdent InstanceType [IMethodImpl] (Maybe ModuleIdent)
     deriving (Eq, Read, Show)
 

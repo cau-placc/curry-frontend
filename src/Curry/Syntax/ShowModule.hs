@@ -220,7 +220,7 @@ showsDecl (InstanceDecl spi li context qcls insts decls)
   . showsLayoutInfo li . space
   . showsContext context . space
   . showsQualIdent qcls . space
-  . showsList showsInstanceType insts . space
+  . showsInstanceType insts . space
   . showsList showsDecl decls
   . showsString ")"
 
@@ -236,11 +236,11 @@ showsContext :: Context -> ShowS
 showsContext = showsList showsConstraint
 
 showsConstraint :: Constraint -> ShowS
-showsConstraint (Constraint spi qcls ty)
+showsConstraint (Constraint spi qcls tys)
   = showsString "(Constraint "
   . showsSpanInfo spi . space
   . showsQualIdent qcls . space
-  . showsTypeExpr ty
+  . showsList showsTypeExpr tys
   . showsString ")"
 
 showsInstanceType :: InstanceType -> ShowS

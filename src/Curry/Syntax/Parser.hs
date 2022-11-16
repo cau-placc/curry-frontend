@@ -259,9 +259,9 @@ iTypeDeclLhs f kw = f' <$> tokenPos kw <*> withKind qtycon <*> many tyvar
 
 -- |Parser for an interface class declaration
 iClassDecl :: Parser a Token IDecl
-iClassDecl = (\(sp, _, cx, (qcls, k), tv) ->
-               IClassDecl (span2Pos sp) cx qcls k tv)
-        <$> classInstHead KW_class (withKind qtycls) clsvar
+iClassDecl = (\(sp, _, cx, (qcls, k), tvs) ->
+               IClassDecl (span2Pos sp) cx qcls k tvs)
+        <$> classInstHead KW_class (withKind qtycls) (many clsvar)
         <*> braces (iMethod `sepBy` semicolon)
         <*> iClassHidden
 
@@ -281,7 +281,7 @@ iClassHidden = token PragmaHiding
 iInstanceDecl :: Parser a Token IDecl
 iInstanceDecl = (\(sp, _, cx, qcls, inst) ->
                    IInstanceDecl (span2Pos sp) cx qcls inst)
-           <$> classInstHead KW_instance qtycls type2
+           <$> classInstHead KW_instance qtycls (many type2)
            <*> braces (iImpl `sepBy` semicolon)
            <*> option iModulePragma
 
@@ -600,14 +600,11 @@ constraint = mkConstraint <$> spanPosition <*> qtycls <*> conType
         mkParensType (apl, sp1, sp2) =
           ParenType (spanInfo (combineSpans sp1 sp2) [sp1, sp2]) apl
 
-        mkConstraint sp qtc (ss, ty) = updateEndPos $
-          Constraint (spanInfo sp ss) qtc ty
         mkVariableType sp = VariableType (fromSrcSpan sp)
         mkApplyType t1 t2 =
           ApplyType (fromSrcSpan (combineSpans (getSrcSpan t1)
                                                (getSrcSpan t2)))
                     t1 t2
-        mk (a, sp1, sp2) = ([sp1, sp2], a)
 
 -- ---------------------------------------------------------------------------
 -- Kinds
