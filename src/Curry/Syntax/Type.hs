@@ -566,6 +566,7 @@ instance HasSpanInfo (Decl a) where
 instance HasSpanInfo FunDep where
   getSpanInfo (FunDep spi _ _) = spi
   setSpanInfo spi (FunDep _ lids rids) = FunDep spi lids rids 
+  -- TODO : Implement updateEndPos
 
 instance HasSpanInfo (Equation a) where
   getSpanInfo (Equation spi _ _) = spi
