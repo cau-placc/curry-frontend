@@ -29,7 +29,7 @@ module Curry.Syntax.Type
   , Interface (..), IImportDecl (..), Arity, IDecl (..), KindExpr (..)
   , IMethodDecl (..), IMethodImpl
     -- * Declarations
-  , Decl (..), Precedence, Infix (..), ConstrDecl (..), NewConstrDecl (..)
+  , Decl (..), FunDep(..), Precedence, Infix (..), ConstrDecl (..), NewConstrDecl (..)
   , FieldDecl (..)
   , TypeExpr (..), QualTypeExpr (..)
   , Equation (..), Lhs (..), Rhs (..), CondExpr (..)
@@ -154,19 +154,23 @@ data KindExpr
 
 -- |Declaration in a module
 data Decl a
-  = InfixDecl        SpanInfo Infix (Maybe Precedence) [Ident]                   -- infixl 5 (op), `fun`
-  | DataDecl         SpanInfo Ident [Ident] [ConstrDecl] [QualIdent]             -- data C a b = C1 a | C2 b deriving (D, ...)
-  | ExternalDataDecl SpanInfo Ident [Ident]                                      -- external data C a b
-  | NewtypeDecl      SpanInfo Ident [Ident] NewConstrDecl [QualIdent]            -- newtype C a b = C a b deriving (D, ...)
-  | TypeDecl         SpanInfo Ident [Ident] TypeExpr                             -- type C a b = D a b
-  | TypeSig          SpanInfo [Ident] QualTypeExpr                               -- f, g :: Bool
-  | FunctionDecl     SpanInfo a Ident [Equation a]                               -- f True = 1 ; f False = 0
-  | ExternalDecl     SpanInfo [Var a]                                            -- f, g external
-  | PatternDecl      SpanInfo (Pattern a) (Rhs a)                                -- Just x = ...
-  | FreeDecl         SpanInfo [Var a]                                            -- x, y free
-  | DefaultDecl      SpanInfo [TypeExpr]                                         -- default (Int, Float)
-  | ClassDecl        SpanInfo LayoutInfo Context Ident Ident [Decl a]            -- class C a => D a where {TypeSig|InfixDecl|FunctionDecl}
-  | InstanceDecl     SpanInfo LayoutInfo Context QualIdent InstanceType [Decl a] -- instance C a => M.D (N.T a b c) where {FunctionDecl}
+  = InfixDecl        SpanInfo Infix (Maybe Precedence) [Ident]                     -- infixl 5 (op), `fun`
+  | DataDecl         SpanInfo Ident [Ident] [ConstrDecl] [QualIdent]               -- data C a b = C1 a | C2 b deriving (D, ...)
+  | ExternalDataDecl SpanInfo Ident [Ident]                                        -- external data C a b
+  | NewtypeDecl      SpanInfo Ident [Ident] NewConstrDecl [QualIdent]              -- newtype C a b = C a b deriving (D, ...)
+  | TypeDecl         SpanInfo Ident [Ident] TypeExpr                               -- type C a b = D a b
+  | TypeSig          SpanInfo [Ident] QualTypeExpr                                 -- f, g :: Bool
+  | FunctionDecl     SpanInfo a Ident [Equation a]                                 -- f True = 1 ; f False = 0
+  | ExternalDecl     SpanInfo [Var a]                                              -- f, g external
+  | PatternDecl      SpanInfo (Pattern a) (Rhs a)                                  -- Just x = ...
+  | FreeDecl         SpanInfo [Var a]                                              -- x, y free
+  | DefaultDecl      SpanInfo [TypeExpr]                                           -- default (Int, Float)
+  | ClassDecl        SpanInfo LayoutInfo Context Ident [Ident] [FunDep] [Decl a]   -- class C a => D a where {TypeSig|InfixDecl|FunctionDecl}
+  | InstanceDecl     SpanInfo LayoutInfo Context QualIdent [InstanceType] [Decl a] -- instance C a => M.D (N.T a b c) where {FunctionDecl}
+    deriving (Eq, Read, Show)
+
+-- | Functional dependency
+data FunDep = FunDep SpanInfo [Ident] [Ident]
     deriving (Eq, Read, Show)
 
 -- ---------------------------------------------------------------------------
@@ -363,8 +367,8 @@ instance Functor Decl where
   fmap f (PatternDecl sp t rhs) = PatternDecl sp (fmap f t) (fmap f rhs)
   fmap f (FreeDecl sp vs) = FreeDecl sp (map (fmap f) vs)
   fmap _ (DefaultDecl sp tys) = DefaultDecl sp tys
-  fmap f (ClassDecl sp li cx cls clsvar ds) =
-    ClassDecl sp li cx cls clsvar (map (fmap f) ds)
+  fmap f (ClassDecl sp li cx cls clsvars fdeps ds) =
+    ClassDecl sp li cx cls clsvars fdeps (map (fmap f) ds)
   fmap f (InstanceDecl sp li cx qcls inst ds) =
     InstanceDecl sp li cx qcls inst (map (fmap f) ds)
 
@@ -476,19 +480,19 @@ instance HasSpanInfo (Module a) where
   getLayoutInfo (Module _ li _ _ _ _ _) = li
 
 instance HasSpanInfo (Decl a) where
-  getSpanInfo (InfixDecl        sp _ _ _)   = sp
-  getSpanInfo (DataDecl         sp _ _ _ _) = sp
-  getSpanInfo (ExternalDataDecl sp _ _)     = sp
-  getSpanInfo (NewtypeDecl      sp _ _ _ _) = sp
-  getSpanInfo (TypeDecl         sp _ _ _)   = sp
-  getSpanInfo (TypeSig          sp _ _)     = sp
-  getSpanInfo (FunctionDecl     sp _ _ _)   = sp
-  getSpanInfo (ExternalDecl     sp _)       = sp
-  getSpanInfo (PatternDecl      sp _ _)     = sp
-  getSpanInfo (FreeDecl         sp _)       = sp
-  getSpanInfo (DefaultDecl      sp _)       = sp
-  getSpanInfo (ClassDecl        sp _ _ _ _ _) = sp
-  getSpanInfo (InstanceDecl     sp _ _ _ _ _) = sp
+  getSpanInfo (InfixDecl        sp _ _ _)       = sp
+  getSpanInfo (DataDecl         sp _ _ _ _)     = sp
+  getSpanInfo (ExternalDataDecl sp _ _)         = sp
+  getSpanInfo (NewtypeDecl      sp _ _ _ _)     = sp
+  getSpanInfo (TypeDecl         sp _ _ _)       = sp
+  getSpanInfo (TypeSig          sp _ _)         = sp
+  getSpanInfo (FunctionDecl     sp _ _ _)       = sp
+  getSpanInfo (ExternalDecl     sp _)           = sp
+  getSpanInfo (PatternDecl      sp _ _)         = sp
+  getSpanInfo (FreeDecl         sp _)           = sp
+  getSpanInfo (DefaultDecl      sp _)           = sp
+  getSpanInfo (ClassDecl        sp _ _ _ _ _ _) = sp
+  getSpanInfo (InstanceDecl     sp _ _ _ _ _)   = sp
 
   setSpanInfo sp (InfixDecl _ fix prec ops) = InfixDecl sp fix prec ops
   setSpanInfo sp (DataDecl _ tc tvs cs clss) = DataDecl sp tc tvs cs clss
@@ -501,7 +505,7 @@ instance HasSpanInfo (Decl a) where
   setSpanInfo sp (PatternDecl _ t rhs) = PatternDecl sp t rhs
   setSpanInfo sp (FreeDecl _ vs) = FreeDecl sp vs
   setSpanInfo sp (DefaultDecl _ tys) = DefaultDecl sp tys
-  setSpanInfo sp (ClassDecl _ li cx cls clsvar ds) = ClassDecl sp li cx cls clsvar ds
+  setSpanInfo sp (ClassDecl _ li cx cls clsvars fdps ds) = ClassDecl sp li cx cls clsvars fdps ds
   setSpanInfo sp (InstanceDecl _ li cx qcls inst ds) = InstanceDecl sp li cx qcls inst ds
 
   updateEndPos d@(InfixDecl _ _ _ ops) =
@@ -544,20 +548,24 @@ instance HasSpanInfo (Decl a) where
   updateEndPos d@(DefaultDecl (SpanInfo _ ss) _) =
     setEndPosition (end (last ss)) d
   updateEndPos d@(DefaultDecl _ _) = d
-  updateEndPos d@(ClassDecl _ _ _ _ _ (d':ds)) =
+  updateEndPos d@(ClassDecl _ _ _ _ _ _ (d':ds)) =
     setEndPosition (getSrcSpanEnd (last (d':ds))) d
-  updateEndPos d@(ClassDecl (SpanInfo _ ss) _ _ _ _ _) =
+  updateEndPos d@(ClassDecl (SpanInfo _ ss) _ _ _ _ _ _) =
     setEndPosition (end (last ss)) d
-  updateEndPos d@(ClassDecl _ _ _ _ _ _) = d
+  updateEndPos d@(ClassDecl _ _ _ _ _ _ _) = d
   updateEndPos d@(InstanceDecl _ _ _ _ _ (d':ds)) =
     setEndPosition (getSrcSpanEnd (last (d':ds))) d
   updateEndPos d@(InstanceDecl (SpanInfo _ ss) _ _ _ _ _) =
     setEndPosition (end (last ss)) d
   updateEndPos d@(InstanceDecl _ _ _ _ _ _) = d
 
-  getLayoutInfo (ClassDecl _ li _ _ _ _) = li
+  getLayoutInfo (ClassDecl _ li _ _ _ _ _) = li
   getLayoutInfo (InstanceDecl _ li _ _ _ _) = li
   getLayoutInfo _ = WhitespaceLayout
+
+instance HasSpanInfo FunDep where
+  getSpanInfo (FunDep spi _ _) = spi
+  setSpanInfo spi (FunDep _ lids rids) = FunDep spi lids rids 
 
 instance HasSpanInfo (Equation a) where
   getSpanInfo (Equation spi _ _) = spi
@@ -1024,6 +1032,10 @@ instance HasPosition (Decl a) where
   getPosition = getStartPosition
   setPosition = setStartPosition
 
+instance HasPosition FunDep where
+  getPosition = getStartPosition
+  setPosition = setStartPosition
+
 instance HasPosition (Equation a) where
   getPosition = getStartPosition
   setPosition = setStartPosition
@@ -1205,8 +1217,8 @@ instance Binary a => Binary (Decl a) where
     putWord8 9 >> put spi >> put vs
   put (DefaultDecl spi tys) =
     putWord8 10 >> put spi >> put tys
-  put (ClassDecl spi li cx cls v ds) =
-    putWord8 11 >> put spi >> put li >> put cx >> put cls >> put v >> put ds
+  put (ClassDecl spi li cx cls vs fds ds) =
+    putWord8 11 >> put spi >> put li >> put cx >> put cls >> put vs >> put fds >> put ds
   put (InstanceDecl spi li cx cls ty ds) =
     putWord8 12 >> put spi >> put li >> put cx >> put cls >> put ty >> put ds
 
@@ -1224,9 +1236,17 @@ instance Binary a => Binary (Decl a) where
       8  -> PatternDecl <$> get <*> get <*> get
       9  -> FreeDecl <$> get <*> get
       10 -> DefaultDecl <$> get <*> get
-      11 -> ClassDecl <$> get <*> get <*> get <*> get <*> get <*> get
+      11 -> ClassDecl <$> get <*> get <*> get <*> get <*> get <*> get <*> get
       12 -> InstanceDecl <$> get <*> get <*> get <*> get <*> get <*> get
       _  -> fail "Invalid encoding for Decl"
+
+instance Binary FunDep where
+  put (FunDep spi lids rids) = putWord8 0 >> put spi >> put lids >> put rids
+
+  get = do
+    x <- getWord8
+    case x of
+      0 -> FunDep <$> get <*> get <*> get
 
 instance Binary Infix where
   put InfixL = putWord8 0

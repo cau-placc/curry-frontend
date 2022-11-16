@@ -204,23 +204,32 @@ showsDecl (DefaultDecl spi types)
   . showsSpanInfo spi . space
   . showsList showsTypeExpr types
   . showsString ")"
-showsDecl (ClassDecl spi li context cls clsvar decls)
+showsDecl (ClassDecl spi li context cls clsvars fdps decls)
   = showsString "(ClassDecl "
   . showsSpanInfo spi . space
   . showsLayoutInfo li . space
   . showsContext context . space
   . showsIdent cls . space
-  . showsIdent clsvar . space
+  . showsList showsIdent clsvars . space
+  . showsList showsFunDep fdps . space
   . showsList showsDecl decls
   . showsString ")"
-showsDecl (InstanceDecl spi li context qcls inst decls)
+showsDecl (InstanceDecl spi li context qcls insts decls)
   = showsString "(InstanceDecl "
   . showsSpanInfo spi . space
   . showsLayoutInfo li . space
   . showsContext context . space
   . showsQualIdent qcls . space
-  . showsInstanceType inst . space
+  . showsList showsInstanceType insts . space
   . showsList showsDecl decls
+  . showsString ")"
+
+showsFunDep :: FunDep -> ShowS
+showsFunDep (FunDep spi lids rids)
+  = showsString "(FunDep "
+  . showsSpanInfo spi . space
+  . showsList showsIdent lids . space
+  . showsList showsIdent rids
   . showsString ")"
 
 showsContext :: Context -> ShowS
