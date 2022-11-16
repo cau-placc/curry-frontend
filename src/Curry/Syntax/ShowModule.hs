@@ -244,7 +244,7 @@ showsConstraint (Constraint spi qcls ty)
   . showsString ")"
 
 showsInstanceType :: InstanceType -> ShowS
-showsInstanceType = showsTypeExpr
+showsInstanceType = showsList showsTypeExpr
 
 showsConsDecl :: ConstrDecl -> ShowS
 showsConsDecl (ConstrDecl spi ident types)

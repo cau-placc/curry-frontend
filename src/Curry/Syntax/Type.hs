@@ -166,7 +166,7 @@ data Decl a
   | FreeDecl         SpanInfo [Var a]                                              -- x, y free
   | DefaultDecl      SpanInfo [TypeExpr]                                           -- default (Int, Float)
   | ClassDecl        SpanInfo LayoutInfo Context Ident [Ident] [FunDep] [Decl a]   -- class C a => D a where {TypeSig|InfixDecl|FunctionDecl}
-  | InstanceDecl     SpanInfo LayoutInfo Context QualIdent [InstanceType] [Decl a] -- instance C a => M.D (N.T a b c) where {FunctionDecl}
+  | InstanceDecl     SpanInfo LayoutInfo Context QualIdent InstanceType [Decl a] -- instance C a => M.D (N.T a b c) where {FunctionDecl}
     deriving (Eq, Read, Show)
 
 -- | Functional dependency
@@ -226,10 +226,10 @@ data QualTypeExpr = QualTypeExpr SpanInfo Context TypeExpr
 
 type Context = [Constraint]
 
-data Constraint = Constraint SpanInfo QualIdent TypeExpr
+data Constraint = Constraint SpanInfo QualIdent [TypeExpr]
     deriving (Eq, Read, Show)
 
-type InstanceType = TypeExpr
+type InstanceType = [TypeExpr]
 
 -- ---------------------------------------------------------------------------
 -- Functions
@@ -744,11 +744,14 @@ instance HasSpanInfo QualTypeExpr where
 
 instance HasSpanInfo Constraint where
   getSpanInfo (Constraint sp _ _) = sp
-  setSpanInfo sp (Constraint _ qid ty) = Constraint sp qid ty
+  setSpanInfo sp (Constraint _ qid tys) = Constraint sp qid tys
   updateEndPos c@(Constraint (SpanInfo _ (s:ss)) _ _) =
     setEndPosition (end (last (s:ss))) c
-  updateEndPos c@(Constraint _ _ ty) =
-    setEndPosition (getSrcSpanEnd ty) c
+  updateEndPos c@(Constraint _ _ (t:ts)) =
+    setEndPosition (getSrcSpanEnd (last (t:ts))) c
+  updateEndPos c@(Constraint _ qid _) =
+    setEndPosition (incr (getPosition qid) (qIdentLength qid - 1)) c
+
 
 instance HasSpanInfo (Lhs a) where
   getSpanInfo (FunLhs sp _ _)   = sp
@@ -1331,7 +1334,7 @@ instance Binary TypeExpr where
       _ -> fail "Invalid encoding for TypeExpr"
 
 instance Binary Constraint where
-  put (Constraint spi cls ty) = put spi >> put cls >> put ty
+  put (Constraint spi cls tys) = put spi >> put cls >> put tys
   get = liftM3 Constraint get get get
 
 instance Binary a => Binary (Equation a) where
