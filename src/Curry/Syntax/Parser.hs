@@ -538,9 +538,12 @@ classInstHead kw cls ty = f <$> tokenSpan kw
                             <*> optContext (,,) ((,) <$> cls <*> ty)
   where f sp (cx, ss, (cls', ty')) = (sp, ss, cx, cls', ty')
 
+-- | The changes made here for multi-parameter type classes and
+--   functional dependencies are taken from the master thesis of
+--    Leif-Erik Krueger 
 classDecl :: Parser a Token (Decl ())
 classDecl = mkClass
-        <$> classInstHead KW_class tycls clsvar
+        <$> classInstHead KW_class tycls (many clsvar)
         <*> whereClause innerDecl
   where
     --TODO: Refactor by left-factorization
@@ -549,14 +552,16 @@ classDecl = mkClass
       [ spanPosition <**> (fun `sepBy1Sp` comma <**> typeSig)
       , spanPosition <**> funRule
       {-, infixDecl-} ]
-    mkClass (sp1, ss, cx, cls, tv) (Just sp2, ds, li) = updateEndPos $
-      ClassDecl (SpanInfo sp1 (sp1 : (ss ++ [sp2]))) li cx cls tv ds
-    mkClass (sp1, ss, cx, cls, tv) (Nothing, ds, li) = updateEndPos $
-      ClassDecl (SpanInfo sp1 (sp1 : ss)) li cx cls tv ds
+    mkClass (sp1, ss, cx, cls, tvs) (Just sp2, ds, li) = updateEndPos $
+      ClassDecl (SpanInfo sp1 (sp1 : (ss ++ [sp2]))) li cx cls tvs [] ds
+    mkClass (sp1, ss, cx, cls, tvs) (Nothing, ds, li) = updateEndPos $
+      ClassDecl (SpanInfo sp1 (sp1 : ss)) li cx cls tvs [] ds
 
+-- | The changes for multi-parameter type classes and functional dependencies
+--   are taken from the master thesis of Leif-Erik Krueger
 instanceDecl :: Parser a Token (Decl ())
 instanceDecl = mkInstance
-           <$> classInstHead KW_instance qtycls type2
+           <$> classInstHead KW_instance qtycls (many type2)
            <*> whereClause innerDecl
   where
     innerDecl = spanPosition <**> funRule
@@ -580,12 +585,21 @@ context = (\c -> ([c], [])) <$> constraint
       <|> combine <$> parensSp (constraint `sepBySp` comma)
   where combine ((ctx, ss), sp1, sp2) = (ctx, sp1 : (ss ++ [sp2]))
 
+-- | Changes for MPTCs are taken from the master thesis of
+--   Leif-Erik Krueger
 constraint :: Parser a Token Constraint
 constraint = mkConstraint <$> spanPosition <*> qtycls <*> conType
-  where varType = mkVariableType <$> spanPosition <*> clsvar
-        conType = fmap ((,) []) varType
-               <|> mk <$> parensSp
-                            (foldl mkApplyType <$> varType <*> many1 type2)
+  where mkConstraint sp qtc tys = updateEndPos $
+          Constraint (fromSrcSpan sp) qtc tys
+        conType = many (varType <|> aplType)
+
+        varType = mkVariableType <$> spanPosition <*> clsvar
+        
+        aplType = mkParensType <$>
+          parensSp (foldl mkApplyType <$> varType <*> many1 type2)
+        mkParensType (apl, sp1, sp2) =
+          ParenType (spanInfo (combineSpans sp1 sp2) [sp1, sp2]) apl
+
         mkConstraint sp qtc (ss, ty) = updateEndPos $
           Constraint (spanInfo sp ss) qtc ty
         mkVariableType sp = VariableType (fromSrcSpan sp)
