@@ -213,9 +213,12 @@ iHidingDecl :: Parser a Token IDecl
 iHidingDecl = tokenPos Id_hiding <**> (hDataDecl <|> hClassDecl)
   where
   hDataDecl = hiddenData <$-> token KW_data <*> withKind qtycon <*> many tyvar
-  hClassDecl = hiddenClass <$> classInstHead KW_class (withKind qtycls) clsvar
+  hClassDecl =   hiddenClass 
+             <$> classInstHead KW_class (withKind qtycls) (many clsvar)
+             <*> optFunDeps
   hiddenData (tc, k) tvs p = HidingDataDecl p tc k tvs
-  hiddenClass (_, _, cx, (qcls, k), tv) p = HidingClassDecl p cx qcls k tv
+  hiddenClass (_, _, cx, (qcls, k), tvs) (fds, _) p = 
+    HidingClassDecl p cx qcls k tvs fds
 
 -- |Parser for an interface data declaration
 iDataDecl :: Parser a Token IDecl
@@ -259,9 +262,10 @@ iTypeDeclLhs f kw = f' <$> tokenPos kw <*> withKind qtycon <*> many tyvar
 
 -- |Parser for an interface class declaration
 iClassDecl :: Parser a Token IDecl
-iClassDecl = (\(sp, _, cx, (qcls, k), tvs) ->
-               IClassDecl (span2Pos sp) cx qcls k tvs)
+iClassDecl = (\(sp, _, cx, (qcls, k), tvs) (fds,_) ->
+               IClassDecl (span2Pos sp) cx qcls k tvs fds)
         <$> classInstHead KW_class (withKind qtycls) (many clsvar)
+        <*> optFunDeps
         <*> braces (iMethod `sepBy` semicolon)
         <*> iClassHidden
 
@@ -544,6 +548,7 @@ classInstHead kw cls ty = f <$> tokenSpan kw
 classDecl :: Parser a Token (Decl ())
 classDecl = mkClass
         <$> classInstHead KW_class tycls (many clsvar)
+        <*> optFunDeps
         <*> whereClause innerDecl
   where
     --TODO: Refactor by left-factorization
@@ -552,10 +557,12 @@ classDecl = mkClass
       [ spanPosition <**> (fun `sepBy1Sp` comma <**> typeSig)
       , spanPosition <**> funRule
       {-, infixDecl-} ]
-    mkClass (sp1, ss, cx, cls, tvs) (Just sp2, ds, li) = updateEndPos $
-      ClassDecl (SpanInfo sp1 (sp1 : (ss ++ [sp2]))) li cx cls tvs [] ds
-    mkClass (sp1, ss, cx, cls, tvs) (Nothing, ds, li) = updateEndPos $
-      ClassDecl (SpanInfo sp1 (sp1 : ss)) li cx cls tvs [] ds
+    mkClass (sp1, ss, cx, cls, tvs) (fds,fdSps)  (Just sp2, ds, li)
+      = updateEndPos $ ClassDecl (SpanInfo sp1 (sp1 : (ss ++ fdSps ++ [sp2])))
+           li cx cls tvs fds ds
+    mkClass (sp1, ss, cx, cls, tvs) (fds,fdSps) (Nothing, ds, li) 
+      = updateEndPos $ ClassDecl (SpanInfo sp1 (sp1 : ss ++ fdSps))
+           li cx cls tvs fds ds
 
 -- | The changes for multi-parameter type classes and functional dependencies
 --   are taken from the master thesis of Leif-Erik Krueger
@@ -605,6 +612,19 @@ constraint = mkConstraint <$> spanPosition <*> qtycls <*> conType
           ApplyType (fromSrcSpan (combineSpans (getSrcSpan t1)
                                                (getSrcSpan t2)))
                     t1 t2
+
+-- | Taken from the master thesis of Leif-Erik Krueger
+optFunDeps :: Parser a Token ([FunDep], [Span])
+optFunDeps = (combine <$> tokenSpan Bar <*> funDep `sepBy1Sp` comma)
+       `opt` ([], [])
+  where combine barSp (funDeps, commaSps) = (funDeps, barSp : commaSps)
+
+funDep :: Parser a Token FunDep
+funDep = mkFunDep <$> many clsvar <*> tokenSpan RightArrow <*> many clsvar
+  where mkFunDep ltvs@(ltv : _) sp rtvs = updateEndPos $
+          FunDep (SpanInfo (getSrcSpan ltv) [sp]) ltvs rtvs
+        mkFunDep [] sp rtvs = updateEndPos $ FunDep (SpanInfo sp [sp]) [] rtvs
+
 
 -- ---------------------------------------------------------------------------
 -- Kinds
