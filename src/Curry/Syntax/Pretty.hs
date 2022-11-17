@@ -110,17 +110,30 @@ instance Pretty (Decl a) where
   pPrint (FreeDecl       _ vs) = list (map pPrint vs) <+> text "free"
   pPrint (DefaultDecl   _ tys) =
     text "default" <+> parenList (map (pPrintPrec 0) tys)
-  pPrint (ClassDecl _ _ cx cls clsvar ds) =
-    ppClassInstHead "class" cx (ppIdent cls) (ppIdent clsvar) <+>
+  pPrint (ClassDecl _ _ cx cls clsvars fdps ds) =
+    ppClassHead cx (ppIdent cls) (hsep (map ppIdent clsvars)) (ppFunDeps fdps) <+>
       ppIf (not $ null ds) (text "where") $$
       ppIf (not $ null ds) (indent $ ppBlock ds)
   pPrint (InstanceDecl _ _ cx qcls inst ds) =
-    ppClassInstHead "instance" cx (ppQIdent qcls) (ppInstanceType inst) <+>
+    ppInstHead cx (ppQIdent qcls) (ppInstanceType inst) <+>
       ppIf (not $ null ds) (text "where") $$
       ppIf (not $ null ds) (indent $ ppBlock ds)
 
-ppClassInstHead :: String -> Context -> Doc -> Doc -> Doc
-ppClassInstHead kw cx cls ty = text kw <+> ppContext cx <+> cls <+> ty
+
+instance Pretty FunDep where
+  pPrint (FunDep _ ltvars rtvars) =
+    hsep (map ppIdent ltvars) <+> rarrow <+> hsep (map ppIdent rtvars) 
+
+ppClassHead :: Context -> Doc -> Doc -> Doc -> Doc
+ppClassHead cx cls tys fdps = text "class" <+> ppContext cx <+> cls <+> tys <+> fdps
+
+ppInstHead :: Context -> Doc -> Doc -> Doc
+ppInstHead cx cls tys = text "instance" <+> ppContext cx <+> cls <+> tys
+
+ppFunDeps :: [FunDep] -> Doc
+ppFunDeps []   = empty
+ppFunDeps [fd] = vbar <+> pPrint fd
+ppFunDeps fds  = vbar <+> list (map pPrint fds)
 
 ppContext :: Context -> Doc
 ppContext []  = empty
@@ -128,10 +141,10 @@ ppContext [c] = pPrint c <+> darrow
 ppContext cs  = parenList (map pPrint cs) <+> darrow
 
 instance Pretty Constraint where
-  pPrint (Constraint _ qcls ty) = ppQIdent qcls <+> pPrintPrec 2 ty
+  pPrint (Constraint _ qcls tys) = ppQIdent qcls <+> (hsep (map (pPrintPrec 2) tys))
 
 ppInstanceType :: InstanceType -> Doc
-ppInstanceType = pPrintPrec 2
+ppInstanceType = hsep . map (pPrintPrec 2) 
 
 ppDeriving :: [QualIdent] -> Doc
 ppDeriving []     = empty
@@ -222,15 +235,15 @@ instance Pretty IDecl where
   pPrint (IFunctionDecl _ f cm a ty) =
     sep [ ppQIdent f, maybePP (ppPragma "METHOD" . ppIdent) cm
         , int a, text "::", pPrintPrec 0 ty ]
-  pPrint (HidingClassDecl _ cx qcls k clsvar) = text "hiding" <+>
-    ppClassInstHead "class" cx (ppQIdentWithKind qcls k) (ppIdent clsvar)
-  pPrint (IClassDecl _ cx qcls k clsvar ms hs) =
-    ppClassInstHead "class" cx (ppQIdentWithKind qcls k) (ppIdent clsvar) <+>
+  pPrint (HidingClassDecl _ cx qcls k clsvars fds) = text "hiding" <+>
+    ppClassHead cx (ppQIdentWithKind qcls k) (hsep (map ppIdent clsvars)) (ppFunDeps fds)
+  pPrint (IClassDecl _ cx qcls k clsvars fds ms hs) =
+    ppClassHead cx (ppQIdentWithKind qcls k) (hsep (map ppIdent clsvars)) (ppFunDeps fds) <+>
       lbrace $$
       vcat (punctuate semi $ map (indent . pPrint) ms) $$
       rbrace <+> ppHiding hs
   pPrint (IInstanceDecl _ cx qcls inst impls m) =
-    ppClassInstHead "instance" cx (ppQIdent qcls) (ppInstanceType inst) <+>
+    ppInstHead cx (ppQIdent qcls) (ppInstanceType inst) <+>
       lbrace $$
       vcat (punctuate semi $ map (indent . ppIMethodImpl) impls) $$
       rbrace <+> maybePP (ppPragma "MODULE" . ppMIdent) m
