@@ -327,6 +327,14 @@ extensions =
     , "do not implicitly import the Prelude"         )
   , ( NoDataDeriving           , "NoDataDeriving"
     , "do not implicitly derive the Data class"      )
+  , ( MultiParamTypeClasse     , "MultiParamTypeClasses"
+    , "enable multi-parameter type classes"          )
+  , ( FlexibleInstances        , "FlexibleInstances" 
+    , "lift instance type restrictions"              )
+  , ( FlexibleContexts         , "FlexibleContexts"
+    , "lift context type restrictions"               )
+  , ( FunctionalDependencies   , "FunctionalDependencies"
+    , "enable functional dependencies"               )  
   ]
 
 -- -----------------------------------------------------------------------------
