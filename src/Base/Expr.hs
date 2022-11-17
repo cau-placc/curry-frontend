@@ -58,11 +58,11 @@ instance QuantExpr e => QuantExpr [e] where
 -- variables cannot be computed independently for each declaration.
 
 instance QualExpr (Decl a) where
-  qfv m (FunctionDecl    _ _ _ eqs) = qfv m eqs
-  qfv m (PatternDecl       _ _ rhs) = qfv m rhs
-  qfv m (ClassDecl    _ _ _ _ _ ds) = qfv m ds
-  qfv m (InstanceDecl _ _ _ _ _ ds) = qfv m ds
-  qfv _ _                           = []
+  qfv m (FunctionDecl    _ _ _ eqs  ) = qfv m eqs
+  qfv m (PatternDecl       _ _ rhs  ) = qfv m rhs
+  qfv m (ClassDecl    _ _ _ _ _ _ ds) = qfv m ds
+  qfv m (InstanceDecl _ _ _ _ _ ds  ) = qfv m ds
+  qfv _ _                             = []
 
 instance QuantExpr (Decl a) where
   bv (TypeSig         _ vs _) = vs

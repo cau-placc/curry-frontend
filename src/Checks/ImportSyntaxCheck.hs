@@ -74,14 +74,14 @@ intfEnv idents ds = foldr bindId Map.empty (concatMap idents ds)
   where bindId x = Map.insert (unqualify (origName x)) x
 
 types :: IDecl -> [ITypeInfo]
-types (IDataDecl     _ tc _ _ cs hs) = [Data tc (filter (`notElem` hs) xs)]
+types (IDataDecl       _ tc _ _ cs hs) = [Data tc (filter (`notElem` hs) xs)]
   where xs = map constrId cs ++ nub (concatMap recordLabels cs)
-types (INewtypeDecl  _ tc _ _ nc hs) = [Data tc (filter (`notElem` hs) xs)]
+types (INewtypeDecl    _ tc _ _ nc hs) = [Data tc (filter (`notElem` hs) xs)]
   where xs = nconstrId nc : nrecordLabels nc
-types (ITypeDecl         _ tc _ _ _) = [Alias tc]
-types (IClassDecl _ _ cls _ _ ms hs) = [Class cls (filter (`notElem` hs) xs)]
+types (ITypeDecl           _ tc _ _ _) = [Alias tc]
+types (IClassDecl _ _ cls _ _ _ ms hs) = [Class cls (filter (`notElem` hs) xs)]
   where xs = map imethod ms
-types _                              = []
+types _                                = []
 
 values :: IDecl -> [IValueInfo]
 values (IDataDecl     _ tc _ _ cs hs) =

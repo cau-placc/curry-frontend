@@ -88,13 +88,13 @@ instance Equiv IDecl where
     = tc1 == tc2 && k1 `eqvKindExpr` k2 && tvs1 == tvs2 && ty1 == ty2
   IFunctionDecl _ f1 cm1 n1 qty1 =~= IFunctionDecl _ f2 cm2 n2 qty2
     = f1 == f2 && cm1 == cm2 && n1 == n2 && qty1 == qty2
-  HidingClassDecl _ cx1 cls1 k1 _ =~= HidingClassDecl _ cx2 cls2 k2 _
+  HidingClassDecl _ cx1 cls1 k1 _ _ =~= HidingClassDecl _ cx2 cls2 k2 _ _
     = cx1 == cx2 && cls1 == cls2 && k1 `eqvKindExpr` k2
-  IClassDecl _ cx1 cls1 k1 _ ms1 hs1 =~= IClassDecl _ cx2 cls2 k2 _ ms2 hs2
+  IClassDecl _ cx1 cls1 k1 _ _ ms1 hs1 =~= IClassDecl _ cx2 cls2 k2 _ _ ms2 hs2
     = cx1 == cx2 && cls1 == cls2 && k1 `eqvKindExpr` k2 &&
       ms1 `eqvList` ms2 && hs1 `eqvSet` hs2
-  IInstanceDecl _ cx1 cls1 ty1 is1 m1 =~= IInstanceDecl _ cx2 cls2 ty2 is2 m2
-    = cx1 == cx2 && cls1 == cls2 && ty1 == ty2 && sort is1 == sort is2 &&
+  IInstanceDecl _ cx1 cls1 tys1 is1 m1 =~= IInstanceDecl _ cx2 cls2 tys2 is2 m2
+    = cx1 == cx2 && cls1 == cls2 && tys1 == tys2 && sort is1 == sort is2 &&
       m1 == m2
   _ =~= _ = False
 
@@ -150,10 +150,10 @@ instance FixInterface IDecl where
     ITypeDecl p tc k vs (fix tcs ty)
   fix tcs (IFunctionDecl p f cm n qty) =
     IFunctionDecl p f cm n (fix tcs qty)
-  fix tcs (HidingClassDecl p cx cls k tv) =
-    HidingClassDecl p (fix tcs cx) cls k tv
-  fix tcs (IClassDecl p cx cls k tv ms hs) =
-    IClassDecl p (fix tcs cx) cls k tv (fix tcs ms) hs
+  fix tcs (HidingClassDecl p cx cls k tvs fds) =
+    HidingClassDecl p (fix tcs cx) cls k tvs fds
+  fix tcs (IClassDecl p cx cls k tvs fds ms hs) =
+    IClassDecl p (fix tcs cx) cls k tvs fds (fix tcs ms) hs
   fix tcs (IInstanceDecl p cx cls inst is m) =
     IInstanceDecl p (fix tcs cx) cls (fix tcs inst) is m
   fix _ d = d
@@ -198,12 +198,12 @@ instance FixInterface TypeExpr where
 
 typeConstructors :: [IDecl] -> [Ident]
 typeConstructors ds = [tc | (QualIdent _ Nothing tc) <- foldr tyCons [] ds]
-  where tyCons (IInfixDecl          _ _ _ _) tcs = tcs
-        tyCons (HidingDataDecl     _ tc _ _) tcs = tc : tcs
-        tyCons (IDataDecl      _ tc _ _ _ _) tcs = tc : tcs
-        tyCons (INewtypeDecl   _ tc _ _ _ _) tcs = tc : tcs
-        tyCons (ITypeDecl        _ tc _ _ _) tcs = tc : tcs
-        tyCons (IFunctionDecl     _ _ _ _ _) tcs = tcs
-        tyCons (HidingClassDecl   _ _ _ _ _) tcs = tcs
-        tyCons (IClassDecl    _ _ _ _ _ _ _) tcs = tcs
-        tyCons (IInstanceDecl   _ _ _ _ _ _) tcs = tcs
+  where tyCons (IInfixDecl          _ _ _ _  ) tcs = tcs
+        tyCons (HidingDataDecl     _ tc _ _  ) tcs = tc : tcs
+        tyCons (IDataDecl      _ tc _ _ _ _  ) tcs = tc : tcs
+        tyCons (INewtypeDecl   _ tc _ _ _ _  ) tcs = tc : tcs
+        tyCons (ITypeDecl        _ tc _ _ _  ) tcs = tc : tcs
+        tyCons (IFunctionDecl     _ _ _ _ _  ) tcs = tcs
+        tyCons (HidingClassDecl   _ _ _ _ _ _) tcs = tcs
+        tyCons (IClassDecl    _ _ _ _ _ _ _ _) tcs = tcs
+        tyCons (IInstanceDecl   _ _ _ _ _ _  ) tcs = tcs
