@@ -73,8 +73,9 @@ checkExtension (UnknownExtension p e) = report $ errUnknownExtension p e
 
 -- |Extensions implied by the given extension.
 impliedExtensions :: KnownExtension -> Set.Set KnownExtension
-impliedExtensions NoImplicitPrelude = Set.singleton NoDataDeriving
-impliedExtensions _                 = Set.empty
+impliedExtensions NoImplicitPrelude      = Set.singleton NoDataDeriving
+impliedExtensions FunctionalDependencies = Set.singleton MultiParamTypeClasses
+impliedExtensions _                      = Set.empty
 
 -- |Extensions implied (possibly transitively) by the given extensions.
 impliedClosure :: Set.Set KnownExtension -> Set.Set KnownExtension
