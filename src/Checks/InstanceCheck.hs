@@ -120,20 +120,21 @@ checkDecls tcEnv clsEnv ds = do
 -- First, the compiler adds all explicit instance declarations to the
 -- instance environment.
 
-bindInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
-bindInstance tcEnv clsEnv (InstanceDecl _ _ cx qcls inst ds) = do
-  m <- getModuleIdent
-  let PredType ps _ = expandPolyType m tcEnv clsEnv $
-                        QualTypeExpr NoSpanInfo cx inst
-  modifyInstEnv $
-    bindInstInfo (genInstIdent m tcEnv qcls inst) (m, ps, impls [] ds)
-  where impls is [] = is
-        impls is (FunctionDecl _ _ f eqs:ds')
-          | f' `elem` map fst is = impls is ds'
-          | otherwise            = impls ((f', eqnArity $ head eqs) : is) ds'
-          where f' = unRenameIdent f
-        impls _ _ = internalError "InstanceCheck.bindInstance.impls"
-bindInstance _     _      _                                = ok
+-- TODO: adapt to new AST
+--bindInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
+--bindInstance tcEnv clsEnv (InstanceDecl _ _ cx qcls inst ds) = do
+--  m <- getModuleIdent
+--  let PredType ps _ = expandPolyType m tcEnv clsEnv $
+--                        QualTypeExpr NoSpanInfo cx inst
+--  modifyInstEnv $
+--    bindInstInfo (genInstIdent m tcEnv qcls inst) (m, ps, impls [] ds)
+--  where impls is [] = is
+--        impls is (FunctionDecl _ _ f eqs:ds')
+--          | f' `elem` map fst is = impls is ds'
+--          | otherwise            = impls ((f', eqnArity $ head eqs) : is) ds'
+--          where f' = unRenameIdent f
+--        impls _ _ = internalError "InstanceCheck.bindInstance.impls"
+--bindInstance _     _      _                                = ok
 
 -- Next, the compiler sorts the data and newtype declarations with non-empty
 -- deriving clauses into minimal binding groups and infers contexts for their

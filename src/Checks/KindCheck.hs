@@ -119,11 +119,11 @@ ok = return ()
 -- and free type constructor and type class identifiers of the declarations.
 
 bt :: Decl a -> [Ident]
-bt (DataDecl     _ tc _ _ _) = [tc]
-bt (ExternalDataDecl _ tc _) = [tc]
-bt (NewtypeDecl  _ tc _ _ _) = [tc]
-bt (TypeDecl       _ tc _ _) = [tc]
-bt (ClassDecl _ _ _ cls _ _) = [cls]
+bt (DataDecl       _ tc _ _ _) = [tc]
+bt (ExternalDataDecl   _ tc _) = [tc]
+bt (NewtypeDecl    _ tc _ _ _) = [tc]
+bt (TypeDecl         _ tc _ _) = [tc]
+bt (ClassDecl _ _ _ cls _ _ _) = [cls]
 bt _                         = []
 
 ft :: ModuleIdent -> Decl a -> [Ident]

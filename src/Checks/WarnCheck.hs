@@ -257,23 +257,23 @@ warnDisjoinedFunctionRules ident pos = spanInfoMessage ident $ hsep (map text
   <+> parens (text "first occurrence at" <+> text (showLine pos))
 
 checkDecl :: Decl () -> WCM ()
-checkDecl (DataDecl          _ _ vs cs _) = inNestedScope $ do
+checkDecl (DataDecl            _ _ vs cs _) = inNestedScope $ do
   mapM_ insertTypeVar   vs
   mapM_ checkConstrDecl cs
   reportUnusedTypeVars  vs
-checkDecl (NewtypeDecl       _ _ vs nc _) = inNestedScope $ do
+checkDecl (NewtypeDecl         _ _ vs nc _) = inNestedScope $ do
   mapM_ insertTypeVar   vs
   checkNewConstrDecl nc
   reportUnusedTypeVars vs
-checkDecl (TypeDecl            _ _ vs ty) = inNestedScope $ do
+checkDecl (TypeDecl              _ _ vs ty) = inNestedScope $ do
   mapM_ insertTypeVar  vs
   checkTypeExpr ty
   reportUnusedTypeVars vs
-checkDecl (FunctionDecl        p _ f eqs) = checkFunctionDecl p f eqs
-checkDecl (PatternDecl           _ p rhs) = checkPattern p >> checkRhs rhs
-checkDecl (DefaultDecl             _ tys) = mapM_ checkTypeExpr tys
-checkDecl (ClassDecl        _ _ _ _ _ ds) = mapM_ checkDecl ds
-checkDecl (InstanceDecl p _ cx cls ty ds) = do
+checkDecl (FunctionDecl          p _ f eqs) = checkFunctionDecl p f eqs
+checkDecl (PatternDecl             _ p rhs) = checkPattern p >> checkRhs rhs
+checkDecl (DefaultDecl               _ tys) = mapM_ checkTypeExpr tys
+checkDecl (ClassDecl        _ _ _ _ _ _ ds) = mapM_ checkDecl ds
+checkDecl (InstanceDecl   p _ cx cls ty ds) = do
   checkOrphanInstance p cx cls ty
   checkMissingMethodImplementations p cls ds
   mapM_ checkDecl ds

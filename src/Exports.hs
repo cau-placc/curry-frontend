@@ -127,15 +127,16 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
             k'   = fromKind' k n
             tvs' = take n tvs
             ty'  = fromQualType m tvs' ty
-    [TypeClass qcls k ms] -> IClassDecl NoPos cx qcls' k' tv ms' hs : ds
-      where qcls' = qualUnqualify m qcls
-            cx    = [ Constraint NoSpanInfo (qualUnqualify m scls)
-                        (VariableType NoSpanInfo tv)
-                    | scls <- superClasses qcls clsEnv ]
-            k'    = fromKind' k 0
-            tv    = head tvs
-            ms'   = map (methodDecl m tvs) ms
-            hs    = filter (`notElem` xs) (map methodName ms)
+    -- TODO : adapt to new AST:
+    --[TypeClass qcls k ms] -> IClassDecl NoPos cx qcls' k' tv ms' hs : ds
+    --  where qcls' = qualUnqualify m qcls
+    --        cx    = [ Constraint NoSpanInfo (qualUnqualify m scls)
+    --                    (VariableType NoSpanInfo tv)
+    --                | scls <- superClasses qcls clsEnv ]
+    --        k'    = fromKind' k 0
+    --        tv    = head tvs
+    --        ms'   = map (methodDecl m tvs) ms
+    --        hs    = filter (`notElem` xs) (map methodName ms)
     _ -> internalError "Exports.typeDecl"
 typeDecl _ _ _ _ _ _ = internalError "Exports.typeDecl: no pattern match"
 

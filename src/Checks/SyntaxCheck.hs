@@ -92,7 +92,7 @@ syntaxCheck exts tcEnv vEnv mdl@(Module _ _ _ m _ _ ds) =
     cons  = concatMap constrs tds
     ls    = nub $ concatMap recLabels tds
     fs    = nub $ concatMap vars vds
-    cs    = concatMap (concatMap methods) [ds' | ClassDecl _ _ _ _ _ ds' <- cds]
+    cs    = concatMap (concatMap methods) [ds' | ClassDecl _ _ _ _ _ _ ds' <- cds]
     rEnv  = globalEnv $ fmap renameInfo vEnv
     state = initState exts m tcEnv rEnv vEnv
 

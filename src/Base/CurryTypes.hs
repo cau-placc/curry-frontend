@@ -97,7 +97,8 @@ toPred :: [Ident] -> CS.Constraint -> Pred
 toPred tvs c = toPred' (enumTypeVars tvs c) c
 
 toPred' :: Map.Map Ident Int -> CS.Constraint -> Pred
-toPred' tvs (CS.Constraint _ qcls ty) = Pred qcls (toType' tvs ty [])
+toPred' tvs (CS.Constraint _ qcls ty) = error "not yet adapted" -- Pred qcls (toType' tvs ty [])
+                                                                -- TODO : adapt to Curry frontend
 
 toQualPred :: ModuleIdent -> [Ident] -> CS.Constraint -> Pred
 toQualPred m tvs = qualifyPred m . toPred tvs
@@ -140,8 +141,9 @@ toConstrType tc tvs tys = toPredType tvs $
 toMethodType :: QualIdent -> Ident -> CS.QualTypeExpr -> PredType
 toMethodType qcls clsvar (CS.QualTypeExpr spi cx ty) =
   toPredType [clsvar] (CS.QualTypeExpr spi cx' ty)
-  where cx' = CS.Constraint NoSpanInfo qcls
-                (CS.VariableType NoSpanInfo clsvar) : cx
+  where cx' = error "not yet adapted" -- CS.Constraint NoSpanInfo qcls
+                                      -- (CS.VariableType NoSpanInfo clsvar) : cx
+                                      -- TODO : adapt to new AST
 
 fromType :: [Ident] -> Type -> CS.TypeExpr
 fromType tvs ty = fromType' tvs ty []
@@ -177,8 +179,8 @@ fromQualType :: ModuleIdent -> [Ident] -> Type -> CS.TypeExpr
 fromQualType m tvs = fromType tvs . unqualifyType m
 
 fromPred :: [Ident] -> Pred -> CS.Constraint
-fromPred tvs (Pred qcls ty) = CS.Constraint NoSpanInfo qcls (fromType tvs ty)
-
+fromPred tvs (Pred qcls ty) =  error "not yet adapted "-- CS.Constraint NoSpanInfo qcls (fromType tvs ty)
+                                                       -- TODO: adapt to new AST
 fromQualPred :: ModuleIdent -> [Ident] -> Pred -> CS.Constraint
 fromQualPred m tvs = fromPred tvs .  unqualifyPred m
 

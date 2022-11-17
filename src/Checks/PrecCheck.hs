@@ -94,7 +94,7 @@ bindPrecs ds0 = case findMultiples opFixDecls of
   opss -> mapM_ (report . errMultiplePrecedence) opss
   where
     (fixDs, nonFixDs) = partition isInfixDecl ds0
-    innerDs           = [ d | ClassDecl _ _ _ _ _ ds <- ds0, d <- ds ]
+    innerDs           = [ d | ClassDecl _ _ _ _ _ _ ds <- ds0, d <- ds ]
     opFixDecls        = [ op | InfixDecl _ _ _ ops <- fixDs, op <- ops ]
     -- Unrenaming is necessary for inner class declarations, because operators
     -- within class declarations have been renamed during syntax checking.
@@ -136,8 +136,8 @@ checkDecl (FunctionDecl p a f           eqs) =
   FunctionDecl p a f <$> mapM checkEquation eqs
 checkDecl (PatternDecl  p t             rhs) =
   PatternDecl p <$> checkPattern t <*> checkRhs rhs
-checkDecl (ClassDecl p li cx cls    tv   ds) =
-  ClassDecl p li cx cls tv <$> mapM checkDecl ds
+--checkDecl (ClassDecl p li cx cls    tv   ds) = error "not yet adapted" -- TODO: adapt to new frontend
+  -- ClassDecl p li cx cls tv <$> mapM checkDecl ds
 checkDecl (InstanceDecl p li cx qcls   inst ds) =
   InstanceDecl p li cx qcls inst <$> mapM checkDecl ds
 checkDecl d                                  = return d

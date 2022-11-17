@@ -84,12 +84,12 @@ trDefaultDecl (DefaultDecl _ tys) = (\tys' -> [CDefaultDecl tys'])
 trDefaultDecl _                   = return []
 
 trClassDecl :: Decl PredType -> GAC [CClassDecl]
-trClassDecl (ClassDecl _ _ cx cls tv ds) =
-  (\cls' v' cx' tv' ds' -> [CClass cls' v' cx' tv' ds'])
-    <$> trGlobalIdent cls <*> getTypeVisibility cls <*> trContext cx
-    <*> getTVarIndex tv <*> concatMapM (trClassMethodDecl sigs fs) ds
-  where fs = [f | FunctionDecl _ _ f _ <- ds]
-        sigs = signatures ds
+trClassDecl (ClassDecl _ _ cx cls tvs _ ds) = error "not yet adapted" -- TODO: adapt to new AST
+--  (\cls' v' cx' tv' ds' -> [CClass cls' v' cx' tv' ds'])
+--    <$> trGlobalIdent cls <*> getTypeVisibility cls <*> trContext cx
+--    <*> getTVarIndex tv <*> concatMapM (trClassMethodDecl sigs fs) ds
+--  where fs = [f | FunctionDecl _ _ f _ <- ds]
+--        sigs = signatures ds
 trClassDecl _ = return []
 
 -- We ignore type signatures for class methods with a given default

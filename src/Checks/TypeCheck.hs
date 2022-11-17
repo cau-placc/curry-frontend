@@ -873,11 +873,12 @@ tcTopPDecl (i, TypeDecl p tc tvs ty)
   = return (i, TypeDecl p tc tvs ty)
 tcTopPDecl (i, DefaultDecl p tys)
   = return (i, DefaultDecl p tys)
-tcTopPDecl (i, ClassDecl p li cx cls tv ds)     = withLocalSigEnv $ do
-  let (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
-  setSigEnv $ foldr (bindTypeSigs . snd) emptySigEnv opds
-  vpds' <- mapM (tcClassMethodPDecl (qualify cls) tv) vpds
-  return (i, ClassDecl p li cx cls tv $ fromPDecls $ map untyped opds ++ vpds')
+-- TODO : Adapt to new AST  
+--tcTopPDecl (i, ClassDecl p li cx cls tv ds)     = withLocalSigEnv $ do
+--  let (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
+--  setSigEnv $ foldr (bindTypeSigs . snd) emptySigEnv opds
+--  vpds' <- mapM (tcClassMethodPDecl (qualify cls) tv) vpds
+--  return (i, ClassDecl p li cx cls tv $ fromPDecls $ map untyped opds ++ vpds')
 tcTopPDecl (i, InstanceDecl p li cx qcls ty ds) = do
   tcEnv <- getTyConsEnv
   pty <- expandPoly $ QualTypeExpr NoSpanInfo cx ty

@@ -324,8 +324,9 @@ idsDecl (PatternDecl         _ p rhs) = idsPat p ++ idsRhs rhs
 idsDecl (FreeDecl               _ vs) =
   map (Identifier IdDeclare False . qualify . varIdent) vs
 idsDecl (DefaultDecl           _ tys) = concatMap idsTypeExpr tys
-idsDecl (ClassDecl     _ _ cx c v ds) =
-  idsContext cx ++ TypeCons TypeDeclare False (qualify c) :
+idsDecl (ClassDecl     _ _ cx c v ds) = error "not yet implemented"
+  -- TODO adapt to new AST
+  -- idsContext cx ++ TypeCons TypeDeclare False (qualify c) :
     Identifier IdDeclare False (qualify v) : concatMap idsClassDecl ds
 idsDecl (InstanceDecl _ _ cx c ty ds) = idsContext cx ++
   TypeCons TypeRefer False c : idsTypeExpr ty ++ concatMap idsInstanceDecl ds
@@ -364,8 +365,9 @@ idsContext :: Context -> [Code]
 idsContext = concatMap idsConstraint
 
 idsConstraint :: Constraint -> [Code]
-idsConstraint (Constraint _ qcls ty) =
-  TypeCons TypeRefer False qcls : idsTypeExpr ty
+idsConstraint (Constraint _ qcls ty) = error "not yet implemented"
+  -- TODO: adapt to new AST
+  -- TypeCons TypeRefer False qcls : idsTypeExpr ty
 
 idsTypeExpr :: TypeExpr -> [Code]
 idsTypeExpr (ConstructorType _ qid) = [TypeCons TypeRefer False qid]
