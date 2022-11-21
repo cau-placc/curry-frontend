@@ -116,10 +116,10 @@ bindType m (TypeDecl _ tc _ _) = bindTypeKind m tc (Alias qtc)
   where
     qtc = qualifyWith m tc
 -- TODO: Adapt to new AST
---bindType m (ClassDecl _ _ _ cls _ ds)  = bindTypeKind m cls (Class qcls ms)
-  --where
-  --  qcls = qualifyWith m cls
-  --  ms = concatMap methods ds
+bindType m (ClassDecl _ _ _ cls _ _ ds)  = bindTypeKind m cls (Class qcls ms)
+  where
+    qcls = qualifyWith m cls
+    ms = concatMap methods ds
 bindType _ _ = id
 
 -- When type declarations are checked, the compiler will allow anonymous
@@ -155,19 +155,19 @@ checkDecl (PatternDecl p t rhs)               = PatternDecl p t <$> checkRhs rhs
 checkDecl (DefaultDecl p tys)                 = DefaultDecl p <$>
   mapM (checkClosedType []) tys
 -- TODO : adapt to new AST
---checkDecl (ClassDecl p li cx cls clsvar ds)   = do
---  checkTypeVars "class declaration" [clsvar]
---  cx' <- checkClosedContext [clsvar] cx
---  checkSimpleContext cx'
---  ds' <- mapM checkDecl ds
---  mapM_ (checkClassMethod clsvar) ds'
---  return $ ClassDecl p li cx' cls clsvar ds'
---checkDecl (InstanceDecl p li cx qcls inst ds) = do
---  checkClass True qcls
---  QualTypeExpr _ cx' inst' <- checkQualType $ QualTypeExpr NoSpanInfo cx inst
---  checkSimpleContext cx'
---  checkInstanceType p inst'
---  InstanceDecl p li cx' qcls inst' <$> mapM checkDecl ds
+checkDecl (ClassDecl p li cx cls clsvars fds ds)   = do
+  checkTypeVars "class declaration" clsvars
+  cx' <- checkClosedContext clsvars cx
+  checkSimpleContext cx'
+  ds' <- mapM checkDecl ds
+  mapM_ (checkClassMethod clsvars) ds'
+  return $ ClassDecl p li cx' cls clsvars fds ds'
+checkDecl (InstanceDecl p li cx qcls inst ds) = do
+  checkClass True qcls
+  (cx', inst') <- checkQualTypes cx inst
+  checkSimpleContext cx'
+  checkInstanceType p inst'
+  InstanceDecl p li cx' qcls inst' <$> mapM checkDecl ds
 checkDecl d                                   = return d
 
 checkConstrDecl :: [Ident] -> ConstrDecl -> TSCM ConstrDecl
@@ -198,28 +198,42 @@ checkSimpleContext :: Context -> TSCM ()
 checkSimpleContext = mapM_ checkSimpleConstraint
 
 checkSimpleConstraint :: Constraint -> TSCM ()
-checkSimpleConstraint c@(Constraint _ _ ty) = error "TypeSyntaxCheck.checkSimpleConstraint:not yet adapted" -- TODO: adapt to new AST
-  --unless (isVariableType ty) $ report $ errIllegalSimpleConstraint c
+checkSimpleConstraint c@(Constraint _ _ tys) =
+  unless (all isVariableType tys) $ report $ errIllegalSimpleConstraint c
 
 -- Class method's type signatures have to obey a few additional restrictions.
 -- The class variable must appear in the method's type and the method's
 -- context must not contain any additional constraints for that class variable.
 
-checkClassMethod :: Ident -> Decl a -> TSCM ()
-checkClassMethod tv (TypeSig spi _ qty) = do
-  unless (tv `elem` fv qty) $ report $ errAmbiguousType spi tv
+checkClassMethod :: [Ident] -> Decl a -> TSCM ()
+checkClassMethod tvs (TypeSig spi _ qty) = do
+  checkForAmbigiousType spi tvs qty
   let QualTypeExpr _ cx _ = qty
-  when (tv `elem` fv cx) $ report $ errConstrainedClassVariable spi tv
+  checkForConstrainedClassVariable spi tvs cx
 checkClassMethod _ _ = ok
 
+checkForAmbigiousType :: SpanInfo -> [Ident] -> QualTypeExpr -> TSCM ()
+checkForAmbigiousType _   []       _    = return ()
+checkForAmbigiousType spi (tv:tvs) qty' =
+  if tv `elem` fv qty'
+  then checkForAmbigiousType spi tvs qty' 
+  else report $ errAmbiguousType spi tv
+
+checkForConstrainedClassVariable :: SpanInfo -> [Ident] -> Context -> TSCM ()
+checkForConstrainedClassVariable _   []       _  = return ()
+checkForConstrainedClassVariable spi (tv:tvs) cx =
+  if tv `elem` fv cx
+  then report $ errConstrainedClassVariable spi tv
+  else checkForConstrainedClassVariable spi tvs cx
+
 checkInstanceType :: SpanInfo -> InstanceType -> TSCM ()
-checkInstanceType p inst = error "TypeSyntaxCheck.checkInstanceType: not yet adapted" -- do
---  tEnv <- getTypeEnv
---  unless (isSimpleType inst &&
---    not (isTypeSyn (typeConstr inst) tEnv) &&
---    not (any isAnonId $ typeVariables inst) &&
---    isNothing (findDouble $ fv inst)) $
---      report $ errIllegalInstanceType p inst
+checkInstanceType p inst = do
+  tEnv <- getTypeEnv
+  unless (all isSimpleType inst &&
+    not (any (flip isTypeSyn tEnv) (map typeConstr inst)) &&
+    not (any isAnonId $ concatMap typeVariables inst) &&
+    isNothing (findDouble $ fv inst)) $
+      report $ errIllegalInstanceType p inst
 
 checkTypeLhs :: [Ident] -> TSCM ()
 checkTypeLhs = checkTypeVars "left hand side of type declaration"
@@ -318,25 +332,32 @@ checkQualType (QualTypeExpr spi cx ty) = do
   cx' <- checkClosedContext (fv ty') cx
   return $ QualTypeExpr spi cx' ty'
 
+-- taken from the master thesis of Leif-Erik Krueger
+checkQualTypes :: Context -> [TypeExpr] -> TSCM (Context, [TypeExpr])
+checkQualTypes cx tys = do
+  tys' <- mapM checkType tys
+  cx'  <- checkClosedContext (fv tys') cx
+  return (cx', tys')
+
 checkClosedContext :: [Ident] -> Context -> TSCM Context
-checkClosedContext tvs cx = error "TypeSyntaxCheck.checkClosedType: not yet adapted" -- do
---  cx' <- checkContext cx
---  mapM_ (\(Constraint _ _ ty) -> checkClosed tvs ty) cx'
---  return cx'
+checkClosedContext tvs cx = do
+  cx' <- checkContext cx
+  mapM_ (\(Constraint _ _ tys) -> mapM_ (checkClosed tvs) tys) cx'
+  return cx'
 
 checkContext :: Context -> TSCM Context
 checkContext = mapM checkConstraint
 
 -- TODO : adapt to new AST
 checkConstraint :: Constraint -> TSCM Constraint
-checkConstraint c@(Constraint spi qcls ty) = error "TypeSyntaxCheck.checkConstraint: not yet adapted" -- do
-  --checkClass False qcls
-  --ty' <- checkType ty
-  --unless (isVariableType $ rootType ty') $ report $ errIllegalConstraint c
-  --return $ Constraint spi qcls ty'
-  --where
-  --  rootType (ApplyType _ ty' _) = rootType ty'
-  --  rootType ty'                 = ty'
+checkConstraint c@(Constraint spi qcls tys) = do
+  checkClass False qcls
+  tys' <- mapM checkType tys
+  unless (all isVariableType $ map rootType tys') $ report $ errIllegalConstraint c
+  return $ Constraint spi qcls tys'
+  where
+    rootType (ApplyType _ ty' _) = rootType ty'
+    rootType ty'                 = ty'
 
 checkClass :: Bool -> QualIdent -> TSCM ()
 checkClass isInstDecl qcls = do
