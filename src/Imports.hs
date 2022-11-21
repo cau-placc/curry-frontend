@@ -162,9 +162,9 @@ importClasses :: ModuleIdent -> [IDecl] -> ClassEnv -> ClassEnv
 importClasses m = flip $ foldr (bindClass m)
 
 bindClass :: ModuleIdent -> IDecl -> ClassEnv -> ClassEnv
-bindClass m (HidingClassDecl p cx cls k tv) =
-  bindClass m (IClassDecl p cx cls k tv [] [])
-bindClass m (IClassDecl _ cx cls _ _ ds ids) =
+bindClass m (HidingClassDecl p cx cls k tvs fds) =
+  bindClass m (IClassDecl p cx cls k tvs fds [] [])
+bindClass m (IClassDecl _ cx cls _ _ _ ds ids) =
   bindClassInfo (qualQualify m cls) (sclss, ms)
   where sclss = map (\(Constraint _ scls _) -> qualQualify m scls) cx
         ms = map (\d -> (imethod d, isJust $ imethodArity d)) $ filter isVis ds
@@ -174,10 +174,10 @@ bindClass _ _ = id
 importInstances :: ModuleIdent -> [IDecl] -> InstEnv -> InstEnv
 importInstances m = flip $ foldr (bindInstance m)
 
-bindInstance :: ModuleIdent -> IDecl -> InstEnv -> InstEnv
-bindInstance m (IInstanceDecl _ cx qcls ty is mm) = bindInstInfo
-  (qualQualify m qcls, qualifyTC m $ typeConstr ty) (fromMaybe m mm, ps, is)
-  where PredType ps _ = toQualPredType m [] $ QualTypeExpr NoSpanInfo cx ty
+bindInstance :: ModuleIdent -> IDecl -> InstEnv -> InstEnv -- TODO : adapt to MPTCs
+bindInstance m (IInstanceDecl _ cx qcls ty is mm) = internalError "Imports.bindInstance: not yet adapted to MPTCs" --bindInstInfo
+--  (qualQualify m qcls, qualifyTC m $ typeConstr ty) (fromMaybe m mm, ps, is)
+--  where PredType ps _ = toQualPredType m [] $ QualTypeExpr NoSpanInfo cx ty
 bindInstance _ _ = id
 
 -- ---------------------------------------------------------------------------
@@ -194,7 +194,7 @@ precs _ _                          = []
 
 hiddenTypes :: ModuleIdent -> IDecl -> [TypeInfo]
 hiddenTypes m (HidingDataDecl     _ tc k tvs) = [typeCon DataType m tc k tvs []]
-hiddenTypes m (HidingClassDecl  _ _ qcls k _) = [typeCls m qcls k []]
+hiddenTypes m (HidingClassDecl  _ _ qcls k _ _) = [typeCls m qcls k []]
 hiddenTypes m d                               = types m d
 
 -- type constructors and type classes
@@ -220,12 +220,12 @@ types m (ITypeDecl _ tc k tvs ty) =
   [typeCon aliasType m tc k tvs (toQualType m tvs ty)]
   where
     aliasType tc' k' = AliasType tc' k' (length tvs)
-types m (IClassDecl _ _ qcls k tv ds ids) =
-  [typeCls m qcls k (map mkMethod $ filter isVis ds)]
-  where
-    isVis (IMethodDecl _ f _ _ ) = f `notElem` ids
-    mkMethod (IMethodDecl _ f a qty) = ClassMethod f a $
-      qualifyPredType m $ normalize 1 $ toMethodType qcls tv qty
+types m (IClassDecl _ _ qcls k tvs _ ds ids) = internalError "Imports.types:not yet adapted to MPTCs" -- TODO : adapt to MPTCs
+--  [typeCls m qcls k (map mkMethod $ filter isVis ds)]
+--  where
+--    isVis (IMethodDecl _ f _ _ ) = f `notElem` ids
+--    mkMethod (IMethodDecl _ f a qty) = ClassMethod f a $
+--      qualifyPredType m $ normalize 1 $ toMethodType qcls tv qty
 types _ _ = []
 
 -- type constructors
@@ -266,17 +266,17 @@ values m (INewtypeDecl _ tc _ tvs nc hs) =
         ty' = constrType tc' tvs
 values m (IFunctionDecl _ f Nothing a qty) =
   [Value (qualQualify m f) Nothing a (typeScheme (toQualPredType m [] qty))]
-values m (IFunctionDecl _ f (Just tv) _ qty) =
+values m (IFunctionDecl _ f (Just tv) _ qty) = -- TODO : adapt to MPTCs
   let mcls = case qty of
         QualTypeExpr _ ctx _ -> fmap (\(Constraint _ qcls _) -> qcls) $
-                                find (\(Constraint _ _ ty) -> isVar ty) ctx
+                                find (\(Constraint _ _ tys) -> all isVar tys) ctx
   in [Value (qualQualify m f) mcls 0 (typeScheme (toQualPredType m [tv] qty))]
   where
     isVar (VariableType _ i) = i == tv
     isVar _                  = False
-values m (IClassDecl _ _ qcls _ tv ds hs) =
-  map (classMethod m qcls' tv hs) ds
-  where qcls' = qualQualify m qcls
+values m (IClassDecl _ _ qcls _ tv _ ds hs) = internalError "Imports.values:not yet adapted to MPTCs" -- TODO : adapt to MPTCs
+  --map (classMethod m qcls' tv hs) ds
+  --where qcls' = qualQualify m qcls
 values _ _                        = []
 
 dataConstr :: ModuleIdent -> QualIdent -> [Ident] -> ConstrDecl -> ValueInfo

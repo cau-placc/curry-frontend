@@ -198,7 +198,7 @@ checkSimpleContext :: Context -> TSCM ()
 checkSimpleContext = mapM_ checkSimpleConstraint
 
 checkSimpleConstraint :: Constraint -> TSCM ()
-checkSimpleConstraint c@(Constraint _ _ ty) = error "not yet adapted" -- TODO: adapt to new AST
+checkSimpleConstraint c@(Constraint _ _ ty) = error "TypeSyntaxCheck.checkSimpleConstraint:not yet adapted" -- TODO: adapt to new AST
   --unless (isVariableType ty) $ report $ errIllegalSimpleConstraint c
 
 -- Class method's type signatures have to obey a few additional restrictions.
@@ -213,7 +213,7 @@ checkClassMethod tv (TypeSig spi _ qty) = do
 checkClassMethod _ _ = ok
 
 checkInstanceType :: SpanInfo -> InstanceType -> TSCM ()
-checkInstanceType p inst = error "not yet adapted" -- do
+checkInstanceType p inst = error "TypeSyntaxCheck.checkInstanceType: not yet adapted" -- do
 --  tEnv <- getTypeEnv
 --  unless (isSimpleType inst &&
 --    not (isTypeSyn (typeConstr inst) tEnv) &&
@@ -319,7 +319,7 @@ checkQualType (QualTypeExpr spi cx ty) = do
   return $ QualTypeExpr spi cx' ty'
 
 checkClosedContext :: [Ident] -> Context -> TSCM Context
-checkClosedContext tvs cx = error "not yet adapted" -- do
+checkClosedContext tvs cx = error "TypeSyntaxCheck.checkClosedType: not yet adapted" -- do
 --  cx' <- checkContext cx
 --  mapM_ (\(Constraint _ _ ty) -> checkClosed tvs ty) cx'
 --  return cx'
@@ -329,7 +329,7 @@ checkContext = mapM checkConstraint
 
 -- TODO : adapt to new AST
 checkConstraint :: Constraint -> TSCM Constraint
-checkConstraint c@(Constraint spi qcls ty) = error "not yet adapted" -- do
+checkConstraint c@(Constraint spi qcls ty) = error "TypeSyntaxCheck.checkConstraint: not yet adapted" -- do
   --checkClass False qcls
   --ty' <- checkType ty
   --unless (isVariableType $ rootType ty') $ report $ errIllegalConstraint c

@@ -84,7 +84,7 @@ trDefaultDecl (DefaultDecl _ tys) = (\tys' -> [CDefaultDecl tys'])
 trDefaultDecl _                   = return []
 
 trClassDecl :: Decl PredType -> GAC [CClassDecl]
-trClassDecl (ClassDecl _ _ cx cls tvs _ ds) = error "not yet adapted" -- TODO: adapt to new AST
+trClassDecl (ClassDecl _ _ cx cls tvs _ ds) = error "GenAbstractCurry.trClassDecl: not yet adapted" -- TODO: adapt to new AST
 --  (\cls' v' cx' tv' ds' -> [CClass cls' v' cx' tv' ds'])
 --    <$> trGlobalIdent cls <*> getTypeVisibility cls <*> trContext cx
 --    <*> getTVarIndex tv <*> concatMapM (trClassMethodDecl sigs fs) ds
@@ -111,9 +111,9 @@ trClassMethodDecl sigs _ (FunctionDecl _ _ f eqs) =
 trClassMethodDecl _ _ _ = return []
 
 trInstanceDecl :: Decl PredType -> GAC [CInstanceDecl]
-trInstanceDecl (InstanceDecl _ _ cx qcls ty ds) =
-  (\qcls' cx' ty' ds' -> [CInstance qcls' cx' ty' ds']) <$> trQual qcls
-  <*> trContext cx <*> trTypeExpr ty <*> mapM (trInstanceMethodDecl qcls ty) ds
+trInstanceDecl (InstanceDecl _ _ cx qcls ty ds) = internalError "GenAbstractCurry.trInstanceDecl:not yet adapted to new AST" -- TODO : adapt to new AST
+--  (\qcls' cx' ty' ds' -> [CInstance qcls' cx' ty' ds']) <$> trQual qcls
+--  <*> trContext cx <*> trTypeExpr ty <*> mapM (trInstanceMethodDecl qcls ty) ds
 trInstanceDecl _ = return []
 
 -- Again, we use the equation's arity for function declarations instead of
@@ -188,8 +188,8 @@ trTypeExpr (ArrowType _ ty1 ty2) = CFuncType <$> trTypeExpr ty1 <*> trTypeExpr t
 trTypeExpr (ParenType      _ ty) = trTypeExpr ty
 trTypeExpr (ForallType    _ _ _) = internalError "GenAbstractCurry.trTypeExpr"
 
-trConstraint :: Constraint -> GAC CConstraint
-trConstraint (Constraint _ q ty) = (,) <$> trQual q <*> trTypeExpr ty
+trConstraint :: Constraint -> GAC CConstraint -- TODO : adapt to new AST
+trConstraint (Constraint _ q ty) = internalError "GenAbstractCurry.trConstraint: not yet adapted" -- (,) <$> trQual q <*> trTypeExpr ty
 
 trContext :: Context -> GAC CContext
 trContext cx = CContext <$> mapM trConstraint cx

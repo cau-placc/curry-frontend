@@ -879,27 +879,28 @@ tcTopPDecl (i, DefaultDecl p tys)
 --  setSigEnv $ foldr (bindTypeSigs . snd) emptySigEnv opds
 --  vpds' <- mapM (tcClassMethodPDecl (qualify cls) tv) vpds
 --  return (i, ClassDecl p li cx cls tv $ fromPDecls $ map untyped opds ++ vpds')
-tcTopPDecl (i, InstanceDecl p li cx qcls ty ds) = do
-  tcEnv <- getTyConsEnv
-  pty <- expandPoly $ QualTypeExpr NoSpanInfo cx ty
-  mid <- getModuleIdent
-  let origCls = getOrigName mid qcls tcEnv
-      clsQual = head $ filter isQualified $ reverseLookupByOrigName origCls tcEnv
-      qQualCls = qualQualify (fromJust $ qidModule clsQual) qcls
-  vpds' <- mapM (tcInstanceMethodPDecl qQualCls pty) vpds
-  return (i,InstanceDecl p li cx qcls ty $ fromPDecls $ map untyped opds++vpds')
-  where (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
+--tcTopPDecl (i, InstanceDecl p li cx qcls ty ds) = do
+--  tcEnv <- getTyConsEnv
+--  pty <- expandPoly $ QualTypeExpr NoSpanInfo cx ty
+--  mid <- getModuleIdent
+--  let origCls = getOrigName mid qcls tcEnv
+--      clsQual = head $ filter isQualified $ reverseLookupByOrigName origCls tcEnv
+--      qQualCls = qualQualify (fromJust $ qidModule clsQual) qcls
+--  vpds' <- mapM (tcInstanceMethodPDecl qQualCls pty) vpds
+--  return (i,InstanceDecl p li cx qcls ty $ fromPDecls $ map untyped opds++vpds')
+--  where (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
 tcTopPDecl _ = internalError "TypeCheck.tcTopDecl"
 
+-- TODO : adapt to new AST
 tcClassMethodPDecl :: QualIdent -> Ident -> PDecl a -> TCM (PDecl PredType)
-tcClassMethodPDecl qcls tv pd@(_, FunctionDecl _ _ f _) = do
-  methTy <- classMethodType qualify f
-  (tySc, pd') <- tcMethodPDecl qcls methTy pd
-  sigs <- getSigEnv
-  let QualTypeExpr spi cx ty = fromJust $ lookupTypeSig f sigs
-      qty = QualTypeExpr spi
-              (Constraint NoSpanInfo qcls (VariableType NoSpanInfo tv) : cx) ty
-  checkClassMethodType qty tySc pd'
+--tcClassMethodPDecl qcls tv pd@(_, FunctionDecl _ _ f _) = do
+--  methTy <- classMethodType qualify f
+--  (tySc, pd') <- tcMethodPDecl qcls methTy pd
+--  sigs <- getSigEnv
+--  let QualTypeExpr spi cx ty = fromJust $ lookupTypeSig f sigs
+--      qty = QualTypeExpr spi
+--              (Constraint NoSpanInfo qcls (VariableType NoSpanInfo tv) : cx) ty
+--  checkClassMethodType qty tySc pd'
 tcClassMethodPDecl _ _ _ = internalError "TypeCheck.tcClassMethodPDecl"
 
 tcInstanceMethodPDecl :: QualIdent -> PredType -> PDecl a

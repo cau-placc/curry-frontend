@@ -194,7 +194,7 @@ instDecl m tcEnv tvs ident@(cls, tc) info@(m', _, _) ds
 
 iInstDecl :: ModuleIdent -> TCEnv -> [Ident] -> InstIdent -> InstInfo -> IDecl
 iInstDecl m tcEnv tvs (cls, tc) (m', ps, is) =
-  IInstanceDecl NoPos cx (qualUnqualify m cls) ty is mm
+  IInstanceDecl NoPos cx (qualUnqualify m cls) [ty] is mm
   where pty = PredType ps $ applyType (TypeConstructor tc) $
                 map TypeVariable [0 .. n-1]
         QualTypeExpr _ cx ty = fromQualPredType m tvs pty
@@ -239,8 +239,8 @@ instance HasModule IDecl where
   modules (INewtypeDecl     _ tc _ _ nc _) = modules tc . modules nc
   modules (ITypeDecl          _ tc _ _ ty) = modules tc . modules ty
   modules (IFunctionDecl      _ f _ _ qty) = modules f . modules qty
-  modules (HidingClassDecl   _ cx cls _ _) = modules cx . modules cls
-  modules (IClassDecl   _ cx cls _ _ ms _) =
+  modules (HidingClassDecl   _ cx cls _ _ _) = modules cx . modules cls
+  modules (IClassDecl   _ cx cls _ _ _ ms _) =
     modules cx . modules cls . modules ms
   modules (IInstanceDecl _ cx cls ty _ mm) =
     modules cx . modules cls . modules ty . modules mm
@@ -302,9 +302,9 @@ iInfo (HidingDataDecl      _ tc _ _) = IType tc
 iInfo (IDataDecl       _ tc _ _ _ _) = IType tc
 iInfo (INewtypeDecl    _ tc _ _ _ _) = IType tc
 iInfo (ITypeDecl          _ _ _ _ _) = IOther
-iInfo (HidingClassDecl  _ _ cls _ _) = IClass cls
-iInfo (IClassDecl   _ _ cls _ _ _ _) = IClass cls
-iInfo (IInstanceDecl _ _ cls ty _ _) = IInst (cls, typeConstr ty)
+iInfo (HidingClassDecl  _ _ cls _ _ _) = IClass cls
+iInfo (IClassDecl   _ _ cls _ _ _ _ _) = IClass cls
+iInfo (IInstanceDecl _ _ cls ty _ _) = IOther --IInst (cls, typeConstr ty) TODO: adapt to MPTCS
 iInfo (IFunctionDecl      _ _ _ _ _) = IOther
 
 closeInterface :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Ident]
@@ -335,11 +335,12 @@ hiddenTypes m tcEnv clsEnv tvs d =
                   in  HidingDataDecl NoPos tc k' $ take n tvs
                 hidingClassDecl k sclss =
                   let cx = [ Constraint NoSpanInfo (qualUnqualify m scls)
-                               (VariableType NoSpanInfo tv)
+                               [(VariableType NoSpanInfo tv)]
                            | scls <- sclss ]
                       tv = head tvs
                       k' = fromKind' k 0
-                  in  HidingClassDecl NoPos cx tc k' tv
+                      -- TODO : adapt to new AST
+                  in  HidingClassDecl NoPos cx tc k' [tv] []
 
 instances :: ModuleIdent -> TCEnv -> InstEnv -> [Ident] -> Set.Set IInfo
           -> IInfo -> [IDecl]
@@ -368,8 +369,8 @@ definedTypes ds = foldr definedType [] ds
   definedType (IDataDecl      _ tc _ _ _ _) tcs = tc : tcs
   definedType (INewtypeDecl   _ tc _ _ _ _) tcs = tc : tcs
   definedType (ITypeDecl      _ tc _ _ _  ) tcs = tc : tcs
-  definedType (HidingClassDecl _ _ cls _ _) tcs = cls : tcs
-  definedType (IClassDecl  _ _ cls _ _ _ _) tcs = cls : tcs
+  definedType (HidingClassDecl _ _ cls _ _ _) tcs = cls : tcs
+  definedType (IClassDecl  _ _ cls _ _ _ _ _) tcs = cls : tcs
   definedType _                             tcs = tcs
 
 class HasType a where
@@ -388,8 +389,8 @@ instance HasType IDecl where
   usedTypes (INewtypeDecl     _ _ _ _ nc _) = usedTypes nc
   usedTypes (ITypeDecl          _ _ _ _ ty) = usedTypes ty
   usedTypes (IFunctionDecl     _ _ _ _ qty) = usedTypes qty
-  usedTypes (HidingClassDecl    _ cx _ _ _) = usedTypes cx
-  usedTypes (IClassDecl    _ cx _ _ _ ms _) = usedTypes cx . usedTypes ms
+  usedTypes (HidingClassDecl    _ cx _ _ _ _) = usedTypes cx
+  usedTypes (IClassDecl    _ cx _ _ _ _ ms _) = usedTypes cx . usedTypes ms
   usedTypes (IInstanceDecl _ cx cls ty _ _) =
     usedTypes cx . (cls :) . usedTypes ty
 

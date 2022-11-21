@@ -80,10 +80,10 @@ qDecl e@(ExternalDecl              _ _) = return e
 qDecl (PatternDecl             p t rhs) = PatternDecl p <$> qPattern t <*> qRhs rhs
 qDecl vs@(FreeDecl                 _ _) = return vs
 qDecl (DefaultDecl               p tys) = DefaultDecl p <$> mapM qTypeExpr tys
-qDecl (ClassDecl     p li cx cls tv ds) = ClassDecl p li <$>
-  qContext cx <*> pure cls <*> pure tv <*> mapM qDecl ds
-qDecl (InstanceDecl p li cx qcls ty ds) = InstanceDecl p li <$>
-  qContext cx <*> qClass qcls <*> qTypeExpr ty <*> mapM qDecl ds
+qDecl (ClassDecl     p li cx cls tvs fds ds) = ClassDecl p li <$>
+  qContext cx <*> pure cls <*> pure tvs <*> pure fds <*> mapM qDecl ds
+qDecl (InstanceDecl p li cx qcls tys ds) = InstanceDecl p li <$>
+  qContext cx <*> qClass qcls <*> mapM qTypeExpr tys <*> mapM qDecl ds
 
 qConstrDecl :: Qual ConstrDecl
 qConstrDecl (ConstrDecl p      n tys) =
@@ -103,8 +103,8 @@ qFieldDecl :: Qual FieldDecl
 qFieldDecl (FieldDecl p fs ty) = FieldDecl p fs <$> qTypeExpr ty
 
 qConstraint :: Qual Constraint
-qConstraint (Constraint spi cls ty) =
-  Constraint spi <$> qClass cls <*> qTypeExpr ty
+qConstraint (Constraint spi cls tys) =
+  Constraint spi <$> qClass cls <*> mapM qTypeExpr tys
 
 qContext :: Qual Context
 qContext = mapM qConstraint

@@ -396,8 +396,8 @@ bindFuncDecl _   _ _ env = env
 
 -- |Bind type class information, i.e. class methods
 bindClassDecl :: Decl a -> SCM ()
-bindClassDecl (ClassDecl _ _ _ _ _ ds) = mapM_ bindClassMethod ds
-bindClassDecl _                        = ok
+bindClassDecl (ClassDecl _ _ _ _ _ _ ds) = mapM_ bindClassMethod ds
+bindClassDecl _                          = ok
 
 bindClassMethod :: Decl a -> SCM ()
 bindClassMethod ts@(TypeSig _ _ _) = do
@@ -492,14 +492,14 @@ checkTopDecls ds = do
   checkDeclGroup (bindFuncDecl tcc m) ds
 
 checkClassDecl :: Decl () -> SCM (Decl ())
-checkClassDecl (ClassDecl p li cx cls tv ds) = do
+checkClassDecl (ClassDecl p li cx cls tvs fds ds) = do
   checkMethods (qualify cls) (concatMap methods ds) ds
-  ClassDecl p li cx cls tv <$> checkTopDecls ds
+  ClassDecl p li cx cls tvs fds <$> checkTopDecls ds
 checkClassDecl _ =
   internalError "SyntaxCheck.checkClassDecl: no class declaration"
 
 checkInstanceDecl :: Decl () -> SCM (Decl ())
-checkInstanceDecl (InstanceDecl p li cx qcls ty ds) = do
+checkInstanceDecl (InstanceDecl p li cx qcls tys ds) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   tcEnv <- getTyConsEnv
@@ -511,7 +511,7 @@ checkInstanceDecl (InstanceDecl p li cx qcls ty ds) = do
           else filter (isFromCls orig m vEnv) clsMthds
   checkMethods qcls mthds ds
   mapM_ checkAmbiguousMethod ds
-  InstanceDecl p li cx qcls ty <$> checkTopDecls ds
+  InstanceDecl p li cx qcls tys <$> checkTopDecls ds
   where
     isFromCls orig m vEnv f = case qualLookupValueUnique m (qualify f) vEnv of
       [Value _ (Just cls) _ _]
@@ -541,7 +541,7 @@ checkMethods qcls ms ds =
 
 updateClassAndInstanceDecls :: [Decl a] -> [Decl a] -> [Decl a] -> [Decl a]
 updateClassAndInstanceDecls [] [] ds = ds
-updateClassAndInstanceDecls (c:cs) is (ClassDecl _ _ _ _ _ _:ds) =
+updateClassAndInstanceDecls (c:cs) is (ClassDecl _ _ _ _ _ _ _:ds) =
   c : updateClassAndInstanceDecls cs is ds
 updateClassAndInstanceDecls cs (i:is) (InstanceDecl _ _ _ _ _ _:ds) =
   i : updateClassAndInstanceDecls cs is ds

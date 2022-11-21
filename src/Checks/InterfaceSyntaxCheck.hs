@@ -29,7 +29,7 @@ import           Data.List                (nub, partition)
 import           Data.Maybe               (isNothing)
 
 import Base.Expr
-import Base.Messages (Message, spanInfoMessage, internalError)
+import Base.Messages (Message, spanInfoMessage, message, internalError)
 import Base.TopEnv
 import Base.Utils    (findMultiples, findDouble)
 
@@ -74,8 +74,8 @@ bindType (INewtypeDecl   _ tc _ _ nc _) =
   qualBindTopEnv tc (Data tc [nconstrId nc])
 bindType (ITypeDecl         _ tc _ _ _) = qualBindTopEnv tc (Alias tc)
 bindType (IFunctionDecl      _ _ _ _ _) = id
-bindType (HidingClassDecl  _ _ cls _ _) = qualBindTopEnv cls (Class cls [])
-bindType (IClassDecl _ _ cls _ _ ms hs) =
+bindType (HidingClassDecl  _ _ cls _ _ _) = qualBindTopEnv cls (Class cls [])
+bindType (IClassDecl _ _ cls _ _ _ ms hs) =
   qualBindTopEnv cls (Class cls (filter (`notElem` hs) (map imethod ms)))
 bindType (IInstanceDecl    _ _ _ _ _ _) = id
 
@@ -106,21 +106,21 @@ checkIDecl (ITypeDecl p tc k tvs ty) = do
   liftM (ITypeDecl p tc k tvs) (checkClosedType tvs ty)
 checkIDecl (IFunctionDecl p f cm n qty) =
   liftM (IFunctionDecl p f cm n) (checkQualType qty)
-checkIDecl (HidingClassDecl p cx qcls k clsvar) = do
-  checkTypeVars "hiding class declaration" [clsvar]
-  cx' <- checkClosedContext [clsvar] cx
+checkIDecl (HidingClassDecl p cx qcls k clsvars fdps) = do
+  checkTypeVars "hiding class declaration" clsvars
+  cx' <- checkClosedContext clsvars cx
   checkSimpleContext cx'
-  return $ HidingClassDecl p cx' qcls k clsvar
-checkIDecl (IClassDecl p cx qcls k clsvar ms hs) = do
-  checkTypeVars "class declaration" [clsvar]
-  cx' <- checkClosedContext [clsvar] cx
+  return $ HidingClassDecl p cx' qcls k clsvars fdps
+checkIDecl (IClassDecl p cx qcls k clsvars fdps ms hs) = do
+  checkTypeVars "class declaration" clsvars
+  cx' <- checkClosedContext clsvars cx
   checkSimpleContext cx'
-  ms' <- mapM (checkIMethodDecl clsvar) ms
+  ms' <- mapM (checkIMethodDecl clsvars) ms
   checkHidden (errNoElement "method" "class") qcls (map imethod ms') hs
-  return $ IClassDecl p cx' qcls k clsvar ms' hs
+  return $ IClassDecl p cx' qcls k clsvars fdps ms' hs
 checkIDecl (IInstanceDecl p cx qcls inst is m) = do
   checkClass qcls
-  QualTypeExpr _ cx' inst' <- checkQualType $ QualTypeExpr NoSpanInfo cx inst
+  (cx',inst') <- checkQualTypes cx inst
   checkSimpleContext cx'
   checkInstanceType inst'
   mapM_ (report . errMultipleImplementation . head) $ findMultiples $ map fst is
@@ -170,25 +170,39 @@ checkSimpleContext :: Context -> ISC ()
 checkSimpleContext = mapM_ checkSimpleConstraint
 
 checkSimpleConstraint :: Constraint -> ISC ()
-checkSimpleConstraint c@(Constraint _ _ ty) =
-  unless (isVariableType ty) $ report $ errIllegalSimpleConstraint c
+checkSimpleConstraint c@(Constraint _ _ tys) =
+  unless (all isVariableType tys) $ report $ errIllegalSimpleConstraint c
 
-checkIMethodDecl :: Ident -> IMethodDecl -> ISC IMethodDecl
-checkIMethodDecl tv (IMethodDecl p f a qty) = do
+checkIMethodDecl :: [Ident] -> IMethodDecl -> ISC IMethodDecl
+checkIMethodDecl tvs (IMethodDecl p f a qty) = do
   qty' <- checkQualType qty
-  unless (tv `elem` fv qty') $ report $ errAmbiguousType f tv
+  checkForAmbigiousType f tvs qty' 
   let QualTypeExpr _ cx _ = qty'
-  when (tv `elem` fv cx) $ report $ errConstrainedClassVariable f tv
+  checkForConstrainedClassVariable f tvs cx
   return $ IMethodDecl p f a qty'
+
+checkForAmbigiousType :: Ident -> [Ident] -> QualTypeExpr -> ISC ()
+checkForAmbigiousType _ []       _    = return ()
+checkForAmbigiousType f (tv:tvs) qty' =
+  if tv `elem` fv qty'
+  then checkForAmbigiousType f tvs qty' 
+  else report $ errAmbiguousType f tv
+
+checkForConstrainedClassVariable :: Ident -> [Ident] -> Context -> ISC ()
+checkForConstrainedClassVariable _ []       _  = return ()
+checkForConstrainedClassVariable f (tv:tvs) cx =
+  if tv `elem` fv cx
+  then report $ errConstrainedClassVariable f tv
+  else checkForConstrainedClassVariable f tvs cx
 
 checkInstanceType :: InstanceType -> ISC ()
 checkInstanceType inst = do
   tEnv <- getTypeEnv
-  unless (isSimpleType inst &&
-    not (isTypeSyn (typeConstr inst) tEnv) &&
-    null (filter isAnonId $ typeVars inst) &&
+  unless (all isSimpleType inst &&
+    not (any (flip isTypeSyn tEnv) (map typeConstr inst)) &&
+    null (filter isAnonId $ concatMap typeVars inst) &&
     isNothing (findDouble $ fv inst)) $
-      report $ errIllegalInstanceType inst inst
+      report $ errIllegalInstanceType inst
 
 checkQualType :: QualTypeExpr -> ISC QualTypeExpr
 checkQualType (QualTypeExpr spi cx ty) = do
@@ -196,19 +210,26 @@ checkQualType (QualTypeExpr spi cx ty) = do
   cx' <- checkClosedContext (fv ty') cx
   return $ QualTypeExpr spi cx' ty'
 
+-- taken from the master thesis of Leif-Erik Krueger
+checkQualTypes :: Context -> [TypeExpr] -> ISC (Context, [TypeExpr])
+checkQualTypes cx tys = do
+  tys' <- mapM checkType tys
+  cx'  <- checkClosedContext (fv tys') cx
+  return (cx', tys')
+
 checkClosedContext :: [Ident] -> Context -> ISC Context
 checkClosedContext tvs cx = do
   cx' <- checkContext cx
-  mapM_ (\(Constraint _ _ ty) -> checkClosed tvs ty) cx'
+  mapM_ (\(Constraint _ _ tys) -> mapM (checkClosed tvs) tys) cx'
   return cx'
 
 checkContext :: Context -> ISC Context
 checkContext = mapM checkConstraint
 
 checkConstraint :: Constraint -> ISC Constraint
-checkConstraint (Constraint spi qcls ty) = do
+checkConstraint (Constraint spi qcls tys) = do
   checkClass qcls
-  Constraint spi qcls `liftM` checkType ty
+  Constraint spi qcls `liftM` mapM checkType tys
 
 checkClass :: QualIdent -> ISC ()
 checkClass qcls = do
@@ -335,12 +356,14 @@ errIllegalSimpleConstraint :: Constraint -> Message
 errIllegalSimpleConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
   [ text "Illegal class constraint" <+> pPrint c
   , text "Constraints in class and instance declarations must be of"
-  , text "the form C u, where C is a type class and u is a type variable."
+  , text "the form C u_1 ... u_n, where C is a type class and"
+  , text "u_1,...,u_n are type variables."
   ]
 
-errIllegalInstanceType :: HasSpanInfo s => s -> InstanceType -> Message
-errIllegalInstanceType p inst = spanInfoMessage p $ vcat
-  [ text "Illegal instance type" <+> pPrint inst
+-- TODO : Display Span INfo
+errIllegalInstanceType :: InstanceType -> Message
+errIllegalInstanceType inst = message $ vcat
+  [ text "Illegal instance type" <+> hsep (map pPrint inst)
   , text "The instance type must be of the form (T u_1 ... u_n),"
   , text "where T is not a type synonym and u_1, ..., u_n are"
   , text "mutually distinct, non-anonymous type variables."

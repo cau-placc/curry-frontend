@@ -136,7 +136,7 @@ checkDecl (FunctionDecl p a f           eqs) =
   FunctionDecl p a f <$> mapM checkEquation eqs
 checkDecl (PatternDecl  p t             rhs) =
   PatternDecl p <$> checkPattern t <*> checkRhs rhs
---checkDecl (ClassDecl p li cx cls    tv   ds) = error "not yet adapted" -- TODO: adapt to new frontend
+checkDecl (ClassDecl p li cx cls tvs fds ds) = error "PrecCheck.checkDecl:not yet adapted" -- TODO: adapt to new frontend
   -- ClassDecl p li cx cls tv <$> mapM checkDecl ds
 checkDecl (InstanceDecl p li cx qcls   inst ds) =
   InstanceDecl p li cx qcls inst <$> mapM checkDecl ds

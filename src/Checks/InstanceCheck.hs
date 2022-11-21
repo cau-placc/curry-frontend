@@ -120,9 +120,9 @@ checkDecls tcEnv clsEnv ds = do
 -- First, the compiler adds all explicit instance declarations to the
 -- instance environment.
 
--- TODO: adapt to new AST
---bindInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
---bindInstance tcEnv clsEnv (InstanceDecl _ _ cx qcls inst ds) = do
+-- TODO : extend for MPTCs.
+bindInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
+bindInstance tcEnv clsEnv (InstanceDecl _ _ cx qcls inst ds) = internalError "InstanceCheck.bindInstance: not yet adapted" -- do
 --  m <- getModuleIdent
 --  let PredType ps _ = expandPolyType m tcEnv clsEnv $
 --                        QualTypeExpr NoSpanInfo cx inst
@@ -134,7 +134,7 @@ checkDecls tcEnv clsEnv ds = do
 --          | otherwise            = impls ((f', eqnArity $ head eqs) : is) ds'
 --          where f' = unRenameIdent f
 --        impls _ _ = internalError "InstanceCheck.bindInstance.impls"
---bindInstance _     _      _                                = ok
+bindInstance _     _      _                                = ok
 
 -- Next, the compiler sorts the data and newtype declarations with non-empty
 -- deriving clauses into minimal binding groups and infers contexts for their
@@ -300,18 +300,19 @@ reportUndecidable p what doc predicate@(Pred _ ty) = do
 -- and also that the contexts of the corresponding instance declarations are
 -- satisfied by cx.
 
+-- TODO : adapt to new AST
 checkInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
-checkInstance tcEnv clsEnv (InstanceDecl _ _ cx cls inst _) = do
-  m <- getModuleIdent
-  let PredType ps ty = expandPolyType m tcEnv clsEnv $
-                         QualTypeExpr NoSpanInfo cx inst
-      ocls = getOrigName m cls tcEnv
-      ps' = Set.fromList [ Pred scls ty | scls <- superClasses ocls clsEnv ]
-      doc = ppPred m $ Pred cls ty
-      what = "instance declaration"
-  (ps'', _) <- reducePredSet False inst what doc clsEnv ps'
-  Set.mapM_ (report . errMissingInstance m inst what doc) $
-    ps'' `Set.difference` maxPredSet clsEnv ps
+checkInstance tcEnv clsEnv (InstanceDecl _ _ cx cls inst _) = internalError "InstanceCheck.checkInstance:not yet adapted" -- do
+--  m <- getModuleIdent
+--  let PredType ps ty = expandPolyType m tcEnv clsEnv $
+--                         QualTypeExpr NoSpanInfo cx inst
+--      ocls = getOrigName m cls tcEnv
+--      ps' = Set.fromList [ Pred scls ty | scls <- superClasses ocls clsEnv ]
+--      doc = ppPred m $ Pred cls ty
+--      what = "instance declaration"
+--  (ps'', _) <- reducePredSet False inst what doc clsEnv ps'
+--  Set.mapM_ (report . errMissingInstance m inst what doc) $
+--    ps'' `Set.difference` maxPredSet clsEnv ps
 checkInstance _ _ _ = ok
 
 -- All types specified in the optional default declaration of a module
@@ -378,7 +379,9 @@ genInstIdents m tcEnv (NewtypeDecl _ tc _ _ qclss) =
   map (flip (genInstIdent m tcEnv) $ ConstructorType NoSpanInfo $ qualify tc)
       qclss
 genInstIdents m tcEnv (InstanceDecl _ _ _ qcls ty _) =
-  [genInstIdent m tcEnv qcls ty]
+  internalError "Instance check.getInstIdents: not yet adapted to new AST"
+  -- TODO: adapt to new AST
+  --[genInstIdent m tcEnv qcls ty]
 genInstIdents _ _     _                            = []
 
 genInstIdent :: ModuleIdent -> TCEnv -> QualIdent -> TypeExpr -> InstIdent

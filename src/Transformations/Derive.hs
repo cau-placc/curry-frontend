@@ -133,7 +133,7 @@ deriveInstance tc tvs cis cls = do
              take (length tvs) $ map TypeVariable [0 ..]
       QualTypeExpr _ cx inst = fromPredType tvs $ PredType ps ty
   ds <- deriveMethods cls ty cis ps
-  return $ InstanceDecl NoSpanInfo WhitespaceLayout cx cls inst ds
+  return $ InstanceDecl NoSpanInfo WhitespaceLayout cx cls [inst] ds
 
 -- Note: The methods and arities of the generated instance declarations have to
 -- correspond to the methods and arities entered previously into the instance

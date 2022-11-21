@@ -324,12 +324,12 @@ idsDecl (PatternDecl         _ p rhs) = idsPat p ++ idsRhs rhs
 idsDecl (FreeDecl               _ vs) =
   map (Identifier IdDeclare False . qualify . varIdent) vs
 idsDecl (DefaultDecl           _ tys) = concatMap idsTypeExpr tys
-idsDecl (ClassDecl     _ _ cx c v ds) = error "not yet implemented"
+idsDecl (ClassDecl     _ _ cx c v _ ds) = error "SyntaxColoring.idsDecl: not yet implemented"
   -- TODO adapt to new AST
   -- idsContext cx ++ TypeCons TypeDeclare False (qualify c) :
-    Identifier IdDeclare False (qualify v) : concatMap idsClassDecl ds
-idsDecl (InstanceDecl _ _ cx c ty ds) = idsContext cx ++
-  TypeCons TypeRefer False c : idsTypeExpr ty ++ concatMap idsInstanceDecl ds
+--    Identifier IdDeclare False (qualify v) : concatMap idsClassDecl ds
+idsDecl (InstanceDecl _ _ cx c ty ds) = error "SyntaxColoring.idsDecl: not yet implemented" -- idsContext cx ++
+--  TypeCons TypeRefer False c : idsTypeExpr ty ++ concatMap idsInstanceDecl ds
 
 idsConstrDecl :: ConstrDecl -> [Code]
 idsConstrDecl (ConstrDecl     _ c tys) =
@@ -365,7 +365,7 @@ idsContext :: Context -> [Code]
 idsContext = concatMap idsConstraint
 
 idsConstraint :: Constraint -> [Code]
-idsConstraint (Constraint _ qcls ty) = error "not yet implemented"
+idsConstraint (Constraint _ qcls ty) = error "SyntaxColoring.idsConstraint: not yet implemented"
   -- TODO: adapt to new AST
   -- TypeCons TypeRefer False qcls : idsTypeExpr ty
 

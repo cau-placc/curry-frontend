@@ -154,16 +154,16 @@ getNextId = do
 -- default declaration since it has already been considered during the type
 -- check.
 
-liftDecls :: Decl PredType -> DTM [Decl PredType]
+liftDecls :: Decl PredType -> DTM [Decl PredType] -- TODO : adapt to MPTCs
 liftDecls (DefaultDecl _ _) = return []
-liftDecls (ClassDecl _ _ _ cls tv ds) = do
-  m <- getModuleIdent
-  liftClassDecls (qualifyWith m cls) tv ds
-liftDecls (InstanceDecl _ _ cx cls ty ds) = do
-  clsEnv <- getClassEnv
-  let PredType ps ty' = toPredType [] $ QualTypeExpr NoSpanInfo cx ty
-      ps' = minPredSet clsEnv ps
-  liftInstanceDecls ps' cls ty' ds
+liftDecls (ClassDecl _ _ _ cls tv _ ds) = internalError "Dictionary.liftDecls: not yet adapted to MPTCs" -- do
+--  m <- getModuleIdent
+--  liftClassDecls (qualifyWith m cls) tv ds
+liftDecls (InstanceDecl _ _ cx cls ty ds) = internalError "Dictionary.liftDecls: not yet adapted to MPTCs"  -- do
+--  clsEnv <- getClassEnv
+--  let PredType ps ty' = toPredType [] $ QualTypeExpr NoSpanInfo cx ty
+--      ps' = minPredSet clsEnv ps
+--  liftInstanceDecls ps' cls ty' ds
 liftDecls d = return [d]
 
 liftClassDecls :: QualIdent -> Ident -> [Decl PredType] -> DTM [Decl PredType]
@@ -308,7 +308,7 @@ renameDecl _ _ = internalError "Dictionary.renameDecl"
 -- class dictionary from the provided class dictionary.
 
 createStubs :: Decl PredType -> DTM [Decl Type]
-createStubs (ClassDecl _ _ _ cls _ _) = do
+createStubs (ClassDecl _ _ _ cls _ _ _) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   clsEnv <- getClassEnv
@@ -526,15 +526,15 @@ addExports :: Maybe ExportSpec -> [Export] -> Maybe ExportSpec
 addExports (Just (Exporting p es)) es' = Just $ Exporting p $ es ++ es'
 addExports Nothing                 _   = internalError "Dictionary.addExports"
 
-dictExports :: Decl a -> DTM [Export]
-dictExports (ClassDecl _ _ _ cls _ _) = do
+dictExports :: Decl a -> DTM [Export] -- TODO : adapt to MPTCs
+dictExports (ClassDecl _ _ _ cls _ _ _) = do
   m <- getModuleIdent
   clsEnv <- getClassEnv
   return $ classExports m clsEnv cls
-dictExports (InstanceDecl _ _ _ cls ty _) = do
-  m <- getModuleIdent
-  clsEnv <- getClassEnv
-  return $ instExports m clsEnv cls (toType [] ty)
+dictExports (InstanceDecl _ _ _ cls ty _) = internalError "Dictionary.dictExports: not yet adapted to MPTCs" -- do
+--  m <- getModuleIdent
+--  clsEnv <- getClassEnv
+--  return $ instExports m clsEnv cls (toType [] ty)
 dictExports _ = return []
 
 classExports :: ModuleIdent -> ClassEnv -> Ident -> [Export]
@@ -944,9 +944,9 @@ dictTransIDecl _ _    _      d@(INewtypeDecl    _ _ _ _ _ _) = [d]
 dictTransIDecl _ _    _      d@(ITypeDecl         _ _ _ _ _) = [d]
 dictTransIDecl m vEnv _      (IFunctionDecl       _ f _ _ _) =
   [iFunctionDeclFromValue m vEnv (qualQualify m f)]
-dictTransIDecl _ _    _      (HidingClassDecl  p _ cls k tv) =
-  [HidingDataDecl p (qDictTypeId cls) (fmap (flip ArrowKind Star) k) [tv]]
-dictTransIDecl m vEnv clsEnv (IClassDecl   p _ cls k _ _ hs) =
+dictTransIDecl _ _    _      (HidingClassDecl  p _ cls k tvs _) =
+  [HidingDataDecl p (qDictTypeId cls) (fmap (flip ArrowKind Star) k) tvs]
+dictTransIDecl m vEnv clsEnv (IClassDecl   p _ cls k _ _ _ hs) =
   dictDecl : defaults ++ methodStubs ++ superDictStubs
   where qcls  = qualQualify m cls
         sclss = superClasses qcls clsEnv
@@ -961,13 +961,14 @@ dictTransIDecl m vEnv clsEnv (IClassDecl   p _ cls k _ _ hs) =
                         filter (`notElem` hs) ms
         superDictStubs = map (iFunctionDeclFromValue m vEnv .
                                qSuperDictStubId qcls) sclss
-dictTransIDecl m vEnv clsEnv (IInstanceDecl _ _ cls ty _ mm) =
-  iFunctionDeclFromValue m vEnv (qInstFunId m' qcls ty') :
-    map (iFunctionDeclFromValue m vEnv . qImplMethodId m' qcls ty') ms
-  where m'   = fromMaybe m mm
-        qcls = qualQualify m cls
-        ty'  = toQualType m [] ty
-        ms   = classMethods qcls clsEnv
+dictTransIDecl m vEnv clsEnv (IInstanceDecl _ _ cls ty _ mm) = -- TODO : adapt to MPTCs
+  internalError "Dictionary.dictTransIDecl: not yet adapted to MPTCs"
+--  iFunctionDeclFromValue m vEnv (qInstFunId m' qcls ty') :
+--    map (iFunctionDeclFromValue m vEnv . qImplMethodId m' qcls ty') ms
+--  where m'   = fromMaybe m mm
+--        qcls = qualQualify m cls
+--        ty'  = toQualType m [] ty
+--        ms   = classMethods qcls clsEnv
 
 dictTransIConstrDecl :: ModuleIdent -> [Ident] -> ConstrDecl -> ConstrDecl
 dictTransIConstrDecl _ _ (ConOpDecl p ty1 op ty2) = ConstrDecl p op [ty1, ty2]

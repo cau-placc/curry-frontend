@@ -274,7 +274,7 @@ checkDecl (PatternDecl             _ p rhs) = checkPattern p >> checkRhs rhs
 checkDecl (DefaultDecl               _ tys) = mapM_ checkTypeExpr tys
 checkDecl (ClassDecl        _ _ _ _ _ _ ds) = mapM_ checkDecl ds
 checkDecl (InstanceDecl   p _ cx cls ty ds) = do
-  checkOrphanInstance p cx cls ty
+  -- checkOrphanInstance p cx cls ty TODO : adapt to new AST
   checkMissingMethodImplementations p cls ds
   mapM_ checkDecl ds
 checkDecl _                             = ok
@@ -456,16 +456,17 @@ checkField check (Field _ _ x) = check x
 -- Check for orphan instances
 -- -----------------------------------------------------------------------------
 
-checkOrphanInstance :: SpanInfo -> Context -> QualIdent -> TypeExpr -> WCM ()
-checkOrphanInstance p cx cls ty = warnFor WarnOrphanInstances $ do
-  m <- getModuleIdent
-  tcEnv <- gets tyConsEnv
-  let ocls = getOrigName m cls tcEnv
-      otc  = getOrigName m tc  tcEnv
-  unless (isLocalIdent m ocls || isLocalIdent m otc) $ report $
-    warnOrphanInstance p $ pPrint $
-    InstanceDecl p WhitespaceLayout cx cls ty []
-  where tc = typeConstr ty
+-- TODO : Adapt to new AST
+--checkOrphanInstance :: SpanInfo -> Context -> QualIdent -> TypeExpr -> WCM ()
+--checkOrphanInstance p cx cls ty = warnFor WarnOrphanInstances $ do
+--  m <- getModuleIdent
+--  tcEnv <- gets tyConsEnv
+--  let ocls = getOrigName m cls tcEnv
+--      otc  = getOrigName m tc  tcEnv
+--  unless (isLocalIdent m ocls || isLocalIdent m otc) $ report $
+--    warnOrphanInstance p $ pPrint $
+--    InstanceDecl p WhitespaceLayout cx cls ty []
+--  where tc = typeConstr ty
 
 warnOrphanInstance :: SpanInfo -> Doc -> Message
 warnOrphanInstance spi doc = spanInfoMessage spi $ text "Orphan instance:" <+> doc
@@ -1019,7 +1020,7 @@ insertDecl (FunctionDecl     _ _ f _) = do
 insertDecl (ExternalDecl        _ vs) = mapM_ (insertVar . varIdent) vs
 insertDecl (PatternDecl        _ p _) = insertPattern False p
 insertDecl (FreeDecl            _ vs) = mapM_ (insertVar . varIdent) vs
-insertDecl (ClassDecl _ _ _ cls _ ds) = do
+insertDecl (ClassDecl _ _ _ cls _ _ ds) = do
   insertTypeConsId cls
   mapM_ insertVar $ concatMap methods ds
 insertDecl _                          = ok
@@ -1252,14 +1253,14 @@ checkCaseModeDecl (PatternDecl _ t rhs) = do
 checkCaseModeDecl (FreeDecl  _ vs) =
   mapM_ (checkCaseModeID isVarName . varIdent) vs
 checkCaseModeDecl (DefaultDecl _ tys) = mapM_ checkTypeExpr tys
-checkCaseModeDecl (ClassDecl _ _ cx cls tv ds) = do
+checkCaseModeDecl (ClassDecl _ _ cx cls tvs _ ds) = do
   checkCaseModeContext cx
   checkCaseModeID isClassDeclName cls
-  checkCaseModeID isVarName tv
+  mapM_ (checkCaseModeID isVarName) tvs
   mapM_ checkCaseModeDecl ds
 checkCaseModeDecl (InstanceDecl _ _ cx _ inst ds) = do
   checkCaseModeContext cx
-  checkCaseModeTypeExpr inst
+  mapM_ checkCaseModeTypeExpr inst
   mapM_ checkCaseModeDecl ds
 checkCaseModeDecl _ = ok
 
@@ -1293,7 +1294,7 @@ checkCaseModeContext :: Context -> WCM ()
 checkCaseModeContext = mapM_ checkCaseModeConstraint
 
 checkCaseModeConstraint :: Constraint -> WCM ()
-checkCaseModeConstraint (Constraint _ _ ty) = checkCaseModeTypeExpr ty
+checkCaseModeConstraint (Constraint _ _ tys) = mapM_ checkCaseModeTypeExpr tys
 
 checkCaseModeTypeExpr :: TypeExpr -> WCM ()
 checkCaseModeTypeExpr (ApplyType _ ty1 ty2) = do
@@ -1483,7 +1484,7 @@ getRedPredSet m cenv tcEnv ps =
 
 getPredFromContext :: Context -> ([Ident], PredSet)
 getPredFromContext cx =
-  let vs = concatMap (\(Constraint _ _ ty) -> typeVariables ty) cx
+  let vs = concatMap (\(Constraint _ _ tys) -> concatMap typeVariables tys) cx
   in (vs, toPredSet vs cx)
 
 checkRedContext' :: (Pred -> Message) -> PredSet -> WCM ()
@@ -1499,19 +1500,20 @@ checkRedContextDecl (TypeSig _ ids (QualTypeExpr _ cx _)) =
   where (vs, ps) = getPredFromContext cx
 checkRedContextDecl (FunctionDecl _ _ _ eqs) = mapM_ checkRedContextEq eqs
 checkRedContextDecl (PatternDecl _ _ rhs) = checkRedContextRhs rhs
-checkRedContextDecl (ClassDecl _ _ cx i _ ds) = do
-  checkRedContext'
-    (warnRedContext (text ("class declaration " ++ escName i)) vs)
-    ps
-  mapM_ checkRedContextDecl ds
-  where (vs, ps) = getPredFromContext cx
-checkRedContextDecl (InstanceDecl _ _ cx qid _ ds) = do
-  checkRedContext'
-    (warnRedContext (text ("instance declaration " ++ escQualName qid)) vs)
-    ps
-  mapM_ checkRedContextDecl ds
-  where (vs, ps) = getPredFromContext cx
-checkRedContextDecl _ = return ()
+-- TODO : adapt to new context type
+--checkRedContextDecl (ClassDecl _ _ cx i _ ds) = do
+--  checkRedContext'
+--    (warnRedContext (text ("class declaration " ++ escName i)) vs)
+--    ps
+--  mapM_ checkRedContextDecl ds
+--  where (vs, ps) = getPredFromContext cx
+--checkRedContextDecl (InstanceDecl _ _ cx qid _ ds) = do
+--  checkRedContext'
+--    (warnRedContext (text ("instance declaration " ++ escQualName qid)) vs)
+--    ps
+--  mapM_ checkRedContextDecl ds
+--  where (vs, ps) = getPredFromContext cx
+--checkRedContextDecl _ = return ()
 
 checkRedContextEq :: Equation a -> WCM ()
 checkRedContextEq (Equation _ _ rhs) = checkRedContextRhs rhs
