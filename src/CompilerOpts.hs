@@ -214,6 +214,7 @@ data WarnFlag
   | WarnUnusedGlobalBindings -- ^ Warn for unused global bindings
   | WarnUnusedBindings       -- ^ Warn for unused local bindings
   | WarnNameShadowing        -- ^ Warn for name shadowing
+  | WarnImportNameShadowing  -- ^ Warn for shadowing of imported names
   | WarnOverlapping          -- ^ Warn for overlapping rules/alternatives
   | WarnIncompletePatterns   -- ^ Warn for incomplete pattern matching
   | WarnMissingSignatures    -- ^ Warn for missing type signatures
@@ -245,6 +246,8 @@ warnFlags =
     , "unused bindings"                )
   , ( WarnNameShadowing       , "name-shadowing"
     , "name shadowing"                 )
+  , ( WarnImportNameShadowing , "import-name-shadowing"
+    , "import name shadowing"          )
   , ( WarnOverlapping         , "overlapping"
     , "overlapping function rules"     )
   , ( WarnIncompletePatterns  , "incomplete-patterns"

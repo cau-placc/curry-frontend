@@ -45,12 +45,12 @@ module Base.TopEnv
   , qualRebindTopEnv, unbindTopEnv, qualUnbindTopEnv
   , lookupTopEnv, qualLookupTopEnv, qualElemTopEnv
   , allImports, moduleImports, localBindings, allLocalBindings, allBindings
-  , allEntities
+  , allEntities, allBoundQualIdents
   ) where
 
 import           Control.Arrow        (second)
 import qualified Data.Map      as Map
-  (Map, empty, insert, findWithDefault, lookup, toList)
+  (Map, empty, insert, findWithDefault, lookup, toList, keys)
 
 import Curry.Base.Ident
 import Base.Messages (internalError)
@@ -179,3 +179,6 @@ allBindings (TopEnv env) = [(x, y) | (x, ys) <- Map.toList env, (_, y) <- ys]
 
 allEntities :: TopEnv a -> [a]
 allEntities (TopEnv env) = [ y | (_, ys) <- Map.toList env, (_, y) <- ys]
+
+allBoundQualIdents :: TopEnv a -> [QualIdent]
+allBoundQualIdents (TopEnv env) = Map.keys env

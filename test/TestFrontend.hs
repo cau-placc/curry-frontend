@@ -62,6 +62,7 @@ runTest opts test errorMsgs =
     wOpts         = CO.optWarnOpts opts
     wFlags        =   CO.WarnUnusedBindings
                     : CO.WarnUnusedGlobalBindings
+                    : CO.WarnImportNameShadowing
                     : CO.wnWarnFlags wOpts
     opts'         = opts { CO.optForce    = True
                          , CO.optWarnOpts = wOpts
@@ -350,6 +351,8 @@ warnInfos = map (uncurry mkFailTest)
     )
   , ("ShadowingSymbols",
       [ "Unused declaration of variable `x'", "Shadowing symbol `x'"])
+  , ("ShadowingImports",
+      [ "Shadowing symbol `failed'", "Shadowing symbol `isAlpha'" ])
   , ("TabCharacter",
       [ "Tab character"])
   , ("UnexportedFunction",
