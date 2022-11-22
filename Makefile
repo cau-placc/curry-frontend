@@ -7,7 +7,7 @@ export ROOT=$(CURDIR)
 # binary directory and executables
 export BINDIR=$(ROOT)/bin
 # The frontend binary
-export CYMAKE = $(BINDIR)/curry-frontend
+export FRONTEND = $(BINDIR)/curry-frontend
 # The stack binary
 STACK = stack
 
@@ -23,7 +23,7 @@ clean:
 .PHONY: cleanall
 cleanall:
 	$(STACK) clean --full
-	rm -f $(CYMAKE) && rm -rf bin
+	rm -f $(FRONTEND) && rm -rf bin
 
 .PHONY: runtests
 runtests:

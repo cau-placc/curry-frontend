@@ -67,6 +67,8 @@ kielExtensions :: [KnownExtension]
 kielExtensions = [AnonFreeVars, FunctionalPatterns]
 
 -- |Known Curry tools which may accept compiler options.
+-- Note: CYMAKE is kept for legacy/compatibility reasons
+--       and is deprecated, specify options for FRONTEND instead.
 data KnownTool = KICS2 | PAKCS | CYMAKE | FRONTEND
     deriving (Eq, Read, Show, Enum, Bounded, Generic, Binary)
 

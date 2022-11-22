@@ -181,7 +181,7 @@ preprocess opts fn src
 withTempFile :: (FilePath -> Handle -> IO a) -> IO a
 withTempFile act = do
   tmp       <- getTemporaryDirectory
-  (fn, hdl) <- openTempFile tmp "cymake.curry"
+  (fn, hdl) <- openTempFile tmp "FrontendTmp.curry"
   res       <- act fn hdl
   hClose hdl
   removeFile fn

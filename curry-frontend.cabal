@@ -141,7 +141,7 @@ library
     , Env.TypeConstructor
     , Env.Value
     , Exports
-    , Files.CymakePath
+    , Files.FrontendPath
     , Generators
     , Generators.GenAbstractCurry
     , Generators.GenFlatCurry
@@ -174,7 +174,7 @@ library
 
 executable curry-frontend
   hs-source-dirs:   app
-  main-is:          cymake.hs
+  main-is:          Main.hs
   default-language: Haskell2010
   ghc-options:      -Wall
   build-depends:

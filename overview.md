@@ -64,7 +64,7 @@ Module overview of package `curry-frontend`
       * `.OpPrec`         : Operatorpräzedenzen
       * `.TypeConstructor`: Typkonstruktoren
       * `.Value`          : Werte (Funktionen, Konstruktoren, Labels)
-  * `Files.CymakePath`: Pfad zur binary
+  * `Files.FrontendPath`: Pfad zur binary
   * `Generators`: Generatoren zur Code-Erzeugung
       * `GenAbstractCurry`: Erzeugung von AbstractCurry
       * `GenFlatCurry`    : Erzeugung von FlatCurry
@@ -87,7 +87,7 @@ Module overview of package `curry-frontend`
   * `CompilerOpts`  : Optionen für den Compiler
   * `CurryBuilder`  : Kompilierung eines Moduls inklusive Modulabhängigkeiten
   * `CurryDeps`     : Berechnung von Modulabhängigkeiten
-  * `cymake`        : Command-line tool
+  * `Main`          : Command-line tool
   * `Exports`       : Erzeugung des Interfaces
   * `Frontend`      : API-Modul (to be removed)
   * `Imports`       : Import von Funktionen etc. aus Schnittstellen
