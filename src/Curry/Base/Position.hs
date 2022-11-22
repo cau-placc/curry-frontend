@@ -13,6 +13,8 @@
     of a filename, a line number, and a column number. A tab stop is assumed
     at every eighth column.
 -}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric  #-}
 module Curry.Base.Position
   ( -- * Source code position
     HasPosition (..), Position (..), (@>)
@@ -20,9 +22,9 @@ module Curry.Base.Position
   , first, next, incr, tab, tabWidth, nl
   ) where
 
-import Prelude hiding ((<>))
 import Data.Binary
-import Control.Monad
+import GHC.Generics
+import Prelude hiding ((<>))
 import System.FilePath
 
 import Curry.Base.Pretty
@@ -51,7 +53,7 @@ data Position
     }
   -- |no position
   | NoPos
-    deriving (Eq, Ord, Read, Show)
+    deriving (Eq, Ord, Read, Show, Generic, Binary)
 
 instance HasPosition Position where
   getPosition = id
@@ -59,17 +61,6 @@ instance HasPosition Position where
 
 instance Pretty Position where
   pPrint = ppPosition
-
-instance Binary Position where
-  put (Position _ l c) = putWord8 0 >> put l >> put c
-  put NoPos            = putWord8 1
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> liftM2 (Position "") get get
-      1 -> return NoPos
-      _ -> fail "Not a valid encoding for a Position"
 
 -- |Show a 'Position' as a 'String'
 showPosition :: Position -> String
@@ -86,7 +77,7 @@ ppPosition _  = empty
 -- |Pretty print a compact representation of a 'Position''s line/column
 ppCompactLine :: Position -> Doc
 ppCompactLine (Position _ l c) = text (show l)
-                                 <> if c == 0 then empty else (colon <> text (show c))
+                                 <> if c == 0 then empty else colon <> text (show c)
 ppCompactLine _ = empty
 
 -- |Pretty print the line and column of a 'Position'

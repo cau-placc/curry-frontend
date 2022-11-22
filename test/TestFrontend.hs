@@ -32,7 +32,7 @@ import qualified Data.Map as Map        (insert)
 import           Distribution.TestSuite ( Test (..), TestInstance (..)
                                         , Progress (..), Result (..)
                                         , OptionDescr)
-import           System.FilePath        (FilePath, (</>), (<.>))
+import           System.FilePath        ((</>), (<.>))
 
 import           Curry.Base.Message     (Message, message, ppMessages, ppError)
 import           Curry.Base.Monad       (CYIO, runCYIO)
@@ -70,13 +70,13 @@ runTest opts test errorMsgs =
                          , CO.optCppOpts  = cppOpts
                             { CO.cppDefinitions = cppDefs }
                          }
-    passOrFail    = Finished . either fail (const Pass)
-    catchE        = Finished . either pass (pass . snd)
-    fail msgs
+    passOrFail    = Finished . either failAct (const Pass)
+    catchE        = Finished . either passAct (passAct . snd)
+    failAct msgs
       | null msgs = Pass
       | otherwise = Fail $ "An unexpected failure occurred: " ++
                            showMessages msgs
-    pass msgs
+    passAct msgs
       | null otherMsgs = Pass
       | otherwise      = Fail $ "Expected warnings/failures did not occur: " ++
                                 unwords otherMsgs

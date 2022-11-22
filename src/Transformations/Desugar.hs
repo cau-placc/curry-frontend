@@ -300,7 +300,7 @@ dsDeclRhs _                          =
 dsEquation :: Equation PredType -> DsM (Equation PredType)
 dsEquation (Equation p lhs rhs) = do
   (ds1, cs1, ts1) <- dsFunctionalPatterns p ts
-  (     cs2, ts2) <- dsNonLinearity ts1  
+  (     cs2, ts2) <- dsNonLinearity ts1
   (ds2     , ts3) <- mapAccumM (dsPat p) [] ts2 --TODO: Remove position arguments in transformation phases
   rhs' <- dsRhs (constrain cs1 . constrain cs2) (addDecls (ds1 ++ ds2) rhs)
   return $ Equation p (FunLhs NoSpanInfo f ts3) rhs'
@@ -361,8 +361,8 @@ addDecls ds (GuardedRhs spi li es ds') = GuardedRhs spi li es (ds ++ ds')
 -- Desugaring of functional patterns works in the following way:
 --  1. The patterns are recursively traversed from left to right
 --     to extract every functional pattern. Note that functional patterns
---     can be nested, but the transformation only sees the top-most functional pattern 
---     where nested functional patterns are transformed into expressions. 
+--     can be nested, but the transformation only sees the top-most functional pattern
+--     where nested functional patterns are transformed into expressions.
 --     Each functional pattern is replaced by a fresh variable and a pair
 --     (variable, functional pattern) is generated.
 --
@@ -409,7 +409,7 @@ dsFunctionalPatterns p ts = do
     mkTuple es | length es >= 2 = Tuple NoSpanInfo es
                | otherwise      = head es
 
-dsFunctionalPatternsNonLinear :: [Ident] -> Pattern PredType 
+dsFunctionalPatternsNonLinear :: [Ident] -> Pattern PredType
                               -> DsM ([((PredType, Ident), Pattern PredType)], Pattern PredType)
 dsFunctionalPatternsNonLinear _ p@(LiteralPattern _ _ _) = return ([], p)
 dsFunctionalPatternsNonLinear _ p@(NegativePattern         _ _ _) = return ([], p)
@@ -418,7 +418,7 @@ dsFunctionalPatternsNonLinear fvs p@(VariablePattern         _ _ v)
     v' <- freshVar "#nonlinear" p
     return ([(v', p)], uncurry (VariablePattern NoSpanInfo) v')
   | otherwise = return ([], p)
-dsFunctionalPatternsNonLinear fvs (ConstructorPattern spi pty qid ts) = do 
+dsFunctionalPatternsNonLinear fvs (ConstructorPattern spi pty qid ts) = do
   (bss, ts') <- unzip <$> mapM (dsFunctionalPatternsNonLinear fvs) ts
   return (concat bss, ConstructorPattern spi pty qid ts')
 dsFunctionalPatternsNonLinear fvs (InfixPattern      spi pty t1 qid t2) = do
@@ -426,8 +426,8 @@ dsFunctionalPatternsNonLinear fvs (InfixPattern      spi pty t1 qid t2) = do
   (bs2, t2') <- dsFunctionalPatternsNonLinear fvs t2
   return (bs1 ++ bs2, InfixPattern spi pty t1' qid t2')
 dsFunctionalPatternsNonLinear fvs (ParenPattern              _ t) = dsFunctionalPatternsNonLinear fvs t
-dsFunctionalPatternsNonLinear fvs (RecordPattern  spi pty qid fs) = do 
-  (bss, fs') <- unzip <$> mapM (\(Field spi' pty' a) -> second (Field spi' pty') 
+dsFunctionalPatternsNonLinear fvs (RecordPattern  spi pty qid fs) = do
+  (bss, fs') <- unzip <$> mapM (\(Field spi' pty' a) -> second (Field spi' pty')
                                   <$> dsFunctionalPatternsNonLinear fvs a) fs
   return (concat bss, RecordPattern spi pty qid fs')
 dsFunctionalPatternsNonLinear fvs (TuplePattern spi ts) = do
@@ -451,7 +451,7 @@ funPats :: Pattern PredType -> DsM ([((PredType, Ident), Pattern PredType)], Pat
 funPats p@(LiteralPattern          _ _ _) = return ([], p)
 funPats p@(NegativePattern         _ _ _) = return ([], p)
 funPats p@(VariablePattern         _ _ _) = return ([], p)
-funPats (ConstructorPattern   spi pty qid ts) = do 
+funPats (ConstructorPattern   spi pty qid ts) = do
   (bss, ts') <- unzip <$> mapM funPats ts
   return (concat bss, ConstructorPattern spi pty qid ts')
 funPats (InfixPattern      spi pty t1 qid t2) = do
@@ -459,8 +459,8 @@ funPats (InfixPattern      spi pty t1 qid t2) = do
   (bs2, t2') <- funPats t2
   return (bs1 ++ bs2, InfixPattern spi pty t1' qid t2')
 funPats (ParenPattern              _ t) = funPats t
-funPats (RecordPattern  spi pty qid fs) = do 
-  (bss, fs') <- unzip <$> mapM (\(Field spi' pty' a) -> second (Field spi' pty') 
+funPats (RecordPattern  spi pty qid fs) = do
+  (bss, fs') <- unzip <$> mapM (\(Field spi' pty' a) -> second (Field spi' pty')
                                     <$> funPats a) fs
   return (concat bss, RecordPattern spi pty qid fs')
 funPats (TuplePattern spi ts) = do
@@ -569,9 +569,11 @@ dsNonLinear env (ListPattern          _ pty ts) =
 dsNonLinear env (AsPattern               _ v t) = do
   let pty = predType $ typeOf t
   (env1, pat) <- dsNonLinear env (VariablePattern NoSpanInfo pty v)
-  let VariablePattern _ _ v' = pat
-  (env2, t') <- dsNonLinear env1 t
-  return (env2, AsPattern NoSpanInfo v' t')
+  case pat of
+    VariablePattern _ _ v' -> do
+      (env2, t') <- dsNonLinear env1 t
+      return (env2, AsPattern NoSpanInfo v' t')
+    _ -> internalError "Desugar.dsNonLinear: Not a variable pattern"
 dsNonLinear env (LazyPattern               _ t) =
   second (LazyPattern NoSpanInfo) <$> dsNonLinear env t
 dsNonLinear _   (FunctionPattern    _ _ _ _) = internalError "Desugar.dsNonLinear: function pattern"
@@ -769,8 +771,10 @@ dsExpr p (LeftSection  _ e op) =
 dsExpr p (RightSection _ op e) = do
   op' <- dsExpr p (infixOp op)
   e'  <- dsExpr p e
-  return $ apply (prelFlip ty1 ty2 ty3) [op', e']
-  where TypeArrow ty1 (TypeArrow ty2 ty3) = typeOf (infixOp op)
+  case typeOf (infixOp op) of
+    TypeArrow ty1 (TypeArrow ty2 ty3)
+      -> return $ apply (prelFlip ty1 ty2 ty3) [op', e']
+    _ -> internalError "Desugar.dsExpr: Operator is not a 2-ary function"
 dsExpr p expr@(Lambda _ ts e) = do
   (pty, f) <- freshVar "_#lambda" expr
   dsExpr p $ mkLet [funDecl p pty f ts e] $ mkVar pty f

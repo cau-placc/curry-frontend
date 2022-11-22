@@ -17,7 +17,8 @@
    hand side of a type declaration are actually defined and no identifier
    is defined more than once.
 -}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP        #-}
+{-# LANGUAGE LambdaCase #-}
 module Checks.TypeSyntaxCheck (typeSyntaxCheck) where
 
 #if __GLASGOW_HASKELL__ < 710
@@ -26,7 +27,7 @@ import           Control.Applicative      ((<$>), (<*>), pure)
 import           Control.Monad            (unless, when)
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 import           Data.List                (nub)
-import           Data.Maybe               (isNothing)
+import           Data.Maybe               (isNothing, mapMaybe)
 
 import Curry.Base.Ident
 import Curry.Base.Position
@@ -57,14 +58,13 @@ import Env.Type
 typeSyntaxCheck :: TCEnv -> Module a -> (Module a, [Message])
 typeSyntaxCheck tcEnv mdl@(Module _ _ _ m _ _ ds) =
   case findMultiples $ map getIdent tcds of
-    [] -> if length dfds <= 1
+    [] -> if length dfps <= 1
             then runTSCM (checkModule mdl) state
             else (mdl, [errMultipleDefaultDeclarations dfps])
     tss -> (mdl, map errMultipleDeclarations tss)
   where
     tcds = filter isTypeOrClassDecl ds
-    dfds = filter isDefaultDecl ds
-    dfps = map (\(DefaultDecl p _) -> p) dfds
+    dfps = mapMaybe (\case { DefaultDecl p _ -> Just p; _ -> Nothing }) ds
     tEnv = foldr (bindType m) (fmap toTypeKind tcEnv) tcds
     state = TSCState m tEnv 1 []
 
@@ -173,8 +173,8 @@ checkConstrDecl tvs (ConstrDecl p c tys) = do
   tys' <- mapM (checkClosedType tvs) tys
   return $ ConstrDecl p c tys'
 checkConstrDecl tvs (ConOpDecl p ty1 op ty2) = do
-  tys' <- mapM (checkClosedType tvs) [ty1, ty2]
-  let [ty1', ty2'] = tys'
+  ty1' <- checkClosedType tvs ty1
+  ty2' <- checkClosedType tvs ty2
   return $ ConOpDecl p ty1' op ty2'
 checkConstrDecl tvs (RecordDecl p c fs) = do
   fs' <- mapM (checkFieldDecl tvs) fs

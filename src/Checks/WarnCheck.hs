@@ -32,7 +32,7 @@ import qualified Data.Map            as Map    (empty, insert, lookup, (!))
 import           Data.Maybe
   (catMaybes, fromMaybe, listToMaybe, isJust)
 import           Data.List
-  ((\\), intersect, intersectBy, nub, sort, unionBy, find)
+  ((\\), intersect, intersectBy, nub, sort, unionBy)
 import           Data.Char
   (isLower, isUpper, toLower, toUpper, isAlpha)
 import qualified Data.Set.Extra as Set
@@ -44,8 +44,6 @@ import Curry.Base.Position
 import Curry.Base.Pretty
 import Curry.Base.SpanInfo
 import Curry.Syntax
-import Curry.Syntax.Utils  (typeVariables)
-import Curry.Syntax.Pretty (pPrint)
 
 import Base.CurryTypes (ppTypeScheme, fromPred, toPredSet)
 import Base.Messages   (Message, spanInfoMessage, internalError)
@@ -700,7 +698,7 @@ processEqs eqs@((n, ps, gs):eqs')
           _ -> False
         qidAlwaysTrue :: QualIdent -> Bool
         qidAlwaysTrue q = elem (idName $ qidIdent q) ["True", "success", "otherwise"]
-        
+
 
 -- |Literal patterns are checked by extracting the matched literals
 --  and constructing a pattern for any missing case.
@@ -790,7 +788,7 @@ processUsedCons cons qs = do
 
   makeCon c a ps = let (args, rest) = splitAt a ps
                    in ConstructorPattern NoSpanInfo () c args : rest
-  
+
   removeFirstCon c a (n, p:ps, gs)
     | isVarPat p = (n, replicate a wildPat ++ ps, gs)
     | isCon c  p = (n, patArgs p           ++ ps, gs)

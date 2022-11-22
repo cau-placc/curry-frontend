@@ -389,7 +389,11 @@ genApply :: AExpr TypeExpr -> [IL.Expression] -> FlatState (AExpr TypeExpr)
 genApply e es = do
   ap  <- trQualIdent $ qApplyId
   es' <- mapM trAExpr es
-  return $ foldl (\e1 e2 -> let FuncType ty1 ty2 = typeOf e1 in AComb ty2 FuncCall (ap, FuncType (FuncType ty1 ty2) (FuncType ty1 ty2)) [e1, e2]) e es'
+  let go e1 e2 = case typeOf e1 of
+        t@(FuncType _ ty2)
+          -> AComb ty2 FuncCall (ap, FuncType t t) [e1, e2]
+        _ -> internalError "GenAnnotatedFlatCurry.genApply: not a function type"
+  return $ foldl go e es'
 
 -- -----------------------------------------------------------------------------
 -- Normalization
@@ -433,7 +437,7 @@ instance Normalize a => Normalize (ARule a) where
   normalize (AExternal ty    s) = flip AExternal s <$> normalize ty
 
 normalizeTuple :: Normalize b => (a, b) -> NormState (a, b)
-normalizeTuple (a, b) = (,) <$> pure a <*> normalize b  
+normalizeTuple (a, b) = (,) <$> pure a <*> normalize b
 
 instance Normalize a => Normalize (AExpr a) where
   normalize (AVar  ty       v) = flip AVar  v  <$> normalize ty

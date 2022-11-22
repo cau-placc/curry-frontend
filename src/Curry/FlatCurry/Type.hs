@@ -13,7 +13,8 @@
     This module contains a definition for representing FlatCurry programs
     in Haskell in type 'Prog'.
 -}
-
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric  #-}
 module Curry.FlatCurry.Type
   ( -- * Representation of qualified names and (type) variables
     QName, VarIndex, TVarIndex, TVarWithKind
@@ -24,8 +25,8 @@ module Curry.FlatCurry.Type
   , CombType (..), CaseType (..), BranchExpr (..), Pattern (..)
   ) where
 
-import Data.Binary
-import Control.Monad
+import Data.Binary  (Binary)
+import GHC.Generics (Generic)
 
 -- ---------------------------------------------------------------------------
 -- Qualified names
@@ -53,7 +54,7 @@ type VarIndex = Int
 data Visibility
   = Public    -- ^ public (exported) entity
   | Private   -- ^ private entity
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |A FlatCurry module.
 --
@@ -69,7 +70,7 @@ data Visibility
 -- [@funcdecls@] Function declarations
 -- [@ opdecls@]  Operator declarations
 data Prog = Prog String [String] [TypeDecl] [FuncDecl] [OpDecl]
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Declaration of algebraic data type or type synonym.
 --
@@ -92,7 +93,7 @@ data TypeDecl
   = Type    QName Visibility [TVarWithKind] [ConsDecl]
   | TypeSyn QName Visibility [TVarWithKind] TypeExpr
   | TypeNew QName Visibility [TVarWithKind] NewConsDecl
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Type variables are represented by @(TVar i)@ where @i@ is a
 -- type variable index.
@@ -105,13 +106,13 @@ type TVarWithKind = (TVarIndex, Kind)
 -- |A constructor declaration consists of the name and arity of the
 -- constructor and a list of the argument types of the constructor.
 data ConsDecl = Cons QName Int Visibility [TypeExpr]
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |A constructor declaration for a newtype consists
 -- of the name of the constructor
 -- and the argument type of the constructor.
 data NewConsDecl = NewCons QName Visibility TypeExpr
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Type expressions.
 --
@@ -126,7 +127,7 @@ data TypeExpr
   | FuncType    TypeExpr TypeExpr       -- ^ function type @t1 -> t2@
   | TCons QName [TypeExpr]              -- ^ type constructor application
   | ForallType  [TVarWithKind] TypeExpr -- ^ forall type
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Kinds.
 --
@@ -134,8 +135,8 @@ data TypeExpr
 data Kind
   = KStar            -- ^ star kind
   | KArrow Kind Kind -- ^ arrow kind
- deriving (Eq, Ord, Read, Show)
-    
+ deriving (Eq, Ord, Read, Show, Generic, Binary)
+
 -- |Operator declarations.
 --
 -- An operator declaration @fix p n@ in Curry corresponds to the
@@ -145,14 +146,14 @@ data Kind
 -- PAKCS definition using Haskell type 'Integer' instead of 'Int'
 -- for representing the precedence.
 data OpDecl = Op QName Fixity Integer
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Fixity of an operator.
 data Fixity
   = InfixOp  -- ^ non-associative infix operator
   | InfixlOp -- ^ left-associative infix operator
   | InfixrOp -- ^ right-associative infix operator
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Data type for representing function declarations.
 --
@@ -180,14 +181,14 @@ data Fixity
 --
 -- Thus, a function declaration consists of the name, arity, type, and rule.
 data FuncDecl = Func QName Int Visibility TypeExpr Rule
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |A rule is either a list of formal parameters together with an expression
 -- or an 'External' tag.
 data Rule
   = Rule [VarIndex] Expr
   | External String
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Data type for representing expressions.
 --
@@ -282,7 +283,7 @@ data Expr
   | Case CaseType Expr [BranchExpr]
   -- |typed expression
   | Typed Expr TypeExpr
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Data type for representing literals.
 --
@@ -297,7 +298,7 @@ data Literal
   = Intc   Integer
   | Floatc Double
   | Charc  Char
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Data type for classifying combinations
 -- (i.e., a function/constructor applied to some arguments).
@@ -311,13 +312,13 @@ data CombType
   | FuncPartCall Int
   -- |a partial call to a constructor along with number of missing arguments
   | ConsPartCall Int
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Classification of case expressions, either flexible or rigid.
 data CaseType
   = Rigid
   | Flex
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Branches in a case expression.
 --
@@ -332,190 +333,10 @@ data CaseType
 -- for integers as branch patterns (similarly for other literals
 -- like float or character constants).
 data BranchExpr = Branch Pattern Expr
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Patterns in case expressions.
 data Pattern
   = Pattern QName [VarIndex]
   | LPattern Literal
-    deriving (Eq, Read, Show)
-
-instance Binary Visibility where
-  put Public  = putWord8 0
-  put Private = putWord8 1
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> return Public
-      1 -> return Private
-      _ -> fail "Invalid encoding for Visibility"
-
-instance Binary Prog where
-  put (Prog mid im tys fus ops) =
-    put mid >> put im >> put tys >> put fus >> put ops
-  get = Prog <$> get <*> get <*> get <*> get <*> get
-
-instance Binary TypeDecl where
-  put (Type    qid vis vs cs) =
-    putWord8 0 >> put qid >> put vis >> put vs >> put cs
-  put (TypeSyn qid vis vs ty) =
-    putWord8 1 >> put qid >> put vis >> put vs >> put ty
-  put (TypeNew qid vis vs c ) =
-    putWord8 2 >> put qid >> put vis >> put vs >> put c
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> liftM4 Type get get get get
-      1 -> liftM4 TypeSyn get get get get
-      2 -> liftM4 TypeNew get get get get
-      _ -> fail "Invalid encoding for TypeDecl"
-
-instance Binary ConsDecl where
-  put (Cons qid arity vis tys) = put qid >> put arity >> put vis >> put tys
-  get = Cons <$> get <*> get <*> get <*> get
-
-instance Binary NewConsDecl where
-  put (NewCons qid vis ty) = put qid >> put vis >> put ty
-  get = NewCons <$> get <*> get <*> get
-
-instance Binary TypeExpr where
-  put (TVar tv) =
-    putWord8 0 >> put tv
-  put (FuncType ty1 ty2) =
-    putWord8 1 >> put ty1 >> put ty2
-  put (TCons qid tys) =
-    putWord8 2 >> put qid >> put tys
-  put (ForallType vs ty) =
-    putWord8 3 >> put vs >> put ty
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> fmap TVar get
-      1 -> liftM2 FuncType get get
-      2 -> liftM2 TCons get get
-      3 -> liftM2 ForallType get get
-      _ -> fail "Invalid encoding for TypeExpr"
-
-instance Binary Kind where
-  put KStar          = putWord8 0
-  put (KArrow k1 k2) = putWord8 1 >> put k1 >> put k2
-  get = do
-    x <- getWord8
-    case x of
-      0 -> return KStar
-      1 -> liftM2 KArrow get get
-      _ -> fail "Invalid encoding for Kind"
-
-instance Binary OpDecl where
-  put (Op qid fix pr) = put qid >> put fix >> put pr
-  get = liftM3 Op get get get
-
-instance Binary Fixity where
-  put InfixOp  = putWord8 0
-  put InfixlOp = putWord8 1
-  put InfixrOp = putWord8 2
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> return InfixOp
-      1 -> return InfixlOp
-      2 -> return InfixrOp
-      _ -> fail "Invalid encoding for Fixity"
-
-instance Binary FuncDecl where
-  put (Func qid arity vis ty r) =
-    put qid >> put arity >> put vis >> put ty >> put r
-  get = Func <$> get <*> get <*> get <*> get <*> get
-
-instance Binary Rule where
-  put (Rule     alts e) = putWord8 0 >> put alts >> put e
-  put (External n     ) = putWord8 1 >> put n
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> liftM2 Rule get get
-      1 -> fmap External get
-      _ -> fail "Invalid encoding for TRule"
-
-instance Binary Expr where
-  put (Var v) = putWord8 0 >> put v
-  put (Lit l) = putWord8 1 >> put l
-  put (Comb cty qid es) =
-    putWord8 2 >> put cty >> put qid >> put es
-  put (Let  bs e) = putWord8 3 >> put bs >> put e
-  put (Free vs e) = putWord8 4 >> put vs >> put e
-  put (Or  e1 e2) = putWord8 5 >> put e1 >> put e2
-  put (Case cty ty as) = putWord8 6 >> put cty >> put ty >> put as
-  put (Typed e ty) = putWord8 7 >> put e >> put ty
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> fmap Var get
-      1 -> fmap Lit get
-      2 -> liftM3 Comb get get get
-      3 -> liftM2 Let get get
-      4 -> liftM2 Free get get
-      5 -> liftM2 Or get get
-      6 -> liftM3 Case get get get
-      7 -> liftM2 Typed get get
-      _ -> fail "Invalid encoding for TExpr"
-
-instance Binary BranchExpr where
-  put (Branch p e) = put p >> put e
-  get = liftM2 Branch get get
-
-instance Binary Pattern where
-  put (Pattern  qid vs) = putWord8 0 >> put qid >> put vs
-  put (LPattern l     ) = putWord8 1 >> put l
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> liftM2 Pattern get get
-      1 -> fmap LPattern get
-      _ -> fail "Invalid encoding for TPattern"
-
-instance Binary Literal where
-  put (Intc   i) = putWord8 0 >> put i
-  put (Floatc f) = putWord8 1 >> put f
-  put (Charc  c) = putWord8 2 >> put c
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> fmap Intc get
-      1 -> fmap Floatc get
-      2 -> fmap Charc get
-      _ -> fail "Invalid encoding for Literal"
-
-instance Binary CombType where
-  put FuncCall = putWord8 0
-  put ConsCall = putWord8 1
-  put (FuncPartCall i) = putWord8 2 >> put i
-  put (ConsPartCall i) = putWord8 3 >> put i
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> return FuncCall
-      1 -> return ConsCall
-      2 -> fmap FuncPartCall get
-      3 -> fmap ConsPartCall get
-      _ -> fail "Invalid encoding for CombType"
-
-instance Binary CaseType where
-  put Rigid = putWord8 0
-  put Flex  = putWord8 1
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> return Rigid
-      1 -> return Flex
-      _ -> fail "Invalid encoding for CaseType"
+    deriving (Eq, Read, Show, Generic, Binary)
