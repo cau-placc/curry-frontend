@@ -1,0 +1,21 @@
+image:
+  name: "haskell:9.2.5"
+  entrypoint: [""]
+
+stages:
+  - make
+  - test
+
+make:
+  stage: make
+  tags:
+    - docker2
+  script:
+    - make
+
+test:
+  stage: test
+  tags:
+    - docker2
+  script:
+    - make runtests
