@@ -30,7 +30,6 @@ module Curry.Files.PathUtils
   ) where
 
 import qualified Control.Exception    as C (IOException, handle)
-import           Control.Monad             (liftM)
 import           Data.List                 (isPrefixOf, isSuffixOf)
 import qualified Data.ByteString.Lazy as B (ByteString, writeFile)
 import           System.FilePath
@@ -164,7 +163,7 @@ checkVersion expected src = case lines src of
 tryOnExistingFile :: (FilePath -> IO a) -> FilePath -> IO (Maybe a)
 tryOnExistingFile action fn = C.handle ignoreIOException $ do
   exists <- doesFileExist fn
-  if exists then Just `liftM` action fn
+  if exists then Just <$> action fn
             else return Nothing
 
 ignoreIOException :: C.IOException -> IO (Maybe a)

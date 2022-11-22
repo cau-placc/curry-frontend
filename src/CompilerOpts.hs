@@ -21,8 +21,8 @@ module CompilerOpts
   , OptimizationOpts(..), CaseMode (..), CymakeMode (..), Verbosity (..)
   , TargetType (..), WarnFlag (..), KnownExtension (..), DumpLevel (..)
   , dumpLevel
-  , defaultOptions, defaultPrepOpts, defaultWarnOpts, defaultDebugOpts
-  , getCompilerOpts, updateOpts, usage
+  , defaultOptions, defaultPrepOpts, defaultWarnOpts, defaultDebugOpts, defaultCppOpts
+  , getCompilerOpts, updateOpts, usage, parseOpts
   ) where
 
 import           Data.List             (intercalate, nub)
@@ -199,6 +199,7 @@ data TargetType
   | FlatCurry            -- ^ FlatCurry
   | AnnotatedFlatCurry   -- ^ Annotated FlatCurry
   | TypedFlatCurry       -- ^ Typed FlatCurry
+  | TypedBinaryFlatCurry -- ^ Typed FlatCurry
   | AbstractCurry        -- ^ AbstractCurry
   | UntypedAbstractCurry -- ^ Untyped AbstractCurry
   | Html                 -- ^ HTML documentation

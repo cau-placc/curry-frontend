@@ -168,11 +168,12 @@ checkThing' f tcExport = do
 
   getTc (DataConstructor  _ _ _ (ForAll _ (PredType _ ty))) = getTc' ty
   getTc (NewtypeConstructor _ _ (ForAll _ (PredType _ ty))) = getTc' ty
-  getTc (Label _ _ (ForAll _ (PredType _ (TypeArrow tc' _)))) =
-    let (TypeConstructor tc, _) = unapplyType False tc' in tc
+  getTc (Label _ _ (ForAll _ (PredType _ (TypeArrow tc' _))))
+    | (TypeConstructor tc, _) <- unapplyType False tc' = tc
   getTc err = internalError $ currentModuleName ++ ".checkThing'.getTc: " ++ show err
 
-  getTc' ty = let (TypeConstructor tc) = arrowBase ty in tc
+  getTc' ty | (TypeConstructor tc) <- arrowBase ty = tc
+  getTc' err = internalError $ currentModuleName ++ ".checkThing'.getTc': " ++ show err
 
 checkTypeWith :: QualIdent -> [Ident] -> ECM ()
 checkTypeWith tc xs = do

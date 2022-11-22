@@ -16,7 +16,6 @@ module Transformations.Derive (derive) where
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative      ((<$>))
 #endif
-import Control.Monad               (replicateM)
 import qualified Control.Monad.State as S (State, evalState, gets, modify)
 import           Data.List         (intercalate, intersperse)
 import           Data.Maybe        (fromJust, isJust)
@@ -318,10 +317,10 @@ deriveEnumFromThen :: Type -> ConstrInfo -> ConstrInfo -> PredSet
                    -> DVM (Decl PredType)
 deriveEnumFromThen ty (_, c1, _, _) (_, c2, _, _) ps = do
   pty <- getInstMethodType ps qEnumId ty enumFromId
-  vs  <- replicateM 2 ((freshArgument . instType) ty)
-  let [v1, v2] = vs
+  v1  <- freshArgument $ instType ty
+  v2  <- freshArgument $ instType ty
   return $ funDecl NoSpanInfo pty enumFromThenId
-    (map (uncurry (VariablePattern NoSpanInfo)) vs) $
+    (map (uncurry (VariablePattern NoSpanInfo)) [v1, v2]) $
     enumFromThenExpr v1 v2 c1 c2
 
 enumFromThenExpr :: (PredType, Ident) -> (PredType, Ident) -> QualIdent
@@ -354,7 +353,8 @@ maxOrMinBoundExpr :: QualIdent -> QualIdent -> Type -> [Type]
 maxOrMinBoundExpr f c ty tys =
   apply (Constructor NoSpanInfo pty c) $
   map (flip (Variable NoSpanInfo) f . predType) instTys
-  where instTy:instTys = map instType $ ty : tys
+  where instTy = instType ty
+        instTys = map instType tys
         pty = predType $ foldr TypeArrow instTy instTys
 
 -- Read:
@@ -627,8 +627,12 @@ prelAppend e1 e2 = foldl1 (Apply NoSpanInfo)
 prelDot :: Expression PredType -> Expression PredType -> Expression PredType
 prelDot e1 e2 = foldl1 (Apply NoSpanInfo)
   [Variable NoSpanInfo pty qDotOpId, e1, e2]
-  where ty1@(TypeArrow _    ty12) = typeOf e1
-        ty2@(TypeArrow ty21 _   ) = typeOf e2
+  where (ty1, ty12) = case typeOf e1 of
+          ty@(TypeArrow _ resTy) -> (ty, resTy)
+          _ -> internalError "Derive.prelDot: First argument not a function"
+        (ty2, ty21) = case typeOf e2 of
+          ty@(TypeArrow argTy _) -> (ty, argTy)
+          _ -> internalError "Derive.prelDot: Second argument not a function"
         pty = predType $ foldr1 TypeArrow [ty1, ty2, ty21, ty12]
 
 prelAnd :: Expression PredType -> Expression PredType -> Expression PredType

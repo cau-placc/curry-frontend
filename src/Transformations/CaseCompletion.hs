@@ -185,8 +185,10 @@ completeConsAlts ea ce alts = do
   consAlts = [ a | a@(Alt (ConstructorPattern _ _ _) _) <- alts ]
 
   -- unifier for data type and concrete pattern type
-  dataTy  = let TypeConstructor qid tys = patTy
-            in TypeConstructor qid $ map TypeVariable [0 .. length tys - 1]
+  dataTy  = case patTy of
+              TypeConstructor qid tys
+                -> TypeConstructor qid $ map TypeVariable [0 .. length tys - 1]
+              _ -> internalError "CaseCompletion.completeConsAlt: not a type constructor"
   patTy   = let Alt pat _ = head consAlts in typeOf pat
   tySubst = matchType dataTy patTy idSubst
 

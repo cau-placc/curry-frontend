@@ -149,7 +149,8 @@ iTypeDecl f m tvs tc k x hs = f NoPos (qualUnqualify m tc) k' (take n tvs) x hs
 constrDecl :: ModuleIdent -> Int -> [Ident] -> DataConstr -> ConstrDecl
 constrDecl m _ tvs (DataConstr c [ty1, ty2])
   | isInfixOp c = ConOpDecl NoSpanInfo ty1' c ty2'
-  where [ty1', ty2'] = map (fromQualType m tvs) [ty1, ty2]
+  where ty1' = fromQualType m tvs ty1
+        ty2' = fromQualType m tvs ty2
 constrDecl m _ tvs (DataConstr c tys) =
   ConstrDecl NoSpanInfo c tys'
   where tys' = map (fromQualType m tvs) tys
