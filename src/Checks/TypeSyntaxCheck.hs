@@ -54,8 +54,8 @@ import Env.Type
 -- type classes are added to this environment and the declarations are checked
 -- within this environment.
 
-typeSyntaxCheck :: TCEnv -> Module a -> (Module a, [Message])
-typeSyntaxCheck tcEnv mdl@(Module _ _ _ m _ _ ds) =
+typeSyntaxCheck :: [KnownExtension] -> TCEnv -> Module a -> (Module a, [Message])
+typeSyntaxCheck exts tcEnv mdl@(Module _ _ _ m _ _ ds) =
   case findMultiples $ map getIdent tcds of
     [] -> if length dfds <= 1
             then runTSCM (checkModule mdl) state
@@ -66,14 +66,15 @@ typeSyntaxCheck tcEnv mdl@(Module _ _ _ m _ _ ds) =
     dfds = filter isDefaultDecl ds
     dfps = map (\(DefaultDecl p _) -> p) dfds
     tEnv = foldr (bindType m) (fmap toTypeKind tcEnv) tcds
-    state = TSCState m tEnv 1 []
+    state = TSCState exts m tEnv 1 []
 
 -- Type Syntax Check Monad
 type TSCM = S.State TSCState
 
 -- |Internal state of the Type Syntax Check
 data TSCState = TSCState
-  { moduleIdent :: ModuleIdent
+  { extensions  :: [KnownExtension]
+  , moduleIdent :: ModuleIdent
   , typeEnv     :: TypeEnv
   , nextId      :: Integer
   , errors      :: [Message]
@@ -81,6 +82,12 @@ data TSCState = TSCState
 
 runTSCM :: TSCM a -> TSCState -> (a, [Message])
 runTSCM tscm s = let (a, s') = S.runState tscm s in (a, reverse $ errors s')
+
+hasExtension :: KnownExtension -> TSCM Bool
+hasExtension ext = S.gets (elem ext . extensions)
+
+getExtensions :: TSCM [KnownExtension]
+getExtensions = S.gets extensions
 
 getModuleIdent :: TSCM ModuleIdent
 getModuleIdent = S.gets moduleIdent
@@ -156,6 +163,7 @@ checkDecl (DefaultDecl p tys)                 = DefaultDecl p <$>
   mapM (checkClosedType []) tys
 -- TODO : adapt to new AST
 checkDecl (ClassDecl p li cx cls clsvars fds ds)   = do
+  checkMPTCExtensionClass p cls clsvars
   checkTypeVars "class declaration" clsvars
   cx' <- checkClosedContext clsvars cx
   checkSimpleContext cx'
@@ -163,6 +171,7 @@ checkDecl (ClassDecl p li cx cls clsvars fds ds)   = do
   mapM_ (checkClassMethod clsvars) ds'
   return $ ClassDecl p li cx' cls clsvars fds ds'
 checkDecl (InstanceDecl p li cx qcls inst ds) = do
+  checkMPTCExtensionInst p qcls inst
   checkClass True qcls
   (cx', inst') <- checkQualTypes cx inst
   checkSimpleContext cx'
@@ -422,6 +431,17 @@ checkClosed tvs (ArrowType _ ty1 ty2) = mapM_ (checkClosed tvs) [ty1, ty2]
 checkClosed tvs (ParenType      _ ty) = checkClosed tvs ty
 checkClosed tvs (ForallType  _ vs ty) = checkClosed (tvs ++ vs) ty
 
+checkMPTCExtensionClass :: SpanInfo -> Ident -> [Ident] -> TSCM ()
+checkMPTCExtensionClass spi cls clsvars = do
+  exts <- getExtensions
+  unless (length clsvars == 1 || MultiParamTypeClasses `elem` exts) $
+    report $ errMPTCClassNoExtension spi cls clsvars
+    
+checkMPTCExtensionInst :: SpanInfo -> QualIdent -> InstanceType -> TSCM ()
+checkMPTCExtensionInst spi qcls inst = do
+  exts <- getExtensions
+  unless (length inst == 1 || MultiParamTypeClasses `elem` exts) $
+    report $ errMPTCInstNoExtension spi qcls inst
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions
 -- ---------------------------------------------------------------------------
@@ -520,3 +540,19 @@ errIllegalDataInstance qcls = spanInfoMessage qcls $ vcat
   , text "Instances of this class cannot be defined."
   , text "Instead, they are automatically derived if possible."
   ]
+
+errMPTCClassNoExtension :: SpanInfo -> Ident -> [Ident] -> Message
+errMPTCClassNoExtension spi cls clsvars = spanInfoMessage spi $ vcat
+  [ text "Illegal multi-parameter type class" <+> ppIdent cls
+  , text "Type classes must have exactly one parameter"
+  , text "Use the language extension \"MultiParamTypeClasses\" to enable"
+  , text "multi-parameter type classes."
+  ]
+
+errMPTCInstNoExtension :: SpanInfo -> QualIdent -> InstanceType -> Message
+errMPTCInstNoExtension spi qcls idents = spanInfoMessage spi $ vcat
+  [ text "Illegal instantiation of multi-parameter type class" <+> ppQIdent qcls
+  , text "Type classes instatiations must have exactly one parameter"
+  , text "Use the language extension \"MultiParamTypeClasses\" to enable"
+  , text "multi-parameter type classes."
+  ]  
