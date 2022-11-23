@@ -164,6 +164,7 @@ checkDecl (DefaultDecl p tys)                 = DefaultDecl p <$>
 -- TODO : adapt to new AST
 checkDecl (ClassDecl p li cx cls clsvars fds ds)   = do
   checkMPTCExtensionClass p cls clsvars
+  checkFunDeps p cls clsvars fds
   checkTypeVars "class declaration" clsvars
   cx' <- checkClosedContext clsvars cx
   checkSimpleContext cx'
@@ -442,6 +443,20 @@ checkMPTCExtensionInst spi qcls inst = do
   exts <- getExtensions
   unless (length inst == 1 || MultiParamTypeClasses `elem` exts) $
     report $ errMPTCInstNoExtension spi qcls inst
+
+checkFunDeps :: SpanInfo -> Ident -> [Ident] -> [FunDep] -> TSCM ()
+checkFunDeps spi cls clsvars fds = do
+  exts <- getExtensions
+  if null fds || FunctionalDependencies `elem` exts
+  then checkFunDeps' cls clsvars fds
+  else report $ errFunDepsNoExt spi cls
+
+checkFunDeps' :: Ident -> [Ident] -> [FunDep] -> TSCM ()
+checkFunDeps' _   _       []                           = ok
+checkFunDeps' cls clsvars (FunDep spi ltvs rtvs : fds) = do
+  mapM_ (report . errFunDepUndefinedVariable spi cls) (filter (`notElem` clsvars) (ltvs ++ rtvs))
+  checkFunDeps' cls clsvars fds
+
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions
 -- ---------------------------------------------------------------------------
@@ -555,4 +570,16 @@ errMPTCInstNoExtension spi qcls idents = spanInfoMessage spi $ vcat
   , text "Type classes instatiations must have exactly one parameter"
   , text "Use the language extension \"MultiParamTypeClasses\" to enable"
   , text "multi-parameter type classes."
-  ]  
+  ] 
+
+errFunDepsNoExt :: SpanInfo -> Ident -> Message
+errFunDepsNoExt spi cls = spanInfoMessage spi $ vcat
+  [ text "The declaration of class" <+> ppIdent cls <+> text "contains"
+  , text "functional dependencies, which are disabled by default."
+  , text "Use the language extension \"FunctionalDependencies\" to enable"
+  , text "functional dependencies."]
+
+errFunDepUndefinedVariable :: SpanInfo -> Ident -> Ident -> Message
+errFunDepUndefinedVariable spi cls clsvar = spanInfoMessage spi $ vcat
+   [ text "A functional dependency in the declaration of the class" <+> ppIdent cls
+   , text "contains undefined class variable" <+> ppIdent clsvar <+> text "."]
