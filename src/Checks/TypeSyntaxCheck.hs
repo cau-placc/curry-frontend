@@ -567,7 +567,7 @@ errMPTCClassNoExtension spi cls clsvars = spanInfoMessage spi $ vcat
 errMPTCInstNoExtension :: SpanInfo -> QualIdent -> InstanceType -> Message
 errMPTCInstNoExtension spi qcls idents = spanInfoMessage spi $ vcat
   [ text "Illegal instantiation of multi-parameter type class" <+> ppQIdent qcls
-  , text "Type classes instatiations must have exactly one parameter"
+  , text "Type class instantiations must have exactly one parameter"
   , text "Use the language extension \"MultiParamTypeClasses\" to enable"
   , text "multi-parameter type classes."
   ] 
