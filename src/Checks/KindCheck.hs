@@ -343,17 +343,16 @@ bindKind m tcEnv' _      tcEnv (TypeDecl _ tc tvs ty) =
     aliasType tc' k = AliasType tc' k $ length tvs
     ty' = expandMonoType m tcEnv' tvs ty
 bindKind m tcEnv' clsEnv tcEnv (ClassDecl _ _ _ cls tvs _ ds) =
-  internalError "KindCheck.bindKind: not yet adapted to new AST"
---  bindTypeClass cls (concatMap mkMethods ds) tcEnv
---  where
---    mkMethods (TypeSig _ fs qty) = map (mkMethod qty) fs
---    mkMethods _                  = []
---    mkMethod qty f = ClassMethod f (findArity f ds) $
---                       expandMethodType m tcEnv' clsEnv (qualify cls) tv qty
---    findArity _ []                                    = Nothing
---    findArity f (FunctionDecl _ _ f' eqs:_) | f == f' =
---      Just $ eqnArity $ head eqs
---    findArity f (_:ds')                               = findArity f ds'
+  bindTypeClass cls (concatMap mkMethods ds) tcEnv
+  where
+    mkMethods (TypeSig _ fs qty) = map (mkMethod qty) fs
+    mkMethods _                  = []
+    mkMethod qty f = ClassMethod f (findArity f ds) $
+                       expandMethodType m tcEnv' clsEnv (qualify cls) tvs qty
+    findArity _ []                                    = Nothing
+    findArity f (FunctionDecl _ _ f' eqs:_) | f == f' =
+      Just $ eqnArity $ head eqs
+    findArity f (_:ds')                               = findArity f ds'
 bindKind _ _      _      tcEnv _                          = return tcEnv
 
 bindTypeConstructor :: (QualIdent -> Kind -> a -> TypeInfo) -> Ident
@@ -390,15 +389,16 @@ bindTypeVars tc tvs tcEnv = do
 bindTypeVar :: Ident -> Kind -> TCEnv -> TCEnv
 bindTypeVar ident k = bindTopEnv ident (TypeVar k)
 
--- TODO : adapt to MPTCs
 bindClass :: ModuleIdent -> TCEnv -> ClassEnv -> Decl a -> ClassEnv
-bindClass m tcEnv clsEnv (ClassDecl _ _ cx cls _ _ ds) =
-  internalError "KindCheck.bindClass:not yet adapted"
---  bindClassInfo qcls (sclss, ms) clsEnv
---  where qcls = qualifyWith m cls
---        ms = map (\f -> (f, f `elem` fs)) $ concatMap methods ds
---        fs = concatMap impls ds
---        sclss = nub $ map (\(Constraint _ cls' _) -> getOrigName m cls' tcEnv) cx
+bindClass m tcEnv clsEnv (ClassDecl _ _ cx cls tvs fds ds) =
+  bindClassInfo qcls (arity, sclss, fundeps, ms) clsEnv
+  where arity = length tvs
+        qcls = qualifyWith m cls
+        ms = map (\f -> (f, f `elem` fs)) $ concatMap methods ds
+        fs = concatMap impls ds
+        fundeps = map (\(FunDep _ ltvs rtvs) -> (ltvs,rtvs)) fds
+        sclss = expandClassContext m tcEnv tvs cx
+          --nub $ map (\(Constraint _ cls' _) -> getOrigName m cls' tcEnv) cx
 bindClass _ _ clsEnv _ = clsEnv
 
 instantiateWithDefaultKind :: TypeInfo -> TypeInfo
