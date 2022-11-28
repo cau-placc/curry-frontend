@@ -29,7 +29,7 @@ import Curry.Syntax
 
 import Base.CurryKinds (toKind')
 import Base.CurryTypes ( toQualType, toQualTypes, toQualPredType, toConstrType
-                       , toMethodType )
+                       , toMethodType, toQualPredSet )
 
 import Base.Kinds
 import Base.Messages
@@ -164,9 +164,11 @@ importClasses m = flip $ foldr (bindClass m)
 bindClass :: ModuleIdent -> IDecl -> ClassEnv -> ClassEnv
 bindClass m (HidingClassDecl p cx cls k tvs fds) =
   bindClass m (IClassDecl p cx cls k tvs fds [] [])
-bindClass m (IClassDecl _ cx cls _ _ _ ds ids) =
-  bindClassInfo (qualQualify m cls) (sclss, ms)
-  where sclss = map (\(Constraint _ scls _) -> qualQualify m scls) cx
+bindClass m (IClassDecl _ cx cls _ tvs fds ds ids) =
+  bindClassInfo (qualQualify m cls) (arity,sclss, fundeps ,ms)
+  where arity = length tvs
+        sclss = toQualPredSet m tvs Other cx
+        fundeps = map (\(FunDep _ ltvs rtvs) -> (ltvs,rtvs)) fds
         ms = map (\d -> (imethod d, isJust $ imethodArity d)) $ filter isVis ds
         isVis (IMethodDecl _ idt _ _ ) = idt `notElem` ids
 bindClass _ _ = id
@@ -265,12 +267,12 @@ values m (INewtypeDecl _ tc _ tvs nc hs) =
   where tc' = qualQualify m tc
         ty' = constrType tc' tvs
 values m (IFunctionDecl _ f Nothing a qty) =
-  [Value (qualQualify m f) Nothing a (typeScheme (toQualPredType m [] qty))]
+  [Value (qualQualify m f) Nothing a (typeScheme (toQualPredType m [] Other qty))]
 values m (IFunctionDecl _ f (Just tv) _ qty) = -- TODO : adapt to MPTCs
   let mcls = case qty of
         QualTypeExpr _ ctx _ -> fmap (\(Constraint _ qcls _) -> qcls) $
                                 find (\(Constraint _ _ tys) -> all isVar tys) ctx
-  in [Value (qualQualify m f) mcls 0 (typeScheme (toQualPredType m [tv] qty))]
+  in [Value (qualQualify m f) mcls 0 (typeScheme (toQualPredType m [tv] Other qty))]
   where
     isVar (VariableType _ i) = i == tv
     isVar _                  = False
@@ -321,11 +323,11 @@ constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)
 -- We always enter class methods with an arity of 0 into the value environment
 -- because there may be different implementations with different arities.
 
-classMethod :: ModuleIdent -> QualIdent -> Ident -> [Ident] -> IMethodDecl
+classMethod :: ModuleIdent -> QualIdent -> [Ident] -> [Ident] -> IMethodDecl
             -> ValueInfo
-classMethod m qcls tv hs (IMethodDecl _ f _ qty) =
+classMethod m qcls tvs hs (IMethodDecl _ f _ qty) =
   Value (qualifyLike qcls f) mcls 0 $
-    typeScheme $ qualifyPredType m $ toMethodType qcls tv qty
+    typeScheme $ qualifyPredType m $ toMethodType qcls tvs qty
   where
     mcls = if f `elem` hs then Nothing else Just qcls
 

@@ -207,16 +207,17 @@ createClassDictConstrDecl :: QualIdent -> Ident -> [Decl a] -> DTM ConstrDecl
 createClassDictConstrDecl cls tv ds = do
   let tvs  = tv : filter (unRenameIdent tv /=) identSupply
       mtys = map (fromType tvs . generalizeMethodType . transformMethodPredType)
-                 [toMethodType cls tv qty | TypeSig _ fs qty <- ds, _ <- fs]
+                 [toMethodType cls [tv] qty | TypeSig _ fs qty <- ds, _ <- fs]  -- todo : adapt to new class env
   return $ ConstrDecl NoSpanInfo (dictConstrId cls) mtys
 
 classDictConstrPredType :: ValueEnv -> ClassEnv -> QualIdent -> PredType
 classDictConstrPredType vEnv clsEnv cls = PredType ps $ foldr TypeArrow ty mtys
-  where sclss = superClasses cls clsEnv
-        ps    = Set.fromList [Pred scls (TypeVariable 0) | scls <- sclss]
+  where ps = superClasses cls clsEnv
+        --sclss = superClasses cls clsEnv       TODO : adapt to new class env
+        --ps    = Set.fromList [Pred scls (TypeVariable 0) | scls <- sclss]
         fs    = classMethods cls clsEnv
         mptys = map (classMethodType vEnv cls) fs
-        ty    = dictType $ Pred cls $ TypeVariable 0
+        ty    = dictType $ Pred Other cls $ [TypeVariable 0]
         mtys  = map (generalizeMethodType . transformMethodPredType) mptys
 
 createInstDictDecl :: PredSet -> QualIdent -> Type -> DTM (Decl PredType)
@@ -307,7 +308,7 @@ renameDecl _ _ = internalError "Dictionary.renameDecl"
 -- create a stub method for each super class selecting the corresponding super
 -- class dictionary from the provided class dictionary.
 
-createStubs :: Decl PredType -> DTM [Decl Type]
+createStubs :: Decl PredType -> DTM [Decl Type]  -- TODO : adapt to new class env
 createStubs (ClassDecl _ _ _ cls _ _ _) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
@@ -326,8 +327,8 @@ createStubs (ClassDecl _ _ _ cls _ _ _) = do
   methodVs <- mapM (freshVar "_#meth" . instType) methodTys
   let patternVs   = superDictVs ++ methodVs
       pattern     = createDictPattern (instType dictTy) ocls patternVs
-      superStubs  = zipWith3 (createSuperDictStubDecl pattern ocls)
-                      superStubTys sclss superDictVs
+      superStubs  = internalError "Dictionary.createStubs: nya" --zipWith3 (createSuperDictStubDecl pattern ocls)
+                    --  superStubTys sclss superDictVs
       methodStubs = zipWith3 (createMethodStubDecl pattern)
                       methodStubTys fs methodVs
   return $ superStubs ++ methodStubs
@@ -359,7 +360,7 @@ createStubEquation t f v =
 
 superDictStubType :: QualIdent -> QualIdent -> Type -> Type
 superDictStubType cls super ty =
-  TypeArrow (rtDictType $ Pred cls ty) (rtDictType $ Pred super ty)
+  TypeArrow (rtDictType $ Pred Other cls [ty]) (rtDictType $ Pred Other super [ty]) -- todo: adapt to mptcs
 
 -- -----------------------------------------------------------------------------
 -- Entering new bindings into the environments
@@ -369,14 +370,14 @@ bindDictTypes :: ModuleIdent -> ClassEnv -> TCEnv -> TCEnv
 bindDictTypes m clsEnv tcEnv =
   foldr (bindDictType m clsEnv) tcEnv (allEntities tcEnv)
 
-bindDictType :: ModuleIdent -> ClassEnv -> TypeInfo -> TCEnv -> TCEnv
-bindDictType m clsEnv (TypeClass cls k ms) = bindEntity m tc ti
-  where ti    = DataType tc (KindArrow k KindStar) [c]
-        tc    = qDictTypeId cls
-        c     = DataConstr (dictConstrId cls) (map rtDictType (Set.toAscList ps) ++ tys)
-        sclss = superClasses cls clsEnv
-        ps    = Set.fromList [Pred scls (TypeVariable 0) | scls <- sclss]
-        tys   = map (generalizeMethodType . transformMethodPredType . methodType) ms
+bindDictType :: ModuleIdent -> ClassEnv -> TypeInfo -> TCEnv -> TCEnv -- todo : adapt to new class env
+bindDictType m clsEnv (TypeClass cls k ms) = internalError "Dict.bindDictType: nya" --bindEntity m tc ti
+--  where ti    = DataType tc (KindArrow k KindStar) [c]
+--        tc    = qDictTypeId cls
+--        c     = DataConstr (dictConstrId cls) (map rtDictType (Set.toAscList ps) ++ tys)
+--        sclss = superClasses cls clsEnv
+--        ps    = Set.fromList [Pred scls (TypeVariable 0) | scls <- sclss]
+--        tys   = map (generalizeMethodType . transformMethodPredType . methodType) ms
 bindDictType _ _      _                    = id
 
 bindClassDecls :: ModuleIdent -> TCEnv -> ClassEnv -> ValueEnv -> ValueEnv
@@ -390,11 +391,11 @@ bindClassDecls m tcEnv clsEnv =
 -- been augmented.
 
 bindClassEntities :: ModuleIdent -> ClassEnv -> TypeInfo -> ValueEnv -> ValueEnv
-bindClassEntities m clsEnv (TypeClass cls _ ms) =
-  bindClassDict m clsEnv cls . bindSuperStubs m cls sclss .
-    bindDefaultMethods m cls fs
-  where fs    = zip (map methodName ms) (map (fromMaybe 0 . methodArity) ms)
-        sclss = superClasses cls clsEnv
+bindClassEntities m clsEnv (TypeClass cls _ ms) = internalError "Dict.bindClassEntities: nya" -- todo : adapt to new classenv
+--  bindClassDict m clsEnv cls . bindSuperStubs m cls sclss .
+--    bindDefaultMethods m cls fs
+--  where fs    = zip (map methodName ms) (map (fromMaybe 0 . methodArity) ms)
+--        sclss = superClasses cls clsEnv
 bindClassEntities _ _ _ = id
 
 bindClassDict :: ModuleIdent -> ClassEnv -> QualIdent -> ValueEnv -> ValueEnv
@@ -438,7 +439,7 @@ bindInstFuns m tcEnv clsEnv ((cls, tc), (m', ps, is)) =
 bindInstDict :: ModuleIdent -> QualIdent -> Type -> ModuleIdent -> PredSet
              -> ValueEnv -> ValueEnv
 bindInstDict m cls ty m' ps =
-  bindMethod m (qInstFunId m' cls ty) 1 $ PredType ps $ rtDictType $ Pred cls ty
+  bindMethod m (qInstFunId m' cls ty) 1 $ PredType ps $ rtDictType $ Pred Other cls [ty] -- todo : adapt to new preds
 
 bindInstMethods :: ModuleIdent -> ClassEnv -> QualIdent -> Type -> ModuleIdent
                 -> PredSet -> [(Ident, Int)] -> ValueEnv -> ValueEnv
@@ -537,12 +538,12 @@ dictExports (InstanceDecl _ _ _ cls ty _) = internalError "Dictionary.dictExport
 --  return $ instExports m clsEnv cls (toType [] ty)
 dictExports _ = return []
 
-classExports :: ModuleIdent -> ClassEnv -> Ident -> [Export]
-classExports m clsEnv cls =
-  ExportTypeWith NoSpanInfo (qDictTypeId qcls) [dictConstrId qcls] :
-   map (Export NoSpanInfo . qSuperDictStubId qcls) (superClasses qcls clsEnv) ++
-    map (Export NoSpanInfo . qDefaultMethodId qcls) (classMethods qcls clsEnv)
-  where qcls = qualifyWith m cls
+classExports :: ModuleIdent -> ClassEnv -> Ident -> [Export] -- TODO : adapt to new class env
+classExports m clsEnv cls = internalError "Dictionary.classExports: nya"
+--  ExportTypeWith NoSpanInfo (qDictTypeId qcls) [dictConstrId qcls] :
+--   map (Export NoSpanInfo . qSuperDictStubId qcls) (superClasses qcls clsEnv) ++
+--    map (Export NoSpanInfo . qDefaultMethodId qcls) (classMethods qcls clsEnv)
+--  where qcls = qualifyWith m cls
 
 instExports :: ModuleIdent -> ClassEnv -> QualIdent -> Type -> [Export]
 instExports m clsEnv cls ty =
@@ -699,13 +700,14 @@ addDictArgs pls ts = do
   where dicts clsEnv vs
           | null vs = vs
           | otherwise = vs ++ dicts clsEnv (concatMap (superDicts clsEnv) vs)
-        superDicts clsEnv (Pred cls ty, e) =
-          map (superDict cls ty e) (superClasses cls clsEnv)
-        superDict cls ty e scls =
-          (Pred scls ty, Apply NoSpanInfo (superDictExpr cls scls ty) e)
-        superDictExpr cls scls ty =
-          Variable NoSpanInfo (superDictStubType cls scls ty)
-            (qSuperDictStubId cls scls)
+        -- TODO : adapt to new class env
+        superDicts clsEnv (Pred _ cls ty, e) = internalError "Dictionary.addDictArgs: nya"
+        --  map (superDict cls ty e) (superClasses cls clsEnv)
+        --superDict cls ty e scls =
+        --  (Pred scls ty, Apply NoSpanInfo (superDictExpr cls scls ty) e)
+        --superDictExpr cls scls ty =
+        --  Variable NoSpanInfo (superDictStubType cls scls ty)
+        --    (qSuperDictStubId cls scls)
 
 -- The function 'dictArg' constructs the dictionary argument for a predicate
 -- from the predicates of a class method or an overloaded function. It checks
@@ -723,20 +725,21 @@ dictArg p = maybeM (instDict p) return (lookup p <$> getDictEnv)
 instDict :: Pred -> DTM (Expression Type)
 instDict p = instPredList p >>= flip (uncurry instFunApp) p
 
+-- TOdo : ADAPT to new preds
 instFunApp :: ModuleIdent -> [Pred] -> Pred -> DTM (Expression Type)
-instFunApp m pls p@(Pred cls ty) = apply (Variable NoSpanInfo ty' f)
-  <$> mapM dictArg pls
-  where f   = qInstFunId m cls ty
-        ty' = foldr1 TypeArrow $ map rtDictType $ pls ++ [p]
+instFunApp m pls p@(Pred _ cls ty) = internalError "Dictionary.instFunApp: nya" --apply (Variable NoSpanInfo ty' f)
+--  <$> mapM dictArg pls
+--  where f   = qInstFunId m cls ty
+--        ty' = foldr1 TypeArrow $ map rtDictType $ pls ++ [p]
 
-instPredList :: Pred -> DTM (ModuleIdent, [Pred])
-instPredList (Pred cls ty) = case unapplyType True ty of
-  (TypeConstructor tc, tys) -> do
-    inEnv <- getInstEnv
-    case lookupInstInfo (cls, tc) inEnv of
-      Just (m, ps, _) -> return (m, expandAliasType tys $ Set.toAscList ps)
-      Nothing -> internalError $ "Dictionary.instPredList: " ++ show (cls, tc)
-  _ -> internalError $ "Dictionary.instPredList: " ++ show ty
+instPredList :: Pred -> DTM (ModuleIdent, [Pred]) -- todo : adapt to new preds
+instPredList (Pred _ cls tys) = internalError "Dictionary.instPredList: not yet adapted" --case unapplyType True ty of
+  --(TypeConstructor tc, tys) -> do
+  --  inEnv <- getInstEnv
+  --  case lookupInstInfo (cls, tc) inEnv of
+  --    Just (m, ps, _) -> return (m, expandAliasType tys $ Set.toAscList ps)
+  --    Nothing -> internalError $ "Dictionary.instPredList: " ++ show (cls, tc)
+  --_ -> internalError $ "Dictionary.instPredList: " ++ show ty
 
 -- When adding dictionary arguments on the left hand side of an equation and
 -- in applications, respectively, the compiler must unify the function's type
@@ -959,8 +962,8 @@ dictTransIDecl m vEnv clsEnv (IClassDecl   p _ cls k _ _ _ hs) =
                             qDefaultMethodId qcls) ms
         methodStubs = map (iFunctionDeclFromValue m vEnv . qualifyLike qcls) $
                         filter (`notElem` hs) ms
-        superDictStubs = map (iFunctionDeclFromValue m vEnv .
-                               qSuperDictStubId qcls) sclss
+        superDictStubs = internalError "Dictionary.dictTransIDecl.superDictStubs: not yet adapted" -- map (iFunctionDeclFromValue m vEnv .
+                         --      qSuperDictStubId qcls) sclss
 dictTransIDecl m vEnv clsEnv (IInstanceDecl _ _ cls ty _ mm) = -- TODO : adapt to MPTCs
   internalError "Dictionary.dictTransIDecl: not yet adapted to MPTCs"
 --  iFunctionDeclFromValue m vEnv (qInstFunId m' qcls ty') :
@@ -1050,7 +1053,7 @@ rtDictType :: Pred -> Type
 rtDictType = TypeArrow unitType . dictType
 
 dictType :: Pred -> Type
-dictType (Pred cls ty) = TypeApply (TypeConstructor $ qDictTypeId cls) ty
+dictType (Pred _ cls ty) = applyType (TypeConstructor $ qDictTypeId cls) ty
 
 -- The function 'transformPredType' replaces each predicate with a new
 -- dictionary type argument.
@@ -1087,7 +1090,7 @@ instType (TypeForall  tvs ty) = TypeForall (map instTypeVar tvs) (instType ty)
 instType ty = ty
 
 instPred :: Pred -> Pred
-instPred (Pred cls ty) = Pred cls (instType ty)
+instPred (Pred icc cls tys) = Pred icc cls (map instType tys)
 
 unRenameIdentIf :: Bool -> Ident -> Ident
 unRenameIdentIf b = if b then unRenameIdent else id

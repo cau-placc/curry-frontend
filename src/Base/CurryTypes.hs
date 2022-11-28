@@ -93,41 +93,43 @@ toQualType m tvs = qualifyType m . toType tvs
 toQualTypes :: ModuleIdent -> [Ident] -> [CS.TypeExpr] -> [Type]
 toQualTypes m tvs = map (qualifyType m) . toTypes tvs
 
-toPred :: [Ident] -> CS.Constraint -> Pred
-toPred tvs c = toPred' (enumTypeVars tvs c) c
+toPred :: [Ident] -> IccFlag -> CS.Constraint -> Pred
+toPred tvs icc c = toPred' (enumTypeVars tvs c) icc c
 
-toPred' :: Map.Map Ident Int -> CS.Constraint -> Pred
-toPred' tvs (CS.Constraint _ qcls ty) = error "CurryTypes.toPred': not yet adapted" -- Pred qcls (toType' tvs ty [])
-                                                                -- TODO : adapt to Curry frontend
+-- | Idea from Leif-Erik Krueger's master thesis
+toPred' :: Map.Map Ident Int -> IccFlag -> CS.Constraint -> Pred
+toPred' tvs icc (CS.Constraint _ qcls tys) = 
+  Pred icc qcls (map (\ty -> toType' tvs ty []) tys)  -- todo : adapt to curry frontend
 
-toQualPred :: ModuleIdent -> [Ident] -> CS.Constraint -> Pred
-toQualPred m tvs = qualifyPred m . toPred tvs
+toQualPred :: ModuleIdent -> [Ident] -> IccFlag -> CS.Constraint -> Pred
+toQualPred m tvs icc = qualifyPred m . toPred tvs icc
 
-toPredSet :: [Ident] -> CS.Context -> PredSet
-toPredSet tvs cx = toPredSet' (enumTypeVars tvs cx) cx
+toPredSet :: [Ident] -> IccFlag -> CS.Context -> PredSet
+toPredSet tvs fstIcc cx = toPredSet' (enumTypeVars tvs cx) fstIcc cx
 
-toPredSet' :: Map.Map Ident Int -> CS.Context -> PredSet
-toPredSet' tvs = Set.fromList . map (toPred' tvs)
+-- | Taken from Leif-Erik Krueger's master thesis
+toPredSet' :: Map.Map Ident Int -> IccFlag -> CS.Context -> PredSet
+toPredSet' tvs fstIcc = Set.fromList . zipWith (toPred' tvs) (fstIcc : repeat Other) 
 
-toQualPredSet :: ModuleIdent -> [Ident] -> CS.Context -> PredSet
-toQualPredSet m tvs = qualifyPredSet m . toPredSet tvs
+toQualPredSet :: ModuleIdent -> [Ident] -> IccFlag -> CS.Context -> PredSet
+toQualPredSet m tvs fstIcc = qualifyPredSet m . toPredSet tvs fstIcc
 
-toPredType :: [Ident] -> CS.QualTypeExpr -> PredType
-toPredType tvs qty = toPredType' (enumTypeVars tvs qty) qty
+toPredType :: [Ident] -> IccFlag -> CS.QualTypeExpr -> PredType
+toPredType tvs icc qty = toPredType' (enumTypeVars tvs qty) icc qty
 
-toPredType' :: Map.Map Ident Int -> CS.QualTypeExpr -> PredType
-toPredType' tvs (CS.QualTypeExpr _ cx ty) =
-  PredType (toPredSet' tvs cx) (toType' tvs ty [])
+toPredType' :: Map.Map Ident Int -> IccFlag -> CS.QualTypeExpr -> PredType
+toPredType' tvs icc (CS.QualTypeExpr _ cx ty) =
+  PredType (toPredSet' tvs icc cx) (toType' tvs ty [])
 
-toQualPredType :: ModuleIdent -> [Ident] -> CS.QualTypeExpr -> PredType
-toQualPredType m tvs = qualifyPredType m . toPredType tvs
+toQualPredType :: ModuleIdent -> [Ident] -> IccFlag -> CS.QualTypeExpr -> PredType
+toQualPredType m tvs icc = qualifyPredType m . toPredType tvs icc
 
 -- The function 'toConstrType' returns the type of a data or newtype
 -- constructor. Hereby, it restricts the context to those type variables
 -- which are free in the argument types.
 
 toConstrType :: QualIdent -> [Ident] -> [CS.TypeExpr] -> PredType
-toConstrType tc tvs tys = toPredType tvs $
+toConstrType tc tvs tys = toPredType tvs Other $
   CS.QualTypeExpr NoSpanInfo [] ty'
   where ty'  = foldr (CS.ArrowType NoSpanInfo) ty0 tys
         ty0  = foldl (CS.ApplyType NoSpanInfo)
@@ -138,11 +140,11 @@ toConstrType tc tvs tys = toPredType tvs $
 -- It adds the implicit type class constraint to the method's type signature
 -- and ensures that the class' type variable is always assigned index 0.
 
-toMethodType :: QualIdent -> Ident -> CS.QualTypeExpr -> PredType
-toMethodType qcls clsvar (CS.QualTypeExpr spi cx ty) =
-  toPredType [clsvar] (CS.QualTypeExpr spi cx' ty)
-  where cx' = error "CurryTypes.toMethodType: not yet adapted" -- CS.Constraint NoSpanInfo qcls
-                                      -- (CS.VariableType NoSpanInfo clsvar) : cx
+toMethodType :: QualIdent -> [Ident] -> CS.QualTypeExpr -> PredType
+toMethodType qcls clsvars (CS.QualTypeExpr spi cx ty) =
+  toPredType clsvars Icc (CS.QualTypeExpr spi cx' ty)
+  where cx' = CS.Constraint NoSpanInfo qcls
+                   (map (CS.VariableType NoSpanInfo) clsvars) : cx
                                       -- TODO : adapt to new AST
 
 fromType :: [Ident] -> Type -> CS.TypeExpr
@@ -179,7 +181,7 @@ fromQualType :: ModuleIdent -> [Ident] -> Type -> CS.TypeExpr
 fromQualType m tvs = fromType tvs . unqualifyType m
 
 fromPred :: [Ident] -> Pred -> CS.Constraint
-fromPred tvs (Pred qcls ty) =  error "CurryTypes.fromPred: not yet adapted "-- CS.Constraint NoSpanInfo qcls (fromType tvs ty)
+fromPred tvs (Pred _ qcls tys) = CS.Constraint NoSpanInfo qcls (map (fromType tvs) tys)
                                                        -- TODO: adapt to new AST
 fromQualPred :: ModuleIdent -> [Ident] -> Pred -> CS.Constraint
 fromQualPred m tvs = fromPred tvs .  unqualifyPred m

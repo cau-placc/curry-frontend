@@ -61,10 +61,10 @@ expandType' m tcEnv (TypeForall      tvs ty) tys =
   applyType (TypeForall tvs (expandType m tcEnv ty)) tys
 
 expandPred :: ModuleIdent -> TCEnv -> Pred -> Pred
-expandPred m tcEnv (Pred qcls ty) = case qualLookupTypeInfo qcls tcEnv of
-  [TypeClass ocls _ _] -> Pred ocls (expandType m tcEnv ty)
+expandPred m tcEnv (Pred icc qcls tys) = case qualLookupTypeInfo qcls tcEnv of
+  [TypeClass ocls _ _] -> Pred icc ocls (map (expandType m tcEnv) tys)
   _ -> case qualLookupTypeInfo (qualQualify m qcls) tcEnv of
-    [TypeClass ocls _ _] -> Pred ocls (expandType m tcEnv ty)
+    [TypeClass ocls _ _] -> Pred icc ocls (map (expandType m tcEnv) tys)
     _ -> internalError $ "Base.TypeExpansion.expandPred: " ++ show qcls
 
 expandPredSet :: ModuleIdent -> TCEnv -> ClassEnv -> PredSet -> PredSet
@@ -81,9 +81,9 @@ expandPredType m tcEnv clsEnv (PredType ps ty) =
 expandMonoType :: ModuleIdent -> TCEnv -> [Ident] -> TypeExpr -> Type
 expandMonoType m tcEnv tvs = expandType m tcEnv . toType tvs
 
-expandPolyType :: ModuleIdent -> TCEnv -> ClassEnv -> QualTypeExpr -> PredType
-expandPolyType m tcEnv clsEnv =
-  normalize 0 . expandPredType m tcEnv clsEnv . toPredType []
+expandPolyType :: IccFlag -> ModuleIdent -> TCEnv -> ClassEnv -> QualTypeExpr -> PredType
+expandPolyType icc m tcEnv clsEnv =
+  normalize 0 . expandPredType m tcEnv clsEnv . toPredType [] icc
 
 -- The function 'expandConstrType' computes the predicated type for a data
 -- or newtype constructor. Similar to 'toConstrType' from 'CurryTypes', the
@@ -106,7 +106,8 @@ expandConstrType m tcEnv clsEnv tc tvs tys =
 -- and type classes are qualified with the name of the module containing their
 -- definition.
 
-expandMethodType :: ModuleIdent -> TCEnv -> ClassEnv -> QualIdent -> Ident
+expandMethodType :: ModuleIdent -> TCEnv -> ClassEnv -> QualIdent -> [Ident]
                  -> QualTypeExpr -> PredType
-expandMethodType m tcEnv clsEnv qcls tv =
-  normalize 1 . expandPredType m tcEnv clsEnv . toMethodType qcls tv
+expandMethodType m tcEnv clsEnv qcls tvs =
+  normalize n . expandPredType m tcEnv clsEnv . toMethodType qcls tvs
+  where n = length tvs

@@ -333,14 +333,14 @@ hiddenTypes m tcEnv clsEnv tvs d =
                   let n = kindArity k
                       k' = fromKind' k n
                   in  HidingDataDecl NoPos tc k' $ take n tvs
-                hidingClassDecl k sclss =
-                  let cx = [ Constraint NoSpanInfo (qualUnqualify m scls)
-                               [(VariableType NoSpanInfo tv)]
-                           | scls <- sclss ]
-                      tv = head tvs
-                      k' = fromKind' k 0
+                hidingClassDecl k sclss = internalError "Exports.hiddenTypes.hidingClsDecl"
+                  --let cx = [ Constraint NoSpanInfo (qualUnqualify m scls)
+                  --             [(VariableType NoSpanInfo tv)]
+                  --         | scls <- sclss ]
+                  --    tv = head tvs
+                  --    k' = fromKind' k 0
                       -- TODO : adapt to new AST
-                  in  HidingClassDecl NoPos cx tc k' [tv] []
+                  --in  HidingClassDecl NoPos cx tc k' [tv] []
 
 instances :: ModuleIdent -> TCEnv -> InstEnv -> [Ident] -> Set.Set IInfo
           -> IInfo -> [IDecl]

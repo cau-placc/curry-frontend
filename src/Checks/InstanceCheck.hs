@@ -248,25 +248,25 @@ inferPredSets clsEnv (DeriveInfo spi tc pty tys clss) =
   mapM (inferPredSet clsEnv spi tc pty tys) clss
 
 inferPredSet :: HasSpanInfo s => ClassEnv -> s -> QualIdent -> PredType -> [Type]
-             -> QualIdent -> INCM ((InstIdent, PredSet), Bool)
-inferPredSet clsEnv p tc (PredType ps inst) tys cls = do
-  m <- getModuleIdent
-  let doc = ppPred m $ Pred cls inst
-      sclss = superClasses cls clsEnv
-      ps'   = Set.fromList [Pred cls ty | ty <- tys]
-      ps''  = Set.fromList [Pred scls inst | scls <- sclss]
-      ps''' = ps `Set.union` ps' `Set.union` ps''
-  (ps4, novarps) <-
-    reducePredSet (cls == qDataId) p "derived instance" doc clsEnv ps'''
-  let ps5 = filter noPolyPred $ Set.toList ps4
-  if any (isDataPred m) (Set.toList novarps ++ ps5) && cls == qDataId
-    then return    (((cls, tc), ps4), False)
-    else mapM_ (reportUndecidable p "derived instance" doc) ps5
-         >> return (((cls, tc), ps4), True)
-  where
-    noPolyPred (Pred _ (TypeVariable _)) = False
-    noPolyPred (Pred _ _               ) = True
-    isDataPred _ (Pred qid _) = qid == qDataId
+             -> QualIdent -> INCM ((InstIdent, PredSet), Bool) -- todo : adapt to new preds
+inferPredSet clsEnv p tc (PredType ps inst) tys cls = internalError "InstanceCheck.inferPredSet: not yet adapted" --do
+--  m <- getModuleIdent
+--  let doc = ppPred m $ Pred cls inst
+--      sclss = superClasses cls clsEnv
+--      ps'   = Set.fromList [Pred cls ty | ty <- tys]
+--      ps''  = Set.fromList [Pred scls inst | scls <- sclss]
+--      ps''' = ps `Set.union` ps' `Set.union` ps''
+--  (ps4, novarps) <-
+--    reducePredSet (cls == qDataId) p "derived instance" doc clsEnv ps'''
+--  let ps5 = filter noPolyPred $ Set.toList ps4
+--  if any (isDataPred m) (Set.toList novarps ++ ps5) && cls == qDataId
+--    then return    (((cls, tc), ps4), False)
+--    else mapM_ (reportUndecidable p "derived instance" doc) ps5
+--         >> return (((cls, tc), ps4), True)
+--  where
+--    noPolyPred (Pred _ (TypeVariable _)) = False
+--    noPolyPred (Pred _ _               ) = True
+--    isDataPred _ (Pred qid _) = qid == qDataId
 
 updatePredSets :: [((InstIdent, PredSet), Bool)] -> INCM Bool
 updatePredSets = fmap or . mapM (uncurry updatePredSet)
@@ -283,12 +283,12 @@ updatePredSet (i, ps) enter = do
         return True
     Nothing -> internalError "InstanceCheck.updatePredSet"
 
-reportUndecidable :: HasSpanInfo s => s -> String -> Doc -> Pred -> INCM ()
-reportUndecidable p what doc predicate@(Pred _ ty) = do
-  m <- getModuleIdent
-  case ty of
-    TypeVariable _ -> return ()
-    _ -> report $ errMissingInstance m p what doc predicate
+reportUndecidable :: HasSpanInfo s => s -> String -> Doc -> Pred -> INCM () -- todo : adapt to new preds
+reportUndecidable p what doc predicate@(Pred _ _ ty) = internalError "InstanceCheck.reportUndecidable: not yet adapted" -- do
+--  m <- getModuleIdent
+--  case ty of
+--    TypeVariable _ -> return ()
+--    _ -> report $ errMissingInstance m p what doc predicate
 
 -- Then, the compiler checks the contexts of all explicit instance
 -- declarations to detect missing super class instances. For an instance
@@ -325,15 +325,15 @@ checkDefault tcEnv clsEnv (DefaultDecl _ tys) =
   mapM_ (checkDefaultType tcEnv clsEnv) tys
 checkDefault _ _ _ = ok
 
-checkDefaultType :: TCEnv -> ClassEnv -> TypeExpr -> INCM ()
-checkDefaultType tcEnv clsEnv ty = do
-  m <- getModuleIdent
-  let PredType _ ty' = expandPolyType m tcEnv clsEnv $
-                         QualTypeExpr NoSpanInfo [] ty
-  (ps, _) <- reducePredSet False ty what empty clsEnv
-    (Set.singleton $ Pred qNumId ty')
-  Set.mapM_ (report . errMissingInstance m ty what empty) ps
-  where what = "default declaration"
+checkDefaultType :: TCEnv -> ClassEnv -> TypeExpr -> INCM () -- TODO : adapt to new preds
+checkDefaultType tcEnv clsEnv ty = internalError "InstanceCheck.checkDefaultType: not yet adapted" --do
+--  m <- getModuleIdent
+--  let PredType _ ty' = expandPolyType m tcEnv clsEnv $
+--                         QualTypeExpr NoSpanInfo [] ty
+--  (ps, _) <- reducePredSet False ty what empty clsEnv
+--    (Set.singleton $ Pred qNumId ty')
+--  Set.mapM_ (report . errMissingInstance m ty what empty) ps
+--  where what = "default declaration"
 
 -- The function 'reducePredSet' simplifies a predicate set of the form
 -- (C_1 tau_1,..,C_n tau_n) where the tau_i are arbitrary types into a
@@ -344,28 +344,28 @@ checkDefaultType tcEnv clsEnv ty = do
 -- When the flag is set, all missing Data preds are ignored
 
 reducePredSet :: HasSpanInfo s => Bool -> s -> String -> Doc -> ClassEnv -> PredSet
-              -> INCM (PredSet, PredSet)
-reducePredSet b p what doc clsEnv ps = do
-  m <- getModuleIdent
-  inEnv <- getInstEnv
-  let (ps1, ps2) = partitionPredSet $ minPredSet clsEnv $ reducePreds inEnv ps
-      ps2' = if b then Set.filter (isNotDataPred m) ps2 else ps2
-  Set.mapM_ (reportMissing m) ps2' >> return (ps1, ps2)
-  where
-    isNotDataPred _ (Pred qid _) = qid /= qDataId
-    reportMissing m pr@(Pred _ _) =
-      report $ errMissingInstance m p what doc pr
-    reducePreds inEnv = Set.concatMap $ reducePred inEnv
-    reducePred inEnv predicate = maybe (Set.singleton predicate)
-                                       (reducePreds inEnv)
-                                       (instPredSet inEnv predicate)
+              -> INCM (PredSet, PredSet) -- TODO : dapt to new preds
+reducePredSet b p what doc clsEnv ps = internalError "InstanceCheck.reducePredSet: not yet adapted" -- do
+--  m <- getModuleIdent
+--  inEnv <- getInstEnv
+--  let (ps1, ps2) = partitionPredSet $ minPredSet clsEnv $ reducePreds inEnv ps
+--      ps2' = if b then Set.filter (isNotDataPred m) ps2 else ps2
+--  Set.mapM_ (reportMissing m) ps2' >> return (ps1, ps2)
+--  where
+--    isNotDataPred _ (Pred qid _) = qid /= qDataId
+--    reportMissing m pr@(Pred _ _) =
+--      report $ errMissingInstance m p what doc pr
+--    reducePreds inEnv = Set.concatMap $ reducePred inEnv
+--    reducePred inEnv predicate = maybe (Set.singleton predicate)
+--                                       (reducePreds inEnv)
+--                                       (instPredSet inEnv predicate)
 
-instPredSet :: InstEnv -> Pred -> Maybe PredSet
-instPredSet inEnv (Pred qcls ty) =
-  case unapplyType False ty of
-    (TypeConstructor tc, tys) ->
-      fmap (expandAliasType tys . snd3) (lookupInstInfo (qcls, tc) inEnv)
-    _ -> Nothing
+instPredSet :: InstEnv -> Pred -> Maybe PredSet -- TODO : adapt to new preds
+instPredSet inEnv (Pred _ qcls ty) = internalError "InstanceCheck.instPredSet: not yet adapted"
+--  case unapplyType False ty of
+--    (TypeConstructor tc, tys) ->
+--      fmap (expandAliasType tys . snd3) (lookupInstInfo (qcls, tc) inEnv)
+--    _ -> Nothing
 
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions

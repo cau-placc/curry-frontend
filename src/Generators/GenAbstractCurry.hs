@@ -132,11 +132,11 @@ trInstanceMethodDecl _ _ _ = internalError "GenAbstractCurry.trInstanceMethodDec
 -- Transforms a class method type into an instance method's type by replacing
 -- the class variable with the given instance type. The implicit class context
 -- is dropped in doing so.
-trInstanceMethodType :: TypeExpr -> QualTypeExpr -> GAC CQualTypeExpr
-trInstanceMethodType ity (QualTypeExpr _ cx ty) =
-  trQualTypeExpr $ fromPredType identSupply $
-    subst (bindSubst 0 (toType [] ity) idSubst) $
-      toPredType (take 1 identSupply) $ QualTypeExpr NoSpanInfo (drop 1 cx) ty
+trInstanceMethodType :: TypeExpr -> QualTypeExpr -> GAC CQualTypeExpr -- todo : adapt to new preds
+trInstanceMethodType ity (QualTypeExpr _ cx ty) = internalError "GenAbstractCurry.trInstanceMethodType: not yet adapted"
+  --trQualTypeExpr $ fromPredType identSupply $
+  --  subst (bindSubst 0 (toType [] ity) idSubst) $
+  --    toPredType (take 1 identSupply) $ QualTypeExpr NoSpanInfo (drop 1 cx) ty
 
 trTypeDecl :: Decl a -> GAC [CTypeDecl]
 trTypeDecl (DataDecl    _ t vs cs clss) =

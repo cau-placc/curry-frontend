@@ -59,7 +59,7 @@ subst' sigma (TypeForall      tvs ty) =
   applyType (TypeForall tvs (subst sigma ty))
 
 instance SubstType Pred where
-  subst sigma (Pred qcls ty) = Pred qcls (subst sigma ty)
+  subst sigma (Pred icc qcls ty) = Pred icc qcls (subst sigma ty)
 
 instance SubstType PredType where
   subst sigma (PredType ps ty) = PredType (subst sigma ps) (subst sigma ty)
@@ -106,7 +106,7 @@ expandAliasType' tys (TypeForall      tvs ty) =
   applyType (TypeForall tvs (expandAliasType tys ty))
 
 instance ExpandAliasType Pred where
-  expandAliasType tys (Pred qcls ty) = Pred qcls (expandAliasType tys ty)
+  expandAliasType tys (Pred icc qcls ty) = Pred icc qcls (expandAliasType tys ty)
 
 instance ExpandAliasType PredType where
   expandAliasType tys (PredType ps ty) =

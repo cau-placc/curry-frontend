@@ -152,34 +152,34 @@ checkImport (IFunctionDecl _ f (Just tv) n ty) = do
   m <- getModuleIdent
   let check (Value f' cm' n' (ForAll _ ty')) =
         f == f' && isJust cm' && n' == n &&
-        toQualPredType m [tv] ty == ty'
+        toQualPredType m [tv] Icc ty == ty'
       check _ = False
   checkValueInfo "method" check f f
 checkImport (IFunctionDecl _ f Nothing n ty) = do
   m <- getModuleIdent
   let check (Value f' cm' n' (ForAll _ ty')) =
         f == f' && isNothing cm' && n' == n &&
-        toQualPredType m [] ty == ty'
+        toQualPredType m [] Other ty == ty'
       check _ = False
   checkValueInfo "function" check f f
-checkImport (HidingClassDecl _ cx cls k _ _) = do
-  clsEnv <- getClassEnv
-  let check (TypeClass cls' k' _)
-        | cls == cls' && toKind' k 0 == k' &&
-          [cls'' | Constraint _ cls'' _ <- cx] == superClasses cls' clsEnv
-        = Just ok
-      check _ = Nothing
-  checkTypeInfo "hidden type class" check cls cls
-checkImport (IClassDecl _ cx cls k clsvars _ ms _) = do
-  clsEnv <- getClassEnv
-  let check (TypeClass cls' k' fs)
-        | cls == cls' && toKind' k 0 == k' &&
-          [cls'' | Constraint _ cls'' _ <- cx] == superClasses cls' clsEnv &&
-          map (\m -> (imethod m, imethodArity m)) ms ==
-            map (\f -> (methodName f, methodArity f)) fs
-        = Just $ mapM_ (checkMethodImport cls clsvars) ms
-      check _ = Nothing
-  checkTypeInfo "type class" check cls cls
+checkImport (HidingClassDecl _ cx cls k _ _) = ok --do
+--  clsEnv <- getClassEnv
+--  let check (TypeClass cls' k' _)
+--        | cls == cls' && toKind' k 0 == k' &&
+--          [cls'' | Constraint _ cls'' _ <- cx] == superClasses cls' clsEnv
+--        = Just ok
+--      check _ = Nothing
+--  checkTypeInfo "hidden type class" check cls cls
+checkImport (IClassDecl _ cx cls k clsvars _ ms _) = ok --do
+--  clsEnv <- getClassEnv
+--  let check (TypeClass cls' k' fs)
+--        | cls == cls' && toKind' k 0 == k' &&
+--          [cls'' | Constraint _ cls'' _ <- cx] == superClasses cls' clsEnv &&
+--          map (\m -> (imethod m, imethodArity m)) ms ==
+--            map (\f -> (methodName f, methodArity f)) fs
+--        = Just $ mapM_ (checkMethodImport cls clsvars) ms
+--      check _ = Nothing--
+--  checkTypeInfo "type class" check cls cls
 checkImport (IInstanceDecl _ cx cls tys is m) = ok
   --checkInstInfo check cls (cls, map typeConstr tys) m
   --where --PredType ps _ = toPredType [] $ QualTypeExpr NoSpanInfo cx ty

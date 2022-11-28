@@ -25,8 +25,8 @@ module Base.Types
   , qualifyType, unqualifyType, qualifyTC
     -- * Representation of predicate, predicate sets and predicated types
   , Pred (..), qualifyPred, unqualifyPred
-  , PredSet, emptyPredSet, partitionPredSet, minPredSet, maxPredSet
-  , qualifyPredSet, unqualifyPredSet
+  , IccFlag ( .. )
+  , PredSet, emptyPredSet, partitionPredSet , qualifyPredSet, unqualifyPredSet
   , PredType (..), predType, unpredType, qualifyPredType, unqualifyPredType
     -- * Representation of data constructors
   , DataConstr (..), constrIdent, constrTypes, recLabels, recLabelTypes
@@ -49,8 +49,6 @@ import qualified Data.Set.Extra as Set
 import Curry.Base.Ident
 
 import Base.Messages (internalError)
-
-import Env.Class (ClassEnv, allSuperClasses)
 
 -- ---------------------------------------------------------------------------
 -- Types
@@ -212,8 +210,13 @@ qualifyTC m tc | isPrimTypeId tc = tc
 -- Predicates
 -- ---------------------------------------------------------------------------
 
-data Pred = Pred QualIdent Type
-  deriving (Eq, Show)
+-- | The predicate stores whether it is an implicit class constraint or not
+--   The idea is taken from the master thesis of Leif-Erik Krueger
+data Pred = Pred IccFlag QualIdent [Type]
+  deriving (Eq, Ord, Show)
+
+data IccFlag = Icc | Other
+  deriving (Eq, Ord, Show)
 
 -- We provide a custom 'Ord' instance for predicates here where we consider
 -- the type component of the predicate before the class component. This way,
@@ -224,21 +227,22 @@ data Pred = Pred QualIdent Type
 -- on class variables are not allowed (see predicate sets below for more
 -- information why this order is relevant).
 
-instance Ord Pred where
-  Pred qcls1 ty1 `compare` Pred qcls2 ty2 = case ty1 `compare` ty2 of
-    LT -> LT
-    EQ -> qcls1 `compare` qcls2
-    GT -> GT
+--instance Ord Pred where
+--  Pred qcls1 ty1 `compare` Pred qcls2 ty2 = case ty1 `compare` ty2 of
+--    LT -> LT
+--    EQ -> qcls1 `compare` qcls2
+--    GT -> GT
 
 instance IsType Pred where
-  typeVars (Pred _ ty) = typeVars ty
+  typeVars (Pred _ _ tys) = concatMap typeVars tys
 
 qualifyPred :: ModuleIdent -> Pred -> Pred
-qualifyPred m (Pred qcls ty) = Pred (qualQualify m qcls) (qualifyType m ty)
+qualifyPred m (Pred icc qcls tys) = 
+  Pred icc (qualQualify m qcls) (map (qualifyType m) tys)
 
 unqualifyPred :: ModuleIdent -> Pred -> Pred
-unqualifyPred m (Pred qcls ty) =
-  Pred (qualUnqualify m qcls) (unqualifyType m ty)
+unqualifyPred m (Pred icc qcls tys) =
+  Pred icc (qualUnqualify m qcls) (map (unqualifyType m) tys)
 
 -- ---------------------------------------------------------------------------
 -- Predicate sets
@@ -260,7 +264,7 @@ emptyPredSet :: PredSet
 emptyPredSet = Set.empty
 
 partitionPredSet :: PredSet -> (PredSet, PredSet)
-partitionPredSet = Set.partition $ \(Pred _ ty) -> isTypeVariable ty
+partitionPredSet = Set.partition $ \(Pred _ _ tys) -> all isTypeVariable tys
   where
     isTypeVariable (TypeVariable _) = True
     isTypeVariable (TypeApply ty _) = isTypeVariable ty
@@ -272,16 +276,7 @@ partitionPredSet = Set.partition $ \(Pred _ ty) -> isTypeVariable ty
 -- adds all predicates to a predicate set which are implied by the predicates
 -- in the given predicate set.
 
-minPredSet :: ClassEnv -> PredSet -> PredSet
-minPredSet clsEnv ps =
-  ps `Set.difference` Set.concatMap implied ps
-  where implied (Pred cls ty) = Set.fromList
-          [Pred cls' ty | cls' <- tail (allSuperClasses cls clsEnv)]
 
-maxPredSet :: ClassEnv -> PredSet -> PredSet
-maxPredSet clsEnv ps = Set.concatMap implied ps
-  where implied (Pred cls ty) = Set.fromList
-          [Pred cls' ty | cls' <- allSuperClasses cls clsEnv]
 
 qualifyPredSet :: ModuleIdent -> PredSet -> PredSet
 qualifyPredSet m = Set.map (qualifyPred m)

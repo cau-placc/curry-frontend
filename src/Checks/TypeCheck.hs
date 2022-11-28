@@ -823,10 +823,10 @@ bindDeclArity _ _     _      _    (InfixDecl        _ _ _ _) = id
 bindDeclArity _ _     _      _    (TypeSig            _ _ _) = id
 bindDeclArity _ _     _      _    (FunctionDecl   _ _ f eqs) =
   bindArity f (eqnArity $ head eqs)
-bindDeclArity m tcEnv clsEnv sigs (ExternalDecl        _ fs) =
-  flip (foldr $ \(Var _ f) -> bindArity f $ arrowArity $ ty f) fs
-  where ty = unpredType . expandPolyType m tcEnv clsEnv . fromJust .
-               flip lookupTypeSig sigs
+bindDeclArity m tcEnv clsEnv sigs (ExternalDecl        _ fs) = internalError "TypeCheck.bindDeclArity: not yet adapted"
+ -- flip (foldr $ \(Var _ f) -> bindArity f $ arrowArity $ ty f) fs
+ -- where ty = unpredType . expandPolyType m tcEnv clsEnv . fromJust .
+--               flip lookupTypeSig sigs
 bindDeclArity _ _     _      _    (PatternDecl        _ t _) =
   flip (foldr bindVarArity) (bv t)
 bindDeclArity _ _     _      _    (FreeDecl            _ vs) =
@@ -1026,14 +1026,14 @@ tcPatternHelper _ (LiteralPattern spi _ l) = do
 tcPatternHelper _ (NegativePattern spi _ l) = do
   (ps, ty) <- lift $ tcLiteral False l
   return (ps, ty, NegativePattern spi (predType ty) l)
-tcPatternHelper _ (VariablePattern spi _ v) = do
-  vEnv <- lift getValueEnv
-  (_, ty) <- lift $ inst (varType v vEnv)
-  used <- S.get
-  ps <- if Set.member v used
-          then return (Set.singleton (Pred qDataId ty))
-          else S.put (Set.insert v used) >> return Set.empty
-  return (ps, ty, VariablePattern spi (predType ty) v)
+tcPatternHelper _ (VariablePattern spi _ v) = internalError "TypeCheck: tcPatternHelper" --do
+--  vEnv <- lift getValueEnv
+--  (_, ty) <- lift $ inst (varType v vEnv)
+--  used <- S.get
+--  ps <- if Set.member v used
+--          then return (Set.singleton (Pred Other qDataId ty)) -- TODO : Adapt to new Pred type ?
+--          else S.put (Set.insert v used) >> return Set.empty
+--  return (ps, ty, VariablePattern spi (predType ty) v)
 tcPatternHelper p t@(ConstructorPattern spi _ c ts) = do
   m <- lift getModuleIdent
   vEnv <- lift getValueEnv
@@ -1066,16 +1066,16 @@ tcPatternHelper p t@(ListPattern spi _ ts) = do
   (ps, ts') <- mapAccumM (flip (ptcPatternArg p "pattern" (pPrintPrec 0 t)) ty)
                          emptyPredSet ts
   return (ps, listType ty, ListPattern spi (predType $ listType ty) ts')
-tcPatternHelper p t@(AsPattern spi v t') = do
-  vEnv <- lift getValueEnv
-  (_, ty) <- lift $ inst (varType v vEnv)
-  used <- S.get
-  ps <- if Set.member v used
-          then return (Set.singleton (Pred qDataId ty))
-          else S.put (Set.insert v used) >> return Set.empty
-  (ps'', t'') <- tcPatternHelper p t' >>-
-    (\ps' ty' -> lift $ unify p "pattern" (pPrintPrec 0 t) ps ty ps' ty')
-  return (ps'', ty, AsPattern spi v t'')
+tcPatternHelper p t@(AsPattern spi v t') = internalError "TypeCheck.tcPatternHelper.AsPattern" --do
+--  vEnv <- lift getValueEnv
+--  (_, ty) <- lift $ inst (varType v vEnv)
+--  used <- S.get
+--  ps <- if Set.member v used
+--          then return (Set.singleton (Pred qDataId ty))
+--          else S.put (Set.insert v used) >> return Set.empty
+--  (ps'', t'') <- tcPatternHelper p t' >>-
+--    (\ps' ty' -> lift $ unify p "pattern" (pPrintPrec 0 t) ps ty ps' ty')
+--  return (ps'', ty, AsPattern spi v t'')
 tcPatternHelper p (LazyPattern spi t) = do
   (ps, ty, t') <- tcPatternHelper p t
   return (ps, ty, LazyPattern spi t')
@@ -1095,8 +1095,8 @@ tcFuncPattern :: HasSpanInfo p => p -> SpanInfo -> Doc -> QualIdent
               -> ([Pattern PredType] -> [Pattern PredType])
               -> PredSet -> Type -> [Pattern a]
               -> PTCM (PredSet, Type, Pattern PredType)
-tcFuncPattern _ spi _ f ts ps ty [] =
-  return (Set.insert (Pred qDataId ty) ps, ty, FunctionPattern spi (predType ty) f (ts []))
+tcFuncPattern _ spi _ f ts ps ty [] = internalError "TypeCheck.tcFuncPattern: not yet adapted"
+--  return (Set.insert (Pred qDataId ty) ps, ty, FunctionPattern spi (predType ty) f (ts []))
 tcFuncPattern p spi doc f ts ps ty (t':ts') = do
   (alpha, beta) <- lift $
     tcArrow p "functional pattern" (doc $-$ text "Term:" <+> pPrintPrec 0 t) ty
@@ -1409,7 +1409,7 @@ tcMissingField p ty l = do
   vEnv <- getValueEnv
   (ps, ty') <- inst (labelType m l vEnv)
   let TypeArrow _ ty2 = ty'
-  let ps' = Set.singleton (Pred qDataId ty2)
+  let ps' = Set.singleton (Pred Other qDataId [ty2]) -- TODO: adapt ?
   unify p "field label" empty ps ty' ps' (TypeArrow ty ty2)
 
 -- | Checks that it's argument can be used as an arrow type @a -> b@ and returns
@@ -1521,21 +1521,21 @@ unifyTypeLists m (ty1 : tys1) (ty2 : tys2) =
 -- may cause a further extension of the current type substitution.
 
 reducePredSet :: HasSpanInfo p => p -> String -> Doc -> PredSet -> TCM PredSet
-reducePredSet p what doc ps = do
-  m <- getModuleIdent
-  clsEnv <- getClassEnv
-  theta <- getTypeSubst
-  inEnv <- fmap (fmap (subst theta)) <$> getInstEnv
-  let ps' = subst theta ps
-      (ps1, ps2) = partitionPredSet $ minPredSet clsEnv $ reducePreds inEnv ps'
-  theta' <-
-    foldM (reportMissingInstance m p what doc inEnv) idSubst $ Set.toList ps2
-  modifyTypeSubst $ compose theta'
-  return ps1
-  where
-    reducePreds inEnv = Set.concatMap $ reducePred inEnv
-    reducePred inEnv pr@(Pred qcls ty) =
-      maybe (Set.singleton pr) (reducePreds inEnv) (instPredSet inEnv qcls ty)
+reducePredSet p what doc ps = internalError "TypeCheck.reducePredSet: not yet adapted" --do
+--  m <- getModuleIdent
+--  clsEnv <- getClassEnv
+--  theta <- getTypeSubst
+--  inEnv <- fmap (fmap (subst theta)) <$> getInstEnv
+--  let ps' = subst theta ps
+--      (ps1, ps2) = partitionPredSet $ minPredSet clsEnv $ reducePreds inEnv ps'
+--  theta' <-
+--    foldM (reportMissingInstance m p what doc inEnv) idSubst $ Set.toList ps2
+--  modifyTypeSubst $ compose theta'
+--  return ps1
+--  where
+--    reducePreds inEnv = Set.concatMap $ reducePred inEnv
+--    reducePred inEnv pr@(Pred qcls ty) =
+--      maybe (Set.singleton pr) (reducePreds inEnv) (instPredSet inEnv qcls ty)
 
 instPredSet :: InstEnv' -> QualIdent -> Type -> Maybe PredSet
 instPredSet inEnv qcls ty = case Map.lookup qcls $ snd inEnv of
@@ -1547,23 +1547,23 @@ instPredSet inEnv qcls ty = case Map.lookup qcls $ snd inEnv of
 
 reportMissingInstance :: HasSpanInfo p => ModuleIdent -> p -> String -> Doc
                       -> InstEnv' -> TypeSubst -> Pred -> TCM TypeSubst
-reportMissingInstance m p what doc inEnv theta (Pred qcls ty) =
-  case subst theta ty of
-    ty'@(TypeConstrained tys tv) ->
-      case filter (hasInstance inEnv qcls) tys of
-        [] -> do
-          report $ errMissingInstance m p what doc (Pred qcls ty')
-          return theta
-        [ty''] -> return (bindSubst tv ty'' theta)
-        tys'
-          | length tys == length tys' -> return theta
-          | otherwise ->
-              liftM (flip (bindSubst tv) theta) (freshConstrained tys')
-    ty'
-      | hasInstance inEnv qcls ty' -> return theta
-      | otherwise -> do
-        report $ errMissingInstance m p what doc (Pred qcls ty')
-        return theta
+reportMissingInstance m p what doc inEnv theta (Pred _ qcls ty) = internalError "TypeCheck.reportMissingInstance: not yet adapted" -- TODO :adapt?
+--  case subst theta ty of
+--    ty'@(TypeConstrained tys tv) ->
+--      case filter (hasInstance inEnv qcls) tys of
+--        [] -> do
+--          report $ errMissingInstance m p what doc (Pred qcls ty')
+--          return theta
+--        [ty''] -> return (bindSubst tv ty'' theta)
+--        tys'
+--          | length tys == length tys' -> return theta
+--          | otherwise ->
+--              liftM (flip (bindSubst tv) theta) (freshConstrained tys')
+--    ty'
+--      | hasInstance inEnv qcls ty' -> return theta
+--      | otherwise -> do
+--        report $ errMissingInstance m p what doc (Pred qcls ty')
+--        return theta
 
 hasInstance :: InstEnv' -> QualIdent -> Type -> Bool
 hasInstance inEnv qcls = isJust . instPredSet inEnv qcls
@@ -1596,7 +1596,7 @@ applyDefaults p what doc fvs ps ty = do
   inEnv <- getInstEnv
   defs <- getDefaultTypes
   let theta = foldr (bindDefault defs inEnv ps) idSubst $ nub
-                [ tv | Pred qcls (TypeVariable tv) <- Set.toList ps
+                [ tv | Pred _ qcls [TypeVariable tv] <- Set.toList ps -- TODO : adapt to new Preds ?
                      , tv `Set.notMember` fvs, isNumClass clsEnv qcls ]
       ps'   = fst (partitionPredSet (subst theta ps))
       ty'   = subst theta ty
@@ -1612,13 +1612,14 @@ bindDefault defs inEnv ps tv =
     ty:_ -> bindSubst tv ty
 
 defaultType :: InstEnv' -> Int -> Pred -> [Type] -> [Type]
-defaultType inEnv tv (Pred qcls (TypeVariable tv'))
+defaultType inEnv tv (Pred _ qcls [TypeVariable tv'])
   | tv == tv' = filter (hasInstance inEnv qcls)
   | otherwise = id
 defaultType _ _ _ = id
 
+-- todo : adapt to new preds
 isNumClass :: ClassEnv -> QualIdent -> Bool
-isNumClass = (elem qNumId .) . flip allSuperClasses
+isNumClass = internalError "TypeCheck.isNumClass: not yet adapted" --(elem qNumId .) . flip allSuperClasses
 
 -- Instantiation and Generalization:
 -- We use negative offsets for fresh type variables.
@@ -1632,10 +1633,10 @@ freshVar f = fresh $ \n -> f (- n)
 freshTypeVar :: TCM Type
 freshTypeVar = freshVar TypeVariable
 
-freshPredType :: [QualIdent] -> TCM (PredSet, Type)
-freshPredType qclss = do
-  ty <- freshTypeVar
-  return (foldr (\qcls -> Set.insert $ Pred qcls ty) emptyPredSet qclss, ty)
+freshPredType :: [QualIdent] -> TCM (PredSet, Type) -- TODO : adapt to new preds
+freshPredType qclss = internalError "TypeCheck.freshPredType: not yet adapted" --do
+--  ty <- freshTypeVar
+--  return (foldr (\qcls -> Set.insert $ Pred qcls ty) emptyPredSet qclss, ty)
 
 freshEnumType :: TCM (PredSet, Type)
 freshEnumType = freshPredType [qEnumId]
@@ -1671,16 +1672,16 @@ inst (ForAll n (PredType ps ty)) = do
 -- constructor's declaration are added to the dynamic instance
 -- environment.
 
-skol :: TypeScheme -> TCM (PredSet, Type)
-skol (ForAll n (PredType ps ty)) = do
-  tys <- replicateM n freshTypeVar
-  clsEnv <- getClassEnv
-  modifyInstEnv $
-    fmap $ bindSkolemInsts $ expandAliasType tys $ maxPredSet clsEnv ps
-  return (emptyPredSet, expandAliasType tys ty)
-  where bindSkolemInsts = flip (foldr bindSkolemInst) . Set.toList
-        bindSkolemInst (Pred qcls ty') dInEnv =
-          Map.insert qcls (ty' : fromMaybe [] (Map.lookup qcls dInEnv)) dInEnv
+skol :: TypeScheme -> TCM (PredSet, Type) -- todo: adapt to new preds
+skol (ForAll n (PredType ps ty)) = internalError "TypeCheck.skol: not yet adapted" --do
+--  tys <- replicateM n freshTypeVar
+--  clsEnv <- getClassEnv
+--  modifyInstEnv $
+--    fmap $ bindSkolemInsts $ expandAliasType tys $ maxPredSet clsEnv ps
+--  return (emptyPredSet, expandAliasType tys ty)
+--  where bindSkolemInsts = flip (foldr bindSkolemInst) . Set.toList
+--        bindSkolemInst (Pred qcls ty') dInEnv =
+--          Map.insert qcls (ty' : fromMaybe [] (Map.lookup qcls dInEnv)) dInEnv
 
 -- The function 'gen' generalizes a predicate set ps and a type tau into
 -- a type scheme forall alpha . ps -> tau by universally quantifying all
@@ -1756,12 +1757,12 @@ labelType m l vEnv = case qualLookupValue l vEnv of
 
 -- The function 'expandPoly' handles the expansion of type aliases.
 
-expandPoly :: QualTypeExpr -> TCM PredType
-expandPoly qty = do
-  m <- getModuleIdent
-  tcEnv <- getTyConsEnv
-  clsEnv <- getClassEnv
-  return $ expandPolyType m tcEnv clsEnv qty
+expandPoly :: QualTypeExpr -> TCM PredType -- todo : adapt to new pred
+expandPoly qty = internalError "TypeCheck.expandPoly: not yet adapted" -- do
+--  m <- getModuleIdent
+--  tcEnv <- getTyConsEnv
+--  clsEnv <- getClassEnv
+--  return $ expandPolyType m tcEnv clsEnv qty
 
 -- The function 'splitPredSet' splits a predicate set into a pair of predicate
 -- set such that all type variables that appear in the types of the predicates
