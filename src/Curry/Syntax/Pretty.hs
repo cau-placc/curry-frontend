@@ -275,6 +275,7 @@ ppHiding hs
 
 instance Pretty KindExpr where
   pPrintPrec _ Star              = char '*'
+  pPrintPrec _ ConstraintKind    = text "Constraint"
   pPrintPrec p (ArrowKind k1 k2) =
     parenIf (p > 0) (fsep (ppArrowKind (ArrowKind k1 k2)))
     where

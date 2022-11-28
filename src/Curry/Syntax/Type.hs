@@ -143,8 +143,10 @@ data IMethodDecl = IMethodDecl Position Ident (Maybe Arity) QualTypeExpr
 type IMethodImpl = (Ident, Arity)
 
 -- |Kind expressions
+-- |ConstraintKind extension taken from Leif-Erik Krueger's master thesis
 data KindExpr
   = Star
+  | ConstraintKind
   | ArrowKind KindExpr KindExpr
     deriving (Eq, Read, Show)
 

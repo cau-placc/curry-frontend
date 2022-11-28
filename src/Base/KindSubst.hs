@@ -34,6 +34,7 @@ substVar = substVar' KindVariable subst
 
 instance SubstKind Kind where
   subst _     KindStar             = KindStar
+  subst _     KindConstraint       = KindConstraint
   subst sigma (KindVariable    kv) = substVar sigma kv
   subst sigma (KindArrow    k1 k2) = KindArrow (subst sigma k1) (subst sigma k2)
 

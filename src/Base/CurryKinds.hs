@@ -28,6 +28,7 @@ import Base.Kinds
 toKind :: KindExpr -> Kind
 toKind Star              = KindStar
 toKind (ArrowKind k1 k2) = KindArrow (toKind k1) (toKind k2)
+toKind ConstraintKind    = KindConstraint
 
 toKind' :: Maybe KindExpr -> Int -> Kind
 toKind' k n = maybe (simpleKind n) toKind k
@@ -36,6 +37,7 @@ fromKind :: Kind -> KindExpr
 fromKind KindStar          = Star
 fromKind (KindVariable  _) = Star
 fromKind (KindArrow k1 k2) = ArrowKind (fromKind k1) (fromKind k2)
+fromKind KindConstraint    = ConstraintKind
 
 fromKind' :: Kind -> Int -> Maybe KindExpr
 fromKind' k n | k == simpleKind n = Nothing

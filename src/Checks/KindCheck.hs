@@ -23,7 +23,7 @@ import Prelude hiding ((<>))
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative      ((<$>), (<*>))
 #endif
-import           Control.Monad            (when, foldM)
+import           Control.Monad            (when, foldM, replicateM)
 import           Control.Monad.Fix        (mfix)
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 import           Data.List                (partition, nub)
@@ -343,7 +343,7 @@ bindKind m tcEnv' _      tcEnv (TypeDecl _ tc tvs ty) =
     aliasType tc' k = AliasType tc' k $ length tvs
     ty' = expandMonoType m tcEnv' tvs ty
 bindKind m tcEnv' clsEnv tcEnv (ClassDecl _ _ _ cls tvs _ ds) =
-  bindTypeClass cls (concatMap mkMethods ds) tcEnv
+  bindTypeClass cls (length tvs) (concatMap mkMethods ds) tcEnv
   where
     mkMethods (TypeSig _ fs qty) = map (mkMethod qty) fs
     mkMethods _                  = []
@@ -365,11 +365,12 @@ bindTypeConstructor f tc tvs k x tcEnv = do
       ti = f qtc (foldr KindArrow k' ks) x
   return $ bindTypeInfo m tc ti tcEnv
 
-bindTypeClass :: Ident -> [ClassMethod] -> TCEnv -> KCM TCEnv
-bindTypeClass cls ms tcEnv = do
+bindTypeClass :: Ident -> Int -> [ClassMethod] -> TCEnv -> KCM TCEnv
+bindTypeClass cls n ms tcEnv = do
   m <- getModuleIdent
-  k <- freshKindVar
+  ks <- replicateM n freshKindVar
   let qcls = qualifyWith m cls
+      k = foldr KindArrow KindStar ks
       ti = TypeClass qcls k ms
   return $ bindTypeInfo m cls ti tcEnv
 
@@ -458,10 +459,7 @@ kcDecl tcEnv (DefaultDecl _ tys) = do
   mapM_ (kcValueType tcEnv' "default declaration" empty) tys
 kcDecl tcEnv (ClassDecl _ _ cx cls tvs fds ds) = do
   m <- getModuleIdent
-  let tcEnv' = foldr 
-                 (\tv tce -> bindTypeVar tv (clsKind m (qualifyWith m cls) tce) tce) 
-                 tcEnv
-                 tvs
+  (_, tcEnv') <- bindTypeVars cls tvs tcEnv
   kcContext tcEnv' cx
   mapM_ (kcDecl tcEnv') ds
 kcDecl tcEnv (InstanceDecl p _ cx qcls inst ds) = do
@@ -643,6 +641,9 @@ kcArrow p what doc k = do
   case subst theta k of
     KindStar -> do
       report $ errNonArrowKind p what doc KindStar
+      (,) <$> freshKindVar <*> freshKindVar
+    KindConstraint -> do
+      report $ errNonArrowKind p what doc KindConstraint
       (,) <$> freshKindVar <*> freshKindVar
     KindVariable kv -> do
       alpha <- freshKindVar

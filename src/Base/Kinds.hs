@@ -15,14 +15,16 @@
 module Base.Kinds where
 
 -- A kind is either *, which is the kind of a value's type, a kind
--- variable, or an arrow kind. Kind variables are used internally during
--- kind inference. Kind variables are not supported in Curry kind
--- expressions and all kind variables that remain free after kind
--- inference are instantiated to *.
-
+-- variable, an arrow kind or a constraint kind. Kind variables are 
+-- used internally during kind inference. Kind variables are not 
+-- supported in Curry kind expressions and all kind variables that 
+-- remain free after kind inference are instantiated to *.
+-- The Constraint kind extension is taken from Leif-Erik Krueger's
+-- master thesis.
 data Kind = KindStar
           | KindVariable Int
           | KindArrow Kind Kind
+          | KindConstraint
   deriving (Eq, Show)
 
 -- |The function 'kindArity' computes the arity n of a kind.
@@ -38,6 +40,7 @@ kindVars k = vars k []
     vars KindStar          kvs = kvs
     vars (KindVariable kv) kvs = kv : kvs
     vars (KindArrow k1 k2) kvs = vars k1 $ vars k2 kvs
+    vars KindConstraint    kvs = kvs
 
 -- |The function 'defaultKind' instantiates all kind variables
 -- occurring in a kind to *.
