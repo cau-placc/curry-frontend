@@ -20,14 +20,15 @@ module Env.Class
   ( ClassEnv, initClassEnv
   , ClassInfo, bindClassInfo, mergeClassInfo, lookupClassInfo
   , superClasses, allSuperClasses, classMethods, hasDefaultImpl
-  , minPredSet, maxPredSet, genFunDep
+  , minPredSet, maxPredSet, genFunDep, cov
   ) where
 
 import           Data.List       (nub, sort)
 import qualified Data.Map       as Map (Map, empty, insertWith, lookup)
-import qualified Data.Set.Extra as Set (Set, insert, delete, concatMap
-                                       , union, difference, map, fromList)
+import qualified Data.Set.Extra as Set (Set, insert, delete, concatMap, isSubsetOf
+                                       , union, unions, difference, map, fromList, toList)
 
+import Base.Expr ( Expr (fv) )
 import Base.Types
 import Base.TypeSubst
 
@@ -133,3 +134,27 @@ genFunDep ixs (FunDep _ ltvs rtvs) =
      Just ix -> ix
      Nothing -> 
        internalError $ "KindCheck.getFunDep: unindexed variable " ++ show (ppIdent ident)
+
+-- | Computes the set of type variables covered by functional dependencies given
+--   a context and a set of already covered type variables
+cov :: Context -> Set.Set Ident -> ClassEnv -> Set.Set Ident
+cov cx tvars clsEnv | tvars' == tvars = tvars
+                    | otherwise       = cov cx tvars' clsEnv
+  where
+    tvars' = foldl cov' tvars cx
+
+    cov' tvs c@(Constraint _ qcls tys) = 
+       let fds  = funDeps qcls clsEnv
+           itys = zip [1..] (map (Set.fromList . fv) tys)
+       in foldl (cov'' itys) tvs fds
+    
+    cov'' itys tvs (lixs,rixs) = 
+       let ltvs = Set.unions $ map (lookupVars itys) lixs
+           rtvs = Set.unions $ map (lookupVars itys) rixs
+       in if   ltvs `Set.isSubsetOf` tvars
+          then tvs `Set.union` rtvs
+          else tvs
+    
+    lookupVars itys ix = case lookup ix itys of
+      Just itvs -> itvs
+      Nothing   -> internalError $ "Env.Class.lookupVars: unbound index " ++ show ix
