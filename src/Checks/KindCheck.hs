@@ -403,9 +403,9 @@ bindClass m tcEnv clsEnv (ClassDecl _ _ cx cls tvs fds ds) =
         qcls = qualifyWith m cls
         ms = map (\f -> (f, f `elem` fs)) $ concatMap methods ds
         fs = concatMap impls ds
-        fundeps = map (\(FunDep _ ltvs rtvs) -> (ltvs,rtvs)) fds
+        fundeps = map (genFunDep (zip tvs [1..])) fds
         sclss = expandClassContext m tcEnv tvs cx
-          --nub $ map (\(Constraint _ cls' _) -> getOrigName m cls' tcEnv) cx
+
 bindClass _ _ clsEnv _ = clsEnv
 
 instantiateWithDefaultKind :: TypeInfo -> TypeInfo

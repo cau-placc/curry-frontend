@@ -20,7 +20,7 @@ module Env.Class
   ( ClassEnv, initClassEnv
   , ClassInfo, bindClassInfo, mergeClassInfo, lookupClassInfo
   , superClasses, allSuperClasses, classMethods, hasDefaultImpl
-  , minPredSet, maxPredSet
+  , minPredSet, maxPredSet, genFunDep
   ) where
 
 import           Data.List       (nub, sort)
@@ -32,10 +32,20 @@ import Base.Types
 import Base.TypeSubst
 
 import Curry.Base.Ident
+import Curry.Syntax.Type
+import Curry.Syntax.Pretty (ppIdent)
 
 import Base.Messages (internalError)
 
-type ClassInfo = (Int, PredSet, [([Ident],[Ident])] ,[(Ident, Bool)])
+-- | The class environment stores the arity of the class, all super classes in
+--   form of a predicate set, the functional dependencies and the identifiers
+--   of the methods. The boolean value in the method list states whether a
+--   method has a default implementation.
+type ClassInfo = (Int, PredSet, FunDeps ,[(Ident, Bool)])
+
+-- | The functional dependencies are stored by saving the index of the left
+--   and right hand side of a functional dependency
+type FunDeps = [([Int],[Int])]
 
 type ClassEnv = Map.Map QualIdent ClassInfo
 
@@ -80,7 +90,7 @@ allSuperClasses cls clsEnv = allSuperClasses' $
 
 
 
-funDeps :: QualIdent -> ClassEnv -> [([Ident], [Ident])]
+funDeps :: QualIdent -> ClassEnv -> FunDeps
 funDeps cls clsEnv = case lookupClassInfo cls clsEnv of
   Just (_, _, fds, _) -> fds
   Nothing -> internalError $ "Env.Class.funDeps: " ++ show cls
@@ -97,15 +107,29 @@ hasDefaultImpl cls f clsEnv = case lookupClassInfo cls clsEnv of
     Nothing -> internalError $ "Env.Classes.hasDefaultImpl: " ++ show f
   _ -> internalError $ "Env.Classes.hasDefaultImpl: " ++ show cls
 
+
+-- | Taken from Leif-Erik Krueger
 minPredSet :: ClassEnv -> PredSet -> PredSet
 minPredSet clsEnv ps =
   ps `Set.difference` Set.concatMap (impliedPreds clsEnv) ps
 
+-- | Taken from Leif-Erik Krueger
 maxPredSet :: ClassEnv -> PredSet -> PredSet
 maxPredSet clsEnv ps = 
   ps `Set.union` Set.concatMap (impliedPreds clsEnv) ps
 
-
+-- | Taken from Leif-Erik Krueger
 impliedPreds :: ClassEnv -> Pred -> PredSet
 impliedPreds clsEnv pr@(Pred _ cls tys) = Set.delete (Pred Other cls tys) $
   Set.map (expandAliasType tys) (allSuperClasses cls clsEnv)
+
+-- | Generates a reperesentation of a functional dependency by indexing every
+--   type variable with an integer.
+genFunDep :: [(Ident,Int)] -> FunDep -> ([Int],[Int])
+genFunDep ixs (FunDep _ ltvs rtvs) = 
+  (map lookupIndex ltvs, map lookupIndex rtvs)
+ where
+   lookupIndex ident = case lookup ident ixs of
+     Just ix -> ix
+     Nothing -> 
+       internalError $ "KindCheck.getFunDep: unindexed variable " ++ show (ppIdent ident)

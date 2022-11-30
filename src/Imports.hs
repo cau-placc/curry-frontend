@@ -168,7 +168,7 @@ bindClass m (IClassDecl _ cx cls _ tvs fds ds ids) =
   bindClassInfo (qualQualify m cls) (arity,sclss, fundeps ,ms)
   where arity = length tvs
         sclss = toQualPredSet m tvs Other cx
-        fundeps = map (\(FunDep _ ltvs rtvs) -> (ltvs,rtvs)) fds
+        fundeps = map (genFunDep (zip tvs [1..])) fds
         ms = map (\d -> (imethod d, isJust $ imethodArity d)) $ filter isVis ds
         isVis (IMethodDecl _ idt _ _ ) = idt `notElem` ids
 bindClass _ _ = id
