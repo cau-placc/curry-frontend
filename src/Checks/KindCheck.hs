@@ -27,6 +27,7 @@ import           Control.Monad            (when, foldM, replicateM)
 import           Control.Monad.Fix        (mfix)
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 import           Data.List                (partition, nub)
+import           Debug.Trace              (traceShow)
 
 import Curry.Base.Ident
 import Curry.Base.Position
@@ -365,12 +366,14 @@ bindTypeConstructor f tc tvs k x tcEnv = do
       ti = f qtc (foldr KindArrow k' ks) x
   return $ bindTypeInfo m tc ti tcEnv
 
+-- | Changes for multi parameter type classes and constraint kind are
+--   taken from Leif-Erik Krueger's master thesis
 bindTypeClass :: Ident -> Int -> [ClassMethod] -> TCEnv -> KCM TCEnv
 bindTypeClass cls n ms tcEnv = do
   m <- getModuleIdent
   ks <- replicateM n freshKindVar
   let qcls = qualifyWith m cls
-      k = foldr KindArrow KindStar ks
+      k = foldr KindArrow KindConstraint ks
       ti = TypeClass qcls k ms
   return $ bindTypeInfo m cls ti tcEnv
 
@@ -379,12 +382,15 @@ bindFreshKind tcEnv tv = do
   k <- freshKindVar
   return $ bindTypeVar tv k tcEnv
 
-bindTypeVars :: Ident -> [Ident] -> TCEnv -> KCM (Kind, TCEnv)
-bindTypeVars tc tvs tcEnv = do
+-- | The version with parametrized kind getting function is taken from
+--   Leif-Erik Krueger
+bindTypeVars :: Ident -> [Ident] -> (ModuleIdent -> QualIdent -> TCEnv -> Kind) 
+  -> TCEnv -> KCM (Kind, TCEnv)
+bindTypeVars tc tvs kindFun tcEnv = do
   m <- getModuleIdent
   return $ foldl (\(KindArrow k1 k2, tcEnv') tv ->
                    (k2, bindTypeVar tv k1 tcEnv'))
-                 (tcKind m (qualifyWith m tc) tcEnv, tcEnv)
+                 (kindFun m (qualifyWith m tc) tcEnv, tcEnv)
                  tvs
 
 bindTypeVar :: Ident -> Kind -> TCEnv -> TCEnv
@@ -440,14 +446,14 @@ kcDeclGroup tcEnv clsEnv ds = do
 kcDecl :: TCEnv -> Decl a -> KCM ()
 kcDecl _     (InfixDecl _ _ _ _) = ok
 kcDecl tcEnv (DataDecl _ tc tvs cs _) = do
-  (_, tcEnv') <- bindTypeVars tc tvs tcEnv
+  (_, tcEnv') <- bindTypeVars tc tvs tcKind tcEnv
   mapM_ (kcConstrDecl tcEnv') cs
 kcDecl _     (ExternalDataDecl _ _ _) = ok
 kcDecl tcEnv (NewtypeDecl _ tc tvs nc _) = do
-  (_, tcEnv') <- bindTypeVars tc tvs tcEnv
+  (_, tcEnv') <- bindTypeVars tc tvs tcKind tcEnv
   kcNewConstrDecl tcEnv' nc
 kcDecl tcEnv t@(TypeDecl _ tc tvs ty) = do
-  (k, tcEnv') <- bindTypeVars tc tvs tcEnv
+  (k, tcEnv') <- bindTypeVars tc tvs tcKind tcEnv
   kcType tcEnv' "type declaration" (pPrint t) k ty
 kcDecl tcEnv (TypeSig _ _ qty) = kcTypeSig tcEnv qty
 kcDecl tcEnv (FunctionDecl _ _ _ eqs) = mapM_ (kcEquation tcEnv) eqs
@@ -458,8 +464,12 @@ kcDecl tcEnv (DefaultDecl _ tys) = do
   tcEnv' <- foldM bindFreshKind tcEnv $ nub $ fv tys
   mapM_ (kcValueType tcEnv' "default declaration" empty) tys
 kcDecl tcEnv (ClassDecl _ _ cx cls tvs fds ds) = do
+  -- like in Leif-Erik Krueger's thesis, the checking for
+  -- ambigious type variables is moved to the Kind Check
+  -- because the class environment is not available in
+  -- the Type Syntax Check
   m <- getModuleIdent
-  (_, tcEnv') <- bindTypeVars cls tvs tcEnv
+  (_, tcEnv') <- bindTypeVars cls tvs clsKind tcEnv
   kcContext tcEnv' cx
   mapM_ (kcDecl tcEnv') ds
 kcDecl tcEnv (InstanceDecl p _ cx qcls inst ds) = do
@@ -580,9 +590,28 @@ kcContext tcEnv = mapM_ (kcConstraint tcEnv)
 kcConstraint :: TCEnv -> Constraint -> KCM ()
 kcConstraint tcEnv sc@(Constraint _ qcls tys) = do
   m <- getModuleIdent
-  mapM_ (kcType tcEnv "class constraint" doc (clsKind m qcls tcEnv)) tys
-  where
-    doc = pPrint sc
+  let doc = pPrint sc
+      k   = clsKind m qcls tcEnv
+      n   = kindArity k
+  traceShow (ppQIdent qcls <+> text "::" <+> pPrint k) $
+    kcConstraintArity tcEnv "class constraint" doc qcls n k tys
+    
+
+-- | Inspired from Leif-Erik Krueger's master thesis.
+--   Iterates through a kind and a list of type expressions and checks if every type
+--   is kind-correct and if the type expressios form a Constraint kind.
+--   TODO : fix bug with * instead of Constraints
+kcConstraintArity :: TCEnv -> String -> Doc -> QualIdent -> Int -> Kind -> [TypeExpr]
+   -> KCM ()
+kcConstraintArity tcEnv what doc qcls n k tys = case (k, tys) of
+  (KindConstraint , [])        -> ok
+  (KindArrow k1 k2, (ty:tys')) -> do
+    kcType tcEnv what doc k1 ty
+    kcConstraintArity tcEnv what doc qcls n k2 tys'
+  (KindArrow _ k2 , []    )  -> report $ errKindClassMismatch qcls what doc qcls n (n - kindArity k2 -1)
+  (KindConstraint , _:tys')  -> report $ errKindClassMismatch qcls what doc qcls n (n + length tys')
+  (_              , _     )  -> internalError $ "KindCheck.kindConstraintArity: invalid kind " 
+                                               ++ show (ppQIdent qcls, pPrint k, map pPrint tys)
 
 kcTypeSig :: TCEnv -> QualTypeExpr -> KCM ()
 kcTypeSig tcEnv (QualTypeExpr _ cx ty) = do
@@ -767,3 +796,9 @@ errKindMismatch p what doc k1 k2 = spanInfoMessage p $ vcat
   , text "Inferred kind:" <+> ppKind k2
   , text "Expected kind:" <+> ppKind k1
   ]
+
+errKindClassMismatch :: HasSpanInfo p => p -> String -> Doc -> QualIdent -> Int -> Int -> Message
+errKindClassMismatch spi what doc qcls n n' = spanInfoMessage spi $ hsep
+  [ text "Kind error in" <+> text what, doc
+  , text "Class" <+> ppQIdent qcls <+> text "is applied to" <+> int n' <+> text "arguments,"
+  , text "but should be applied to" <+> int n <+> text "arguments."]
