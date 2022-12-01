@@ -606,7 +606,7 @@ kcConstraintArity tcEnv what doc qcls n k tys = case (k, tys) of
     kcType tcEnv what doc k1 ty
     kcConstraintArity tcEnv what doc qcls n k2 tys'
   (KindArrow _ k2 , []    )  -> report $ errKindClassMismatch qcls what doc qcls n (n - kindArity k2 -1)
-  (KindConstraint , _:tys')  -> report $ errKindClassMismatch qcls what doc qcls n (n + length tys')
+  (KindConstraint , _:tys')  -> report $ errKindClassMismatch qcls what doc qcls n (n + length tys' + 1)
   (_              , _     )  -> internalError $ "KindCheck.kindConstraintArity: invalid kind " 
                                                ++ show (ppQIdent qcls, pPrint k, map pPrint tys)
 
@@ -796,7 +796,11 @@ errKindMismatch p what doc k1 k2 = spanInfoMessage p $ vcat
   ]
 
 errKindClassMismatch :: HasSpanInfo p => p -> String -> Doc -> QualIdent -> Int -> Int -> Message
-errKindClassMismatch spi what doc qcls n n' = spanInfoMessage spi $ hsep
+errKindClassMismatch spi what doc qcls n n' = spanInfoMessage spi $ vcat
   [ text "Kind error in" <+> text what, doc
-  , text "Class" <+> ppQIdent qcls <+> text "is applied to" <+> int n' <+> text "arguments,"
-  , text "but should be applied to" <+> int n <+> text "arguments."]
+  , text "Class" <+> ppQIdent qcls <+> text "is applied to" <+> int n' <+> text (argText n')
+  , text "but should be applied to" <+> int n <+> text (argText n)]
+
+  where
+    argText m | m == 1    = "argument"
+              | otherwise = "arguments"
