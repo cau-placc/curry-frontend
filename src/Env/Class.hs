@@ -9,11 +9,13 @@
     Portability :  portable
 
     The compiler maintains information about all type classes in an
-    environment that maps type classes to a sorted list of their direct
-    superclasses and all their associated class methods with an additional
-    flag stating whether an default implementation has been provided or not.
-    For both the type class identifier and the list of super classes original
-    names are used. Thus, the use of a flat environment is sufficient.
+    environment that maps type classes to their arity, a predicate set which
+    represents their direct superclasses, a list of tuples of indices that
+    represents their functional dependencies and all their associated class 
+    methods with an additional flag stating whether an default implementation 
+    has been provided or not. For both the type class identifier and the
+    predicate set of super classes original names are used. Thus, the use of a
+    flat environment is sufficient.
 -}
 
 module Env.Class
@@ -136,18 +138,35 @@ genFunDep ixs (FunDep _ ltvs rtvs) =
        internalError $ "KindCheck.getFunDep: unindexed variable " ++ show (ppIdent ident)
 
 -- | Computes the set of type variables covered by functional dependencies given
---   a context and a set of already covered type variables
+--   a context and a set of already covered type variables.
+--   The algorithm is taken from Leif-Erik Krueger.
+--   The algorithm works as follows (pseudo-code of an imperative language):
+--   Input: A context C and a set of already covered type variables V
+--   Output: A set of all type varaibles covered by the functional
+--   dependencies
+--   COV(C,V)
+--   V' := V
+--   for each C t_1 ... t_m in C do :
+--     Consider the declaration class ... => C u_1 ... u_m | F_1, ..., F_n
+--     for each l_1 ... l_lmax -> r_1 ... r_rmax in \{ F_1, ... , F_n \} do :
+--       if Union \{ TV(t_i) | i in \{ 1, ..., m \} and u_i in \{ l_1, ..., l_lmax } \}
+--         is a subset of V :
+--            V' := V' union (Union \{ TV(t_i) | i in \{1,...,n\} and u_i in \{r_1,...,r_rmax\}})
+--   if V /= V' :
+--        V' := COV(C,V')
 cov :: Context -> Set.Set Ident -> ClassEnv -> Set.Set Ident
 cov cx tvars clsEnv | tvars' == tvars = tvars
                     | otherwise       = cov cx tvars' clsEnv
   where
     tvars' = foldl cov' tvars cx
-
+    
+    -- Outer for-loop
     cov' tvs c@(Constraint _ qcls tys) = 
        let fds  = funDeps qcls clsEnv
            itys = zip [1..] (map (Set.fromList . fv) tys)
        in foldl (cov'' itys) tvs fds
     
+    -- Inner for-loop
     cov'' itys tvs (lixs,rixs) = 
        let ltvs = Set.unions $ map (lookupVars itys) lixs
            rtvs = Set.unions $ map (lookupVars itys) rixs
