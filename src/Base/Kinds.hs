@@ -46,6 +46,7 @@ kindVars k = vars k []
 -- occurring in a kind to *.
 defaultKind :: Kind -> Kind
 defaultKind (KindArrow k1 k2) = KindArrow (defaultKind k1) (defaultKind k2)
+defaultKind KindConstraint    = KindConstraint
 defaultKind _                 = KindStar
 
 -- |The function 'simpleKind' returns the kind of a type

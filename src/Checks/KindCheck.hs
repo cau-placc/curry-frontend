@@ -27,7 +27,6 @@ import           Control.Monad            (when, foldM, replicateM)
 import           Control.Monad.Fix        (mfix)
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 import           Data.List                (partition, nub)
-import           Debug.Trace              (traceShow)
 
 import Curry.Base.Ident
 import Curry.Base.Position
@@ -463,12 +462,11 @@ kcDecl _     (FreeDecl _ _) = ok
 kcDecl tcEnv (DefaultDecl _ tys) = do
   tcEnv' <- foldM bindFreshKind tcEnv $ nub $ fv tys
   mapM_ (kcValueType tcEnv' "default declaration" empty) tys
-kcDecl tcEnv (ClassDecl _ _ cx cls tvs fds ds) = do
+kcDecl tcEnv (ClassDecl _ _ cx cls tvs _ ds) = do
   -- like in Leif-Erik Krueger's thesis, the checking for
   -- ambigious type variables is moved to the Kind Check
   -- because the class environment is not available in
   -- the Type Syntax Check
-  m <- getModuleIdent
   (_, tcEnv') <- bindTypeVars cls tvs clsKind tcEnv
   kcContext tcEnv' cx
   mapM_ (kcDecl tcEnv') ds
@@ -593,8 +591,7 @@ kcConstraint tcEnv sc@(Constraint _ qcls tys) = do
   let doc = pPrint sc
       k   = clsKind m qcls tcEnv
       n   = kindArity k
-  traceShow (ppQIdent qcls <+> text "::" <+> pPrint k) $
-    kcConstraintArity tcEnv "class constraint" doc qcls n k tys
+  kcConstraintArity tcEnv "class constraint" doc qcls n k tys
     
 
 -- | Inspired from Leif-Erik Krueger's master thesis.
@@ -697,6 +694,7 @@ unify p what doc k1 k2 = do
 
 unifyKinds :: Kind -> Kind -> Maybe KindSubst
 unifyKinds KindStar KindStar = Just idSubst
+unifyKinds KindConstraint KindConstraint = Just idSubst
 unifyKinds (KindVariable kv1) (KindVariable kv2)
   | kv1 == kv2 = Just idSubst
   | otherwise  = Just (singleSubst kv1 (KindVariable kv2))
