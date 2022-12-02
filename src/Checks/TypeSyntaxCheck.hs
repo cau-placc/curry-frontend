@@ -217,7 +217,7 @@ checkSimpleConstraint c@(Constraint _ _ tys) =
 
 checkClassMethod :: [Ident] -> Decl a -> TSCM ()
 checkClassMethod tvs (TypeSig spi _ qty) = do
-  checkForAmbigiousType spi tvs qty
+  --checkForAmbigiousType spi tvs qty
   let QualTypeExpr _ cx _ = qty
   checkForConstrainedClassVariable spi tvs cx
 checkClassMethod _ _ = ok

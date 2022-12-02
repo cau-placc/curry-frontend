@@ -23,10 +23,11 @@ import Prelude hiding ((<>))
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative      ((<$>), (<*>))
 #endif
-import           Control.Monad            (when, foldM, replicateM)
+import           Control.Monad            (when, unless, foldM, replicateM)
 import           Control.Monad.Fix        (mfix)
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 import           Data.List                (partition, nub)
+import qualified Data.Set            as Set (Set, fromList, null, difference, toList)
 
 import Curry.Base.Ident
 import Curry.Base.Position
@@ -69,6 +70,9 @@ kindCheck tcEnv clsEnv (Module _ _ _ m _ _ ds) = runKCM check initState
     checkDecls = do
       (tcEnv', clsEnv') <- kcDecls tcEnv clsEnv tcds
       mapM_ (kcDecl tcEnv') ods
+      -- Checks for ambiguous type variables in bounded types considering
+      -- the functional dependencies in the class environment
+      mapM_ (kcATVDecl clsEnv' Nothing) ds
       return (tcEnv', clsEnv')
     tds = filter isTypeDecl tcds
     cds = filter isClassDecl tcds
@@ -738,6 +742,127 @@ isTypeOrNewtypeDecl (TypeDecl      _ _ _ _) = True
 isTypeOrNewtypeDecl _                       = False
 
 -- ---------------------------------------------------------------------------
+-- Checking for ambiguous type variables
+-- ---------------------------------------------------------------------------
+
+kcATVDecl :: ClassEnv -> Maybe Constraint -> Decl a -> KCM ()
+kcATVDecl _ _ (InfixDecl _ _ _ _) = ok
+kcATVDecl _ _ (DataDecl _ _ _ _ _) = ok
+kcATVDecl _ _ (ExternalDataDecl _ _ _) = ok
+kcATVDecl _ _ (NewtypeDecl _ _ _ _ _) = ok
+kcATVDecl _ _ (TypeDecl _ _ _ _)      = ok
+kcATVDecl clsEnv micc (TypeSig _ _ qty) = 
+  kcATVQualTypeExpr clsEnv micc qty
+kcATVDecl clsEnv micc (FunctionDecl _ _ _ eqs) = 
+  mapM_ (kcATVEquation clsEnv micc) eqs
+kcATVDecl _ _ (ExternalDecl _ _) = ok
+kcATVDecl clsEnv micc (PatternDecl _ _ rhs) = kcATVRhs clsEnv micc rhs
+kcATVDecl _ _ (FreeDecl _ _) = ok
+kcATVDecl _ _ (DefaultDecl _ _) = ok
+kcATVDecl clsEnv _ (ClassDecl _ _ _ cls tvs _ ds) = do
+  m <- getModuleIdent
+  let icc = Constraint 
+               NoSpanInfo (qualifyWith m cls) 
+               (map (VariableType NoSpanInfo) tvs)
+  mapM_ (kcATVDecl clsEnv (Just icc)) ds
+kcATVDecl clsEnv micc (InstanceDecl _ _ _ _ _ ds) =
+  mapM_ (kcATVDecl clsEnv micc) ds
+
+kcATVEquation :: ClassEnv -> Maybe Constraint -> Equation a -> KCM ()
+kcATVEquation clsEnv micc (Equation _ _ rhs) = kcATVRhs clsEnv micc rhs
+
+kcATVRhs :: ClassEnv -> Maybe Constraint -> Rhs a -> KCM ()
+kcATVRhs clsEnv micc (SimpleRhs _ _ expr ds) = do
+  kcATVExpression clsEnv micc expr
+  mapM_ (kcATVDecl clsEnv micc) ds
+kcATVRhs clsEnv micc (GuardedRhs _ _ cexprs ds) = do
+  mapM_ (kcATVCondExpr clsEnv micc) cexprs
+  mapM_ (kcATVDecl clsEnv micc) ds
+
+kcATVCondExpr :: ClassEnv -> Maybe Constraint -> CondExpr a -> KCM ()
+kcATVCondExpr clsEnv micc (CondExpr _ e1 e2) = do
+  kcATVExpression clsEnv micc e1
+  kcATVExpression clsEnv micc e2
+
+kcATVExpression :: ClassEnv -> Maybe Constraint -> Expression a -> KCM ()
+kcATVExpression _ _ (Literal _ _ _)  = ok
+kcATVExpression _ _ (Variable _ _ _) = ok
+kcATVExpression _ _ (Constructor _ _ _) = ok
+kcATVExpression clsEnv micc (Paren _ e) = kcATVExpression clsEnv micc e
+kcATVExpression clsEnv micc (Typed _ e qty) = do
+  kcATVExpression clsEnv micc e
+  kcATVQualTypeExpr clsEnv micc qty
+kcATVExpression clsEnv micc (Record _ _ _ fs) = 
+  mapM_ (kcATVField clsEnv micc) fs
+kcATVExpression clsEnv micc (RecordUpdate _ e fs) = do
+  kcATVExpression clsEnv micc e
+  mapM_ (kcATVField clsEnv micc) fs
+kcATVExpression clsEnv micc (Tuple _ es) = 
+  mapM_ (kcATVExpression clsEnv micc) es
+kcATVExpression clsEnv micc (List _ _ es) = 
+  mapM_ (kcATVExpression clsEnv micc) es
+kcATVExpression clsEnv micc (ListCompr _ e stms) = do
+  kcATVExpression clsEnv micc e
+  mapM_ (kcATVStatement clsEnv micc) stms
+kcATVExpression clsEnv micc (EnumFrom _ e) = kcATVExpression clsEnv micc e
+kcATVExpression clsEnv micc (EnumFromThen _ e1 e2) = do
+  kcATVExpression clsEnv micc e1
+  kcATVExpression clsEnv micc e2
+kcATVExpression clsEnv micc (EnumFromTo _ e1 e2) = do
+  kcATVExpression clsEnv micc e1
+  kcATVExpression clsEnv micc e2
+kcATVExpression clsEnv micc (EnumFromThenTo _ e1 e2 e3) = do
+  kcATVExpression clsEnv micc e1
+  kcATVExpression clsEnv micc e2
+  kcATVExpression clsEnv micc e3
+kcATVExpression clsEnv micc (UnaryMinus _ e) = kcATVExpression clsEnv micc e
+kcATVExpression clsEnv micc (Apply _ e1 e2) = do
+  kcATVExpression clsEnv micc e1
+  kcATVExpression clsEnv micc e2
+kcATVExpression clsEnv micc (InfixApply _ e1 _ e2) = do
+  kcATVExpression clsEnv micc e1
+  kcATVExpression clsEnv micc e2
+kcATVExpression clsEnv micc (LeftSection _ e _) = kcATVExpression clsEnv micc e
+kcATVExpression clsEnv micc (RightSection _ _ e) = 
+  kcATVExpression clsEnv micc e
+kcATVExpression clsEnv micc (Lambda _ _ e) = kcATVExpression clsEnv micc e
+kcATVExpression clsEnv micc (Let _ _ ds e) = do
+  mapM_ (kcATVDecl clsEnv micc) ds
+  kcATVExpression clsEnv micc e
+kcATVExpression clsEnv micc (Do _ _ stms e) = do
+  mapM_ (kcATVStatement clsEnv micc) stms
+  kcATVExpression clsEnv micc e
+kcATVExpression clsEnv micc (IfThenElse _ e1 e2 e3) = do
+  kcATVExpression clsEnv micc e1
+  kcATVExpression clsEnv micc e2
+  kcATVExpression clsEnv micc e3
+kcATVExpression clsEnv micc (Case _ _ _ e alts) = do
+  kcATVExpression clsEnv micc e
+  mapM_ (kcATVAlt clsEnv micc) alts  
+
+
+kcATVField :: ClassEnv -> Maybe Constraint -> Field (Expression a) -> KCM ()
+kcATVField clsEnv micc (Field _ _ e) = kcATVExpression clsEnv micc e
+
+kcATVStatement :: ClassEnv -> Maybe Constraint -> Statement a -> KCM ()
+kcATVStatement clsEnv micc (StmtExpr _ e) = kcATVExpression clsEnv micc e
+kcATVStatement clsEnv micc (StmtDecl _ _ ds) = mapM_ (kcATVDecl clsEnv micc) ds
+kcATVStatement clsEnv micc (StmtBind _ _ e) = kcATVExpression clsEnv micc e
+
+kcATVAlt :: ClassEnv -> Maybe Constraint -> Alt a -> KCM ()
+kcATVAlt clsEnv micc (Alt _ _ rhs) = kcATVRhs clsEnv micc rhs
+
+kcATVQualTypeExpr :: ClassEnv -> Maybe Constraint -> QualTypeExpr -> KCM ()
+kcATVQualTypeExpr clsEnv micc (QualTypeExpr spi cx ty) = do
+  let cx'     = maybe cx (:cx) micc
+      cxVars  = Set.fromList $ fv cx'
+      covVars = cov cx (Set.fromList $ fv ty) clsEnv
+      ambVars = cxVars `Set.difference` covVars
+  unless (Set.null ambVars) $ 
+    mapM_ (report . errAmbiguousTypeVar spi) (Set.toList ambVars)
+
+
+-- ---------------------------------------------------------------------------
 -- Error messages
 -- ---------------------------------------------------------------------------
 
@@ -804,3 +929,11 @@ errKindClassMismatch spi what doc qcls n n' = spanInfoMessage spi $ vcat
   where
     argText m | m == 1    = "argument"
               | otherwise = "arguments"
+
+
+errAmbiguousTypeVar :: HasSpanInfo p => p -> Ident -> Message
+errAmbiguousTypeVar spi ident = spanInfoMessage spi $ vcat
+  [ text $ "Type signature contains a constraint with identifier" ++ idName ident
+  , text "that is neither used in the type expression nor can be derived using"
+  , text "functional dependencies." 
+  ]
