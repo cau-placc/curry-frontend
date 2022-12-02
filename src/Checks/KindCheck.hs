@@ -933,7 +933,7 @@ errKindClassMismatch spi what doc qcls n n' = spanInfoMessage spi $ vcat
 
 errAmbiguousTypeVar :: HasSpanInfo p => p -> Ident -> Message
 errAmbiguousTypeVar spi ident = spanInfoMessage spi $ vcat
-  [ text $ "Type signature contains a constraint with identifier" ++ idName ident
+  [ text $ "Type signature contains a constraint with identifier " ++ idName ident
   , text "that is neither used in the type expression nor can be derived using"
   , text "functional dependencies." 
   ]
