@@ -854,9 +854,10 @@ kcATVAlt clsEnv micc (Alt _ _ rhs) = kcATVRhs clsEnv micc rhs
 
 kcATVQualTypeExpr :: ClassEnv -> Maybe Constraint -> QualTypeExpr -> KCM ()
 kcATVQualTypeExpr clsEnv micc (QualTypeExpr spi cx ty) = do
+  m <- getModuleIdent
   let cx'     = maybe cx (:cx) micc
       cxVars  = Set.fromList $ fv cx'
-      covVars = cov cx' (Set.fromList $ fv ty) clsEnv
+      covVars = cov cx' (Set.fromList $ fv ty) m clsEnv
       ambVars = cxVars `Set.difference` covVars
   unless (Set.null ambVars) $ 
     mapM_ (report . errAmbiguousTypeVar spi) (Set.toList ambVars)

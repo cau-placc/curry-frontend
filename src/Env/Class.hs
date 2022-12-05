@@ -26,7 +26,7 @@ module Env.Class
   ) where
 
 import           Data.List       (nub, sort)
-import qualified Data.Map       as Map (Map, empty, insertWith, lookup)
+import qualified Data.Map       as Map (Map, empty, insertWith, lookup, toList)
 import qualified Data.Set.Extra as Set (Set, insert, delete, concatMap, isSubsetOf
                                        , union, unions, difference, map, fromList, toList)
 
@@ -96,7 +96,7 @@ allSuperClasses cls clsEnv = allSuperClasses' $
 funDeps :: QualIdent -> ClassEnv -> FunDeps
 funDeps cls clsEnv = case lookupClassInfo cls clsEnv of
   Just (_, _, fds, _) -> fds
-  Nothing -> internalError $ "Env.Class.funDeps: " ++ show cls
+  Nothing -> internalError $ "Env.Class.funDeps: " ++ show (ppQIdent cls)
 
 classMethods :: QualIdent -> ClassEnv -> [Ident]
 classMethods cls clsEnv = case lookupClassInfo cls clsEnv of
@@ -154,15 +154,15 @@ genFunDep ixs (FunDep _ ltvs rtvs) =
 --            V' := V' union (Union \{ TV(t_i) | i in \{1,...,n\} and u_i in \{r_1,...,r_rmax\}})
 --   if V /= V' :
 --        V' := COV(C,V')
-cov :: Context -> Set.Set Ident -> ClassEnv -> Set.Set Ident
-cov cx tvars clsEnv | tvars' == tvars = tvars
-                    | otherwise       = cov cx tvars' clsEnv
+cov :: Context -> Set.Set Ident -> ModuleIdent -> ClassEnv -> Set.Set Ident
+cov cx tvars m clsEnv | tvars' == tvars = tvars
+                      | otherwise       = cov cx tvars' m clsEnv
   where
     tvars' = foldl cov' tvars cx
     
     -- Outer for-loop
     cov' tvs c@(Constraint _ qcls tys) = 
-       let fds  = funDeps qcls clsEnv
+       let fds  = funDeps (qualQualify m qcls) clsEnv
            itys = zip [1..] (map (Set.fromList . fv) tys)
        in foldl (cov'' itys) tvs fds
     
