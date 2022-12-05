@@ -856,7 +856,7 @@ kcATVQualTypeExpr :: ClassEnv -> Maybe Constraint -> QualTypeExpr -> KCM ()
 kcATVQualTypeExpr clsEnv micc (QualTypeExpr spi cx ty) = do
   let cx'     = maybe cx (:cx) micc
       cxVars  = Set.fromList $ fv cx'
-      covVars = cov cx (Set.fromList $ fv ty) clsEnv
+      covVars = cov cx' (Set.fromList $ fv ty) clsEnv
       ambVars = cxVars `Set.difference` covVars
   unless (Set.null ambVars) $ 
     mapM_ (report . errAmbiguousTypeVar spi) (Set.toList ambVars)

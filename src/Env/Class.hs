@@ -36,7 +36,7 @@ import Base.TypeSubst
 
 import Curry.Base.Ident
 import Curry.Syntax.Type
-import Curry.Syntax.Pretty (ppIdent)
+import Curry.Syntax.Pretty
 
 import Base.Messages (internalError)
 
