@@ -24,31 +24,60 @@ module Env.Instance
   , InstEnv, initInstEnv, bindInstInfo, removeInstInfo, lookupInstInfo
   ) where
 
-import qualified Data.Map as Map (Map, empty, insert, delete, lookup)
+import qualified Data.Map as Map ( Map, empty, insert, delete, lookup, union
+                                 , singleton, insertWith, adjust
+                                 )
 
 import Curry.Base.Ident
 import Curry.Base.Pretty
 import Curry.Syntax.Pretty
 
+import Base.CurryTypes
+import Base.TypeSubst
 import Base.Types
 
-type InstIdent = (QualIdent, QualIdent)
+-- Taken from Leif-Erik Krueger
+-- Instances are now identified by their class name and
+-- the types of the class arguments
+type InstIdent = (QualIdent, [Type])
 
+-- taken from Leif-Erik Krueger
 ppInstIdent :: InstIdent -> Doc
-ppInstIdent (qcls, qtc) = ppQIdent qcls <+> ppQIdent qtc
+ppInstIdent (qcls, tys) = ppQIdent qcls <+> 
+  hsep (map (pPrintPrec 2 . fromType identSupply) tys)
 
 type InstInfo = (ModuleIdent, PredSet, [(Ident, Int)])
 
-type InstEnv = Map.Map InstIdent InstInfo
+-- taken from Leif-Erik Krueger
+type InstEnv = Map.Map QualIdent (Map.Map [Type] InstInfo)
 
 initInstEnv :: InstEnv
 initInstEnv = Map.empty
 
+-- taken from Leif-Erik Krueger
 bindInstInfo :: InstIdent -> InstInfo -> InstEnv -> InstEnv
-bindInstInfo = Map.insert
+bindInstInfo (qcls,tys) instInfo = 
+  Map.insertWith Map.union qcls (Map.singleton tys instInfo)
 
+-- taken from Leif-Erik Krueger
 removeInstInfo  :: InstIdent -> InstEnv -> InstEnv
-removeInstInfo = Map.delete
+removeInstInfo (qcls, tys) = Map.adjust (Map.delete tys) qcls
 
+-- taken from Leif-Erik Krueger
 lookupInstInfo :: InstIdent -> InstEnv -> Maybe InstInfo
-lookupInstInfo = Map.lookup
+lookupInstInfo (qcls, tys) iEnv = do
+  clsMap <- Map.lookup qcls iEnv
+  res    <- Map.lookup tys clsMap
+  return res
+
+
+-------------------------------------------------------------------------------
+--- Type Matching and Unification
+-------------------------------------------------------------------------------
+
+
+unifyTypes :: [Type] -> [Type] -> Maybe TypeSubst
+unifyTypes = undefined
+
+unifyType :: Type -> Type -> Maybe TypeSubst
+unifyType = undefined
