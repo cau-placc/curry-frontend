@@ -13,7 +13,7 @@
 -}
 module CompilerEnv where
 
-import qualified Data.Map as Map (Map, keys, toList)
+import qualified Data.Map as Map (Map, keys, toList, fromList)
 
 import Curry.Base.Ident    (ModuleIdent, moduleName)
 import Curry.Base.Pretty
@@ -78,7 +78,9 @@ showCompilerEnv env allBinds simpleEnv = show $ vcat
   , header "Precedences        " $ ppAL simpleEnv $ bindings $ opPrecEnv env
   , header "Type Constructors  " $ ppAL simpleEnv $ bindings $ tyConsEnv env
   , header "Classes            " $ ppMap simpleEnv $ classEnv env
-  , header "Instances          " $ ppMap simpleEnv $ instEnv env
+  , header "Instances          " $ ppMap simpleEnv $ Map.fromList  -- taken from Leif-Erik Krueger
+                                                   $ instEnvToList 
+                                                   $ instEnv env
   , header "Values             " $ ppAL simpleEnv $ bindings $ valueEnv  env
   ]
   where

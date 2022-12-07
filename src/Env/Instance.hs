@@ -22,10 +22,11 @@
 module Env.Instance
   ( InstIdent, ppInstIdent, InstInfo
   , InstEnv, initInstEnv, bindInstInfo, removeInstInfo, lookupInstInfo
+  , instEnvToList
   ) where
 
 import qualified Data.Map as Map ( Map, empty, insert, delete, lookup, union
-                                 , singleton, insertWith, adjust
+                                 , singleton, insertWith, adjust, toList
                                  )
 
 import Curry.Base.Ident
@@ -70,6 +71,11 @@ lookupInstInfo (qcls, tys) iEnv = do
   res    <- Map.lookup tys clsMap
   return res
 
+-- from Leif-Erik Krueger
+instEnvToList :: InstEnv -> [(InstIdent, InstInfo)]
+instEnvToList iEnv = [ ((qcls,tys), iInfo) | 
+                        (qcls,qclsMap) <- Map.toList iEnv,
+                        (tys,iInfo) <- Map.toList qclsMap ]
 
 -------------------------------------------------------------------------------
 --- Type Matching and Unification

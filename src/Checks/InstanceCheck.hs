@@ -51,7 +51,7 @@ instanceCheck exts m tcEnv clsEnv inEnv ds =
     iss -> (inEnv, map (errMultipleInstances tcEnv) iss)
   where
     local = map (flip InstSource m) $ concatMap (genInstIdents m tcEnv) ds
-    imported = map (uncurry InstSource . fmap fst3) $ Map.toList inEnv
+    imported = map (uncurry InstSource . fmap fst3) $ instEnvToList inEnv
     state = INCState
       { moduleIdent = m
       , instEnv = inEnv
@@ -384,22 +384,23 @@ genInstIdents m tcEnv (InstanceDecl _ _ _ qcls ty _) =
   --[genInstIdent m tcEnv qcls ty]
 genInstIdents _ _     _                            = []
 
-genInstIdent :: ModuleIdent -> TCEnv -> QualIdent -> TypeExpr -> InstIdent
-genInstIdent m tcEnv qcls = qualInstIdent m tcEnv . (,) qcls . typeConstr
+genInstIdent :: ModuleIdent -> TCEnv -> QualIdent -> TypeExpr -> InstIdent -- todo : adapt to new inst env
+genInstIdent m tcEnv qcls = internalError "InstanceCheck.genInstIdent: not yet adapted" -- qualInstIdent m tcEnv . (,) qcls . typeConstr
 
 -- When qualifiying an instance identifier, we replace both the class and
 -- type constructor with their original names as found in the type constructor
 -- environment.
 
 qualInstIdent :: ModuleIdent -> TCEnv -> InstIdent -> InstIdent
-qualInstIdent m tcEnv (cls, tc) = (qual cls, qual tc)
-  where
-    qual = flip (getOrigName m) tcEnv
+qualInstIdent m tcEnv (cls, tc) = internalError "InstanceCheck.qualInstIdent: not yet adapted" -- (qual cls, qual tc)
+--  where
+--    qual = flip (getOrigName m) tcEnv
 
 unqualInstIdent :: TCEnv -> InstIdent -> InstIdent
-unqualInstIdent tcEnv (qcls, tc) = (unqual qcls, unqual tc)
-  where
-    unqual = head . flip reverseLookupByOrigName tcEnv
+unqualInstIdent tcEnv (qcls, tc) = internalError "InstanceCheck.unqualInstIdent: not yet adapted" 
+  --(unqual qcls, unqual tc)
+  --where
+  --  unqual = head . flip reverseLookupByOrigName tcEnv
 
 isFunType :: Type -> Bool
 isFunType (TypeArrow         _ _) = True

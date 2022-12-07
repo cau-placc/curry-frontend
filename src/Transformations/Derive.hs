@@ -95,10 +95,10 @@ deriveAllInstances ds = do
 hasDataInstance :: InstEnv -> ModuleIdent -> Decl PredType -> Bool
 hasDataInstance inst mid (DataDecl    _ tc _ _ _) =
   maybe False (\(mid', _, _) -> mid == mid') $
-    lookupInstInfo (qDataId, qualifyWith mid tc) inst
+    lookupInstInfo (qDataId, [TypeConstructor (qualifyWith mid tc)]) inst -- todo : adapt to new instance env
 hasDataInstance inst mid (NewtypeDecl _ tc _ _ _) =
   maybe False (\(mid', _, _) -> mid == mid') $
-    lookupInstInfo (qDataId, qualifyWith mid tc) inst
+    lookupInstInfo (qDataId, [TypeConstructor (qualifyWith mid tc)]) inst -- todo : adapt to new instance env
 hasDataInstance _       _   _                     =
   False
 
@@ -128,7 +128,7 @@ deriveInstance :: QualIdent -> [Ident] -> [ConstrInfo] -> QualIdent
                -> DVM (Decl PredType)
 deriveInstance tc tvs cis cls = do
   inEnv <- getInstEnv
-  let ps = snd3 $ fromJust $ lookupInstInfo (cls, tc) inEnv
+  let ps = snd3 $ fromJust $ lookupInstInfo (cls, [TypeConstructor tc]) inEnv  -- todo : adapt to new instance env
       ty = applyType (TypeConstructor tc) $
              take (length tvs) $ map TypeVariable [0 ..]
       QualTypeExpr _ cx inst = fromPredType tvs $ PredType ps ty

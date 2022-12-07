@@ -1542,8 +1542,8 @@ instPredSet inEnv qcls ty = case Map.lookup qcls $ snd inEnv of
   Just tys | ty `elem` tys -> Just emptyPredSet
   _ -> case unapplyType False ty of
     (TypeConstructor tc, tys) ->
-      fmap (expandAliasType tys . snd3) (lookupInstInfo (qcls, tc) $ fst inEnv)
-    _ -> Nothing
+      fmap (expandAliasType tys . snd3) (lookupInstInfo (qcls, [TypeConstructor tc]) $ fst inEnv)
+    _ -> Nothing -- todo : adapt to new instance env
 
 reportMissingInstance :: HasSpanInfo p => ModuleIdent -> p -> String -> Doc
                       -> InstEnv' -> TypeSubst -> Pred -> TCM TypeSubst

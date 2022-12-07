@@ -426,15 +426,16 @@ bindSuperStub m cls scls = bindEntity m f $ Value f Nothing 1 $ polyType ty
 
 bindInstDecls :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> ValueEnv
                   -> ValueEnv
-bindInstDecls m tcEnv clsEnv =
-  flip (foldr $ bindInstFuns m tcEnv clsEnv) . Map.toList
+bindInstDecls m tcEnv clsEnv = internalError "Dictionary.bindInstDecls: not yet adapted"
+--  flip (foldr $ bindInstFuns m tcEnv clsEnv) . Map.toList     todo : adapt to new inst Env
 
 bindInstFuns :: ModuleIdent -> TCEnv -> ClassEnv -> (InstIdent, InstInfo)
              -> ValueEnv -> ValueEnv
 bindInstFuns m tcEnv clsEnv ((cls, tc), (m', ps, is)) =
   bindInstDict m cls ty m' ps . bindInstMethods m clsEnv cls ty m' ps is
-  where ty = applyType (TypeConstructor tc) (take n (map TypeVariable [0..]))
-        n = kindArity (tcKind m tc tcEnv) - kindArity (clsKind m cls tcEnv)
+  where ty = internalError "Dictionary.bindInstFuns: not yet adapted"    -- todo : adapt to new inst env
+           -- applyType (TypeConstructor tc) (take n (map TypeVariable [0..]))
+        n = internalError "Dictionary.bindInstFun: not yet adapted" --kindArity (tcKind m tc tcEnv) - kindArity (clsKind m cls tcEnv)
 
 bindInstDict :: ModuleIdent -> QualIdent -> Type -> ModuleIdent -> PredSet
              -> ValueEnv -> ValueEnv
@@ -792,14 +793,15 @@ emptySpEnv :: SpecEnv
 emptySpEnv = Map.empty
 
 initSpEnv :: ClassEnv -> InstEnv -> SpecEnv
-initSpEnv clsEnv = foldr (uncurry bindInstance) emptySpEnv . Map.toList
-  where bindInstance (cls, tc) (m, _, _) =
-          flip (foldr $ bindInstanceMethod m cls tc) $ classMethods cls clsEnv
-        bindInstanceMethod m cls tc f = Map.insert (f', d) f''
-          where f'  = qualifyLike cls f
-                d   = qInstFunId m cls ty
-                f'' = qImplMethodId m cls ty f
-                ty  = TypeConstructor tc
+initSpEnv clsEnv = internalError "Dictionary.initSpecEnv: not yet adapted"
+--                   foldr (uncurry bindInstance) emptySpEnv . Map.toList
+--  where bindInstance (cls, tc) (m, _, _) =
+--          flip (foldr $ bindInstanceMethod m cls tc) $ classMethods cls clsEnv
+--        bindInstanceMethod m cls tc f = Map.insert (f', d) f''
+--          where f'  = qualifyLike cls f
+--                d   = qInstFunId m cls ty
+--                f'' = qImplMethodId m cls ty f
+--                ty  = TypeConstructor tc
 
 class Specialize a where
   specialize :: a Type -> DTM (a Type)
