@@ -28,6 +28,7 @@ module Base.Types
   , IccFlag ( .. )
   , PredSet, emptyPredSet, partitionPredSet , qualifyPredSet, unqualifyPredSet
   , PredType (..), predType, unpredType, qualifyPredType, unqualifyPredType
+  , PredTypes(..), qualifyPredTypes, unqualifyPredTypes
     -- * Representation of data constructors
   , DataConstr (..), constrIdent, constrTypes, recLabels, recLabelTypes
   , tupleData
@@ -236,6 +237,9 @@ data IccFlag = Icc | Other
 instance IsType Pred where
   typeVars (Pred _ _ tys) = concatMap typeVars tys
 
+instance IsType a => IsType [a] where
+  typeVars = concatMap typeVars
+
 qualifyPred :: ModuleIdent -> Pred -> Pred
 qualifyPred m (Pred icc qcls tys) = 
   Pred icc (qualQualify m qcls) (map (qualifyType m) tys)
@@ -311,6 +315,32 @@ qualifyPredType m (PredType ps ty) =
 unqualifyPredType :: ModuleIdent -> PredType -> PredType
 unqualifyPredType m (PredType ps ty) =
   PredType (unqualifyPredSet m ps) (unqualifyType m ty)
+
+------------------------------------------------------------------------------
+-- Predicated type lists
+------------------------------------------------------------------------------
+
+-- The data type PredTypes is used to represent contexts and instance
+-- types
+
+
+-- taken from Leif-Erik Krueger
+data PredTypes = PredTypes PredSet [Type]
+
+-- taken from Leif-Erik Krueger
+instance IsType PredTypes where
+  typeVars (PredTypes ps tys) = typeVars ps ++ typeVars tys
+
+-- taken from Leif-Erik Krueger
+qualifyPredTypes :: ModuleIdent -> PredTypes -> PredTypes
+qualifyPredTypes m (PredTypes ps tys) =
+  PredTypes (qualifyPredSet m ps) (map (qualifyType m) tys)
+
+-- taken from Leif-Erik Krueger
+unqualifyPredTypes :: ModuleIdent -> PredTypes -> PredTypes
+unqualifyPredTypes m (PredTypes ps tys) =
+  PredTypes (unqualifyPredSet m ps) (map (unqualifyType m) tys)
+
 
 -- ---------------------------------------------------------------------------
 -- Data constructors
