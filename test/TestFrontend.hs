@@ -50,7 +50,7 @@ runSecure :: CYIO a -> IO (Either [Message] (a, [Message]))
 runSecure act = runCYIO act `E.catch` handler
   where handler e = return (Left [message $ text $ show (e :: E.SomeException)])
 
--- Execute a test by calling cymake
+-- Execute a test by calling the frontend
 runTest :: CO.Options -> String -> [String] -> IO Progress
 runTest opts test errorMsgs =
   if null errorMsgs

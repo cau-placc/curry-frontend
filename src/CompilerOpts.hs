@@ -18,7 +18,7 @@
 -}
 module CompilerOpts
   ( Options (..), CppOpts (..), PrepOpts (..), WarnOpts (..), DebugOpts (..)
-  , OptimizationOpts(..), CaseMode (..), CymakeMode (..), Verbosity (..)
+  , OptimizationOpts(..), CaseMode (..), FrontendMode (..), Verbosity (..)
   , TargetType (..), WarnFlag (..), KnownExtension (..), DumpLevel (..)
   , dumpLevel
   , defaultOptions, defaultPrepOpts, defaultWarnOpts, defaultDebugOpts, defaultCppOpts
@@ -44,7 +44,7 @@ import Curry.Syntax.Extension
 -- |Compiler options
 data Options = Options
   -- general
-  { optMode          :: CymakeMode          -- ^ modus operandi
+  { optMode          :: FrontendMode          -- ^ modus operandi
   , optVerbosity     :: Verbosity           -- ^ verbosity level
   -- compilation
   , optForce         :: Bool                -- ^ force (re-)compilation of target
@@ -172,7 +172,7 @@ defaultOptimizationOpts = OptimizationOpts
   }
 
 -- |Modus operandi of the program
-data CymakeMode
+data FrontendMode
   = ModeHelp           -- ^ Show help information and exit
   | ModeVersion        -- ^ Show version and exit
   | ModeNumericVersion -- ^ Show numeric version, suitable for later processing
