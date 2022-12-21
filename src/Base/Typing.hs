@@ -163,10 +163,13 @@ bindPattern :: (Eq t, Typeable t, ValueType t) => Pattern t -> ValueEnv
 bindPattern t vEnv = bindLocalVars (filter unbound $ patternVars t) vEnv
   where unbound v = null $ lookupValue (fst3 v) vEnv
 
+-- TODO : correct this if necessary for the new label of function decls
 declVars :: (Eq t, Typeable t, ValueType t) => Decl t -> [(Ident, Int, t)]
 declVars (InfixDecl        _ _ _ _) = []
 declVars (TypeSig            _ _ _) = []
-declVars (FunctionDecl  _ ty f eqs) = [(f, eqnArity $ head eqs, ty)]
+declVars (FunctionDecl  _ fl f eqs) = [(f, eqnArity $ head eqs, ty fl)]
+  where ty (OneType    t) = t
+        ty (TwoTypes _ t) = t
 declVars (PatternDecl        _ t _) = patternVars t
 declVars (FreeDecl            _ vs) = [(v, 0, ty) | Var ty v <- vs]
 declVars _                          = internalError "Base.Typing.declVars"

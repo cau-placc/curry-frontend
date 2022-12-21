@@ -610,7 +610,7 @@ checkEquationsLhs p [Equation p' lhs rhs] = do
   case lhs' of
     Left  l -> return $ funDecl' l
     Right r -> checkDeclLhs (PatternDecl p' r rhs)
-  where funDecl' (f, lhs') = FunctionDecl p () f [Equation p' lhs' rhs]
+  where funDecl' (f, lhs') = FunctionDecl p (OneType ()) f [Equation p' lhs' rhs]
 checkEquationsLhs _ _ = internalError "SyntaxCheck.checkEquationsLhs"
 
 checkEqLhs :: SpanInfo -> Lhs () -> SCM (Either (Ident, Lhs ()) (Pattern ()))

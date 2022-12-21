@@ -235,7 +235,7 @@ genSelFun p qcs l = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   let ForAll _ pty = varType (qualifyWith m l) vEnv
-  FunctionDecl p pty l <$> concatMapM (genSelEqn p l) qcs
+  FunctionDecl p (OneType pty) l <$> concatMapM (genSelEqn p l) qcs
 
 -- Generate a selector equation for a label and a constructor if the label
 -- is applicable, otherwise the empty list is returned.
@@ -764,7 +764,7 @@ dsExpr p (RightSection _ op e) = do
   where TypeArrow ty1 (TypeArrow ty2 ty3) = typeOf (infixOp op)
 dsExpr p expr@(Lambda _ ts e) = do
   (pty, f) <- freshVar "_#lambda" expr
-  dsExpr p $ mkLet [funDecl p pty f ts e] $ mkVar pty f
+  dsExpr p $ mkLet [funDecl p (OneType pty) f ts e] $ mkVar pty f
 dsExpr p (Let _ _ ds e) = do
   ds' <- dsDeclGroup ds
   e'  <- dsExpr p e

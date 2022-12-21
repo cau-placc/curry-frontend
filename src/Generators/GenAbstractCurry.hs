@@ -219,10 +219,10 @@ trInfixDecl (InfixDecl _ fix mprec ops) = mapM trInfix (reverse ops)
 trInfixDecl _ = return []
 
 trFuncDecl :: Bool -> Decl PredType -> GAC [CFuncDecl]
-trFuncDecl global (FunctionDecl  _ pty f eqs)
+trFuncDecl global (FunctionDecl  _ fl f eqs)
   =   (\f' a v ty rs -> [CFunc f' a v ty rs])
   <$> trFuncName global f <*> pure (eqnArity $ head eqs) <*> getVisibility f
-  <*> getQualType f pty <*> mapM trEquation eqs
+  <*> getQualType f (funLabelAnnType fl) <*> mapM trEquation eqs
 trFuncDecl global (ExternalDecl         _ vs)
   =   T.forM vs $ \(Var pty f) -> CFunc
   <$> trFuncName global f <*> pure (arrowArity $ unpredType pty)

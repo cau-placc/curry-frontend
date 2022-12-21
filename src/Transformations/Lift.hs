@@ -250,7 +250,7 @@ absFunDecl pre fvs lvs (FunctionDecl p _ f eqs) = do
   modifyValueEnv $ bindGlobalInfo
     (\qf tySc -> Value qf Nothing (eqnArity $ head eqs') tySc) m f' $
                  polyType ty''
-  return $ FunctionDecl p ty'' f' eqs''
+  return $ FunctionDecl p (OneType ty'') f' eqs''
   where f' = liftIdent pre f
         ty' = foldr TypeArrow (typeOf rhs') (map typeOf ts')
           where Equation _ (FunLhs _ _ ts') rhs' = head eqs'

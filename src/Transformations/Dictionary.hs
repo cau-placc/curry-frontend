@@ -232,7 +232,7 @@ classDictConstrPredType m tcEnv vEnv clsEnv cls =
 createInstDictDecl :: PredSet -> QualIdent -> [Type] -> DTM (Decl PredType)
 createInstDictDecl ps cls tys = do
   pty <- PredType ps . arrowBase <$> getInstDictConstrType cls tys
-  funDecl NoSpanInfo pty (instFunId cls tys)
+  funDecl NoSpanInfo (OneType pty) (instFunId cls tys)
     [ConstructorPattern NoSpanInfo predUnitType qUnitId []]
     <$> createInstDictExpr cls tys
 
@@ -261,7 +261,7 @@ createClassMethodDecl cls =
 defaultClassMethodDecl :: QualIdent -> Ident -> DTM (Decl PredType)
 defaultClassMethodDecl cls f = do
   pty@(PredType _ ty) <- getClassMethodType cls f
-  return $ funDecl NoSpanInfo pty f [] $ preludeError (instType ty) $
+  return $ funDecl NoSpanInfo (OneType pty) f [] $ preludeError (instType ty) $
     "No instance or default method for class operation " ++ escName f
 
 getClassMethodType :: QualIdent -> Ident -> DTM PredType
@@ -283,7 +283,7 @@ defaultInstMethodDecl :: PredSet -> QualIdent -> [Type] -> Ident
 defaultInstMethodDecl ps cls tys f = do
   vEnv <- getValueEnv
   let pty@(PredType _ ty) = instMethodType vEnv ps cls tys f
-  return $ funDecl NoSpanInfo pty f [] $
+  return $ funDecl NoSpanInfo (OneType pty) f [] $
     Variable NoSpanInfo (predType $ instType ty) (qDefaultMethodId cls f)
 
 -- Returns the type for a given instance's method of a given class. To this
@@ -363,12 +363,12 @@ createMethodStubDecl = createStubDecl
 
 createStubDecl :: Pattern Type -> Type -> Ident -> (Type, Ident) -> Decl Type
 createStubDecl t a f v =
-  FunctionDecl NoSpanInfo a f [createStubEquation t f v]
+  FunctionDecl NoSpanInfo (OneType a) f [createStubEquation t f v]
 
 createStubEquation :: Pattern Type -> Ident -> (Type, Ident) -> Equation Type
 createStubEquation t f v = 
   mkEquation NoSpanInfo f [VariablePattern NoSpanInfo (TypeArrow unitType (typeOf t)) (mkIdent "_#temp")] $
-    mkLet [FunctionDecl NoSpanInfo (TypeArrow (typeOf t) (fst v)) (mkIdent "_#lambda")
+    mkLet [FunctionDecl NoSpanInfo (OneType (TypeArrow (typeOf t) (fst v))) (mkIdent "_#lambda")
       [mkEquation NoSpanInfo (mkIdent "_#lambda") [t] $ uncurry mkVar v]]
       (apply (Variable NoSpanInfo (TypeArrow (typeOf t) (fst v)) (qualify $ mkIdent "_#lambda"))
         [apply (Variable NoSpanInfo (TypeArrow unitType (typeOf t)) (qualify $ mkIdent "_#temp"))
@@ -619,11 +619,11 @@ instance DictTrans Decl where
   dictTrans (NewtypeDecl     p tc tvs nc _) =
     return $ NewtypeDecl p tc tvs nc []
   dictTrans (TypeDecl          p tc tvs ty) = return $ TypeDecl p tc tvs ty
-  dictTrans (FunctionDecl p      pty f eqs) =
-    FunctionDecl p (transformPredType pty) f <$> mapM dictTrans eqs
+  dictTrans (FunctionDecl p      fl f eqs) = let pty = funLabelAnnType fl in
+    FunctionDecl p (OneType (transformPredType pty)) f <$> mapM dictTrans eqs
   dictTrans (PatternDecl           p t rhs) = case t of
     VariablePattern _ pty@(PredType ps _) v | not (Set.null ps) ->
-      dictTrans $ FunctionDecl p pty v [Equation p (FunLhs NoSpanInfo v []) rhs]
+      dictTrans $ FunctionDecl p (OneType pty) v [Equation p (FunLhs NoSpanInfo v []) rhs]
     _ -> withLocalDictEnv $ PatternDecl p <$> dictTrans t <*> dictTrans rhs
   dictTrans d@(FreeDecl                _ _) = return $ fmap unpredType d
   dictTrans d@(ExternalDecl            _ _) = return $ fmap transformPredType d
