@@ -1214,7 +1214,7 @@ tcExpr e@(Variable spi _ v) = do
                                         else inst (funType True m v vEnv)
   -- TODO: Maybe use a different "what" for anonymous variables
   let ps' = Set.map (\pr -> LPred pr spi "variable" (pPrint e)) ps
-  return (ps', ty, Variable spi (predType ty) v)
+  return (ps', ty, Variable spi (PredType ps ty) v)
 tcExpr e@(Constructor spi _ c) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
