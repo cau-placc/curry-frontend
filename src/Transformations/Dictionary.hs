@@ -308,7 +308,7 @@ createMethodDecl methodId defaultDecl ms f =
 
 renameDecl :: Ident -> Decl a -> Decl a
 renameDecl f (FunctionDecl p a _ eqs) = FunctionDecl p a f $ map renameEq eqs
-  where renameEq (Equation p' lhs rhs) = Equation p' (renameLhs lhs) rhs
+  where renameEq (Equation p' a lhs rhs) = Equation p' a (renameLhs lhs) rhs
         renameLhs (FunLhs _ _ ts) = FunLhs NoSpanInfo f ts
         renameLhs _ = internalError "Dictionary.renameDecl.renameLhs"
 renameDecl _ _ = internalError "Dictionary.renameDecl"
@@ -623,7 +623,7 @@ instance DictTrans Decl where
     FunctionDecl p (OneType (transformPredType pty)) f <$> mapM dictTrans eqs
   dictTrans (PatternDecl           p t rhs) = case t of
     VariablePattern _ pty@(PredType ps _) v | not (Set.null ps) ->
-      dictTrans $ FunctionDecl p (OneType pty) v [Equation p (FunLhs NoSpanInfo v []) rhs]
+      dictTrans $ FunctionDecl p (OneType pty) v [Equation p Nothing (FunLhs NoSpanInfo v []) rhs]
     _ -> withLocalDictEnv $ PatternDecl p <$> dictTrans t <*> dictTrans rhs
   dictTrans d@(FreeDecl                _ _) = return $ fmap unpredType d
   dictTrans d@(ExternalDecl            _ _) = return $ fmap transformPredType d
@@ -639,14 +639,14 @@ dictTransConstrDecl tvs (ConOpDecl p ty1 op ty2) dc =
 dictTransConstrDecl _ d _ = internalError $ "Dictionary.dictTrans: " ++ show d
 
 instance DictTrans Equation where
-  dictTrans (Equation p (FunLhs _ f ts) rhs) =
+  dictTrans (Equation p a (FunLhs _ f ts) rhs) =
     withLocalValueEnv $ withLocalDictEnv $ do
       m <- getModuleIdent
       pls <- matchPredList (varType m f) $
                foldr (TypeArrow . typeOf) (typeOf rhs) ts
       ts' <- addDictArgs pls ts
       modifyValueEnv $ bindPatterns ts'
-      Equation p (FunLhs NoSpanInfo f ts') <$> dictTrans rhs
+      Equation p Nothing (FunLhs NoSpanInfo f ts') <$> dictTrans rhs
   dictTrans eq                               =
     internalError $ "Dictionary.dictTrans: " ++ show eq
 
@@ -895,7 +895,7 @@ instance Specialize Decl where
   specialize d                         = return d
 
 instance Specialize Equation where
-  specialize (Equation p lhs rhs) = Equation p lhs <$> specialize rhs
+  specialize (Equation p a lhs rhs) = Equation p a lhs <$> specialize rhs
 
 instance Specialize Rhs where
   specialize (SimpleRhs p _ e []) = simpleRhs p <$> specialize e

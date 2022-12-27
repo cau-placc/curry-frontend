@@ -371,7 +371,7 @@ trFunction f eqs = do
   where
   -- vs are the variables needed for the function: _1, _2, etc.
   -- ws is an infinite list for introducing additional variables later
-  Equation _ lhs rhs = head eqs
+  Equation _ _ lhs rhs = head eqs
   (_, ts) = flatLhs lhs
   (vs, ws) = splitAt (length ts) (argNames (mkIdent ""))
 
@@ -379,7 +379,7 @@ trEquation :: [Ident]       -- identifiers for the function's parameters
            -> [Ident]       -- infinite list of additional identifiers
            -> Equation Type -- equation to be translated
            -> TransM Match  -- nested constructor terms + translated RHS
-trEquation vs vs' (Equation _ (FunLhs _ _ ts) rhs) = do
+trEquation vs vs' (Equation _ _ (FunLhs _ _ ts) rhs) = do
   -- construct renaming of variables inside constructor terms
   let patternRenaming = foldr2 bindRenameEnv Map.empty vs ts
   -- translate right-hand-side

@@ -40,7 +40,7 @@ instance QualAnnotExpr Decl where
   qafv _ _                           = []
 
 instance QualAnnotExpr Equation where
-  qafv m (Equation _ lhs rhs) = filterBv lhs $ qafv m lhs ++ qafv m rhs
+  qafv m (Equation _ _ lhs rhs) = filterBv lhs $ qafv m lhs ++ qafv m rhs
 
 instance QualAnnotExpr Lhs where
   qafv m = concatMap (qafv m) . snd . flatLhs

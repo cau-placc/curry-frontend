@@ -238,7 +238,7 @@ data FunDep = FunDep SpanInfo [Ident] [Ident]
 -- ---------------------------------------------------------------------------
 
 -- |Function defining equation
-data Equation a = Equation SpanInfo (Lhs a) (Rhs a)
+data Equation a = Equation SpanInfo (Maybe a) (Lhs a) (Rhs a)
     deriving (Eq, Read, Show)
 
 -- |Left-hand-side of an 'Equation' (function identifier and patterns)
@@ -392,7 +392,8 @@ instance Functor Decl where
     InstanceDecl sp li cx qcls inst (map (fmap f) ds)
 
 instance Functor Equation where
-  fmap f (Equation p lhs rhs) = Equation p (fmap f lhs) (fmap f rhs)
+  fmap f (Equation p a lhs rhs) = 
+    Equation p (fmap f a) (fmap f lhs) (fmap f rhs)
 
 instance Functor Lhs where
   fmap f (FunLhs p f' ts) = FunLhs p f' (map (fmap f) ts)
@@ -591,9 +592,9 @@ instance HasSpanInfo (Decl a) where
   getLayoutInfo _ = WhitespaceLayout
 
 instance HasSpanInfo (Equation a) where
-  getSpanInfo (Equation spi _ _) = spi
-  setSpanInfo spi (Equation _ lhs rhs) = Equation spi lhs rhs
-  updateEndPos e@(Equation _ _ rhs) =
+  getSpanInfo (Equation spi _ _ _) = spi
+  setSpanInfo spi (Equation _ a lhs rhs) = Equation spi a lhs rhs
+  updateEndPos e@(Equation _ _ _ rhs) =
     setEndPosition (getSrcSpanEnd rhs) e
 
 instance HasSpanInfo ModulePragma where
@@ -1365,8 +1366,8 @@ instance Binary FunDep where
   get = liftM3 FunDep get get get
 
 instance Binary a => Binary (Equation a) where
-  put (Equation spi lhs rhs) = put spi >> put lhs >> put rhs
-  get = liftM3 Equation get get get
+  put (Equation spi a lhs rhs) = put spi >> put a >> put lhs >> put rhs
+  get = liftM4 Equation get get get get
 
 instance Binary a => Binary (Lhs a) where
   put (FunLhs spi f ps) =

@@ -60,7 +60,7 @@ instance Show a => Newtypes (Decl a) where
     "Newtypes.Newtypes.nt: unexpected declaration: " ++ show d
 
 instance Show a => Newtypes (Equation a) where
-  nt (Equation p lhs rhs) = Equation p <$> nt lhs <*> nt rhs
+  nt (Equation p a lhs rhs) = Equation p a <$> nt lhs <*> nt rhs
 
 instance Show a => Newtypes (Lhs a) where
   nt (FunLhs spi f ts) = FunLhs spi f <$> nt ts

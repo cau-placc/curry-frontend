@@ -107,8 +107,8 @@ absDecl pre lvs (PatternDecl     p t rhs) = PatternDecl p t
 absDecl _   _   d                         = return d
 
 absEquation :: [Ident] -> Equation Type -> LiftM (Equation Type)
-absEquation lvs (Equation p lhs@(FunLhs _ f ts) rhs) =
-  Equation p lhs <$> absRhs (idName f ++ ".") lvs' rhs
+absEquation lvs (Equation p a lhs@(FunLhs _ f ts) rhs) =
+  Equation p a lhs <$> absRhs (idName f ++ ".") lvs' rhs
   where lvs' = lvs ++ bv ts
 absEquation _ _ = error "Lift.absEquation: no pattern match"
 
@@ -187,7 +187,7 @@ absFunDecls pre lvs (fds:fdss) vds e = do
       fs      = bv fds
       -- function types
       ftys    = map extractFty fds
-      extractFty (FunctionDecl _ _ f (Equation _ (FunLhs _ _ ts) rhs : _)) =
+      extractFty (FunctionDecl _ _ f (Equation _ _ (FunLhs _ _ ts) rhs : _)) =
         (f, foldr TypeArrow (typeOf rhs) $ map typeOf ts)
       extractFty _                                                         =
         internalError "Lift.absFunDecls.extractFty"
@@ -253,14 +253,14 @@ absFunDecl pre fvs lvs (FunctionDecl p _ f eqs) = do
   return $ FunctionDecl p (OneType ty'') f' eqs''
   where f' = liftIdent pre f
         ty' = foldr TypeArrow (typeOf rhs') (map typeOf ts')
-          where Equation _ (FunLhs _ _ ts') rhs' = head eqs'
+          where Equation _ _ (FunLhs _ _ ts') rhs' = head eqs'
         ty'' = genType ty'
         eqs' = map addVars eqs
         genType ty''' = subst (foldr2 bindSubst idSubst tvs tvs') ty'''
           where tvs = nub (typeVars ty''')
                 tvs' = map TypeVariable [0 ..]
-        addVars (Equation p' (FunLhs _ _ ts) rhs) =
-          Equation p' (FunLhs NoSpanInfo
+        addVars (Equation p' a (FunLhs _ _ ts) rhs) =
+          Equation p' a (FunLhs NoSpanInfo
             f' (map (uncurry (VariablePattern NoSpanInfo)) fvs ++ ts)) rhs
         addVars _ = error "Lift.absFunDecl.addVars: no pattern match"
 absFunDecl pre _ _ (ExternalDecl p vs) = ExternalDecl p <$> mapM (absVar pre) vs
@@ -328,7 +328,7 @@ liftVarDecl ex@(FreeDecl       _ _) = (ex, [])
 liftVarDecl _ = error "Lift.liftVarDecl: no pattern match"
 
 liftEquation :: Eq a => Equation a -> (Equation a, [Decl a])
-liftEquation (Equation p lhs rhs) = (Equation p lhs rhs', ds')
+liftEquation (Equation p a lhs rhs) = (Equation p a lhs rhs', ds')
   where (rhs', ds') = liftRhs rhs
 
 liftRhs :: Eq a => Rhs a -> (Rhs a, [Decl a])
@@ -377,7 +377,7 @@ renameFunDecl (FunctionDecl p a f eqs) =
 renameFunDecl d                        = d
 
 renameEquation :: Eq a => Equation a -> Equation a
-renameEquation (Equation p lhs rhs) = Equation p lhs' (renameRhs rm rhs)
+renameEquation (Equation p a lhs rhs) = Equation p a lhs' (renameRhs rm rhs)
   where (rm, lhs') = renameLhs lhs
 
 renameLhs :: Eq a => Lhs a -> (RenameMap a, Lhs a)

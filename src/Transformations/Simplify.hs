@@ -109,9 +109,9 @@ simDecl env (PatternDecl     p t rhs) = PatternDecl p t <$> simRhs env rhs
 simDecl _   d                         = return d
 
 simEquation :: InlineEnv -> Equation Type -> SIM [Equation Type]
-simEquation env (Equation p lhs rhs) = do
+simEquation env (Equation p a lhs rhs) = do
   rhs'  <- simRhs env rhs
-  inlineFun env p lhs rhs'
+  inlineFun env p a lhs rhs'
 
 simRhs :: InlineEnv -> Rhs Type -> SIM (Rhs Type)
 simRhs env (SimpleRhs  p _ e _) = simpleRhs p <$> simExpr env e
@@ -147,16 +147,16 @@ simRhs _   (GuardedRhs _ _ _ _) = error "Simplify.simRhs: guarded rhs"
 -- because it would require to represent the pattern matching code
 -- explicitly in a Curry expression.
 
-inlineFun :: InlineEnv -> SpanInfo -> Lhs Type -> Rhs Type
+inlineFun :: InlineEnv -> SpanInfo -> Maybe Type -> Lhs Type -> Rhs Type
           -> SIM [Equation Type]
-inlineFun env p lhs rhs = do
+inlineFun env p ma lhs rhs = do
   m <- getModuleIdent
   case rhs of
     SimpleRhs _ _ (Let _ _ [FunctionDecl _ _ f' eqs'] e) _
       | -- @f'@ is not recursive
         f' `notElem` qfv m eqs'
         -- @f'@ does not perform any pattern matching
-        && and [all isVariablePattern ts1 | Equation _ (FunLhs _ _ ts1) _ <- eqs']
+        && and [all isVariablePattern ts1 | Equation _ _ (FunLhs _ _ ts1) _ <- eqs']
       -> do
         let a = eqnArity $ head eqs'
             (n, vs', e') = etaReduce 0 [] (reverse (snd $ flatLhs lhs)) e
@@ -165,16 +165,16 @@ inlineFun env p lhs rhs = do
             -- @f'@ was fully applied before eta-reduction
             && n  == a
           then mapM (mergeEqns p vs') eqs'
-          else return [Equation p lhs rhs]
-    _ -> return [Equation p lhs rhs]
+          else return [Equation p ma lhs rhs]
+    _ -> return [Equation p ma lhs rhs]
   where
   etaReduce n1 vs (VariablePattern _ ty v : ts1)
                   (Apply _ e1 (Variable _ _ v'))
     | qualify v == v' = etaReduce (n1 + 1) ((ty, v) : vs) ts1 e1
   etaReduce n1 vs _ e1 = (n1, vs, e1)
 
-  mergeEqns p1 vs (Equation _ (FunLhs _ _ ts2) (SimpleRhs p2 _ e _))
-    = Equation p1 lhs <$> simRhs env (simpleRhs p2 (mkLet ds e))
+  mergeEqns p1 vs (Equation _ _ (FunLhs _ _ ts2) (SimpleRhs p2 _ e _))
+    = Equation p1 Nothing lhs <$> simRhs env (simpleRhs p2 (mkLet ds e))
       where
       ds = zipWith (\t v -> PatternDecl NoSpanInfo t (simpleRhs p2 (uncurry mkVar v)))
                    ts2

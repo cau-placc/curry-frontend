@@ -600,7 +600,7 @@ tcFunctionPDecl i ps tySc@(ForAll _ pty) p f eqs = do
 
 tcEquation :: Type -> LPredSet -> Equation a
            -> TCM (LPredSet, Equation PredType)
-tcEquation ty ps eqn@(Equation p lhs rhs) =
+tcEquation ty ps eqn@(Equation p a lhs rhs) =
   tcEqn p lhs rhs >>- unify p "equation" (pPrint eqn) ps ty
 
 tcEqn :: SpanInfo -> Lhs a -> Rhs a
@@ -614,7 +614,7 @@ tcEqn p lhs rhs = do
   let ps'' = ps `Set.union` ps'
   -- ps'' <- reducePredSet p "equation" (pPrint (Equation p lhs' rhs'))
   --                       (ps `Set.union` ps')
-  return (ps'', foldr TypeArrow ty tys, Equation p lhs' rhs')
+  return (ps'', foldr TypeArrow ty tys, Equation p Nothing lhs' rhs')
 
 bindLambdaVars :: QuantExpr t => t -> TCM ()
 bindLambdaVars t = do

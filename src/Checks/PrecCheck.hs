@@ -143,8 +143,8 @@ checkDecl (InstanceDecl p li cx qcls inst     ds ) =
 checkDecl d                                  = return d
 
 checkEquation :: Equation a -> PCM (Equation a)
-checkEquation (Equation p lhs rhs) =
-  Equation p <$> checkLhs lhs <*> checkRhs rhs
+checkEquation (Equation p a lhs rhs) =
+  Equation p a <$> checkLhs lhs <*> checkRhs rhs
 
 checkLhs :: Lhs a -> PCM (Lhs a)
 checkLhs (FunLhs spi     f ts) = FunLhs spi f <$> mapM checkPattern ts

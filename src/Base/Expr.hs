@@ -83,7 +83,7 @@ instance QuantExpr (Decl a) where
   bv _                          = []
 
 instance QualExpr (Equation a) where
-  qfv m (Equation _ lhs rhs) = filterBv lhs $ qfv m lhs ++ qfv m rhs
+  qfv m (Equation _ _ lhs rhs) = filterBv lhs $ qfv m lhs ++ qfv m rhs
 
 instance QuantExpr (Lhs a) where
   bv = bv . snd . flatLhs

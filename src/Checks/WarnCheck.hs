@@ -329,7 +329,7 @@ checkFunctionDecl p f eqs = inNestedScope $ do
 
 checkFunctionPatternMatch :: SpanInfo -> Ident -> [Equation ()] -> WCM ()
 checkFunctionPatternMatch spi f eqs = do
-  let pats = map (\(Equation _ lhs _) -> snd (flatLhs lhs)) eqs
+  let pats = map (\(Equation _ _ lhs _) -> snd (flatLhs lhs)) eqs
   let guards = map eq2Guards eqs
   (nonExhaustive, overlapped, nondet) <- checkPatternMatching pats guards
   unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
@@ -337,14 +337,14 @@ checkFunctionPatternMatch spi f eqs = do
   when (nondet || not (null overlapped)) $ warnFor WarnOverlapping $ report $
     warnNondetOverlapping spi ("Function " ++ escName f)
   where eq2Guards :: Equation () -> [CondExpr ()]
-        eq2Guards (Equation _ _ (GuardedRhs _ _ conds _)) = conds
+        eq2Guards (Equation _ _ _ (GuardedRhs _ _ conds _)) = conds
         eq2Guards _ = []
 
 -- Check an equation for warnings.
 -- This is done in a seperate scope as the left-hand-side may introduce
 -- new variables.
 checkEquation :: Equation () -> WCM ()
-checkEquation (Equation _ lhs rhs) = inNestedScope $ do
+checkEquation (Equation _ _ lhs rhs) = inNestedScope $ do
   checkLhs lhs
   checkRhs rhs
   reportUnusedVars
@@ -1316,7 +1316,7 @@ checkCaseModeQualTypeExpr (QualTypeExpr _ cx ty) = do
   checkCaseModeTypeExpr ty
 
 checkCaseModeEquation :: Equation a -> WCM ()
-checkCaseModeEquation (Equation _ lhs rhs) = do
+checkCaseModeEquation (Equation _ _ lhs rhs) = do
   checkCaseModeLhs lhs
   checkCaseModeRhs rhs
 
@@ -1516,7 +1516,7 @@ checkRedContextDecl (InstanceDecl _ _ cx qid _ ds) = do
 checkRedContextDecl _ = return ()
 
 checkRedContextEq :: Equation a -> WCM ()
-checkRedContextEq (Equation _ _ rhs) = checkRedContextRhs rhs
+checkRedContextEq (Equation _ _ _ rhs) = checkRedContextRhs rhs
 
 checkRedContextRhs :: Rhs a -> WCM ()
 checkRedContextRhs (SimpleRhs  _ _ e  ds) = do

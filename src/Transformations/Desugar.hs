@@ -302,13 +302,13 @@ dsDeclRhs _                          =
 
 -- Desugaring of an equation
 dsEquation :: Equation PredType -> DsM (Equation PredType)
-dsEquation (Equation p lhs rhs) = do
+dsEquation (Equation p a lhs rhs) = do
   (     cs1, ts1) <- dsNonLinearity         ts
   (ds1, cs2, ts2) <- dsFunctionalPatterns p ts1
   (ds2,      ts3) <- mapAccumM (dsPat p) [] ts2
   rhs'            <- dsRhs (constrain cs2 . constrain cs1)
                            (addDecls (ds1 ++ ds2) rhs)
-  return $ Equation p (FunLhs NoSpanInfo f ts3) rhs'
+  return $ Equation p a (FunLhs NoSpanInfo f ts3) rhs'
   where (f, ts) = flatLhs lhs
 
 -- Constrain an expression by a list of constraints.

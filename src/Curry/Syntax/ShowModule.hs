@@ -343,9 +343,10 @@ showsTypeExpr (ForallType spi vars ty)
   . showsString ")"
 
 showsEquation :: Show a => Equation a -> ShowS
-showsEquation (Equation spi lhs rhs)
+showsEquation (Equation spi a lhs rhs)
   = showsString "(Equation "
   . showsSpanInfo spi . space
+  . showsPrec 11 a . space
   . showsLhs lhs . space
   . showsRhs rhs
   . showsString ")"

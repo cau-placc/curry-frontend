@@ -191,7 +191,7 @@ flatLhs lhs = flat lhs []
 
 -- |Return the arity of an equation.
 eqnArity :: Equation a -> Int
-eqnArity (Equation _ lhs _) = length $ snd $ flatLhs lhs
+eqnArity (Equation _ _ lhs _) = length $ snd $ flatLhs lhs
 
 -- |Select the label of a field
 fieldLabel :: Field a -> QualIdent
@@ -263,7 +263,8 @@ funDecl :: SpanInfo -> FunLabel a -> Ident -> [Pattern a] -> Expression a -> Dec
 funDecl spi fl f ts e = FunctionDecl spi fl f [mkEquation spi f ts e]
 
 mkEquation :: SpanInfo -> Ident -> [Pattern a] -> Expression a -> Equation a
-mkEquation spi f ts e = Equation spi (FunLhs NoSpanInfo f ts) (simpleRhs NoSpanInfo e)
+mkEquation spi f ts e = 
+  Equation spi Nothing (FunLhs NoSpanInfo f ts) (simpleRhs NoSpanInfo e)
 
 simpleRhs :: SpanInfo -> Expression a -> Rhs a
 simpleRhs spi e = SimpleRhs spi WhitespaceLayout e []

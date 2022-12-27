@@ -389,7 +389,7 @@ idsFieldDecl (FieldDecl _ ls ty) =
   map (Function FuncDeclare False . qualify . unRenameIdent) ls ++ idsTypeExpr ty
 
 idsEquation :: Equation a -> [Code]
-idsEquation (Equation _ lhs rhs) = idsLhs lhs ++ idsRhs rhs
+idsEquation (Equation _ _ lhs rhs) = idsLhs lhs ++ idsRhs rhs
 
 idsLhs :: Lhs a -> [Code]
 idsLhs (FunLhs    _ f ps) =

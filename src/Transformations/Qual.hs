@@ -126,7 +126,7 @@ qQualTypeExpr (QualTypeExpr spi cx ty) = QualTypeExpr spi <$> qContext cx
                                                           <*> qTypeExpr ty
 
 qEquation :: Qual (Equation a)
-qEquation (Equation p lhs rhs) = Equation p <$> qLhs lhs <*> qRhs rhs
+qEquation (Equation p a lhs rhs) = Equation p a <$> qLhs lhs <*> qRhs rhs
 
 qLhs :: Qual (Lhs a)
 qLhs (FunLhs sp    f ts) = FunLhs sp       f  <$> mapM qPattern ts

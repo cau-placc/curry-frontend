@@ -233,7 +233,7 @@ trFuncName :: Bool -> Ident -> GAC QName
 trFuncName global = if global then trGlobalIdent else trLocalIdent
 
 trEquation :: Equation PredType -> GAC CRule
-trEquation (Equation _ lhs rhs) = inNestedScope
+trEquation (Equation _ _ lhs rhs) = inNestedScope
                                 $ CRule <$> trLhs lhs <*> trRhs rhs
 
 trLhs :: Lhs a -> GAC [CPattern]

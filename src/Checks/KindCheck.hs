@@ -187,7 +187,7 @@ instance HasType TypeExpr where
   fts m (ForallType        _ _ ty) = fts m ty
 
 instance HasType (Equation a) where
-  fts m (Equation _ _ rhs) = fts m rhs
+  fts m (Equation _ _ _ rhs) = fts m rhs
 
 instance HasType (Rhs a) where
   fts m (SimpleRhs  _ _ e  ds) = fts m e . fts m ds
@@ -509,7 +509,7 @@ kcNewConstrDecl tcEnv (NewRecordDecl p _ (l, ty)) =
   kcFieldDecl tcEnv (FieldDecl p [l] ty)
 
 kcEquation :: TCEnv -> ClassEnv -> Equation a -> KCM ()
-kcEquation tcEnv clsEnv (Equation _ _ rhs) = kcRhs tcEnv clsEnv rhs
+kcEquation tcEnv clsEnv (Equation _ _ _ rhs) = kcRhs tcEnv clsEnv rhs
 
 kcRhs :: TCEnv -> ClassEnv -> Rhs a -> KCM ()
 kcRhs tcEnv clsEnv (SimpleRhs _ _ e ds) = do

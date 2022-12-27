@@ -605,12 +605,13 @@ renameVar :: Ident -> SCM Ident
 renameVar v = renameIdent v <$> getScopeId
 
 checkEquationsLhs :: SpanInfo -> [Equation ()] -> SCM (Decl ())
-checkEquationsLhs p [Equation p' lhs rhs] = do
+checkEquationsLhs p [Equation p' _ lhs rhs] = do
   lhs' <- checkEqLhs p' lhs
   case lhs' of
     Left  l -> return $ funDecl' l
     Right r -> checkDeclLhs (PatternDecl p' r rhs)
-  where funDecl' (f, lhs') = FunctionDecl p (OneType ()) f [Equation p' lhs' rhs]
+  where funDecl' (f, lhs') 
+           = FunctionDecl p (OneType ()) f [Equation p' Nothing lhs' rhs]
 checkEquationsLhs _ _ = internalError "SyntaxCheck.checkEquationsLhs"
 
 checkEqLhs :: SpanInfo -> Lhs () -> SCM (Either (Ident, Lhs ()) (Pattern ()))
@@ -727,10 +728,10 @@ checkLocalVar bvs v = do
   return v
 
 checkEquation :: Equation () -> SCM (Equation ())
-checkEquation (Equation p lhs rhs) = inNestedScope $ do
+checkEquation (Equation p a lhs rhs) = inNestedScope $ do
   lhs' <- checkLhs p lhs >>= addBoundVariables False
   rhs' <- checkRhs rhs
-  return $ Equation p lhs' rhs'
+  return $ Equation p a lhs' rhs'
 
 checkLhs :: SpanInfo -> Lhs () -> SCM (Lhs ())
 checkLhs p (FunLhs    spi f ts) = FunLhs spi f <$> mapM (checkPattern p) ts
@@ -1269,7 +1270,7 @@ typeArity (ArrowType _ _ t2) = 1 + typeArity t2
 typeArity _                  = 0
 
 getFlatLhs :: Equation a -> (Ident, [Pattern a])
-getFlatLhs (Equation  _ lhs _) = flatLhs lhs
+getFlatLhs (Equation  _ _ lhs _) = flatLhs lhs
 
 opAnnotation :: InfixOp a -> a
 opAnnotation (InfixOp     a _) = a

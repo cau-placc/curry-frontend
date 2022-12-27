@@ -176,7 +176,7 @@ ppQuantifiedVars tvs
   | otherwise = text "forall" <+> hsep (map ppIdent tvs) <+> char '.'
 
 instance Pretty (Equation a) where
-  pPrint (Equation _ lhs rhs) = ppRule (pPrint lhs) equals rhs
+  pPrint (Equation _ _ lhs rhs) = ppRule (pPrint lhs) equals rhs
 
 instance Pretty (Lhs a) where
   pPrint (FunLhs   _ f ts) =

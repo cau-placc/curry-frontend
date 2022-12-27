@@ -421,7 +421,7 @@ typeSig = sig <$> tokenSpan DoubleColon <*> qualType
 mkFunDecl :: (Ident, Lhs ()) -> Rhs () -> Span -> Decl ()
 mkFunDecl (f, lhs) rhs' p = updateEndPos $
     FunctionDecl (spanInfo p []) (OneType ()) f [updateEndPos $
-                                         Equation (spanInfo p []) lhs rhs']
+                                         Equation (spanInfo p []) Nothing lhs rhs']
 
 funLhs :: Parser a Token (Ident, Lhs ())
 funLhs = mkFunLhs    <$> fun      <*> many1 pattern2

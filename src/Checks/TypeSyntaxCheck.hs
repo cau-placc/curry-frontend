@@ -246,7 +246,7 @@ checkTypeVars what (tv : tvs) = do
 -- declaration groups.
 
 checkEquation :: Equation a -> TSCM (Equation a)
-checkEquation (Equation p lhs rhs) = Equation p lhs <$> checkRhs rhs
+checkEquation (Equation p a lhs rhs) = Equation p a lhs <$> checkRhs rhs
 
 checkRhs :: Rhs a -> TSCM (Rhs a)
 checkRhs (SimpleRhs spi li e ds)   =
