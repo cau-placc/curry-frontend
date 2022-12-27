@@ -49,7 +49,7 @@ module Base.Types
   ) where
 
 import           Data.Function (on)
-import           Data.List (nub)
+import           Data.List (nub, partition)
 import qualified Data.Set.Extra as Set
 
 import Curry.Base.Ident
@@ -306,6 +306,10 @@ type PredSet = Set.Set Pred
 
 type LPredSet = Set.Set LPred
 
+type PredList = [Pred]
+
+type LPredList = [LPred]
+
 instance (IsType a, Ord a) => IsType (Set.Set a) where
   typeVars = concat . Set.toList . Set.map typeVars
 
@@ -323,6 +327,13 @@ psMember pr ps = let Pred _ qcls tys = getPred pr
                      psMember' = (||) `on` ((`Set.member` ps) . getFromPred)
                  in psMember' (Pred OPred qcls tys) (Pred ICC qcls tys)
 
+-- Same as above for lists
+plElem :: (IsPred a, IsPred b) => a -> [b] -> Bool
+plElem pr pl = let Pred _ qcls tys = getPred pr
+                   plElem' :: Pred -> Pred -> Bool
+                   plElem' = (||) `on` ((`elem` pl) . getFromPred)
+               in plElem' (Pred OPred qcls tys) (Pred ICC qcls tys)
+
 -- Returns the given predicate set with its implicit class constraint, if it has
 -- any, transformed into a regular predicate.
 removeICCFlag :: IsPred a => Set.Set a -> Set.Set a
@@ -331,6 +342,15 @@ removeICCFlag ps = case Set.lookupMin ps of
     Set.insert (modifyPred (\(Pred _ qcls tys) -> Pred OPred qcls tys) pr)
                (Set.deleteMin ps)
   _ -> ps
+
+-- the same as above, but for lists
+removeICCFlagList :: IsPred a => [a] -> [a]
+removeICCFlagList []                            = []
+removeICCFlagList (p : ps)
+  | iccFlag == ICC = (modifyPred (\(Pred _ qcls tys) -> Pred OPred qcls tys) p) : ps
+  | otherwise      = p : removeICCFlagList ps
+ where
+  iccFlag = let Pred icc _ _ = getPred p in icc
 
 -- TODO: Is the following function actually useful? Reducing a predicate set
 --         might only be needed where types need to be inferred (and not just
@@ -374,6 +394,19 @@ partitionPredSet f ps = Set.partition $
     isTypeVariable (TypeApply ty _) = isTypeVariable ty
     isTypeVariable _                = False
 
+partitionPredList :: (IsPred a, IsPred b) => ((Type -> Bool) -> [Type] -> Bool)
+                  -> [a] -> [b] -> ([b],[b])
+partitionPredList f pl = partition $
+  (\pr@(Pred _ _ tys) -> pr `plElem` pl || f isTypeVariable tys) . getPred
+  where
+    isTypeVariable (TypeVariable _) = True
+    isTypeVariable (TypeApply ty _) = isTypeVariable ty
+    isTypeVariable _                = False
+
+-- The set theoretical union of two predicateList
+plUnion :: IsPred a => [a] -> [a] -> [a]
+plUnion pl1 pl2 = nub (pl1 ++ pl2)
+
 -- The function 'minPredSet' transforms a predicate set by removing all
 -- predicates from the predicate set which are implied by other predicates
 -- according to the super class hierarchy. Inversely, the function 'maxPredSet'
@@ -400,6 +433,12 @@ qualifyPredSet m = Set.map (qualifyPred m)
 
 unqualifyPredSet :: IsPred a => ModuleIdent -> Set.Set a -> Set.Set a
 unqualifyPredSet m = Set.map (unqualifyPred m)
+
+qualifyPredList :: IsPred a => ModuleIdent -> [a] -> [a]
+qualifyPredList m = map (qualifyPred m)
+
+unqualifyPredList :: IsPred a => ModuleIdent -> [a] -> [a]
+unqualifyPredList m = map (unqualifyPred m)
 
 funDepCoveragePredSet :: IsPred a => ClassEnv -> Set.Set a -> Set.Set Int
                                   -> Set.Set Int
