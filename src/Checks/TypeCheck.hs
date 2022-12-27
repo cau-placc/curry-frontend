@@ -593,7 +593,10 @@ tcFunctionPDecl :: Int -> LPredSet -> TypeScheme -> SpanInfo -> Ident
 tcFunctionPDecl i ps tySc@(ForAll _ pty) p f eqs = do
   (_, ty) <- inst tySc
   (ps', eqs') <- mapAccumM (tcEquation ty) ps eqs
-  return (ps', (ty, (i, FunctionDecl p (OneType pty) f eqs')))
+  theta <- getTypeSubst
+  let ty' = subst theta ty'
+      ps'' = Set.map getPred ps'
+  return (ps', (ty, (i, FunctionDecl p (TwoTypes (PredType ps'' ty') pty) f eqs')))
 
 tcEquation :: Type -> LPredSet -> Equation a
            -> TCM (LPredSet, Equation PredType)
@@ -655,8 +658,8 @@ applyDefaultsDecl p what doc fvs ps ty = do
 -- function declarations.
 
 fixType :: TypeScheme -> PDecl PredType -> PDecl PredType
-fixType ~(ForAll _ pty) (i, FunctionDecl p _ f eqs) =
-  (i, FunctionDecl p (OneType pty) f eqs)
+fixType ~(ForAll _ pty) (i, FunctionDecl p fl f eqs) =
+  (i, FunctionDecl p (funLabelMapSecond (const pty) fl) f eqs)
 fixType ~(ForAll _ pty) pd@(i, PatternDecl p t rhs) = case t of
   VariablePattern spi _ v
     -> (i, PatternDecl p (VariablePattern spi pty v) rhs)

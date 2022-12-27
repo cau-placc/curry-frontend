@@ -33,7 +33,7 @@ module Curry.Syntax.Utils
   , nconstrType
   , recordLabels, nrecordLabels
   , methods, impls, imethod, imethodArity
-  , funLabelAnnType
+  , funLabelAnnType, funLabelMapSecond
   , shortenModuleAST
   ) where
 
@@ -300,6 +300,9 @@ unapply :: Expression a -> [Expression a] -> (Expression a, [Expression a])
 unapply (Apply _ e1 e2) es = unapply e1 (e2 : es)
 unapply e               es = (e, es)
 
+funLabelMapSecond :: (a -> a) -> FunLabel a -> FunLabel a
+funLabelMapSecond f (OneType ty)       = OneType (f ty)
+funLabelMapSecond f (TwoTypes ty1 ty2) = TwoTypes ty1 (f ty2)
 
 funLabelAnnType :: FunLabel a -> a
 funLabelAnnType (OneType    x) = x
