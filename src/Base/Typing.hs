@@ -19,12 +19,13 @@
 
 module Base.Typing
   ( Typeable (..)
-  , withType, matchType
+  , withType, matchPredType, matchPreds, matchPred, matchType
   , bindDecls, bindDecl, bindPatterns, bindPattern, declVars, patternVars
   ) where
 
-import Data.List (nub)
-import Data.Maybe (fromMaybe)
+import           Data.List (nub)
+import           Data.Maybe (fromMaybe)
+import qualified Data.Set as Set
 
 import Curry.Base.Ident
 import Curry.Syntax
@@ -112,6 +113,33 @@ instance Typeable a => Typeable (Alt a) where
 
 withType :: (Functor f, Typeable (f Type)) => Type -> f Type -> f Type
 withType ty e = fmap (subst (matchType (typeOf e) ty idSubst)) e
+
+matchPredType :: PredType -> PredType -> TypeSubst -> TypeSubst
+matchPredType (PredType ps1 ty1) (PredType ps2 ty2) =
+  matchType ty1 ty2 . matchPredSet ps1 ps2
+
+matchPredSet :: PredSet -> PredSet -> TypeSubst -> TypeSubst
+matchPredSet ps1 ps2 = matchPreds (Set.toAscList ps1) (Set.toAscList ps2)
+
+matchPreds :: [Pred] -> [Pred] -> TypeSubst -> TypeSubst
+matchPreds []       []       = id
+matchPreds (p1:ps1) (p2:ps2) = 
+  matchPreds ps1 ps2 . matchPred p1 p2
+matchPreds ps1      ps2      = 
+  internalError $ "Base.Typing,matchPreds: " ++ show ps1 ++ " " ++ show ps2
+
+-- TODO : check if it is OK to ignore the ICC flag
+matchPred :: Pred -> Pred -> TypeSubst -> TypeSubst
+matchPred pt1@(Pred _ qcls1 tys1) pt2@(Pred _ qcls2 tys2) 
+  | qcls1 == qcls2 = matchTypes tys1 tys2
+  | otherwise      
+  = internalError $ "Base.Typing.matchPred: " ++ show pt1 ++ " " ++ show pt2 
+
+matchTypes :: [Type] -> [Type] -> TypeSubst -> TypeSubst
+matchTypes []         []         = id
+matchTypes (ty1:tys1) (ty2:tys2) = matchTypes tys1 tys2 . matchType ty1 ty2
+matchTypes tys1       tys2       = internalError $
+  "Base.Typing.matchTypes: " ++ show tys1 ++ " " ++ show tys2 
 
 matchType :: Type -> Type -> TypeSubst -> TypeSubst
 matchType ty1 ty2 = fromMaybe noMatch (matchType' ty1 ty2)
