@@ -639,10 +639,17 @@ dictTransConstrDecl tvs (ConOpDecl p ty1 op ty2) dc =
 dictTransConstrDecl _ d _ = internalError $ "Dictionary.dictTrans: " ++ show d
 
 instance DictTrans Equation where
-  dictTrans (Equation p a (FunLhs _ f ts) rhs) =
+  dictTrans (Equation p Nothing (FunLhs _ f ts) rhs) =
     withLocalValueEnv $ withLocalDictEnv $ do
       m <- getModuleIdent
       pls <- matchPredList (varType m f) $
+               foldr (TypeArrow . typeOf) (typeOf rhs) ts
+      ts' <- addDictArgs pls ts
+      modifyValueEnv $ bindPatterns ts'
+      Equation p Nothing (FunLhs NoSpanInfo f ts') <$> dictTrans rhs
+  dictTrans (Equation p (Just pty) (FunLhs _ f ts) rhs) =
+    withLocalValueEnv $ withLocalDictEnv $ do
+      pls <- matchPredList' pty $
                foldr (TypeArrow . typeOf) (typeOf rhs) ts
       ts' <- addDictArgs pls ts
       modifyValueEnv $ bindPatterns ts'
@@ -790,6 +797,18 @@ matchPredList tySc ty2 = do
       argPreds = foldr (\(pls1, pls2) pls' -> fromMaybe pls' $
                           qualMatch pls1 ty1 pls2 ty2 maxDictTv)
                        (internalError $ "Dictionary.matchPredList: " ++ show ps)
+                       (splits $ Set.toAscList ps)
+  clsEnv <- getClassEnv
+  inEnv <- getInstEnv
+  return $ inferDependentVars clsEnv inEnv dictEnvPreds argPreds
+
+matchPredList' :: PredType -> Type -> DTM [Pred]
+matchPredList' (PredType ps ty1) ty2 = do
+  dictEnvPreds <- map fst <$> getDictEnv
+  let maxDictTv = maximum (-1 : typeVars dictEnvPreds)
+      argPreds = foldr (\(pls1, pls2) pls' -> fromMaybe pls' $
+                          qualMatch pls1 ty1 pls2 ty2 maxDictTv)
+                       (internalError $ "Dictionary.matchPredList': " ++ show ps)
                        (splits $ Set.toAscList ps)
   clsEnv <- getClassEnv
   inEnv <- getInstEnv
