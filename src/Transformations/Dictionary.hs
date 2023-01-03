@@ -33,6 +33,8 @@ import           Data.Maybe        (fromMaybe, isJust)
 import qualified Data.Set   as Set ( deleteMin, fromList, lookupMin, null, size
                                    , toAscList, toList, union )
 
+import Debug.Trace
+
 import Curry.Base.Ident
 import Curry.Base.Position
 import Curry.Base.SpanInfo
@@ -43,6 +45,7 @@ import Base.CurryTypes
 import Base.Expr
 import Base.Kinds
 import Base.Messages (internalError)
+import Base.PrettyTypes
 import Base.TopEnv
 import Base.Types
 import Base.TypeSubst
@@ -647,10 +650,11 @@ instance DictTrans Equation where
       ts' <- addDictArgs pls ts
       modifyValueEnv $ bindPatterns ts'
       Equation p Nothing (FunLhs NoSpanInfo f ts') <$> dictTrans rhs
-  dictTrans (Equation p (Just pty) (FunLhs _ f ts) rhs) =
+  dictTrans (Equation p (Just (PredType ps ty)) (FunLhs _ f ts) rhs) =
     withLocalValueEnv $ withLocalDictEnv $ do
-      pls <- matchPredList' pty $
-               foldr (TypeArrow . typeOf) (typeOf rhs) ts
+      m <- getModuleIdent
+      let pty' = PredType ps (foldr (TypeArrow . typeOf) ty ts)
+      pls <- matchPredList' (varType m f) pty'
       ts' <- addDictArgs pls ts
       modifyValueEnv $ bindPatterns ts'
       Equation p Nothing (FunLhs NoSpanInfo f ts') <$> dictTrans rhs
@@ -802,12 +806,13 @@ matchPredList tySc ty2 = do
   inEnv <- getInstEnv
   return $ inferDependentVars clsEnv inEnv dictEnvPreds argPreds
 
-matchPredList' :: PredType -> Type -> DTM [Pred]
-matchPredList' (PredType ps ty1) ty2 = do
+matchPredList' :: (ValueEnv -> TypeScheme)  -> PredType -> DTM [Pred]
+matchPredList' tySc (PredType ps2 ty2) = do
+  ForAll _ (PredType ps ty1) <- tySc <$> getValueEnv
   dictEnvPreds <- map fst <$> getDictEnv
   let maxDictTv = maximum (-1 : typeVars dictEnvPreds)
       argPreds = foldr (\(pls1, pls2) pls' -> fromMaybe pls' $
-                          qualMatch pls1 ty1 pls2 ty2 maxDictTv)
+                          qualMatch' pls1 ty1 pls2 ps2 ty2 maxDictTv)
                        (internalError $ "Dictionary.matchPredList': " ++ show ps)
                        (splits $ Set.toAscList ps)
   clsEnv <- getClassEnv
@@ -864,6 +869,17 @@ qualMatch pls1 ty1 pls2 ty2 maxDictTv = case predListMatch pls2 ty2 of
         psTvs = [maximum (-1 : typeVars ty1) + 1 .. maximum (-1 : typeVars pls1)]
         renamePsTvs = foldr2 bindSubst idSubst psTvs freshTys
     in Just $ subst (matchType ty1 ty2' idSubst) $ subst renamePsTvs pls1
+  Nothing -> Nothing
+
+qualMatch' :: [Pred] -> Type -> [Pred] -> PredSet -> Type -> Int -> Maybe [Pred]
+qualMatch' pls1 ty1 pls2 ps ty2 maxDictTv = case predListMatch pls2 ty2 of
+  Just ty2' ->
+    let freshTys = map TypeVariable [maximum (maxDictTv : typeVars ty2') + 1 ..]
+        psTvs = [maximum (-1 : typeVars ty1) + 1 .. maximum (-1 : typeVars pls1)]
+        renamePsTvs = foldr2 bindSubst idSubst psTvs freshTys
+        pls2' = Set.toAscList ps
+    in Just $ subst (matchPredType' pls1 ty1 pls2' ty2' idSubst) 
+            $ subst renamePsTvs pls1
   Nothing -> Nothing
 
 predListMatch :: [Pred] -> Type -> Maybe Type

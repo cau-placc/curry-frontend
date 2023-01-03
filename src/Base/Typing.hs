@@ -19,7 +19,7 @@
 
 module Base.Typing
   ( Typeable (..)
-  , withType, matchPredType, matchPreds, matchPred, matchType
+  , withType, matchPredType, matchPredType', matchPreds, matchPred, matchType
   , bindDecls, bindDecl, bindPatterns, bindPattern, declVars, patternVars
   ) where
 
@@ -31,6 +31,7 @@ import Curry.Base.Ident
 import Curry.Syntax
 
 import Base.Messages (internalError)
+import Base.PrettyTypes
 import Base.Types
 import Base.TypeSubst
 import Base.Utils (fst3)
@@ -116,7 +117,14 @@ withType ty e = fmap (subst (matchType (typeOf e) ty idSubst)) e
 
 matchPredType :: PredType -> PredType -> TypeSubst -> TypeSubst
 matchPredType (PredType ps1 ty1) (PredType ps2 ty2) =
-  matchType ty1 ty2 . matchPredSet ps1 ps2
+  matchPredType' ps1' ty1 ps2' ty2
+ where
+  ps1' = Set.toAscList ps1
+  ps2' = Set.toAscList ps2
+
+matchPredType' :: [Pred] -> Type -> [Pred] -> Type -> TypeSubst -> TypeSubst
+matchPredType' ps1 ty1 ps2 ty2 =
+  matchType ty1 ty2 . matchPreds ps1 ps2
 
 matchPredSet :: PredSet -> PredSet -> TypeSubst -> TypeSubst
 matchPredSet ps1 ps2 = matchPreds (Set.toAscList ps1) (Set.toAscList ps2)
@@ -145,7 +153,7 @@ matchType :: Type -> Type -> TypeSubst -> TypeSubst
 matchType ty1 ty2 = fromMaybe noMatch (matchType' ty1 ty2)
   where
     noMatch = internalError $ "Base.Typing.matchType: " ++
-                                showsPrec 11 ty1 " " ++ showsPrec 11 ty2 ""
+                                show (pPrintPrec 11 ty1) ++ " " ++ show (pPrintPrec 11 ty2)
 
 matchType' :: Type -> Type -> Maybe (TypeSubst -> TypeSubst)
 matchType' (TypeVariable tv) ty
