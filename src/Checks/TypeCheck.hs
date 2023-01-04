@@ -1079,13 +1079,14 @@ tcPatternHelper _ t@(NegativePattern spi _ l) = do
   return (ps', ty, NegativePattern spi (predType ty) l)
 tcPatternHelper _ t@(VariablePattern spi _ v) = do
   vEnv <- lift getValueEnv
-  (_, ty) <- lift $ inst (varType v vEnv)
+  (ps, ty) <- lift $ inst (varType v vEnv)
   used <- S.get
   let what = "variable pattern"
-  ps <- if Set.member v used
+  ps' <- if Set.member v used
           then return $ Set.singleton (LPred (dataPred ty) spi what (pPrint t))
           else S.put (Set.insert v used) >> return Set.empty
-  return (ps, ty, VariablePattern spi (predType ty) v)
+  let ps'' = (Set.map (\pred -> LPred pred spi what (pPrint t)) ps) `Set.union` ps'
+  return (ps'', ty, VariablePattern spi (PredType (Set.map getPred ps'') ty) v)
 tcPatternHelper p t@(ConstructorPattern spi _ c ts) = do
   m <- lift getModuleIdent
   vEnv <- lift getValueEnv

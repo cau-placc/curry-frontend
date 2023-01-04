@@ -650,11 +650,10 @@ instance DictTrans Equation where
       ts' <- addDictArgs pls ts
       modifyValueEnv $ bindPatterns ts'
       Equation p Nothing (FunLhs NoSpanInfo f ts') <$> dictTrans rhs
-  dictTrans (Equation p (Just (PredType ps ty)) (FunLhs _ f ts) rhs) =
+  dictTrans (Equation p (Just pty@(PredType ps ty)) (FunLhs _ f ts) rhs) =
     withLocalValueEnv $ withLocalDictEnv $ do
       m <- getModuleIdent
-      let pty' = PredType ps (foldr (TypeArrow . typeOf) ty ts)
-      pls <- matchPredList' (varType m f) pty'
+      pls <- matchPredList' (varType m f) pty
       ts' <- addDictArgs pls ts
       modifyValueEnv $ bindPatterns ts'
       Equation p Nothing (FunLhs NoSpanInfo f ts') <$> dictTrans rhs

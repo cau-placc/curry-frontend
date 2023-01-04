@@ -141,7 +141,7 @@ matchPred :: Pred -> Pred -> TypeSubst -> TypeSubst
 matchPred pt1@(Pred _ qcls1 tys1) pt2@(Pred _ qcls2 tys2) 
   | qcls1 == qcls2 = matchTypes tys1 tys2
   | otherwise      
-  = internalError $ "Base.Typing.matchPred: " ++ show pt1 ++ " " ++ show pt2 
+  = internalError $ "Base.Typing.matchPred: " ++ show (pPrintPrec 11 pt1) ++ " " ++ show (pPrintPrec 11 pt2) 
 
 matchTypes :: [Type] -> [Type] -> TypeSubst -> TypeSubst
 matchTypes []         []         = id
