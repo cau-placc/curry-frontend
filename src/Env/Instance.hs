@@ -54,13 +54,13 @@ ppInstIdent (qcls, tys) =
 -- An 'InstInfo' contains all relevant information about an instance declaration
 -- beyond its identifier. These are its module, the given instance context, and
 -- the implemented methods with their arity.
-type InstInfo = (ModuleIdent, PredSet, [(Ident, Int)])
+type InstInfo = (ModuleIdent, PredList, [(Ident, Int)])
 
 -- An 'InstMatchInfo' is represents a successful result when searching for a
 -- matching instance. In addition to the information of an 'InstInfo', it
 -- contains the original instance types of the matching instance and a type
 -- substitution mapping instance types to the the requested types.
-type InstMatchInfo = (ModuleIdent, PredSet, [Type], [(Ident, Int)], TypeSubst)
+type InstMatchInfo = (ModuleIdent, PredList, [Type], [(Ident, Int)], TypeSubst)
 
 type InstEnv = Map.Map QualIdent (Map.Map [Type] InstInfo)
 

@@ -136,16 +136,16 @@ deriveInstance tc tvs cis cls = do
   let ty = applyType (TypeConstructor tc) $
              take (length tvs) $ map TypeVariable [0 ..]
       -- TODO: Maybe add a specific error message?
-      ps = snd3 $ fromJust $ lookupInstExact (cls, [ty]) inEnv
-      QualTypeExpr _ cx inst = fromPredType tvs $ PredType ps ty
-  ds <- deriveMethods cls ty cis ps
+      pls = snd3 $ fromJust $ lookupInstExact (cls, [ty]) inEnv
+      QualTypeExpr _ cx inst = fromPredType tvs $ PredType pls ty
+  ds <- deriveMethods cls ty cis pls
   return $ InstanceDecl NoSpanInfo WhitespaceLayout cx cls [inst] ds
 
 -- Note: The methods and arities of the generated instance declarations have to
 -- correspond to the methods and arities entered previously into the instance
 -- environment (see instance check).
 
-deriveMethods :: QualIdent -> Type -> [ConstrInfo] -> PredSet
+deriveMethods :: QualIdent -> Type -> [ConstrInfo] -> PredList
               -> DVM [Decl PredType]
 deriveMethods cls
   | cls == qEqId      = deriveEqMethods
@@ -166,9 +166,9 @@ type BinOpExpr = Int
               -> Expression PredType
 
 deriveBinOp :: QualIdent -> Ident -> BinOpExpr -> Type -> [ConstrInfo]
-            -> PredSet -> DVM (Decl PredType)
-deriveBinOp cls op expr ty cis ps = do
-  pty <- getInstMethodType ps cls ty op
+            -> PredList -> DVM (Decl PredType)
+deriveBinOp cls op expr ty cis pls = do
+  pty <- getInstMethodType pls cls ty op
   eqs <- mapM (deriveBinOpEquation op expr ty) $ sequence [cis, cis]
   return $ FunctionDecl NoSpanInfo (OneType pty) op $
     if null eqs
@@ -191,9 +191,9 @@ deriveBinOpEquation _ _ _ _ = internalError "Derive.deriveBinOpEquation"
 
 -- Equality:
 
-deriveEqMethods :: Type -> [ConstrInfo] -> PredSet -> DVM [Decl PredType]
-deriveEqMethods ty cis ps = sequence
-  [deriveBinOp qEqId eqOpId eqOpExpr ty cis ps]
+deriveEqMethods :: Type -> [ConstrInfo] -> PredList -> DVM [Decl PredType]
+deriveEqMethods ty cis pls = sequence
+  [deriveBinOp qEqId eqOpId eqOpExpr ty cis pls]
 
 eqOpExpr :: BinOpExpr
 eqOpExpr i1 es1 i2 es2
@@ -203,10 +203,10 @@ eqOpExpr i1 es1 i2 es2
 
 -- Data:
 
-deriveDataMethods :: Type -> [ConstrInfo] -> PredSet -> DVM [Decl PredType]
-deriveDataMethods ty cis ps = sequence
-  [ deriveBinOp qDataId dataEqId dataEqOpExpr ty cis ps
-  , deriveAValue ty cis ps]
+deriveDataMethods :: Type -> [ConstrInfo] -> PredList -> DVM [Decl PredType]
+deriveDataMethods ty cis pls = sequence
+  [ deriveBinOp qDataId dataEqId dataEqOpExpr ty cis pls
+  , deriveAValue ty cis pls]
 
 dataEqOpExpr :: BinOpExpr
 dataEqOpExpr i1 es1 i2 es2
@@ -214,9 +214,9 @@ dataEqOpExpr i1 es1 i2 es2
                             else foldl1 prelAnd $ zipWith prelDataEq es1 es2
   | otherwise = prelFalse
 
-deriveAValue :: Type -> [ConstrInfo] -> PredSet -> DVM (Decl PredType)
-deriveAValue ty cis ps = do
-  pty <- getInstMethodType ps qDataId ty aValueId
+deriveAValue :: Type -> [ConstrInfo] -> PredList -> DVM (Decl PredType)
+deriveAValue ty cis pls = do
+  pty <- getInstMethodType pls qDataId ty aValueId
   return $ FunctionDecl NoSpanInfo (OneType pty) aValueId $
     if null cis
       then [mkEquation NoSpanInfo aValueId [] $ preludeFailed $ instType ty]
@@ -236,9 +236,9 @@ aValueEquation ty (arity, cns, _, tys)
 
 -- Ordering:
 
-deriveOrdMethods :: Type -> [ConstrInfo] -> PredSet -> DVM [Decl PredType]
-deriveOrdMethods ty cis ps = sequence
-  [deriveBinOp qOrdId leqOpId leqOpExpr ty cis ps]
+deriveOrdMethods :: Type -> [ConstrInfo] -> PredList -> DVM [Decl PredType]
+deriveOrdMethods ty cis pls = sequence
+  [deriveBinOp qOrdId leqOpId leqOpExpr ty cis pls]
 
 leqOpExpr :: BinOpExpr
 leqOpExpr i1 es1 i2 es2
@@ -254,20 +254,20 @@ leqOpExpr i1 es1 i2 es2
 
 -- Enumerations:
 
-deriveEnumMethods :: Type -> [ConstrInfo] -> PredSet -> DVM [Decl PredType]
-deriveEnumMethods ty cis ps = sequence
-  [ deriveSuccOrPred succId ty cis (tail cis) ps
-  , deriveSuccOrPred predId ty (tail cis) cis ps
-  , deriveToEnum ty cis ps
-  , deriveFromEnum ty cis ps
-  , deriveEnumFrom ty (last cis) ps
-  , deriveEnumFromThen ty (head cis) (last cis) ps
+deriveEnumMethods :: Type -> [ConstrInfo] -> PredList -> DVM [Decl PredType]
+deriveEnumMethods ty cis pls = sequence
+  [ deriveSuccOrPred succId ty cis (tail cis) pls
+  , deriveSuccOrPred predId ty (tail cis) cis pls
+  , deriveToEnum ty cis pls
+  , deriveFromEnum ty cis pls
+  , deriveEnumFrom ty (last cis) pls
+  , deriveEnumFromThen ty (head cis) (last cis) pls
   ]
 
-deriveSuccOrPred :: Ident -> Type -> [ConstrInfo] -> [ConstrInfo] -> PredSet
+deriveSuccOrPred :: Ident -> Type -> [ConstrInfo] -> [ConstrInfo] -> PredList
                  -> DVM (Decl PredType)
-deriveSuccOrPred f ty cis1 cis2 ps = do
-  pty <- getInstMethodType ps qEnumId ty f
+deriveSuccOrPred f ty cis1 cis2 pls = do
+  pty <- getInstMethodType pls qEnumId ty f
   FunctionDecl NoSpanInfo (OneType pty) f <$>
     if null eqs
       then do
@@ -284,9 +284,9 @@ succOrPredEquation f ty (_, c1, _, _) (_, c2, _, _) =
     Constructor NoSpanInfo pty c2
   where pty = predType $ instType ty
 
-deriveToEnum :: Type -> [ConstrInfo] -> PredSet -> DVM (Decl PredType)
-deriveToEnum ty cis ps = do
-  pty <- getInstMethodType ps qEnumId ty toEnumId
+deriveToEnum :: Type -> [ConstrInfo] -> PredList -> DVM (Decl PredType)
+deriveToEnum ty cis pls = do
+  pty <- getInstMethodType pls qEnumId ty toEnumId
   return $ FunctionDecl NoSpanInfo (OneType pty) toEnumId eqs
   where eqs = zipWith (toEnumEquation ty) [0 ..] cis
 
@@ -296,9 +296,9 @@ toEnumEquation ty i (_, c, _, _) =
     [LiteralPattern NoSpanInfo (predType intType) (Int i)] $
     Constructor NoSpanInfo (predType $ instType ty) c
 
-deriveFromEnum :: Type -> [ConstrInfo] -> PredSet -> DVM (Decl PredType)
-deriveFromEnum ty cis ps = do
-  pty <- getInstMethodType ps qEnumId ty fromEnumId
+deriveFromEnum :: Type -> [ConstrInfo] -> PredList -> DVM (Decl PredType)
+deriveFromEnum ty cis pls = do
+  pty <- getInstMethodType pls qEnumId ty fromEnumId
   return $ FunctionDecl NoSpanInfo (OneType pty) fromEnumId eqs
   where eqs = zipWith (fromEnumEquation ty) cis [0 ..]
 
@@ -308,9 +308,9 @@ fromEnumEquation ty (_, c, _, _) i =
     Literal NoSpanInfo (predType intType) $ Int i
   where pty = predType $ instType ty
 
-deriveEnumFrom :: Type -> ConstrInfo -> PredSet -> DVM (Decl PredType)
-deriveEnumFrom ty (_, c, _, _) ps = do
-  pty <- getInstMethodType ps qEnumId ty enumFromId
+deriveEnumFrom :: Type -> ConstrInfo -> PredList -> DVM (Decl PredType)
+deriveEnumFrom ty (_, c, _, _) pls = do
+  pty <- getInstMethodType pls qEnumId ty enumFromId
   v <- freshArgument $ instType ty
   return $ funDecl NoSpanInfo (OneType pty) enumFromId
     [uncurry (VariablePattern NoSpanInfo) v] $
@@ -320,10 +320,10 @@ enumFromExpr :: (PredType, Ident) -> QualIdent -> Expression PredType
 enumFromExpr v c = prelEnumFromTo (uncurry mkVar v) $
   Constructor NoSpanInfo (fst v) c
 
-deriveEnumFromThen :: Type -> ConstrInfo -> ConstrInfo -> PredSet
+deriveEnumFromThen :: Type -> ConstrInfo -> ConstrInfo -> PredList
                    -> DVM (Decl PredType)
-deriveEnumFromThen ty (_, c1, _, _) (_, c2, _, _) ps = do
-  pty <- getInstMethodType ps qEnumId ty enumFromId
+deriveEnumFromThen ty (_, c1, _, _) (_, c2, _, _) pls = do
+  pty <- getInstMethodType pls qEnumId ty enumFromId
   vs  <- replicateM 2 ((freshArgument . instType) ty)
   let [v1, v2] = vs
   return $ funDecl NoSpanInfo (OneType pty) enumFromThenId
@@ -343,16 +343,16 @@ enumFromThenExpr v1 v2 c1 c2 =
 
 -- Upper and Lower Bounds:
 
-deriveBoundedMethods :: Type -> [ConstrInfo] -> PredSet -> DVM [Decl PredType]
-deriveBoundedMethods ty cis ps = sequence
-  [ deriveMaxOrMinBound qMinBoundId ty (head cis) ps
-  , deriveMaxOrMinBound qMaxBoundId ty (last cis) ps
+deriveBoundedMethods :: Type -> [ConstrInfo] -> PredList -> DVM [Decl PredType]
+deriveBoundedMethods ty cis pls = sequence
+  [ deriveMaxOrMinBound qMinBoundId ty (head cis) pls
+  , deriveMaxOrMinBound qMaxBoundId ty (last cis) pls
   ]
 
-deriveMaxOrMinBound :: QualIdent -> Type -> ConstrInfo -> PredSet
+deriveMaxOrMinBound :: QualIdent -> Type -> ConstrInfo -> PredList
                     -> DVM (Decl PredType)
-deriveMaxOrMinBound f ty (_, c, _, tys) ps = do
-  pty <- getInstMethodType ps qBoundedId ty $ unqualify f
+deriveMaxOrMinBound f ty (_, c, _, tys) pls = do
+  pty <- getInstMethodType pls qBoundedId ty $ unqualify f
   return $ 
     funDecl NoSpanInfo (OneType pty) (unqualify f) [] $ maxOrMinBoundExpr f c ty tys
 
@@ -366,12 +366,12 @@ maxOrMinBoundExpr f c ty tys =
 
 -- Read:
 
-deriveReadMethods :: Type -> [ConstrInfo] -> PredSet -> DVM [Decl PredType]
-deriveReadMethods ty cis ps = sequence [deriveReadsPrec ty cis ps]
+deriveReadMethods :: Type -> [ConstrInfo] -> PredList -> DVM [Decl PredType]
+deriveReadMethods ty cis pls = sequence [deriveReadsPrec ty cis pls]
 
-deriveReadsPrec :: Type -> [ConstrInfo] -> PredSet -> DVM (Decl PredType)
-deriveReadsPrec ty cis ps = do
-  pty <- getInstMethodType ps qReadId ty readsPrecId
+deriveReadsPrec :: Type -> [ConstrInfo] -> PredList -> DVM (Decl PredType)
+deriveReadsPrec ty cis pls = do
+  pty <- getInstMethodType pls qReadId ty readsPrecId
   d <- freshArgument intType
   r <- freshArgument stringType
   let pats = map (uncurry (VariablePattern NoSpanInfo)) [d, r]
@@ -494,12 +494,12 @@ deriveReadsPrecReadsPrecStmt p r ty = do
 
 -- Show:
 
-deriveShowMethods :: Type -> [ConstrInfo] -> PredSet -> DVM [Decl PredType]
-deriveShowMethods ty cis ps = sequence [deriveShowsPrec ty cis ps]
+deriveShowMethods :: Type -> [ConstrInfo] -> PredList -> DVM [Decl PredType]
+deriveShowMethods ty cis pls = sequence [deriveShowsPrec ty cis pls]
 
-deriveShowsPrec :: Type -> [ConstrInfo] -> PredSet -> DVM (Decl PredType)
-deriveShowsPrec ty cis ps = do
-  pty <- getInstMethodType ps qShowId ty showsPrecId
+deriveShowsPrec :: Type -> [ConstrInfo] -> PredList -> DVM (Decl PredType)
+deriveShowsPrec ty cis pls = do
+  pty <- getInstMethodType pls qShowId ty showsPrecId
   eqs <- mapM (deriveShowsPrecEquation ty) cis
   return $ FunctionDecl NoSpanInfo (OneType pty) showsPrecId eqs
 
@@ -604,18 +604,18 @@ instType ty = ty
 -- instance's type. The remaining predicate set is then united with the
 -- instance's predicate set.
 
-getInstMethodType :: PredSet -> QualIdent -> Type -> Ident -> DVM PredType
-getInstMethodType ps cls ty f = do
+getInstMethodType :: PredList -> QualIdent -> Type -> Ident -> DVM PredType
+getInstMethodType pls cls ty f = do
   vEnv <- getValueEnv
-  return $ instMethodType vEnv ps cls ty f
+  return $ instMethodType vEnv pls cls ty f
 
-instMethodType :: ValueEnv -> PredSet -> QualIdent -> Type -> Ident -> PredType
-instMethodType vEnv ps cls ty f = PredType (ps `Set.union` ps'') ty''
+instMethodType :: ValueEnv -> PredList -> QualIdent -> Type -> Ident -> PredType
+instMethodType vEnv pls cls ty f = PredType (plUnion pls pls'') ty''
  where
-  PredType ps' ty' = case qualLookupValue (qualifyLike cls f) vEnv of
+  PredType pls' ty' = case qualLookupValue (qualifyLike cls f) vEnv of
                        [Value _ _ _ (ForAll _ pty)] -> pty
                        _ -> internalError "Derive.instMethodType"
-  PredType ps'' ty'' = instanceTypes [ty] $ PredType (Set.deleteMin ps') ty'
+  PredType pls'' ty'' = instanceTypes [ty] $ PredType (plDeleteMin pls') ty'
 
 -- -----------------------------------------------------------------------------
 -- Prelude entities

@@ -165,9 +165,9 @@ liftDecls (ClassDecl _ _ _ cls tvs _ ds) = do
   liftClassDecls (qualifyWith m cls) tvs ds
 liftDecls (InstanceDecl _ _ cx cls tys ds) = do
   clsEnv <- getClassEnv
-  let PredTypes ps tys' = toPredTypes [] OPred cx tys
-      ps' = minPredSet clsEnv ps
-  liftInstanceDecls ps' cls tys' ds
+  let PredTypes pls tys' = toPredTypes [] OPred cx tys
+      pls' = minPredList clsEnv pls
+  liftInstanceDecls pls' cls tys' ds
 liftDecls d = return [d]
 
 liftClassDecls :: QualIdent -> [Ident] -> [Decl PredType] -> DTM [Decl PredType]
@@ -180,13 +180,13 @@ liftClassDecls cls tvs ds = do
   where (vds, ods) = partition isValueDecl ds
         ms = methodMap vds
 
-liftInstanceDecls :: PredSet -> QualIdent -> [Type] -> [Decl PredType]
+liftInstanceDecls :: PredList -> QualIdent -> [Type] -> [Decl PredType]
                   -> DTM [Decl PredType]
-liftInstanceDecls ps cls tys ds = do
-  dictDecl <- createInstDictDecl ps cls tys
+liftInstanceDecls pls cls tys ds = do
+  dictDecl <- createInstDictDecl pls cls tys
   clsEnv <- getClassEnv
   let fs = classMethods cls clsEnv
-  methodDecls <- mapM (createInstMethodDecl ps cls tys ms) fs
+  methodDecls <- mapM (createInstMethodDecl pls cls tys ms) fs
   return $ dictDecl : methodDecls
   where ms = methodMap ds
 
@@ -222,19 +222,19 @@ createClassDictConstrDecl cls tvs ds = do
 classDictConstrPredType :: ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv
                         -> QualIdent -> PredType
 classDictConstrPredType m tcEnv vEnv clsEnv cls =
-  PredType ps $ foldr TypeArrow ty mtys
+  PredType pls $ foldr TypeArrow ty mtys
  where
   varTys = map TypeVariable [0 .. kindArity (clsKind m cls tcEnv) - 1]
-  ps     = Set.fromList [ uncurry (Pred OPred) (applySuperClass varTys sclsInfo)
-                        | sclsInfo <- superClasses cls clsEnv ]
+  pls    = [ uncurry (Pred OPred) (applySuperClass varTys sclsInfo)
+           | sclsInfo <- superClasses cls clsEnv ]
   fs     = classMethods cls clsEnv
   mptys  = map (classMethodType vEnv cls) fs
   ty     = dictType $ Pred OPred cls varTys
   mtys   = map (generalizeMethodType . transformMethodPredType) mptys
 
-createInstDictDecl :: PredSet -> QualIdent -> [Type] -> DTM (Decl PredType)
-createInstDictDecl ps cls tys = do
-  pty <- PredType ps . arrowBase <$> getInstDictConstrType cls tys
+createInstDictDecl :: PredList -> QualIdent -> [Type] -> DTM (Decl PredType)
+createInstDictDecl pls cls tys = do
+  pty <- PredType pls . arrowBase <$> getInstDictConstrType cls tys
   funDecl NoSpanInfo (OneType pty) (instFunId cls tys)
     [ConstructorPattern NoSpanInfo predUnitType qUnitId []]
     <$> createInstDictExpr cls tys
@@ -276,16 +276,16 @@ classMethodType :: ValueEnv -> QualIdent -> Ident -> PredType
 classMethodType vEnv cls f = pty
   where ForAll _ pty = funType False (qualifyLike cls f) vEnv
 
-createInstMethodDecl :: PredSet -> QualIdent -> [Type] -> MethodMap -> Ident
+createInstMethodDecl :: PredList -> QualIdent -> [Type] -> MethodMap -> Ident
                      -> DTM (Decl PredType)
-createInstMethodDecl ps cls tys =
-  createMethodDecl (implMethodId cls tys) (defaultInstMethodDecl ps cls tys)
+createInstMethodDecl pls cls tys =
+  createMethodDecl (implMethodId cls tys) (defaultInstMethodDecl pls cls tys)
 
-defaultInstMethodDecl :: PredSet -> QualIdent -> [Type] -> Ident
+defaultInstMethodDecl :: PredList -> QualIdent -> [Type] -> Ident
                       -> DTM (Decl PredType)
-defaultInstMethodDecl ps cls tys f = do
+defaultInstMethodDecl pls cls tys f = do
   vEnv <- getValueEnv
-  let pty@(PredType _ ty) = instMethodType vEnv ps cls tys f
+  let pty@(PredType _ ty) = instMethodType vEnv pls cls tys f
   return $ funDecl NoSpanInfo (OneType pty) f [] $
     Variable NoSpanInfo (predType $ instType ty) (qDefaultMethodId cls f)
 
@@ -295,11 +295,11 @@ defaultInstMethodDecl ps cls tys f = do
 -- instance's types. The remaining predicate set is then united with the
 -- instance's predicate set.
 
-instMethodType :: ValueEnv -> PredSet -> QualIdent -> [Type] -> Ident
+instMethodType :: ValueEnv -> PredList -> QualIdent -> [Type] -> Ident
                -> PredType
-instMethodType vEnv ps cls tys f = PredType (ps `Set.union` ps'') ty'
-  where PredType ps'  ty  = classMethodType vEnv cls f
-        PredType ps'' ty' = instanceTypes tys $ PredType (Set.deleteMin ps') ty
+instMethodType vEnv pls cls tys f = PredType (plUnion pls pls'') ty'
+  where PredType pls'  ty  = classMethodType vEnv cls f
+        PredType pls'' ty' = instanceTypes tys $ PredType (plDeleteMin pls') ty
 
 createMethodDecl :: (Ident -> Ident) -> (Ident -> DTM (Decl PredType))
                  -> MethodMap -> Ident -> DTM (Decl PredType)
@@ -394,10 +394,10 @@ bindDictType m clsEnv (TypeClass cls k ms) = bindEntity m tc ti
  where
   ti     = DataType tc (dictTypeKind cls k) [c]
   tc     = qDictTypeId cls
-  c      = DataConstr (dictConstrId cls) (map rtDictType (Set.toAscList ps) ++ tys)
+  c      = DataConstr (dictConstrId cls) (map rtDictType pls ++ tys)
   varTys = map TypeVariable [0 ..]
-  ps     = Set.fromList [ uncurry (Pred OPred) (applySuperClass varTys sclsInfo)
-                        | sclsInfo <- superClasses cls clsEnv ]
+  pls    = [ uncurry (Pred OPred) (applySuperClass varTys sclsInfo)
+           | sclsInfo <- superClasses cls clsEnv ]
   tys    = map (generalizeMethodType . transformMethodPredType . methodType) ms
 bindDictType _ _      _                     = id
 
@@ -425,8 +425,8 @@ bindClassDict :: ModuleIdent -> TCEnv -> ClassEnv -> QualIdent -> ValueEnv
 bindClassDict m tcEnv clsEnv cls vEnv = bindEntity m c dc vEnv
   where c  = qDictConstrId cls
         dc = DataConstructor c a (replicate a anonId) tySc
-        a  = Set.size ps + arrowArity ty
-        pty@(PredType ps ty) = classDictConstrPredType m tcEnv vEnv clsEnv cls
+        a  = length pls + arrowArity ty
+        pty@(PredType pls ty) = classDictConstrPredType m tcEnv vEnv clsEnv cls
         tySc = ForAll (kindArity (clsKind m cls tcEnv)) pty
 
 bindDefaultMethods :: ModuleIdent -> QualIdent -> [(Ident, Int)] -> ValueEnv
@@ -457,25 +457,25 @@ bindInstDecls m clsEnv = flip (foldr $ bindInstFuns m clsEnv) . instEnvList
 
 bindInstFuns :: ModuleIdent -> ClassEnv -> (InstIdent, InstInfo) -> ValueEnv
              -> ValueEnv
-bindInstFuns m clsEnv ((cls, tys), (m', ps, is)) =
-  bindInstDict m cls tys m' ps . bindInstMethods m clsEnv cls tys m' ps is
+bindInstFuns m clsEnv ((cls, tys), (m', pls, is)) =
+  bindInstDict m cls tys m' pls . bindInstMethods m clsEnv cls tys m' pls is
 
-bindInstDict :: ModuleIdent -> QualIdent -> [Type] -> ModuleIdent -> PredSet
+bindInstDict :: ModuleIdent -> QualIdent -> [Type] -> ModuleIdent -> PredList
              -> ValueEnv -> ValueEnv
-bindInstDict m cls tys m' ps = bindMethod m (qInstFunId m' cls tys) 1 $
-  PredType ps $ rtDictType $ Pred OPred cls tys
+bindInstDict m cls tys m' pls = bindMethod m (qInstFunId m' cls tys) 1 $
+  PredType pls $ rtDictType $ Pred OPred cls tys
 
 bindInstMethods :: ModuleIdent -> ClassEnv -> QualIdent -> [Type] -> ModuleIdent
-                -> PredSet -> [(Ident, Int)] -> ValueEnv -> ValueEnv
-bindInstMethods m clsEnv cls tys m' ps is =
-  flip (foldr (bindInstMethod m cls tys m' ps is)) (classMethods cls clsEnv)
+                -> PredList -> [(Ident, Int)] -> ValueEnv -> ValueEnv
+bindInstMethods m clsEnv cls tys m' pls is =
+  flip (foldr (bindInstMethod m cls tys m' pls is)) (classMethods cls clsEnv)
 
 bindInstMethod :: ModuleIdent -> QualIdent -> [Type] -> ModuleIdent
-               -> PredSet -> [(Ident, Int)] -> Ident -> ValueEnv -> ValueEnv
-bindInstMethod m cls tys m' ps is f vEnv = bindMethod m f' a pty vEnv
+               -> PredList -> [(Ident, Int)] -> Ident -> ValueEnv -> ValueEnv
+bindInstMethod m cls tys m' pls is f vEnv = bindMethod m f' a pty vEnv
   where f'  = qImplMethodId m' cls tys f
         a   = fromMaybe 0 $ lookup f is
-        pty = instMethodType vEnv ps cls tys f
+        pty = instMethodType vEnv pls cls tys f
 
 bindMethod :: ModuleIdent -> QualIdent -> Int -> PredType -> ValueEnv
            -> ValueEnv
@@ -625,7 +625,7 @@ instance DictTrans Decl where
   dictTrans (FunctionDecl p      fl f eqs) = let pty = funLabelAnnType fl in
     FunctionDecl p (OneType (transformPredType pty)) f <$> mapM dictTrans eqs
   dictTrans (PatternDecl           p t rhs) = case t of
-    VariablePattern _ pty@(PredType ps _) v | not (Set.null ps) ->
+    VariablePattern _ pty@(PredType pls _) v | not (null pls) ->
       dictTrans $ FunctionDecl p (OneType pty) v [Equation p Nothing (FunLhs NoSpanInfo v []) rhs]
     _ -> withLocalDictEnv $ PatternDecl p <$> dictTrans t <*> dictTrans rhs
   dictTrans d@(FreeDecl                _ _) = return $ fmap unpredType d
@@ -650,7 +650,7 @@ instance DictTrans Equation where
       ts' <- addDictArgs pls ts
       modifyValueEnv $ bindPatterns ts'
       Equation p Nothing (FunLhs NoSpanInfo f ts') <$> dictTrans rhs
-  dictTrans (Equation p (Just pty@(PredType ps ty)) (FunLhs _ f ts) rhs) =
+  dictTrans (Equation p (Just pty) (FunLhs _ f ts) rhs) =
     withLocalValueEnv $ withLocalDictEnv $ do
       m <- getModuleIdent
       pls <- matchPredList' (varType m f) pty
@@ -773,7 +773,7 @@ instPredList (Pred _ cls tys) = do
   case lookupInstMatch cls tys inEnv of
     [] -> internalError $ "Dictionary.instPredList: " ++
                             "Could not find an instance for " ++ show (cls, tys)
-    [(m, ps, itys, _, tau)] -> return (m, itys, subst tau (Set.toAscList ps))
+    [(m, pls, itys, _, tau)] -> return (m, itys, subst tau pls)
     _ : _ -> internalError $ "Dictionary.instPredList: " ++
                                "Multiple instances for " ++ show (cls, tys)
 
@@ -800,7 +800,7 @@ matchPredList tySc ty2 = do
       argPreds = foldr (\(pls1, pls2) pls' -> fromMaybe pls' $
                           qualMatch pls1 ty1 pls2 ty2 maxDictTv)
                        (internalError $ "Dictionary.matchPredList: " ++ show ps)
-                       (splits $ Set.toAscList ps)
+                       (splits ps)
   clsEnv <- getClassEnv
   inEnv <- getInstEnv
   return $ inferDependentVars clsEnv inEnv dictEnvPreds argPreds
@@ -813,7 +813,7 @@ matchPredList' tySc (PredType ps2 ty2) = do
       argPreds = foldr (\(pls1, pls2) pls' -> fromMaybe pls' $
                           qualMatch' pls1 ty1 pls2 ps2 ty2 maxDictTv)
                        (internalError $ "Dictionary.matchPredList': " ++ show ps)
-                       (splits $ Set.toAscList ps)
+                       (splits ps)
   clsEnv <- getClassEnv
   inEnv <- getInstEnv
   return $ inferDependentVars clsEnv inEnv dictEnvPreds argPreds
@@ -870,13 +870,13 @@ qualMatch pls1 ty1 pls2 ty2 maxDictTv = case predListMatch pls2 ty2 of
     in Just $ subst (matchType ty1 ty2' idSubst) $ subst renamePsTvs pls1
   Nothing -> Nothing
 
-qualMatch' :: [Pred] -> Type -> [Pred] -> PredSet -> Type -> Int -> Maybe [Pred]
+qualMatch' :: [Pred] -> Type -> [Pred] -> PredList -> Type -> Int -> Maybe [Pred]
 qualMatch' pls1 ty1 pls2 ps ty2 maxDictTv = case predListMatch pls2 ty2 of
   Just ty2' ->
     let freshTys = map TypeVariable [maximum (maxDictTv : typeVars ty2') + 1 ..]
         psTvs = [maximum (-1 : typeVars ty1) + 1 .. maximum (-1 : typeVars pls1)]
         renamePsTvs = foldr2 bindSubst idSubst psTvs freshTys
-        pls2' = Set.toAscList ps
+        pls2' = ps
     in Just $ subst (matchPredType' pls1 ty1 pls2' ty2' idSubst) 
             $ subst renamePsTvs pls1
   Nothing -> Nothing
@@ -1231,17 +1231,17 @@ dictTypeKind cls k = dictTypeKind' k
 -- dictionary type argument.
 
 transformPredType :: PredType -> Type
-transformPredType (PredType ps ty) =
-  foldr (TypeArrow . rtDictType) ty $ Set.toList ps
+transformPredType (PredType pls ty) =
+  foldr (TypeArrow . rtDictType) ty pls
 
 -- The function 'transformMethodPredType' first deletes the implicit class
 -- constraint and then transforms the resulting predicated type as above.
 -- Additionally, it returns the arity of the class in this constraint.
 
 transformMethodPredType :: PredType -> (Type, Int)
-transformMethodPredType (PredType ps ty) =
-  let iccAr = maybe 0 (\(Pred _ _ tys) -> length tys) (Set.lookupMin ps)
-  in (transformPredType $ PredType (Set.deleteMin ps) ty, iccAr)
+transformMethodPredType (PredType pls ty) =
+  let iccAr = maybe 0 (\(Pred _ _ tys) -> length tys) (plLookupMin pls)
+  in (transformPredType $ PredType (plDeleteMin pls) ty, iccAr)
 
 -- The function 'generalizeMethodType' generalizes an already transformed
 -- method type to a forall type by quantifying all occurring type variables
@@ -1307,8 +1307,8 @@ stringExpr = foldr (consExpr . Literal NoSpanInfo (predType charType) . Char)
 -- class method has to be treated differently than other predicates.
 
 varType :: ModuleIdent -> Ident -> ValueEnv -> TypeScheme
-varType m v vEnv = let ForAll n (PredType ps ty) = varType' m v vEnv
-                   in  ForAll n (PredType (removeICCFlag ps) ty)
+varType m v vEnv = let ForAll n (PredType pls ty) = varType' m v vEnv
+                   in  ForAll n (PredType (removeICCFlagList pls) ty)
 
 varType' :: ModuleIdent -> Ident -> ValueEnv -> TypeScheme
 varType' m v vEnv = case qualLookupValue (qualify v) vEnv of
@@ -1330,8 +1330,8 @@ funType False f vEnv = case qualLookupValue f vEnv of
   [Value _ _ _ tySc] -> tySc
   [Label _ _   tySc] -> tySc
   _ -> internalError $ "Dictionary.funType " ++ show f
-funType True  f vEnv = let ForAll n (PredType ps ty) = funType False f vEnv
-                       in  ForAll n (PredType (removeICCFlag ps) ty)
+funType True  f vEnv = let ForAll n (PredType pls ty) = funType False f vEnv
+                       in  ForAll n (PredType (removeICCFlagList pls) ty)
 
 opType :: QualIdent -> ValueEnv -> TypeScheme
 opType op vEnv = case qualLookupValue op vEnv of

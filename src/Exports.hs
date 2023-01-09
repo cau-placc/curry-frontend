@@ -175,8 +175,8 @@ newConstrDecl m tvs (RecordConstr c ls tys)
 -- causes it to always be the minimum element of the predicate set.
 
 methodDecl :: ModuleIdent -> [Ident] -> ClassMethod -> IMethodDecl
-methodDecl m tvs (ClassMethod f a (PredType ps ty)) = IMethodDecl NoPos f a $
-  fromQualPredType m tvs $ PredType (Set.deleteMin ps) ty
+methodDecl m tvs (ClassMethod f a (PredType pls ty)) = IMethodDecl NoPos f a $
+  fromQualPredType m tvs $ PredType (plDeleteMin pls) ty
 
 valueDecl
   :: ModuleIdent -> TCEnv -> ValueEnv -> [Ident] -> Export -> [IDecl] -> [IDecl]

@@ -70,13 +70,16 @@ expandPred m tcEnv (Pred isIcc qcls tys) = case qualLookupTypeInfo qcls tcEnv of
 expandPredSet :: ModuleIdent -> TCEnv -> ClassEnv -> PredSet -> PredSet
 expandPredSet m tcEnv clsEnv = minPredSet clsEnv . Set.map (expandPred m tcEnv)
 
+expandPredList :: ModuleIdent -> TCEnv -> ClassEnv -> PredList -> PredList
+expandPredList m tcEnv clsEnv = minPredList clsEnv . map (expandPred m tcEnv)
+
 expandPredType :: ModuleIdent -> TCEnv -> ClassEnv -> PredType -> PredType
-expandPredType m tcEnv clsEnv (PredType ps ty) =
-  PredType (expandPredSet m tcEnv clsEnv ps) (expandType m tcEnv ty)
+expandPredType m tcEnv clsEnv (PredType pls ty) =
+  PredType (expandPredList m tcEnv clsEnv pls) (expandType m tcEnv ty)
 
 expandPredTypes :: ModuleIdent -> TCEnv -> ClassEnv -> PredTypes -> PredTypes
-expandPredTypes m tcEnv clsEnv (PredTypes ps tys) =
-  PredTypes (expandPredSet m tcEnv clsEnv ps) (map (expandType m tcEnv) tys)
+expandPredTypes m tcEnv clsEnv (PredTypes pls tys) =
+  PredTypes (expandPredList m tcEnv clsEnv pls) (map (expandType m tcEnv) tys)
 
 -- The functions 'expandMonoType', 'expandPolyType' and 'expandInst' convert
 -- type expressions, qualified type expressions and instance contexts with lists

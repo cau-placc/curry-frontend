@@ -25,11 +25,13 @@
 
 module Base.CurryTypes
   ( toType, toTypes, toQualType, toQualTypes
-  , toPred, toQualPred, toPredSet, toQualPredSet, toPredType, toQualPredType
-  , toPredTypes, toQualPredTypes, toConstrType, toMethodType
+  , toPred, toQualPred, toPredSet, toQualPredSet, toPredList, toQualPredList 
+  , toPredType, toQualPredType, toPredTypes, toQualPredTypes, toConstrType
+  , toMethodType
   , fromType, fromQualType
-  , fromPred, fromQualPred, fromPredSet, fromQualPredSet, fromPredType
-  , fromQualPredType, fromPredTypes, fromQualPredTypes
+  , fromPred, fromQualPred, fromPredSet, fromQualPredSet, fromPredList
+  , fromQualPredList, fromPredType, fromQualPredType, fromPredTypes
+  , fromQualPredTypes
   , ppType, ppPred, ppPredType, ppTypeScheme
   ) where
 
@@ -106,19 +108,29 @@ toQualPred m tvs fstIcc = qualifyPred m . toPred tvs fstIcc
 toPredSet :: [Ident] -> PredIsICC -> CS.Context -> PredSet
 toPredSet tvs fstIcc cx = toPredSet' (enumTypeVars tvs cx) fstIcc cx
 
+toPredList :: [Ident] -> PredIsICC -> CS.Context -> PredList
+toPredList tvs fstIcc cx = toPredList' (enumTypeVars tvs cx) fstIcc cx
+
 toPredSet' :: Map.Map Ident Int -> PredIsICC -> CS.Context -> PredSet
 toPredSet' tvs fstIcc =
   Set.fromList . zipWith (toPred' tvs) (fstIcc : repeat OPred)
 
+toPredList' :: Map.Map Ident Int -> PredIsICC -> CS.Context -> PredList
+toPredList' tvs fstIcc =
+  zipWith (toPred' tvs) (fstIcc : repeat OPred)
+
 toQualPredSet :: ModuleIdent -> [Ident] -> PredIsICC -> CS.Context -> PredSet
 toQualPredSet m tvs fstIcc = qualifyPredSet m . toPredSet tvs fstIcc
+
+toQualPredList :: ModuleIdent -> [Ident] -> PredIsICC -> CS.Context -> PredList
+toQualPredList m tvs fstIcc = qualifyPredList m . toPredList tvs fstIcc
 
 toPredType :: [Ident] -> PredIsICC -> CS.QualTypeExpr -> PredType
 toPredType tvs fstIcc qty = toPredType' (enumTypeVars tvs qty) fstIcc qty
 
 toPredType' :: Map.Map Ident Int -> PredIsICC -> CS.QualTypeExpr -> PredType
 toPredType' tvs fstIcc (CS.QualTypeExpr _ cx ty) =
-  PredType (toPredSet' tvs fstIcc cx) (toType' tvs ty [])
+  PredType (toPredList' tvs fstIcc cx) (toType' tvs ty [])
 
 toQualPredType
   :: ModuleIdent -> [Ident] -> PredIsICC -> CS.QualTypeExpr -> PredType
@@ -126,7 +138,7 @@ toQualPredType m tvs fstIcc = qualifyPredType m . toPredType tvs fstIcc
 
 toPredTypes :: [Ident] -> PredIsICC -> CS.Context -> [CS.TypeExpr] -> PredTypes
 toPredTypes tvs fstIcc cx tys = flip PredTypes (toTypes tvs tys) $
-  toPredSet' (enumTypeVars tvs (tys, cx)) fstIcc cx
+  toPredList' (enumTypeVars tvs (tys, cx)) fstIcc cx
 
 toQualPredTypes :: ModuleIdent -> [Ident] -> PredIsICC -> CS.Context
                 -> [CS.TypeExpr] -> PredTypes
@@ -201,19 +213,25 @@ fromQualPred m tvs = fromPred tvs . unqualifyPred m
 fromPredSet :: [Ident] -> PredSet -> CS.Context
 fromPredSet tvs = map (fromPred tvs) . Set.toAscList
 
+fromPredList :: [Ident] -> PredList -> CS.Context
+fromPredList tvs = map (fromPred tvs)
+
 fromQualPredSet :: ModuleIdent -> [Ident] -> PredSet -> CS.Context
 fromQualPredSet m tvs = fromPredSet tvs . unqualifyPredSet m
 
+fromQualPredList :: ModuleIdent -> [Ident] -> PredList -> CS.Context
+fromQualPredList m tvs = fromPredList tvs . unqualifyPredList m
+
 fromPredType :: [Ident] -> PredType -> CS.QualTypeExpr
 fromPredType tvs (PredType ps ty) =
-  CS.QualTypeExpr NoSpanInfo (fromPredSet tvs ps) (fromType tvs ty)
+  CS.QualTypeExpr NoSpanInfo (fromPredList tvs ps) (fromType tvs ty)
 
 fromQualPredType :: ModuleIdent -> [Ident] -> PredType -> CS.QualTypeExpr
 fromQualPredType m tvs = fromPredType tvs . unqualifyPredType m
 
 fromPredTypes :: [Ident] -> PredTypes -> (CS.Context, [CS.TypeExpr])
 fromPredTypes tvs (PredTypes ps tys) =
-  (fromPredSet tvs ps, map (fromType tvs) tys)
+  (fromPredList tvs ps, map (fromType tvs) tys)
 
 fromQualPredTypes
   :: ModuleIdent -> [Ident] -> PredTypes -> (CS.Context, [CS.TypeExpr])

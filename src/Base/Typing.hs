@@ -117,10 +117,7 @@ withType ty e = fmap (subst (matchType (typeOf e) ty idSubst)) e
 
 matchPredType :: PredType -> PredType -> TypeSubst -> TypeSubst
 matchPredType (PredType ps1 ty1) (PredType ps2 ty2) =
-  matchPredType' ps1' ty1 ps2' ty2
- where
-  ps1' = Set.toAscList ps1
-  ps2' = Set.toAscList ps2
+  matchPredType' ps1 ty1 ps2 ty2
 
 matchPredType' :: [Pred] -> Type -> [Pred] -> Type -> TypeSubst -> TypeSubst
 matchPredType' ps1 ty1 ps2 ty2 =

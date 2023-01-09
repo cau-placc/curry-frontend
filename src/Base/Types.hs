@@ -29,6 +29,10 @@ module Base.Types
   , PredSet, emptyPredSet, LPredSet, emptyLPredSet, psMember, removeICCFlag
   , partitionPredSetSomeVars, partitionPredSetOnlyVars, minPredSet, maxPredSet
   , qualifyPredSet, unqualifyPredSet, funDepCoveragePredSet
+  , PredList, LPredList, plElem, removeICCFlagList, partitionPredListSomeVars
+  , partitionPredListOnlyVars, minPredList, maxPredList, qualifyPredList
+  , unqualifyPredList, funDepCoveragePredList, plUnion, plUnions, plDeleteMin
+  , plConcatMap, plConcatMapM, plInsert, plDifference, plLookupMin
   , PredType (..), predType, unpredType, qualifyPredType, unqualifyPredType
   , ambiguousTypeVars
   , PredTypes (..), qualifyPredTypes, unqualifyPredTypes
@@ -49,8 +53,10 @@ module Base.Types
   ) where
 
 import           Data.Function (on)
-import           Data.List (nub, partition)
+import           Data.List (nub, partition, (\\))
 import qualified Data.Set.Extra as Set
+
+import Control.Monad ( liftM )
 
 import Curry.Base.Ident
 import Curry.Base.Pretty
@@ -376,6 +382,9 @@ partitionPredSetSomeVars :: (IsPred a, IsPred b) => Set.Set a -> Set.Set b
                                                  -> (Set.Set b, Set.Set b)
 partitionPredSetSomeVars = partitionPredSet any
 
+partitionPredListSomeVars :: (IsPred a, IsPred b) => [a] -> [b] -> ([b],[b])
+partitionPredListSomeVars = partitionPredList any
+
 -- Partitions the given predicate set such that all predicates in the first
 -- element of the returned tuple have only type variables (or type variables
 -- applied to types) as predicate types.
@@ -384,6 +393,9 @@ partitionPredSetSomeVars = partitionPredSet any
 -- a FlexibleContexts language extension when all predicate types are known.
 partitionPredSetOnlyVars :: IsPred a => Set.Set a -> (Set.Set a, Set.Set a)
 partitionPredSetOnlyVars = partitionPredSet all emptyPredSet
+
+partitionPredListOnlyVars :: IsPred a => [a] -> ([a],[a])
+partitionPredListOnlyVars = partitionPredList all ([] :: PredList)
 
 partitionPredSet :: (IsPred a, IsPred b) => ((Type -> Bool) -> [Type] -> Bool)
                  -> Set.Set a -> Set.Set b -> (Set.Set b, Set.Set b)
@@ -404,8 +416,47 @@ partitionPredList f pl = partition $
     isTypeVariable _                = False
 
 -- The set theoretical union of two predicateList
-plUnion :: IsPred a => [a] -> [a] -> [a]
+plUnion :: Eq a => [a] -> [a] -> [a]
 plUnion pl1 pl2 = nub (pl1 ++ pl2)
+
+plDifference :: Eq a => [a] -> [a] -> [a]
+plDifference = (\\)
+
+plInsert :: Eq a => a -> [a] -> [a]
+plInsert pl pls = nub (pl:pls)
+
+-- The list version of plUnion
+plUnions :: Eq a => [[a]] -> [a]
+plUnions = foldr plUnion []
+
+-- concatMap for predicate lists
+plConcatMap :: Eq b => (a -> [b]) -> [a] -> [b]
+plConcatMap f = plUnions . map f 
+
+-- concatMapM for predicate lists
+plConcatMapM :: (Eq b, Monad m) => (a -> m [b]) -> [a] -> m [b]
+plConcatMapM f = liftM plUnions . mapM f
+
+plLookupMin :: Ord a => [a] -> Maybe a
+plLookupMin []       = Nothing
+plLookupMin xs@(_:_) = Just $ minimum xs
+
+-- delete the minimal element of a predicate list
+plDeleteMin :: Ord a => [a] -> [a]
+plDeleteMin pls = case minIndex pls of
+    Nothing -> pls
+    Just i  -> deleteIndex i pls
+  where
+    minIndex [] = Nothing
+    minIndex (p : pl) = Just $ minIndex' pl p 0 1
+
+    minIndex' []     _  i _ = i
+    minIndex' (p:ps) p' i j | p < p'    = minIndex' ps p j (j+1)
+                            | otherwise = minIndex' ps p' i (j+1)
+    
+    deleteIndex _ []     = []
+    deleteIndex 0 (x:xs) = xs
+    deleteIndex n (x:xs) = x : deleteIndex (n-1) xs
 
 -- The function 'minPredSet' transforms a predicate set by removing all
 -- predicates from the predicate set which are implied by other predicates
@@ -417,9 +468,17 @@ minPredSet :: IsPred a => ClassEnv -> Set.Set a -> Set.Set a
 minPredSet clsEnv ps =
   ps `Set.difference` Set.concatMap (impliedPredicates clsEnv) ps
 
+minPredList :: IsPred a => ClassEnv -> [a] -> [a]
+minPredList clsEnv pls = 
+  plDifference pls (plConcatMap (impliedPredicatesList clsEnv) pls)
+
 maxPredSet :: IsPred a => ClassEnv -> Set.Set a -> Set.Set a
 maxPredSet clsEnv ps =
   ps `Set.union` Set.concatMap (impliedPredicates clsEnv) ps
+
+maxPredList :: IsPred a => ClassEnv -> [a] -> [a]
+maxPredList clsEnv pls =
+  plUnion pls (concatMap (impliedPredicatesList clsEnv) pls)
 
 -- Returns the set of all predicates implied by the given predicate, excluding
 -- the given predicate.
@@ -427,6 +486,12 @@ impliedPredicates :: IsPred a => ClassEnv -> a -> Set.Set a
 impliedPredicates clsEnv pr =
   Set.fromList $ tail $ map (flip modifyPred pr . const . uncurry (Pred OPred))
     ((\(Pred _ qcls tys) -> applyAllSuperClasses qcls tys clsEnv) (getPred pr))
+
+impliedPredicatesList :: IsPred a => ClassEnv -> a -> [a]
+impliedPredicatesList clsEnv pr = 
+    tail $ map (flip modifyPred pr . const . uncurry (Pred OPred))
+    ((\(Pred _ qcls tys) -> applyAllSuperClasses qcls tys clsEnv) (getPred pr))
+
 
 qualifyPredSet :: IsPred a => ModuleIdent -> Set.Set a -> Set.Set a
 qualifyPredSet m = Set.map (qualifyPred m)
@@ -465,11 +530,36 @@ funDepCoveragePredSet clsEnv ps tvSet =
       tvs  -> let (tvs', freshVar) = (Set.fromList tvs, Set.singleton i)
               in (tvs', freshVar) : (freshVar, tvs') : funDeps
 
+funDepCoveragePredList :: IsPred a => ClassEnv -> [a] -> Set.Set Int
+                                  -> Set.Set Int
+funDepCoveragePredList clsEnv pls tvSet =
+  let predList = map getPred pls
+      tvSetPs = Set.fromList (typeVars predList)
+      freshVar = Set.findMax (Set.insert (-1) (tvSet `Set.union` tvSetPs)) + 1
+      funDeps = removeTrivialFunDeps $ predListFunDeps freshVar predList
+  in funDepCoverage funDeps tvSet
+ where
+  predListFunDeps :: Int -> [Pred] -> [FunDep]
+  predListFunDeps _ [] = []
+  predListFunDeps freshVar (Pred _ cls tys : preds) =
+    let (freshVar', funDeps) = instantiateFunDeps tys freshVar $
+          map (renameFunDep freshVar) $ classFunDeps cls clsEnv
+    in funDeps ++ predListFunDeps freshVar' preds
+
+  instantiateFunDeps :: [Type] -> Int -> [FunDep] -> (Int, [FunDep])
+  instantiateFunDeps [] i funDeps = (i, funDeps)
+  instantiateFunDeps (ty : tys) i funDeps = instantiateFunDeps tys (i + 1) $
+    case nub (typeVars ty) of
+      []   -> map (deleteVarFunDep i) funDeps
+      [tv] -> map (renameVarFunDep i tv) funDeps
+      tvs  -> let (tvs', freshVar) = (Set.fromList tvs, Set.singleton i)
+              in (tvs', freshVar) : (freshVar, tvs') : funDeps
+
 -- ---------------------------------------------------------------------------
 -- Predicated types
 -- ---------------------------------------------------------------------------
 
-data PredType = PredType PredSet Type
+data PredType = PredType [Pred] Type
   deriving (Eq, Show)
 
 -- When enumarating the type variables and skolems of a predicated type, we
@@ -477,43 +567,43 @@ data PredType = PredType PredSet Type
 -- occurring in the type itself.
 
 instance IsType PredType where
-  typeVars (PredType ps ty) = typeVars ty ++ typeVars ps
+  typeVars (PredType pls ty) = typeVars ty ++ typeVars pls
 
 predType :: Type -> PredType
-predType = PredType emptyPredSet
+predType = PredType []
 
 unpredType :: PredType -> Type
 unpredType (PredType _ ty) = ty
 
 qualifyPredType :: ModuleIdent -> PredType -> PredType
-qualifyPredType m (PredType ps ty) =
-  PredType (qualifyPredSet m ps) (qualifyType m ty)
+qualifyPredType m (PredType pls ty) =
+  PredType (qualifyPredList m pls) (qualifyType m ty)
 
 unqualifyPredType :: ModuleIdent -> PredType -> PredType
-unqualifyPredType m (PredType ps ty) =
-  PredType (unqualifyPredSet m ps) (unqualifyType m ty)
+unqualifyPredType m (PredType pls ty) =
+  PredType (unqualifyPredList m pls) (unqualifyType m ty)
 
 ambiguousTypeVars :: ClassEnv -> PredType -> Set.Set Int -> [Int]
-ambiguousTypeVars clsEnv (PredType ps ty) fvs =
-  let coveredVars = funDepCoveragePredSet clsEnv ps $
+ambiguousTypeVars clsEnv (PredType pls ty) fvs =
+  let coveredVars = funDepCoveragePredList clsEnv pls $
                       Set.fromList (typeVars ty) `Set.union` fvs
-  in filter (`Set.notMember` coveredVars) (typeVars ps)
+  in filter (`Set.notMember` coveredVars) (typeVars pls)
 
 -- The 'PredTypes' data type stores a predicate set and a list of types all
 -- constrained by this predicate set. It can be used to represent the context
 -- and the instance types of an instance declaration.
-data PredTypes = PredTypes PredSet [Type]
+data PredTypes = PredTypes PredList [Type]
 
 instance IsType PredTypes where
-  typeVars (PredTypes ps tys) = typeVars tys ++ typeVars ps
+  typeVars (PredTypes pls tys) = typeVars tys ++ typeVars pls
 
 qualifyPredTypes :: ModuleIdent -> PredTypes -> PredTypes
-qualifyPredTypes m (PredTypes ps tys) =
-  PredTypes (qualifyPredSet m ps) (map (qualifyType m) tys)
+qualifyPredTypes m (PredTypes pls tys) =
+  PredTypes (qualifyPredList m pls) (map (qualifyType m) tys)
 
 unqualifyPredTypes :: ModuleIdent -> PredTypes -> PredTypes
-unqualifyPredTypes m (PredTypes ps tys) =
-  PredTypes (unqualifyPredSet m ps) (map (unqualifyType m) tys)
+unqualifyPredTypes m (PredTypes pls tys) =
+  PredTypes (unqualifyPredList m pls) (map (unqualifyType m) tys)
 
 -- ---------------------------------------------------------------------------
 -- Data constructors

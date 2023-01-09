@@ -260,7 +260,7 @@ checkTypeInfo what check p tc = do
         _    -> internalError "checkTypeInfo"
   checkImported checkInfo tc
 
-checkInstInfo :: HasSpanInfo s => (PredSet -> [(Ident, Int)] -> Bool) -> s
+checkInstInfo :: HasSpanInfo s => (PredList -> [(Ident, Int)] -> Bool) -> s
               -> InstIdent -> Maybe ModuleIdent -> IC ()
 checkInstInfo check p i mm = do
   inEnv <- getInstEnv

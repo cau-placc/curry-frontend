@@ -74,7 +74,7 @@ findFunDepConflicts :: ModuleIdent -> ClassEnv -> InstEnv -> [InstIdent]
                     -> [(InstSource, InstSource)]
 findFunDepConflicts m clsEnv inEnv localInsts =
   [ (InstSource (cls, itys1) m1, InstSource (cls, itys2) m2)
-  | let inEnv' = foldr (flip bindInstInfo (m, Set.empty, [])) inEnv localInsts
+  | let inEnv' = foldr (flip bindInstInfo (m, [], [])) inEnv localInsts
   , (cls, instMap) <- Map.toList inEnv'
   , funDep <- classFunDeps cls clsEnv
   , (itys1, (m1, _, _)) : remInsts <- tails (Map.toList instMap)
@@ -180,16 +180,16 @@ bindInstance tcEnv clsEnv (InstanceDecl p _ cx qcls inst ds) = do
   -- passed on before normalization, so that the original type variables can be
   -- used (otherwise, these type variables might not be in the correct order
   -- because of type synonyms).
-  let PredTypes ps tys = expandPredTypes m tcEnv clsEnv $
-                           toPredTypes [] OPred cx inst
-      ops = Set.map (\(Pred _ pcls ptys) -> uncurry (Pred OPred) $
-                       unqualInstIdent tcEnv (pcls, ptys)) ps
+  let PredTypes pls tys = expandPredTypes m tcEnv clsEnv $
+                            toPredTypes [] OPred cx inst
+      opls = map (\(Pred _ pcls ptys) -> uncurry (Pred OPred) $
+                      unqualInstIdent tcEnv (pcls, ptys)) pls
       otys = map (unqualType tcEnv) tys
-      PredTypes ips itys = normalize 0 $ PredTypes ps tys
-  term <- checkInstanceTermination m False (nub $ fv (inst, cx)) p ops qcls otys
+      PredTypes ipls itys = normalize 0 $ PredTypes pls tys
+  term <- checkInstanceTermination m False (nub $ fv (inst, cx)) p opls qcls otys
   fdCov <- checkFunDepCoverage clsEnv p qcls (getOrigName m qcls tcEnv) inst
   when (term && fdCov) $ modifyInstEnv $
-    bindInstInfo (getOrigName m qcls tcEnv, itys) (m, ips, impls [] ds)
+    bindInstInfo (getOrigName m qcls tcEnv, itys) (m, ipls, impls [] ds)
   where impls is [] = is
         impls is (FunctionDecl _ _ f eqs:ds')
           | f' `elem` map fst is = impls is ds'
@@ -272,14 +272,14 @@ groupDeriveInfos = scc bound free
 
 bindDerivedInstances :: ClassEnv -> [DeriveInfo] -> INCM ()
 bindDerivedInstances clsEnv dis = unless (any hasDataFunType dis) $ do
-  mapM_ (enterInitialPredSet clsEnv) dis
-  whileM $ concatMapM (inferPredSets clsEnv) dis >>= updatePredSets
+  mapM_ (enterInitialPredList clsEnv) dis
+  whileM $ concatMapM (inferPredLists clsEnv) dis >>= updatePredLists
   where
     hasDataFunType (DeriveInfo _ _ tys clss) =
       clss == [qDataId] && any isFunType tys
 
-enterInitialPredSet :: ClassEnv -> DeriveInfo -> INCM ()
-enterInitialPredSet clsEnv (DeriveInfo spi pty _ clss) =
+enterInitialPredList :: ClassEnv -> DeriveInfo -> INCM ()
+enterInitialPredList clsEnv (DeriveInfo spi pty _ clss) =
   mapM_ (bindDerivedInstance clsEnv spi pty) clss
 
 -- Note: The methods and arities entered into the instance environment have
@@ -290,8 +290,8 @@ bindDerivedInstance :: HasSpanInfo s => ClassEnv -> s -> PredType -> QualIdent
                     -> INCM ()
 bindDerivedInstance clsEnv p pty cls = do
   m <- getModuleIdent
-  (((_, tys), ps), enter) <- inferPredSet clsEnv p pty [] cls
-  when enter $ modifyInstEnv (bindInstInfo (cls, tys) (m, ps, impls))
+  (((_, tys), pls), enter) <- inferPredList clsEnv p pty [] cls
+  when enter $ modifyInstEnv (bindInstInfo (cls, tys) (m, pls, impls))
   where impls | cls == qEqId      = [(eqOpId, 2)]
               | cls == qOrdId     = [(leqOpId, 2)]
               | cls == qEnumId    = [ (succId, 1), (predId, 1), (toEnumId, 1)
@@ -305,51 +305,52 @@ bindDerivedInstance clsEnv p pty cls = do
               | otherwise         =
                 internalError "InstanceCheck.bindDerivedInstance.impls"
 
-inferPredSets :: ClassEnv -> DeriveInfo -> INCM [((InstIdent, PredSet), Bool)]
-inferPredSets clsEnv (DeriveInfo spi pty@(PredType _ inst) tys clss) = do
+inferPredLists :: ClassEnv -> DeriveInfo -> INCM [((InstIdent, PredList), Bool)]
+inferPredLists clsEnv (DeriveInfo spi pty@(PredType _ inst) tys clss) = do
   inEnv <- getInstEnv
   let clss' = filter (\cls -> isJust $ lookupInstExact (cls, [inst]) inEnv) clss
-  mapM (inferPredSet clsEnv spi pty tys) clss'
+  mapM (inferPredList clsEnv spi pty tys) clss'
 
 -- TODO: The following probably has to be reworked with FlexibleInstances
 
-inferPredSet :: HasSpanInfo s => ClassEnv -> s -> PredType -> [Type]
-             -> QualIdent -> INCM ((InstIdent, PredSet), Bool)
-inferPredSet clsEnv p (PredType ps inst) tys cls = do
+inferPredList :: HasSpanInfo s => ClassEnv -> s -> PredType -> [Type]
+              -> QualIdent -> INCM ((InstIdent, PredList), Bool)
+inferPredList clsEnv p (PredType pls inst) tys cls = do
   m <- getModuleIdent
   let doc = ppPred m $ Pred OPred cls [inst]
       sclsInfos = superClasses cls clsEnv
-      ps'   = Set.fromList [Pred OPred cls [ty] | ty <- tys]
-      ps''  = Set.fromList [Pred OPred scls [inst] | (scls, [0]) <- sclsInfos]
-      ps''' = ps `Set.union` ps' `Set.union` ps''
-  (ps4, novarps) <-
-    reducePredSet (cls == qDataId) p "derived instance" doc clsEnv ps'''
-  let ps5 = filter noPolyPred $ Set.toList ps4
-  if any (isDataPred m) (Set.toList novarps ++ ps5) && cls == qDataId
-    then return    (((cls, [inst]), ps4), False)
-    else do mapM_ (reportUndecidable p "derived instance" doc) ps5
-            enter <- checkInstanceTermination m True [] p ps4 cls [inst]
-            return (((cls, [inst]), ps4), enter)
+      pls'   = [Pred OPred cls [ty] | ty <- tys]
+      pls''  = [Pred OPred scls [inst] | (scls, [0]) <- sclsInfos]
+      pls''' = plUnions [pls, pls',  pls'']
+  (pls4, novarpls) <-
+    reducePredList (cls == qDataId) p "derived instance" doc clsEnv pls'''
+  let pls5 = filter noPolyPred pls4
+  if any (isDataPred m) (novarpls ++ pls5) && cls == qDataId
+    then return    (((cls, [inst]), pls4), False)
+    else do mapM_ (reportUndecidable p "derived instance" doc) pls5
+            enter <- checkInstanceTermination m True [] p pls4 cls [inst]
+            return (((cls, [inst]), pls4), enter)
   where
     noPolyPred (Pred _ _ tys') = any (not . isSimpleTypeVar) tys'
     isSimpleTypeVar (TypeVariable _) = True
     isSimpleTypeVar _                = False
     isDataPred _ (Pred _ qid _) = qid == qDataId
 
-updatePredSets :: [((InstIdent, PredSet), Bool)] -> INCM Bool
-updatePredSets = fmap or . mapM (uncurry updatePredSet)
+updatePredLists :: [((InstIdent, PredList), Bool)] -> INCM Bool
+updatePredLists = fmap or . mapM (uncurry updatePredList)
 
-updatePredSet :: (InstIdent, PredSet) -> Bool -> INCM Bool
-updatePredSet (i, ps) enter = do
+updatePredList :: (InstIdent, PredList) -> Bool -> INCM Bool
+updatePredList (i, pls) enter = do
   inEnv <- getInstEnv
   case lookupInstExact i inEnv of
-    Just (m, ps', is)
-      | not enter -> modifyInstEnv (removeInstInfo i) >> return False
-      | ps == ps' -> return False
-      | otherwise -> do
-        modifyInstEnv $ bindInstInfo i (m, ps, is)
+    Just (m, pls', is)
+      | not enter   -> modifyInstEnv (removeInstInfo i) >> return False
+      -- TODO : is this correct every time? Order of elements in list?
+      | pls == pls' -> return False
+      | otherwise   -> do
+        modifyInstEnv $ bindInstInfo i (m, pls, is)
         return True
-    _ -> internalError "InstanceCheck.updatePredSet"
+    _ -> internalError "InstanceCheck.updatePredList"
 
 reportUndecidable :: HasSpanInfo s => s -> String -> Doc -> Pred -> INCM ()
 reportUndecidable p what doc pr@(Pred _ _ tys) = do
@@ -364,9 +365,9 @@ reportUndecidable p what doc pr@(Pred _ _ tys) = do
 -- signalizing whether the instance is derived and a list of the type variables
 -- of the original instance, which is allowed to be empty.
 checkInstanceTermination :: HasSpanInfo p => ModuleIdent -> Bool -> [Ident]
-                         -> p -> PredSet -> QualIdent -> [Type] -> INCM Bool
-checkInstanceTermination m d oVars spi ps qcls iTys =
-  and <$> mapM checkInstanceTerminationPred (Set.toList ps)
+                         -> p -> PredList -> QualIdent -> [Type] -> INCM Bool
+checkInstanceTermination m d oVars spi pls qcls iTys =
+  and <$> mapM checkInstanceTerminationPred pls
  where
   iVars  = typeVars iTys
   iSize  = sum (map typeSize iTys)
@@ -452,17 +453,17 @@ checkFunDepCoverage clsEnv p cls qcls itys =
 checkInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
 checkInstance tcEnv clsEnv (InstanceDecl p _ cx cls inst _) = do
   m <- getModuleIdent
-  let PredTypes ps tys = expandInst m tcEnv clsEnv cx inst
+  let PredTypes pls tys = expandInst m tcEnv clsEnv cx inst
       ocls = getOrigName m cls tcEnv
-      ps' = Set.fromList [ uncurry (Pred OPred) (applySuperClass tys sclsInfo)
-                         | sclsInfo <- superClasses ocls clsEnv ]
+      pls' = [ uncurry (Pred OPred) (applySuperClass tys sclsInfo)
+             | sclsInfo <- superClasses ocls clsEnv ]
       doc = ppPred m $ Pred OPred cls tys
       what = "instance declaration"
   -- TODO: Is there a better span for these, for example by combining the 'cls'
   --         and 'inst' spans?
-  (ps'', _) <- reducePredSet False p what doc clsEnv ps'
-  Set.mapM_ (report . errMissingInstance m p what doc) $
-    ps'' `Set.difference` maxPredSet clsEnv ps
+  (pls'', _) <- reducePredList False p what doc clsEnv pls'
+  mapM_ (report . errMissingInstance m p what doc) $
+    plDifference pls'' (maxPredList clsEnv pls)
 checkInstance _ _ _ = ok
 
 -- All types specified in the optional default declaration of a module
@@ -480,9 +481,9 @@ checkDefaultType tcEnv clsEnv ty = do
   m <- getModuleIdent
   let PredType _ ty' = expandPolyType OPred m tcEnv clsEnv $
                          QualTypeExpr NoSpanInfo [] ty
-  (ps, _) <- reducePredSet False ty what empty clsEnv
-    (Set.singleton $ Pred OPred qNumId [ty'])
-  Set.mapM_ (report . errMissingInstance m ty what empty) ps
+  (pls, _) <- reducePredList False ty what empty clsEnv
+    [Pred OPred qNumId [ty']]
+  mapM_ (report . errMissingInstance m ty what empty) pls
   where what = "default declaration"
 
 -- The function 'reducePredSet' simplifies a predicate set of the form
@@ -494,33 +495,33 @@ checkDefaultType tcEnv clsEnv ty = do
 -- within the same set.
 -- When the flag is set, all missing Data preds are ignored.
 
-reducePredSet :: HasSpanInfo s => Bool -> s -> String -> Doc -> ClassEnv -> PredSet
-              -> INCM (PredSet, PredSet)
-reducePredSet b p what doc clsEnv ps = do
+reducePredList :: HasSpanInfo s => Bool -> s -> String -> Doc -> ClassEnv -> PredList
+              -> INCM (PredList, PredList)
+reducePredList b p what doc clsEnv pls = do
   m <- getModuleIdent
   inEnv <- getInstEnv
-  (ps1, ps2) <-
-    partitionPredSetOnlyVars <$> minPredSet clsEnv <$> reducePreds inEnv ps
-  let ps2' = if b then Set.filter (isNotDataPred m) ps2 else ps2
-  Set.mapM_ (reportMissing m) ps2' >> return (ps1, ps2)
+  (pls1, pls2) <-
+    partitionPredListOnlyVars <$> minPredList clsEnv <$> reducePreds inEnv pls
+  let pls2' = if b then filter (isNotDataPred m) pls2 else pls2
+  mapM_ (reportMissing m) pls2' >> return (pls1, pls2)
   where
     isNotDataPred _ (Pred _ qid _) = qid /= qDataId
     reportMissing m pr =
       report $ errMissingInstance m p what doc pr
-    reducePreds inEnv = Set.concatMapM $ reducePred inEnv
+    reducePreds inEnv = plConcatMapM $ reducePred inEnv
     reducePred inEnv predicate =
-      maybeM (return $ Set.singleton predicate) (reducePreds inEnv)
-        (instPredSet p what doc inEnv predicate)
+      maybeM (return [predicate]) (reducePreds inEnv)
+        (instPredList p what doc inEnv predicate)
 
-instPredSet :: HasSpanInfo p => p -> String -> Doc -> InstEnv -> Pred
-            -> INCM (Maybe PredSet)
-instPredSet p what doc inEnv pr@(Pred _ qcls tys) =
+instPredList :: HasSpanInfo p => p -> String -> Doc -> InstEnv -> Pred
+            -> INCM (Maybe PredList)
+instPredList p what doc inEnv pr@(Pred _ qcls tys) =
   case lookupInstMatch qcls tys inEnv of
     [] -> return Nothing
-    [(_, ps, _, _, sigma)] -> return $ Just (subst sigma ps)
+    [(_, pls, _, _, sigma)] -> return $ Just (subst sigma pls)
     insts -> do m <- getModuleIdent
                 report $ errInstanceOverlap m p what doc pr insts
-                return $ Just Set.empty
+                return $ Just []
 
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions
