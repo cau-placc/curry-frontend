@@ -65,7 +65,7 @@ instance SubstType LPred where
   subst sigma (LPred pr spi doc what) = LPred (subst sigma pr) spi doc what
 
 instance SubstType PredType where
-  subst sigma (PredType ps ty) = PredType (subst sigma ps) (subst sigma ty)
+  subst sigma (PredType ps ty) = PredType (nub (subst sigma ps)) (subst sigma ty)
 
 instance SubstType TypeScheme where
   subst sigma (ForAll n ty) =

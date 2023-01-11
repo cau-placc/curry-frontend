@@ -589,7 +589,7 @@ ambiguousTypeVars clsEnv (PredType pls ty) fvs =
                       Set.fromList (typeVars ty) `Set.union` fvs
   in filter (`Set.notMember` coveredVars) (typeVars pls)
 
--- The 'PredTypes' data type stores a predicate set and a list of types all
+-- The 'PredTypes' data type stores a predicate list and a list of types all
 -- constrained by this predicate set. It can be used to represent the context
 -- and the instance types of an instance declaration.
 data PredTypes = PredTypes PredList [Type]

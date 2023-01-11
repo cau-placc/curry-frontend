@@ -76,6 +76,8 @@ import Base.Types
 import Base.TypeSubst
 import Base.Utils (foldr2, fst3, thd3, uncurry3, mapAccumM)
 
+import Debug.Trace
+
 import Env.Class
 import Env.Instance
 import Env.TypeConstructor
@@ -1012,10 +1014,10 @@ tcExternal f = do
   sigs <- getSigEnv
   case lookupTypeSig f sigs of
     Nothing -> internalError "TypeCheck.tcExternal: type signature not found"
-    Just (QualTypeExpr _ _ ty) -> do
+    Just (QualTypeExpr _ cx ty) -> do
       m <- getModuleIdent
-      PredType _ ty' <- expandPoly $ QualTypeExpr NoSpanInfo [] ty
-      modifyValueEnv $ bindFun m f Nothing (arrowArity ty') (polyType ty')
+      pty@(PredType _ ty') <- expandPoly $ QualTypeExpr NoSpanInfo cx ty
+      modifyValueEnv $ bindFun m f Nothing (arrowArity ty') (typeScheme pty)
       return ty'
 
 -- Patterns and Expressions:
@@ -1161,7 +1163,7 @@ tcFuncPattern :: HasSpanInfo p => p -> SpanInfo -> Doc -> QualIdent
               -> LPredList -> Type -> [Pattern a]
               -> PTCM (LPredList, Type, Pattern PredType)
 tcFuncPattern _ spi doc f ts pls ty [] =
-  let pls' = (LPred (dataPred ty) spi "functional pattern" doc) : pls
+  let pls' = plInsert (LPred (dataPred ty) spi "functional pattern" doc) pls
   in return (pls', ty, FunctionPattern spi (predType ty) f (ts []))
 tcFuncPattern p spi doc f ts pls ty (t':ts') = do
   (alpha, beta) <- lift $
@@ -1818,7 +1820,7 @@ freshPredType :: [QualIdent] -> TCM (PredList, Type)
 freshPredType qclss = do
   ty <- freshTypeVar
   return
-    (foldr (\qcls -> (:) (Pred OPred qcls [ty])) [] qclss, ty)
+    (foldr (\qcls -> plInsert (Pred OPred qcls [ty])) [] qclss, ty)
 
 freshEnumType :: TCM (PredList, Type)
 freshEnumType = freshPredType [qEnumId]
