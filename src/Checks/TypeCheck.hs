@@ -599,8 +599,11 @@ tcFunctionPDecl i pls tySc@(ForAll _ pty) p f eqs = do
 
 tcEquation :: Type -> LPredList -> Equation a
            -> TCM (LPredList, Equation PredType)
-tcEquation ty pls eqn@(Equation p a lhs rhs) =
-  tcEqn p lhs rhs >>- unify p "equation" (pPrint eqn) pls ty
+tcEquation ty pls eqn@(Equation p a lhs rhs) = do
+  (pls', ty', Equation p' _ lhs' rhs') <- tcEqn p lhs rhs
+  pls'' <- unify p "equation" (pPrint eqn) pls ty pls' ty'
+  let pty = PredType (map getPred pls'') ty'
+  return (pls'', Equation p' (Just pty) lhs' rhs')
 
 tcEqn :: SpanInfo -> Lhs a -> Rhs a
       -> TCM (LPredList, Type, Equation PredType)
@@ -612,9 +615,8 @@ tcEqn p lhs rhs = do
     return (pls, tys, lhs', pls', ty, rhs')
   let pls'' = plUnion pls pls'
       ty' = foldr TypeArrow ty tys
-  -- ps'' <- reducePredSet p "equation" (pPrint (Equation p lhs' rhs'))
-  --                       (ps `Set.union` ps')
-  return (pls'', ty', Equation p (Just (PredType (map getPred pls'') ty')) lhs' rhs')
+  pls3 <- reducePredSet pls''
+  return (pls3, ty', Equation p (Just (PredType (map getPred pls'') ty')) lhs' rhs')
 
 bindLambdaVars :: QuantExpr t => t -> TCM ()
 bindLambdaVars t = do
@@ -1192,8 +1194,8 @@ tcRhs (SimpleRhs p li e ds) = do
     (pls', ty, e') <- tcExpr e
     return (pls, ds', pls', ty, e')
   let pls'' = plUnion pls pls'
-  -- ps'' <- reducePredSet p "expression" (pPrintPrec 0 e') (ps `Set.union` ps')
-  return (pls'', ty, SimpleRhs p li e' ds')
+  pls3 <- reducePredSet pls''
+  return (pls3, ty, SimpleRhs p li e' ds')
 tcRhs (GuardedRhs spi li es ds) = withLocalValueEnv $ do
   (pls, ds') <- tcDecls ds
   ty <- freshTypeVar
@@ -1277,8 +1279,8 @@ tcExpr (ListCompr spi e qs) = do
     (pls', ty, e') <- tcExpr e
     return (pls, qs', pls', ty, e')
   let pls'' = plUnion pls pls'
-  -- ps'' <- reducePredSet spi "expression" (pPrintPrec 0 e') (ps `Set.union` ps')
-  return (pls'', listType ty, ListCompr spi e' qs')
+  pls3 <- reducePredSet pls''
+  return (pls3, listType ty, ListCompr spi e' qs')
 tcExpr e@(EnumFrom spi e1) = do
   (pls, ty) <- freshEnumType
   let pls' = map (\pr -> LPred pr spi "arithmetic sequence" (pPrint e)) pls
@@ -1336,16 +1338,16 @@ tcExpr (Lambda spi ts e) = do
     (pls, ty, e') <- tcExpr e
     return (plss, tys, ts', pls, ty, e')
   let pls' = plUnions (pls : plss)
-  -- ps' <- reducePredSet spi "expression" (pPrintPrec 0 e') (Set.unions $ ps : pss)
-  return (pls', foldr TypeArrow ty tys, Lambda spi ts' e')
+  pls2 <- reducePredSet pls'
+  return (pls2, foldr TypeArrow ty tys, Lambda spi ts' e')
 tcExpr (Let spi li ds e) = do
   (pls, ds', pls', ty, e') <- withLocalValueEnv $ do
     (pls, ds') <- tcDecls ds
     (pls', ty, e') <- tcExpr e
     return (pls, ds', pls', ty, e')
   let pls'' = plUnion pls pls'
-  -- ps'' <- reducePredSet spi "expression" (pPrintPrec 0 e') (ps `Set.union` ps')
-  return (pls'', ty, Let spi li ds' e')
+  pls3 <- reducePredSet pls''
+  return (pls3, ty, Let spi li ds' e')
 tcExpr (Do spi li sts e) = do
   (sts', ty, pls', e') <- withLocalValueEnv $ do
     ((pls, mTy), sts') <-
@@ -1386,9 +1388,8 @@ tcAltern tyLhs p t rhs = do
     (pls', ty', rhs') <- tcRhs rhs
     return (pls, t', pls', ty', rhs')
   let pls'' = plUnion pls pls'
-  -- ps'' <- reducePredSet p "alternative" (pPrint (Alt p t' rhs'))
-  --                       (ps `Set.union` ps')
-  return (pls'', ty', Alt p t' rhs')
+  pls3 <- reducePredSet pls''
+  return (pls3, ty', Alt p t' rhs')
 
 tcQual :: HasSpanInfo p => p -> LPredList -> Statement a
        -> TCM (LPredList, Statement PredType)
@@ -1557,8 +1558,7 @@ unify p what doc pls1 ty1 pls2 ty2 = do
   case unifyTypes m ty1' ty2' of
     Left reason -> report $ errTypeMismatch p what doc m ty1' ty2' reason
     Right sigma -> modifyTypeSubst (compose sigma)
-  -- reducePredSet p what doc $ ps1 `Set.union` ps2
-  return $ plUnion pls1 pls2
+  reducePredSet $ plUnion pls1 pls2
 
 unifyTypes :: ModuleIdent -> Type -> Type -> Either Doc TypeSubst
 unifyTypes _ (TypeVariable tv1) (TypeVariable tv2)

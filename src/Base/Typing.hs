@@ -130,7 +130,7 @@ matchPredSet ps1 ps2 = matchPreds (Set.toAscList ps1) (Set.toAscList ps2)
 
 matchPreds :: HasCallStack => [Pred] -> [Pred] -> TypeSubst -> TypeSubst
 matchPreds []       []       = id
-matchPreds (p1:ps1) (p2:ps2) = 
+matchPreds (p1:ps1) (p2:ps2) =
   matchPreds ps1 ps2 . matchPred p1 p2
 matchPreds ps1      ps2      = 
   internalError $ "Base.Typing,matchPreds: " ++ show (map pPrint ps1) ++ " " ++ show (map pPrint ps2)
