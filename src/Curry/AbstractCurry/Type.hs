@@ -23,7 +23,7 @@ module Curry.AbstractCurry.Type
   ( CurryProg (..), MName, QName, CVisibility (..), CTVarIName
   , CDefaultDecl (..), CClassDecl (..), CInstanceDecl (..)
   , CTypeDecl (..), CConsDecl (..), CFieldDecl (..)
-  , CConstraint, CContext (..), CFunDep(..), CTypeExpr (..), CQualTypeExpr (..)
+  , CConstraint, CContext (..), CFunDep, CTypeExpr (..), CQualTypeExpr (..)
   , COpDecl (..), CFixity (..), Arity, CFuncDecl (..), CRhs (..), CRule (..)
   , CLocalDecl (..), CVarIName, CExpr (..), CCaseType (..), CStatement (..)
   , CPattern (..), CLiteral (..), CField, version
