@@ -358,16 +358,6 @@ removeICCFlagList (p : ps)
  where
   iccFlag = let Pred icc _ _ = getPred p in icc
 
--- TODO: Is the following function actually useful? Reducing a predicate set
---         might only be needed where types need to be inferred (and not just
---         checked) and implicit class constraints might not be able to appear
---         in these cases.
--- Deletes duplicates of implicit class constraints from predicate sets.
-deleteDoubleICC :: IsPred a => Set.Set a -> Set.Set a
-deleteDoubleICC ps = case fmap getPred (Set.lookupMin ps) of
-  Just (Pred ICC qcls tys) -> Set.delete (getFromPred (Pred OPred qcls tys)) ps
-  _                        -> ps
-
 -- Partitions the predicate set given as the second argument such that all
 -- predicates in the first element of the returned tuple are elements of the
 -- predicate set given as the first argument or have at least one predicate type
@@ -457,15 +447,17 @@ plDeleteMin pls = case minIndex pls of
     Nothing -> pls
     Just i  -> deleteIndex i pls
   where
+    minIndex :: Ord b => [b] -> Maybe Int
     minIndex [] = Nothing
     minIndex (p : pl) = Just $ minIndex' pl p 0 1
 
+    minIndex' :: Ord b => [b] -> b -> Int -> Int -> Int
     minIndex' []     _  i _ = i
     minIndex' (p:ps) p' i j | p < p'    = minIndex' ps p j (j+1)
                             | otherwise = minIndex' ps p' i (j+1)
     
     deleteIndex _ []     = []
-    deleteIndex 0 (x:xs) = xs
+    deleteIndex 0 (_:xs) = xs
     deleteIndex n (x:xs) = x : deleteIndex (n-1) xs
 
 -- The function 'minPredSet' transforms a predicate set by removing all

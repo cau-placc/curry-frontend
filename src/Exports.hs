@@ -23,8 +23,8 @@ import           Data.List         (nub)
 import qualified Data.Map   as Map ( Map, delete, fromListWith, lookup
                                    , mapKeysWith )
 import           Data.Maybe        (mapMaybe)
-import qualified Data.Set   as Set ( Set, delete, empty, insert, deleteMin
-                                   , fromList, member, toList )
+import qualified Data.Set   as Set ( Set, delete, empty, insert, fromList
+                                   , member, toList )
 
 import Curry.Base.Position
 import Curry.Base.SpanInfo

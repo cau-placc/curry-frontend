@@ -23,15 +23,12 @@ module Transformations.Dictionary
 import           Control.Applicative      ((<$>), (<*>))
 import           Data.Traversable         (traverse)
 #endif
-import           Control.Monad.Extra      ( concatMapM, liftM, maybeM, when
-                                          , zipWithM )
+import           Control.Monad.Extra      (concatMapM, liftM, maybeM, when)
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 
-import           Data.List         (inits, nub, partition, tails, zipWith4)
-import qualified Data.Map   as Map (Map, empty, insert, lookup, mapWithKey)
+import           Data.List         (inits, nub, partition, tails)
+import qualified Data.Map   as Map (Map, empty, insert, lookup)
 import           Data.Maybe        (fromMaybe, isJust)
-import qualified Data.Set   as Set ( deleteMin, fromList, lookupMin, null, size
-                                   , toAscList, toList, union )
 
 import Debug.Trace
 import GHC.Stack (HasCallStack)
@@ -47,7 +44,6 @@ import Base.CurryTypes
 import Base.Expr
 import Base.Kinds
 import Base.Messages (internalError)
-import Base.PrettyTypes
 import Base.TopEnv
 import Base.Types
 import Base.TypeSubst
@@ -117,9 +113,6 @@ getClassEnv = S.gets classEnv
 
 getInstEnv :: DTM InstEnv
 getInstEnv = S.gets instEnv
-
-modifyInstEnv :: (InstEnv -> InstEnv) -> DTM ()
-modifyInstEnv f = S.modify $ \s -> s { instEnv = f $ instEnv s }
 
 getPrecEnv :: DTM OpPrecEnv
 getPrecEnv = S.gets opPrecEnv
@@ -313,7 +306,7 @@ createMethodDecl methodId defaultDecl ms f =
 
 renameDecl :: Ident -> Decl a -> Decl a
 renameDecl f (FunctionDecl p a _ eqs) = FunctionDecl p a f $ map renameEq eqs
-  where renameEq (Equation p' a lhs rhs) = Equation p' a (renameLhs lhs) rhs
+  where renameEq (Equation p' b lhs rhs) = Equation p' b (renameLhs lhs) rhs
         renameLhs (FunLhs _ _ ts) = FunLhs NoSpanInfo f ts
         renameLhs _ = internalError "Dictionary.renameDecl.renameLhs"
 renameDecl _ _ = internalError "Dictionary.renameDecl"
@@ -1278,15 +1271,12 @@ instPred (Pred isIcc cls ty) = Pred isIcc cls (map instType ty)
 instPredType :: PredType -> PredType
 instPredType (PredType pls ty) = PredType (map instPred pls) (instType ty)
 
-unRenameIdentIf :: Bool -> Ident -> Ident
-unRenameIdentIf b = if b then unRenameIdent else id
-
 -- The string for the error message for a class method's default method
 -- implementation has to be constructed in its desugared form since the
 -- desugaring has already taken place.
 
 preludeError :: PredType -> String -> Expression PredType
-preludeError pty@(PredType pls ty) =
+preludeError (PredType pls ty) =
   Apply NoSpanInfo (Variable NoSpanInfo
                      (PredType pls (TypeArrow stringType ty)) qErrorId) . stringExpr
 

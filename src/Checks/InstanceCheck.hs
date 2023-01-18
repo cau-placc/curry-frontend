@@ -26,7 +26,6 @@ import           Data.List                  ( (\\), nub, partition, sortBy
                                             , tails )
 import qualified Data.Map            as Map (toList)
 import           Data.Maybe                 (isJust)
-import qualified Data.Set.Extra      as Set
 
 import Curry.Base.Ident
 import Curry.Base.Pretty

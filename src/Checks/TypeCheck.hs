@@ -54,10 +54,8 @@ import           Data.Function       (on)
 import           Data.List           (nub, nubBy, partition, sortBy, (\\))
 import qualified Data.Map            as Map (Map, empty, insert, lookup)
 import           Data.Maybe                 (fromJust, fromMaybe, isJust)
-import qualified Data.Set.Extra      as Set ( Set, concatMapM, deleteMin, empty
-                                            , filter, fromList, insert, map
-                                            , member, notMember, partition
-                                            , singleton, toList, union, unions )
+import qualified Data.Set.Extra      as Set ( Set, empty, fromList, insert
+                                            , member, notMember)
 
 import Curry.Base.Ident
 import Curry.Base.Pretty
@@ -75,8 +73,6 @@ import Base.TypeExpansion
 import Base.Types
 import Base.TypeSubst
 import Base.Utils (foldr2, fst3, thd3, uncurry3, mapAccumM)
-
-import Debug.Trace
 
 import Env.Class
 import Env.Instance
@@ -599,7 +595,7 @@ tcFunctionPDecl i pls tySc@(ForAll _ pty) p f eqs = do
 
 tcEquation :: Type -> LPredList -> Equation a
            -> TCM (LPredList, Equation PredType)
-tcEquation ty pls eqn@(Equation p a lhs rhs) = do
+tcEquation ty pls eqn@(Equation p _ lhs rhs) = do
   (pls', ty', Equation p' _ lhs' rhs') <- tcEqn p lhs rhs
   pls'' <- unify p "equation" (pPrint eqn) pls ty pls' ty'
   let pty = PredType (map getPred pls'') ty'
@@ -1089,7 +1085,7 @@ tcPatternHelper _ t@(VariablePattern spi _ v) = do
   pls' <- if Set.member v used
           then return $ [(LPred (dataPred ty) spi what (pPrint t))]
           else S.put (Set.insert v used) >> return []
-  let pls'' = plUnion pls' (map (\pred -> LPred pred spi what (pPrint t)) pls)
+  let pls'' = plUnion pls' (map (\pr -> LPred pr spi what (pPrint t)) pls)
   return (pls'', ty, VariablePattern spi (PredType (map getPred pls'') ty) v)
 tcPatternHelper p t@(ConstructorPattern spi _ c ts) = do
   m <- lift getModuleIdent

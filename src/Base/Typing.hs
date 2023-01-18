@@ -25,7 +25,6 @@ module Base.Typing
 
 import           Data.List (nub)
 import           Data.Maybe (fromMaybe)
-import qualified Data.Set as Set
 
 import Curry.Base.Ident
 import Curry.Syntax
@@ -35,7 +34,7 @@ import GHC.Stack (HasCallStack)
 import Debug.Trace
 
 import Base.Messages (internalError)
-import Base.PrettyTypes
+import Base.PrettyTypes ()
 import Base.Types
 import Base.TypeSubst
 import Base.Utils (fst3)
@@ -126,9 +125,6 @@ matchPredType (PredType ps1 ty1) (PredType ps2 ty2) =
 matchPredType' :: HasCallStack => [Pred] -> Type -> [Pred] -> Type -> TypeSubst -> TypeSubst
 matchPredType' ps1 ty1 ps2 ty2 =
   matchType ty1 ty2 . matchPreds ps1 ps2
-
-matchPredSet :: HasCallStack => PredSet -> PredSet -> TypeSubst -> TypeSubst
-matchPredSet ps1 ps2 = matchPreds (Set.toAscList ps1) (Set.toAscList ps2)
 
 matchPreds :: HasCallStack => [Pred] -> [Pred] -> TypeSubst -> TypeSubst
 matchPreds []       []       = id

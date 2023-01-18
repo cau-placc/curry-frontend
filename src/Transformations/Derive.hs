@@ -20,7 +20,6 @@ import Control.Monad               (replicateM)
 import qualified Control.Monad.State as S (State, evalState, gets, modify)
 import           Data.List         (intercalate, intersperse)
 import           Data.Maybe        (fromJust, isJust)
-import qualified Data.Set   as Set (deleteMin, union)
 
 import Curry.Base.Ident
 import Curry.Base.SpanInfo

@@ -173,13 +173,13 @@ trDecl (ExternalDecl          _ vs) = mapM trExternal vs
 trDecl _                            = return []
 
 trData :: Ident -> [Ident] -> [ConstrDecl] -> TransM IL.Decl
-trData tc tvs cs = do
+trData tc _ cs = do
   tc' <- trQualify tc
   ks <- tcTVarKinds tc'
   IL.DataDecl tc' (transKind <$> ks) <$> mapM trConstrDecl cs
 
 trNewtype :: Ident -> [Ident] -> NewConstrDecl -> TransM IL.Decl
-trNewtype tc tvs nc = do
+trNewtype tc _ nc = do
   tc' <- trQualify tc
   ks <- tcTVarKinds tc'
   IL.NewtypeDecl tc' (transKind <$> ks) <$> trNewConstrDecl nc
@@ -208,7 +208,7 @@ trNewConstrDecl d = do
   constr (NewRecordDecl    _ c _) = c
 
 trExternalData :: Ident -> [Ident] -> TransM IL.Decl
-trExternalData tc tvs = do
+trExternalData tc _ = do
   tc' <- trQualify tc
   ks <- tcTVarKinds tc'
   return $ IL.ExternalDataDecl tc' (transKind <$> ks)
