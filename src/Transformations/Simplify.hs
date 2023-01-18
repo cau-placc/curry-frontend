@@ -342,6 +342,6 @@ expandPatternBindings fvs d@(PatternDecl p t (SimpleRhs _ _ e _)) = case t of
       let fty = TypeArrow pty vty
       f <- freshIdent (updIdentName (++ '#' : idName v) . fpSelectorId)
       return $ varDecl p vty v $
-        mkLet [funDecl p (OneType fty) f [t] (mkVar vty v)]
+        mkLet [funDecl p fty f [t] (mkVar vty v)]
         (Apply NoSpanInfo (mkVar fty f) e)
 expandPatternBindings _ d = return [d]

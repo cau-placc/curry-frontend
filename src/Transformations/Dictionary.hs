@@ -34,11 +34,13 @@ import qualified Data.Set   as Set ( deleteMin, fromList, lookupMin, null, size
                                    , toAscList, toList, union )
 
 import Debug.Trace
+import GHC.Stack (HasCallStack)
 
 import Curry.Base.Ident
 import Curry.Base.Position
 import Curry.Base.SpanInfo
 import Curry.Syntax
+import Curry.Syntax.Pretty (ppIdent)
 
 import Base.CurryKinds
 import Base.CurryTypes
@@ -235,7 +237,7 @@ classDictConstrPredType m tcEnv vEnv clsEnv cls =
 createInstDictDecl :: PredList -> QualIdent -> [Type] -> DTM (Decl PredType)
 createInstDictDecl pls cls tys = do
   pty <- PredType pls . arrowBase <$> getInstDictConstrType cls tys
-  funDecl NoSpanInfo (OneType pty) (instFunId cls tys)
+  funDecl NoSpanInfo pty (instFunId cls tys)
     [ConstructorPattern NoSpanInfo predUnitType qUnitId []]
     <$> createInstDictExpr cls tys
 
@@ -263,8 +265,8 @@ createClassMethodDecl cls =
 
 defaultClassMethodDecl :: QualIdent -> Ident -> DTM (Decl PredType)
 defaultClassMethodDecl cls f = do
-  pty@(PredType _ ty) <- getClassMethodType cls f
-  return $ funDecl NoSpanInfo (OneType pty) f [] $ preludeError (instType ty) $
+  pty <- getClassMethodType cls f
+  return $ funDecl NoSpanInfo pty f [] $ preludeError (instPredType pty) $
     "No instance or default method for class operation " ++ escName f
 
 getClassMethodType :: QualIdent -> Ident -> DTM PredType
@@ -286,7 +288,7 @@ defaultInstMethodDecl :: PredList -> QualIdent -> [Type] -> Ident
 defaultInstMethodDecl pls cls tys f = do
   vEnv <- getValueEnv
   let pty@(PredType _ ty) = instMethodType vEnv pls cls tys f
-  return $ funDecl NoSpanInfo (OneType pty) f [] $
+  return $ funDecl NoSpanInfo pty f [] $
     Variable NoSpanInfo (predType $ instType ty) (qDefaultMethodId cls f)
 
 -- Returns the type for a given instance's method of a given class. To this
@@ -366,12 +368,12 @@ createMethodStubDecl = createStubDecl
 
 createStubDecl :: Pattern Type -> Type -> Ident -> (Type, Ident) -> Decl Type
 createStubDecl t a f v =
-  FunctionDecl NoSpanInfo (OneType a) f [createStubEquation t f v]
+  FunctionDecl NoSpanInfo a f [createStubEquation t f v]
 
 createStubEquation :: Pattern Type -> Ident -> (Type, Ident) -> Equation Type
 createStubEquation t f v = 
   mkEquation NoSpanInfo f [VariablePattern NoSpanInfo (TypeArrow unitType (typeOf t)) (mkIdent "_#temp")] $
-    mkLet [FunctionDecl NoSpanInfo (OneType (TypeArrow (typeOf t) (fst v))) (mkIdent "_#lambda")
+    mkLet [FunctionDecl NoSpanInfo (TypeArrow (typeOf t) (fst v)) (mkIdent "_#lambda")
       [mkEquation NoSpanInfo (mkIdent "_#lambda") [t] $ uncurry mkVar v]]
       (apply (Variable NoSpanInfo (TypeArrow (typeOf t) (fst v)) (qualify $ mkIdent "_#lambda"))
         [apply (Variable NoSpanInfo (TypeArrow unitType (typeOf t)) (qualify $ mkIdent "_#temp"))
@@ -622,11 +624,13 @@ instance DictTrans Decl where
   dictTrans (NewtypeDecl     p tc tvs nc _) =
     return $ NewtypeDecl p tc tvs nc []
   dictTrans (TypeDecl          p tc tvs ty) = return $ TypeDecl p tc tvs ty
-  dictTrans (FunctionDecl p      fl f eqs) = let pty = funLabelAnnType fl in
-    FunctionDecl p (OneType (transformPredType pty)) f <$> mapM dictTrans eqs
+  dictTrans (FunctionDecl p      pty f eqs) =
+    trace ("transforming function " ++ show (ppIdent f)) $
+    trace (if show (ppIdent f) == "_def#===#Prelude.Data" then show (FunctionDecl p pty f eqs) else []) $
+    FunctionDecl p (transformPredType pty) f <$> mapM dictTrans eqs
   dictTrans (PatternDecl           p t rhs) = case t of
     VariablePattern _ pty@(PredType pls _) v | not (null pls) ->
-      dictTrans $ FunctionDecl p (OneType pty) v [Equation p Nothing (FunLhs NoSpanInfo v []) rhs]
+      dictTrans $ FunctionDecl p pty v [Equation p Nothing (FunLhs NoSpanInfo v []) rhs]
     _ -> withLocalDictEnv $ PatternDecl p <$> dictTrans t <*> dictTrans rhs
   dictTrans d@(FreeDecl                _ _) = return $ fmap unpredType d
   dictTrans d@(ExternalDecl            _ _) = return $ fmap transformPredType d
@@ -643,6 +647,7 @@ dictTransConstrDecl _ d _ = internalError $ "Dictionary.dictTrans: " ++ show d
 
 instance DictTrans Equation where
   dictTrans (Equation p Nothing (FunLhs _ f ts) rhs) =
+    trace ("translate equation of function " ++ show (ppIdent f) ++ " with Nothing as label") $
     withLocalValueEnv $ withLocalDictEnv $ do
       m <- getModuleIdent
       pls <- matchPredList (varType m f) $
@@ -651,6 +656,7 @@ instance DictTrans Equation where
       modifyValueEnv $ bindPatterns ts'
       Equation p Nothing (FunLhs NoSpanInfo f ts') <$> dictTrans rhs
   dictTrans (Equation p (Just pty) (FunLhs _ f ts) rhs) =
+    trace ("translate equation of function " ++ show (ppIdent f) ++ " with Just as label") $
     withLocalValueEnv $ withLocalDictEnv $ do
       m <- getModuleIdent
       pls <- matchPredList' (varType m f) pty
@@ -792,7 +798,7 @@ instPredList (Pred _ cls tys) = do
 -- tries to find a suffix of the context whose transformation matches the
 -- initial arrows of the instance type.
 
-matchPredList :: (ValueEnv -> TypeScheme) -> Type -> DTM [Pred]
+matchPredList :: HasCallStack => (ValueEnv -> TypeScheme) -> Type -> DTM [Pred]
 matchPredList tySc ty2 = do
   ForAll _ (PredType ps ty1) <- tySc <$> getValueEnv
   dictEnvPreds <- map fst <$> getDictEnv
@@ -805,7 +811,7 @@ matchPredList tySc ty2 = do
   inEnv <- getInstEnv
   return $ inferDependentVars clsEnv inEnv dictEnvPreds argPreds
 
-matchPredList' :: (ValueEnv -> TypeScheme)  -> PredType -> DTM [Pred]
+matchPredList' :: HasCallStack => (ValueEnv -> TypeScheme)  -> PredType -> DTM [Pred]
 matchPredList' tySc (PredType ps2 ty2) = do
   ForAll _ (PredType ps ty1) <- tySc <$> getValueEnv
   dictEnvPreds <- map fst <$> getDictEnv
@@ -861,7 +867,7 @@ inferDependentVarsInstEnv clsEnv inEnv (Pred _ argCls argTys) sigma =
         unzip $ typeDepsInstEnv argCls (subst sigma argTys) clsEnv inEnv
   in foldr2 matchType sigma argTys' instTys
 
-qualMatch :: [Pred] -> Type -> [Pred] -> Type -> Int -> Maybe [Pred]
+qualMatch :: HasCallStack => [Pred] -> Type -> [Pred] -> Type -> Int -> Maybe [Pred]
 qualMatch pls1 ty1 pls2 ty2 maxDictTv = case predListMatch pls2 ty2 of
   Just ty2' ->
     let freshTys = map TypeVariable [maximum (maxDictTv : typeVars ty2') + 1 ..]
@@ -870,7 +876,7 @@ qualMatch pls1 ty1 pls2 ty2 maxDictTv = case predListMatch pls2 ty2 of
     in Just $ subst (matchType ty1 ty2' idSubst) $ subst renamePsTvs pls1
   Nothing -> Nothing
 
-qualMatch' :: [Pred] -> Type -> [Pred] -> PredList -> Type -> Int -> Maybe [Pred]
+qualMatch' :: HasCallStack => [Pred] -> Type -> [Pred] -> PredList -> Type -> Int -> Maybe [Pred]
 qualMatch' pls1 ty1 pls2 ps ty2 maxDictTv = case predListMatch pls2 ty2 of
   Just ty2' ->
     let freshTys = map TypeVariable [maximum (maxDictTv : typeVars ty2') + 1 ..]
@@ -1269,6 +1275,9 @@ instType ty = ty
 instPred :: Pred -> Pred
 instPred (Pred isIcc cls ty) = Pred isIcc cls (map instType ty)
 
+instPredType :: PredType -> PredType
+instPredType (PredType pls ty) = PredType (map instPred pls) (instType ty)
+
 unRenameIdentIf :: Bool -> Ident -> Ident
 unRenameIdentIf b = if b then unRenameIdent else id
 
@@ -1276,10 +1285,10 @@ unRenameIdentIf b = if b then unRenameIdent else id
 -- implementation has to be constructed in its desugared form since the
 -- desugaring has already taken place.
 
-preludeError :: Type -> String -> Expression PredType
-preludeError a =
+preludeError :: PredType -> String -> Expression PredType
+preludeError pty@(PredType pls ty) =
   Apply NoSpanInfo (Variable NoSpanInfo
-                     (predType (TypeArrow stringType a)) qErrorId) . stringExpr
+                     (PredType pls (TypeArrow stringType ty)) qErrorId) . stringExpr
 
 stringExpr :: String -> Expression PredType
 stringExpr = foldr (consExpr . Literal NoSpanInfo (predType charType) . Char)

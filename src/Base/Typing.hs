@@ -32,6 +32,8 @@ import Curry.Syntax
 
 import GHC.Stack (HasCallStack)
 
+import Debug.Trace
+
 import Base.Messages (internalError)
 import Base.PrettyTypes
 import Base.Types
@@ -144,7 +146,8 @@ matchPred pt1@(Pred _ qcls1 tys1) pt2@(Pred _ qcls2 tys2)
 
 matchTypes :: HasCallStack => [Type] -> [Type] -> TypeSubst -> TypeSubst
 matchTypes []         []         = id
-matchTypes (ty1:tys1) (ty2:tys2) = matchTypes tys1 tys2 . matchType ty1 ty2
+matchTypes (ty1:tys1) (ty2:tys2) = traceShow (pPrint (ty1:tys1), pPrint(ty2:tys2)) $
+  matchTypes tys1 tys2 . matchType ty1 ty2
 matchTypes tys1       tys2       = internalError $
   "Base.Typing.matchTypes: " ++ show tys1 ++ " " ++ show tys2 
 
@@ -202,9 +205,7 @@ bindPattern t vEnv = bindLocalVars (filter unbound $ patternVars t) vEnv
 declVars :: (Eq t, Typeable t, ValueType t) => Decl t -> [(Ident, Int, t)]
 declVars (InfixDecl        _ _ _ _) = []
 declVars (TypeSig            _ _ _) = []
-declVars (FunctionDecl  _ fl f eqs) = [(f, eqnArity $ head eqs, ty fl)]
-  where ty (OneType    t) = t
-        ty (TwoTypes _ t) = t
+declVars (FunctionDecl  _ ty f eqs) = [(f, eqnArity $ head eqs, ty)]
 declVars (PatternDecl        _ t _) = patternVars t
 declVars (FreeDecl            _ vs) = [(v, 0, ty) | Var ty v <- vs]
 declVars _                          = internalError "Base.Typing.declVars"

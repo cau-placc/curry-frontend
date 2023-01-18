@@ -595,7 +595,7 @@ tcFunctionPDecl :: Int -> LPredList -> TypeScheme -> SpanInfo -> Ident
 tcFunctionPDecl i pls tySc@(ForAll _ pty) p f eqs = do
   (_, ty) <- inst tySc
   (pls', eqs') <- mapAccumM (tcEquation ty) pls eqs
-  return (pls', (ty, (i, FunctionDecl p (OneType pty) f eqs')))
+  return (pls', (ty, (i, FunctionDecl p pty f eqs')))
 
 tcEquation :: Type -> LPredList -> Equation a
            -> TCM (LPredList, Equation PredType)
@@ -660,8 +660,8 @@ applyDefaultsDecl p what doc fvs pls ty = do
 -- function declarations.
 
 fixType :: TypeScheme -> PDecl PredType -> PDecl PredType
-fixType ~(ForAll _ pty) (i, FunctionDecl p (OneType _) f eqs) =
-  (i, FunctionDecl p (OneType pty) f eqs)
+fixType ~(ForAll _ pty) (i, FunctionDecl p _ f eqs) =
+  (i, FunctionDecl p pty f eqs)
 fixType ~(ForAll _ pty) pd@(i, PatternDecl p t rhs) = case t of
   VariablePattern spi _ v
     -> (i, PatternDecl p (VariablePattern spi pty v) rhs)
@@ -669,8 +669,8 @@ fixType ~(ForAll _ pty) pd@(i, PatternDecl p t rhs) = case t of
 fixType _ _ = internalError "TypeCheck.fixType"
 
 declVars :: Decl PredType -> [(Ident, Int, TypeScheme)]
-declVars (FunctionDecl _ fl f eqs) = 
-    [(f, eqnArity $ head eqs, typeScheme (funLabelAnnType fl))]
+declVars (FunctionDecl _ pty f eqs) = 
+    [(f, eqnArity $ head eqs, typeScheme pty)]
 declVars (PatternDecl _ t _) = case t of
   VariablePattern _ pty v -> [(v, 0, typeScheme pty)]
   _ -> []
@@ -710,7 +710,7 @@ checkPDeclType qty pls tySc (i, FunctionDecl p _ f eqs) = do
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
     report $ errTypeSigTooGeneral m (text "Function:" <+> ppIdent f) qty tySc
-  return (pls, (i, FunctionDecl p (OneType pty) f eqs))
+  return (pls, (i, FunctionDecl p pty f eqs))
 checkPDeclType qty pls tySc (i, PatternDecl p (VariablePattern spi _ v) rhs) = do
   pty <- expandPoly qty
   unlessM (checkTypeSig pty tySc) $ do
@@ -1704,9 +1704,8 @@ hasInstance inEnv qcls tys = isJust (lookupInstExact (qcls, tys) (fst inEnv)) ||
 -- the end of inferring types for a declaration group.
 
 reportFlexibleContextDecl :: ModuleIdent -> PDecl PredType -> TCM ()
-reportFlexibleContextDecl m (_, FunctionDecl spi fl f _) =
-  let PredType pls _ = funLabelAnnType fl
-      flexCs = snd $ partitionPredListOnlyVars pls
+reportFlexibleContextDecl m (_, FunctionDecl spi (PredType pls _) f _) =
+  let flexCs = snd $ partitionPredListOnlyVars pls
       what   = "function declaration"
   in mapM_ (report . errFlexibleContext m spi what f) flexCs
 reportFlexibleContextDecl m (_, PatternDecl _ t _) =

@@ -33,7 +33,6 @@ module Curry.Syntax.Utils
   , nconstrType
   , recordLabels, nrecordLabels
   , methods, impls, imethod, imethodArity
-  , funLabelAnnType, funLabelMapSecond
   , shortenModuleAST
   ) where
 
@@ -259,8 +258,8 @@ imethodArity (IMethodDecl _ _ a _) = a
 -- constructing elements of the abstract syntax tree
 --------------------------------------------------------
 
-funDecl :: SpanInfo -> FunLabel a -> Ident -> [Pattern a] -> Expression a -> Decl a
-funDecl spi fl f ts e = FunctionDecl spi fl f [mkEquation spi f ts e]
+funDecl :: SpanInfo -> a -> Ident -> [Pattern a] -> Expression a -> Decl a
+funDecl spi a f ts e = FunctionDecl spi a f [mkEquation spi f ts e]
 
 mkEquation :: SpanInfo -> Ident -> [Pattern a] -> Expression a -> Equation a
 mkEquation spi f ts e = 
@@ -300,14 +299,6 @@ apply = foldl (Apply NoSpanInfo)
 unapply :: Expression a -> [Expression a] -> (Expression a, [Expression a])
 unapply (Apply _ e1 e2) es = unapply e1 (e2 : es)
 unapply e               es = (e, es)
-
-funLabelMapSecond :: (a -> a) -> FunLabel a -> FunLabel a
-funLabelMapSecond f (OneType ty)       = OneType (f ty)
-funLabelMapSecond f (TwoTypes ty1 ty2) = TwoTypes ty1 (f ty2)
-
-funLabelAnnType :: FunLabel a -> a
-funLabelAnnType (OneType    x) = x
-funLabelAnnType (TwoTypes _ y) = y
 
 --------------------------------------------------------
 -- Shorten Module

@@ -415,13 +415,21 @@ partitionPredList f pl = partition $
     isTypeVariable (TypeApply ty _) = isTypeVariable ty
     isTypeVariable _                = False
 
+-------------------------------------------------------------------------------
+-- Operations on predicate lists
+-------------------------------------------------------------------------------
+
 -- The set theoretical union of two predicateList
+-- TODO : check if this can be changed so that predicates are ordered by
+-- the order in a given type scheme.
 plUnion :: Eq a => [a] -> [a] -> [a]
 plUnion pl1 pl2 = nub (pl1 ++ pl2)
 
+-- Set-theoretical difference of two predicate lists
 plDifference :: Eq a => [a] -> [a] -> [a]
 plDifference = (\\)
 
+-- Insert an element into a predicate list and remove all duplicates afterwards
 plInsert :: Eq a => a -> [a] -> [a]
 plInsert pl pls = nub (pl:pls)
 
@@ -437,6 +445,8 @@ plConcatMap f = plUnions . map f
 plConcatMapM :: (Eq b, Monad m) => (a -> m [b]) -> [a] -> m [b]
 plConcatMapM f = liftM plUnions . mapM f
 
+-- lookup the minimum element of a predicate list. If the list contains a
+-- predicate that can be ordered
 plLookupMin :: Ord a => [a] -> Maybe a
 plLookupMin []       = Nothing
 plLookupMin xs@(_:_) = Just $ minimum xs
@@ -468,6 +478,7 @@ minPredSet :: IsPred a => ClassEnv -> Set.Set a -> Set.Set a
 minPredSet clsEnv ps =
   ps `Set.difference` Set.concatMap (impliedPredicates clsEnv) ps
 
+-- List version of minPredList
 minPredList :: IsPred a => ClassEnv -> [a] -> [a]
 minPredList clsEnv pls = 
   plDifference pls (plConcatMap (impliedPredicatesList clsEnv) pls)
@@ -476,6 +487,7 @@ maxPredSet :: IsPred a => ClassEnv -> Set.Set a -> Set.Set a
 maxPredSet clsEnv ps =
   ps `Set.union` Set.concatMap (impliedPredicates clsEnv) ps
 
+-- List version of maxPredSet
 maxPredList :: IsPred a => ClassEnv -> [a] -> [a]
 maxPredList clsEnv pls =
   plUnion pls (concatMap (impliedPredicatesList clsEnv) pls)

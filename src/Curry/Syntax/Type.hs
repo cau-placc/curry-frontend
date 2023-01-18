@@ -39,8 +39,6 @@ module Curry.Syntax.Type
   , Context, Constraint (..), InstanceType, FunDep (..)
     -- * Goals
   , Goal (..)
-    -- * Function labelings
-  , FunLabel (..)
   ) where
 
 import Data.Binary
@@ -163,7 +161,7 @@ data Decl a
   | NewtypeDecl      SpanInfo Ident [Ident] NewConstrDecl [QualIdent]              -- newtype C a b = C a b deriving (D, ...)
   | TypeDecl         SpanInfo Ident [Ident] TypeExpr                               -- type C a b = D a b
   | TypeSig          SpanInfo [Ident] QualTypeExpr                                 -- f, g :: Bool
-  | FunctionDecl     SpanInfo (FunLabel a) Ident [Equation a]                      -- f True = 1 ; f False = 0
+  | FunctionDecl     SpanInfo  a Ident [Equation a]                                -- f True = 1 ; f False = 0
   | ExternalDecl     SpanInfo [Var a]                                              -- f, g external
   | PatternDecl      SpanInfo (Pattern a) (Rhs a)                                  -- Just x = ...
   | FreeDecl         SpanInfo [Var a]                                              -- x, y free
@@ -238,6 +236,12 @@ data FunDep = FunDep SpanInfo [Ident] [Ident]
 -- ---------------------------------------------------------------------------
 
 -- |Function defining equation
+--  Equations are now annotated with a type.
+--  The type is stored in a Maybe because there are some points where equations
+--  are generated and I wanted to change only as few things as possible.
+--  Nothing is annotated if an equation is generated after finishing Type check.
+--  otherwise, the equations are annotated with the type that is inferred for them
+--  during Type check.
 data Equation a = Equation SpanInfo (Maybe a) (Lhs a) (Rhs a)
     deriving (Eq, Read, Show)
 
@@ -342,22 +346,6 @@ data Field a = Field SpanInfo QualIdent a
 data Var a = Var a Ident
     deriving (Eq, Read, Show)
 
-
-------------------------------------------------------------------------------
--- Helper data types
-------------------------------------------------------------------------------
-
--- | The type function label is a helper type that can store either one or
---   two different values. It is introduced because if a function is expli-
---   citly typed, then both inferred and annotated types are stored because
---   the inferred type can be helpful during dictionary insertion to avoid
---   errors regarding functional dependencies. The constructor OneType is
---   used when only one type needs to be stored. The constructor TwoTypes
---   can store two different values. The left value represents the inferred
---   type, the right value the annotated type
-data FunLabel a = OneType a | TwoTypes a a
-    deriving (Eq, Read, Show)
-
 -- ---------------------------------------------------------------------------
 -- Goals
 -- ---------------------------------------------------------------------------
@@ -380,8 +368,8 @@ instance Functor Decl where
   fmap _ (NewtypeDecl sp tc tvs nc clss) = NewtypeDecl sp tc tvs nc clss
   fmap _ (TypeDecl sp tc tvs ty) = TypeDecl sp tc tvs ty
   fmap _ (TypeSig sp fs qty) = TypeSig sp fs qty
-  fmap f (FunctionDecl sp fl f' eqs) = 
-    FunctionDecl sp (fmap f fl) f' (map (fmap f) eqs)
+  fmap f (FunctionDecl sp a f' eqs) = 
+    FunctionDecl sp (f a) f' (map (fmap f) eqs)
   fmap f (ExternalDecl sp vs) = ExternalDecl sp (map (fmap f) vs)
   fmap f (PatternDecl sp t rhs) = PatternDecl sp (fmap f t) (fmap f rhs)
   fmap f (FreeDecl sp vs) = FreeDecl sp (map (fmap f) vs)
@@ -476,10 +464,6 @@ instance Functor Var where
 
 instance Functor Goal where
   fmap f (Goal p li e ds) = Goal p li (fmap f e) (map (fmap f) ds)
-
-instance Functor FunLabel where
-  fmap f (OneType    x) = OneType (f x)
-  fmap f (TwoTypes x y) = TwoTypes (f x) (f y)
 
 instance Pretty Infix where
   pPrint InfixL = text "infixl"
@@ -1588,15 +1572,5 @@ instance Binary a => Binary (Field a) where
 instance Binary a => Binary (Var a) where
   put (Var a idt) = put a >> put idt
   get = liftM2 Var get get
-
-instance Binary a => Binary (FunLabel a) where
-  put (OneType    x) = put "0" >> put x
-  put (TwoTypes x y) = put "1" >> put x >> put y
-  get = do
-    x <- getWord8
-    case x of
-      0 -> OneType <$> get
-      1 -> TwoTypes <$> get <*> get
-      _ -> fail "Invalid encoding for FunLabel"
 
 {- HLINT ignore "Use record patterns"-}

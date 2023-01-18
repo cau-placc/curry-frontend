@@ -170,7 +170,7 @@ deriveBinOp :: QualIdent -> Ident -> BinOpExpr -> Type -> [ConstrInfo]
 deriveBinOp cls op expr ty cis pls = do
   pty <- getInstMethodType pls cls ty op
   eqs <- mapM (deriveBinOpEquation op expr ty) $ sequence [cis, cis]
-  return $ FunctionDecl NoSpanInfo (OneType pty) op $
+  return $ FunctionDecl NoSpanInfo pty op $
     if null eqs
       then [mkEquation NoSpanInfo op [] $
         preludeFailed $ instType $ unpredType pty]
@@ -217,7 +217,7 @@ dataEqOpExpr i1 es1 i2 es2
 deriveAValue :: Type -> [ConstrInfo] -> PredList -> DVM (Decl PredType)
 deriveAValue ty cis pls = do
   pty <- getInstMethodType pls qDataId ty aValueId
-  return $ FunctionDecl NoSpanInfo (OneType pty) aValueId $
+  return $ FunctionDecl NoSpanInfo pty aValueId $
     if null cis
       then [mkEquation NoSpanInfo aValueId [] $ preludeFailed $ instType ty]
       else map (aValueEquation ty) cis
@@ -268,7 +268,7 @@ deriveSuccOrPred :: Ident -> Type -> [ConstrInfo] -> [ConstrInfo] -> PredList
                  -> DVM (Decl PredType)
 deriveSuccOrPred f ty cis1 cis2 pls = do
   pty <- getInstMethodType pls qEnumId ty f
-  FunctionDecl NoSpanInfo (OneType pty) f <$>
+  FunctionDecl NoSpanInfo pty f <$>
     if null eqs
       then do
         v <- freshArgument $ instType ty
@@ -287,7 +287,7 @@ succOrPredEquation f ty (_, c1, _, _) (_, c2, _, _) =
 deriveToEnum :: Type -> [ConstrInfo] -> PredList -> DVM (Decl PredType)
 deriveToEnum ty cis pls = do
   pty <- getInstMethodType pls qEnumId ty toEnumId
-  return $ FunctionDecl NoSpanInfo (OneType pty) toEnumId eqs
+  return $ FunctionDecl NoSpanInfo pty toEnumId eqs
   where eqs = zipWith (toEnumEquation ty) [0 ..] cis
 
 toEnumEquation :: Type -> Integer -> ConstrInfo -> Equation PredType
@@ -299,7 +299,7 @@ toEnumEquation ty i (_, c, _, _) =
 deriveFromEnum :: Type -> [ConstrInfo] -> PredList -> DVM (Decl PredType)
 deriveFromEnum ty cis pls = do
   pty <- getInstMethodType pls qEnumId ty fromEnumId
-  return $ FunctionDecl NoSpanInfo (OneType pty) fromEnumId eqs
+  return $ FunctionDecl NoSpanInfo pty fromEnumId eqs
   where eqs = zipWith (fromEnumEquation ty) cis [0 ..]
 
 fromEnumEquation :: Type -> ConstrInfo -> Integer -> Equation PredType
@@ -312,7 +312,7 @@ deriveEnumFrom :: Type -> ConstrInfo -> PredList -> DVM (Decl PredType)
 deriveEnumFrom ty (_, c, _, _) pls = do
   pty <- getInstMethodType pls qEnumId ty enumFromId
   v <- freshArgument $ instType ty
-  return $ funDecl NoSpanInfo (OneType pty) enumFromId
+  return $ funDecl NoSpanInfo pty enumFromId
     [uncurry (VariablePattern NoSpanInfo) v] $
     enumFromExpr v c
 
@@ -326,7 +326,7 @@ deriveEnumFromThen ty (_, c1, _, _) (_, c2, _, _) pls = do
   pty <- getInstMethodType pls qEnumId ty enumFromId
   vs  <- replicateM 2 ((freshArgument . instType) ty)
   let [v1, v2] = vs
-  return $ funDecl NoSpanInfo (OneType pty) enumFromThenId
+  return $ funDecl NoSpanInfo pty enumFromThenId
     (map (uncurry (VariablePattern NoSpanInfo)) vs) $
     enumFromThenExpr v1 v2 c1 c2
 
@@ -354,7 +354,7 @@ deriveMaxOrMinBound :: QualIdent -> Type -> ConstrInfo -> PredList
 deriveMaxOrMinBound f ty (_, c, _, tys) pls = do
   pty <- getInstMethodType pls qBoundedId ty $ unqualify f
   return $ 
-    funDecl NoSpanInfo (OneType pty) (unqualify f) [] $ maxOrMinBoundExpr f c ty tys
+    funDecl NoSpanInfo pty (unqualify f) [] $ maxOrMinBoundExpr f c ty tys
 
 maxOrMinBoundExpr :: QualIdent -> QualIdent -> Type -> [Type]
                   -> Expression PredType
@@ -375,7 +375,7 @@ deriveReadsPrec ty cis pls = do
   d <- freshArgument intType
   r <- freshArgument stringType
   let pats = map (uncurry (VariablePattern NoSpanInfo)) [d, r]
-  funDecl NoSpanInfo (OneType pty) readsPrecId pats <$>
+  funDecl NoSpanInfo pty readsPrecId pats <$>
     deriveReadsPrecExpr ty cis (uncurry mkVar d) (uncurry mkVar r)
 
 deriveReadsPrecExpr :: Type -> [ConstrInfo] -> Expression PredType
@@ -501,7 +501,7 @@ deriveShowsPrec :: Type -> [ConstrInfo] -> PredList -> DVM (Decl PredType)
 deriveShowsPrec ty cis pls = do
   pty <- getInstMethodType pls qShowId ty showsPrecId
   eqs <- mapM (deriveShowsPrecEquation ty) cis
-  return $ FunctionDecl NoSpanInfo (OneType pty) showsPrecId eqs
+  return $ FunctionDecl NoSpanInfo pty showsPrecId eqs
 
 deriveShowsPrecEquation :: Type -> ConstrInfo -> DVM (Equation PredType)
 deriveShowsPrecEquation ty (_, c, ls, tys) = do
