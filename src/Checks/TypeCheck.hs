@@ -590,16 +590,41 @@ tcFunctionPDecl :: Int -> LPredList -> TypeScheme -> SpanInfo -> Ident
                 -> [Equation a] -> TCM (LPredList, (Type, PDecl PredType))
 tcFunctionPDecl i pls tySc@(ForAll _ pty) p f eqs = do
   (_, ty) <- inst tySc
-  (pls', eqs') <- mapAccumM (tcEquation ty) pls eqs
+  (pls', eqs') <- tcEquations p ty pls eqs
   return (pls', (ty, (i, FunctionDecl p pty f eqs')))
 
-tcEquation :: Type -> LPredList -> Equation a
-           -> TCM (LPredList, Equation PredType)
-tcEquation ty pls eqn@(Equation p _ lhs rhs) = do
-  (pls', ty', Equation p' _ lhs' rhs') <- tcEqn p lhs rhs
-  pls'' <- unify p "equation" (pPrint eqn) pls ty pls' ty'
-  let pty = PredType (map getPred pls'') ty'
-  return (pls'', Equation p' (Just pty) lhs' rhs')
+tcEquations :: HasSpanInfo p => p -> Type -> LPredList -> [Equation a]
+            -> TCM (LPredList, [Equation PredType])
+tcEquations p ty pls eqs = do
+  (pls', tys, eqs') <- tcEqns eqs
+  -- TODO : improve span computation
+  plss <- mapM (unify p "function definition" empty pls ty pls') tys
+  pls'' <- reducePredSet $ plUnions plss
+  let eqs'' = map (setPredList pls'') eqs'
+  return (pls'', eqs'')
+ where
+   setPredList preds (Equation p (Just (PredType _ typ)) lhs rhs)
+     = Equation p (Just $ PredType (map getPred preds) typ) lhs rhs
+   setPredList _     eqn = eqn
+
+tcEqns :: [Equation a]
+       -> TCM (LPredList, [Type], [Equation PredType])
+tcEqns eqs = do
+  plsEqs <- mapM tcEquation eqs
+  let (plss, tys, eqs') = unzip3 plsEqs 
+      poss              = map getSpanInfo eqs
+      docs              = map pPrint eqs
+  pls' <- unifyList poss "equation" docs plss tys
+  let eqs'' = setPredType pls' tys eqs'
+  return (pls', tys, eqs'')
+ where
+  setPredType preds types eqns = map (setPredType' preds) (zip types eqns)
+  
+  setPredType' preds (ty, Equation p _ lhs rhs) 
+    = Equation p (Just $ PredType (map getPred preds) ty) lhs rhs
+
+tcEquation :: Equation a -> TCM (LPredList, Type, Equation PredType)
+tcEquation eqn@(Equation p _ lhs rhs) = tcEqn p lhs rhs
 
 tcEqn :: SpanInfo -> Lhs a -> Rhs a
       -> TCM (LPredList, Type, Equation PredType)
@@ -1555,6 +1580,16 @@ unify p what doc pls1 ty1 pls2 ty2 = do
     Left reason -> report $ errTypeMismatch p what doc m ty1' ty2' reason
     Right sigma -> modifyTypeSubst (compose sigma)
   reducePredSet $ plUnion pls1 pls2
+
+-- List version of unify
+unifyList :: HasSpanInfo p => [p] -> String -> [Doc] -> [LPredList] -> [Type] 
+          -> TCM LPredList
+unifyList _ _    _   []    _                        = return []
+unifyList _ _    _   [pls] _                        = return pls
+unifyList (p:ps) what (doc:docs) (pls1:pls2:plss) (ty1:ty2:tys) = do
+  pls'  <- unifyList ps what docs (pls2:plss) (ty2:tys)
+  pls'' <- unify p what doc pls1 ty1 pls2 ty2
+  reducePredSet $ plUnion pls' pls''
 
 unifyTypes :: ModuleIdent -> Type -> Type -> Either Doc TypeSubst
 unifyTypes _ (TypeVariable tv1) (TypeVariable tv2)

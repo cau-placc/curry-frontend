@@ -142,7 +142,7 @@ matchPred pt1@(Pred _ qcls1 tys1) pt2@(Pred _ qcls2 tys2)
 
 matchTypes :: HasCallStack => [Type] -> [Type] -> TypeSubst -> TypeSubst
 matchTypes []         []         = id
-matchTypes (ty1:tys1) (ty2:tys2) = traceShow (pPrint (ty1:tys1), pPrint(ty2:tys2)) $
+matchTypes (ty1:tys1) (ty2:tys2) = --traceShow (pPrint (ty1:tys1), pPrint(ty2:tys2)) $
   matchTypes tys1 tys2 . matchType ty1 ty2
 matchTypes tys1       tys2       = internalError $
   "Base.Typing.matchTypes: " ++ show tys1 ++ " " ++ show tys2 

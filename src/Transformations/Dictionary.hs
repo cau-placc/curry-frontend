@@ -57,6 +57,8 @@ import Env.OpPrec
 import Env.TypeConstructor
 import Env.Value
 
+import qualified CompilerEnv as CE
+
 data DTState = DTState
   { moduleIdent :: ModuleIdent
   , tyConsEnv   :: TCEnv
@@ -579,11 +581,12 @@ emptyDictEnv :: DictEnv
 emptyDictEnv = []
 
 class DictTrans a where
-  dictTrans :: a PredType -> DTM (a Type)
+  dictTrans :: HasCallStack => a PredType -> DTM (a Type)
 
 instance DictTrans Module where
   dictTrans (Module spi li ps m es is ds) = do
     liftedDs <- concatMapM liftDecls ds
+    --traceM (show $ filter (\d -> isFunDecl d) liftedDs)
     stubDs <- concatMapM createStubs ds
     tcEnv <- getTyConsEnv
     clsEnv <- getClassEnv
@@ -591,11 +594,18 @@ instance DictTrans Module where
     modifyValueEnv $ bindClassDecls m tcEnv clsEnv
     modifyValueEnv $ bindInstDecls m clsEnv inEnv
     modifyTyConsEnv $ bindDictTypes m clsEnv
+    vEnv <- getValueEnv
+    --traceM (show $ CE.ppAL True $ allLocalBindings vEnv)
     transDs <- mapM dictTrans liftedDs
     modifyValueEnv $ dictTransValues
     modifyTyConsEnv $ dictTransTypes
     dictEs <- addExports es <$> concatMapM dictExports ds
     return $ Module spi li ps m dictEs is $ transDs ++ stubDs
+   where
+     isFunDecl (FunctionDecl _ _ _ _) = True
+     isFunDecl _                      = False
+
+     funName (FunctionDecl _ _ f _) = show (ppIdent f)
 
 -- We use and transform the type from the type constructor environment for
 -- transforming a constructor declaration as it contains the reduced and
@@ -618,8 +628,6 @@ instance DictTrans Decl where
     return $ NewtypeDecl p tc tvs nc []
   dictTrans (TypeDecl          p tc tvs ty) = return $ TypeDecl p tc tvs ty
   dictTrans (FunctionDecl p      pty f eqs) =
-    trace ("transforming function " ++ show (ppIdent f)) $
-    trace (if show (ppIdent f) == "_def#===#Prelude.Data" then show (FunctionDecl p pty f eqs) else []) $
     FunctionDecl p (transformPredType pty) f <$> mapM dictTrans eqs
   dictTrans (PatternDecl           p t rhs) = case t of
     VariablePattern _ pty@(PredType pls _) v | not (null pls) ->
@@ -640,7 +648,6 @@ dictTransConstrDecl _ d _ = internalError $ "Dictionary.dictTrans: " ++ show d
 
 instance DictTrans Equation where
   dictTrans (Equation p Nothing (FunLhs _ f ts) rhs) =
-    trace ("translate equation of function " ++ show (ppIdent f) ++ " with Nothing as label") $
     withLocalValueEnv $ withLocalDictEnv $ do
       m <- getModuleIdent
       pls <- matchPredList (varType m f) $
@@ -649,7 +656,6 @@ instance DictTrans Equation where
       modifyValueEnv $ bindPatterns ts'
       Equation p Nothing (FunLhs NoSpanInfo f ts') <$> dictTrans rhs
   dictTrans (Equation p (Just pty) (FunLhs _ f ts) rhs) =
-    trace ("translate equation of function " ++ show (ppIdent f) ++ " with Just as label") $
     withLocalValueEnv $ withLocalDictEnv $ do
       m <- getModuleIdent
       pls <- matchPredList' (varType m f) pty
