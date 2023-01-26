@@ -44,6 +44,7 @@ import Base.CurryTypes
 import Base.Expr
 import Base.Kinds
 import Base.Messages (internalError)
+import Base.PrettyTypes ()
 import Base.TopEnv
 import Base.Types
 import Base.TypeSubst
@@ -658,7 +659,7 @@ instance DictTrans Equation where
   dictTrans (Equation p (Just pty) (FunLhs _ f ts) rhs) =
     withLocalValueEnv $ withLocalDictEnv $ do
       m <- getModuleIdent
-      pls <- matchPredList' (varType m f) pty
+      pls <- matchPredList' f (varType m f) pty
       ts' <- addDictArgs pls ts
       modifyValueEnv $ bindPatterns ts'
       Equation p Nothing (FunLhs NoSpanInfo f ts') <$> dictTrans rhs
@@ -810,13 +811,13 @@ matchPredList tySc ty2 = do
   inEnv <- getInstEnv
   return $ inferDependentVars clsEnv inEnv dictEnvPreds argPreds
 
-matchPredList' :: HasCallStack => (ValueEnv -> TypeScheme)  -> PredType -> DTM [Pred]
-matchPredList' tySc (PredType ps2 ty2) = do
+matchPredList' :: HasCallStack => Ident -> (ValueEnv -> TypeScheme)  -> PredType -> DTM [Pred]
+matchPredList' f tySc (PredType ps2 ty2) = do
   ForAll _ (PredType ps ty1) <- tySc <$> getValueEnv
   dictEnvPreds <- map fst <$> getDictEnv
   let maxDictTv = maximum (-1 : typeVars dictEnvPreds)
       argPreds = foldr (\(pls1, pls2) pls' -> fromMaybe pls' $
-                          qualMatch' pls1 ty1 pls2 ps2 ty2 maxDictTv)
+                          qualMatch' f pls1 ty1 pls2 ps2 ty2 maxDictTv)
                        (internalError $ "Dictionary.matchPredList': " ++ show ps)
                        (splits ps)
   clsEnv <- getClassEnv
@@ -875,14 +876,14 @@ qualMatch pls1 ty1 pls2 ty2 maxDictTv = case predListMatch pls2 ty2 of
     in Just $ subst (matchType ty1 ty2' idSubst) $ subst renamePsTvs pls1
   Nothing -> Nothing
 
-qualMatch' :: HasCallStack => [Pred] -> Type -> [Pred] -> PredList -> Type -> Int -> Maybe [Pred]
-qualMatch' pls1 ty1 pls2 ps ty2 maxDictTv = case predListMatch pls2 ty2 of
+qualMatch' :: HasCallStack => Ident -> [Pred] -> Type -> [Pred] -> PredList -> Type -> Int -> Maybe [Pred]
+qualMatch' f pls1 ty1 pls2 ps ty2 maxDictTv = trace ("call qualMatch' with function " ++ show (ppIdent f)) $ case predListMatch pls2 ty2 of
   Just ty2' ->
     let freshTys = map TypeVariable [maximum (maxDictTv : typeVars ty2') + 1 ..]
         psTvs = [maximum (-1 : typeVars ty1) + 1 .. maximum (-1 : typeVars pls1)]
         renamePsTvs = foldr2 bindSubst idSubst psTvs freshTys
         pls2' = ps
-    in Just $ subst (matchPredType' pls1 ty1 pls2' ty2' idSubst) 
+    in trace (show (pPrint (pls1,pls2') )) $ Just $ subst (matchPredType' pls1 ty1 pls2' ty2' idSubst) 
             $ subst renamePsTvs pls1
   Nothing -> Nothing
 
