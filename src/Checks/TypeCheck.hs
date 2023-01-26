@@ -33,7 +33,7 @@
    hold the particular instance at which a polymorphic function or
    variable is used.
 -}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP, TupleSections #-}
 module Checks.TypeCheck (typeCheck) where
 
 #if __GLASGOW_HASKELL__ >= 804
@@ -524,6 +524,9 @@ tcPDeclGroup pls pds = do
   mapM_ (reportFlexibleContextDecl m) impPds''
   modifyValueEnv $ flip (rebindVars m) (concatMap (declVars . snd) impPds'')
   (pls'', expPds') <- mapAccumM (uncurry . tcCheckPDecl) gpls expPds
+  -- We have to adapt the contexts of the annotations of equations so that it
+  -- matches the corresponding entry in the value environment
+  pds3 <- fixEqnType (impPds'' ++ expPds')
   return (pls'', impPds'' ++ expPds')
 
 partitionPDecls :: SigEnv -> [PDecl a] -> ([PDecl a], [(QualTypeExpr, PDecl a)])
@@ -1831,6 +1834,98 @@ defaultType _ _ _ = id
 --         might be useful.
 isSimpleNumClass :: ClassEnv -> QualIdent -> Bool
 isSimpleNumClass = (elem (qNumId, [0]) .) . flip allSuperClasses
+
+-- ----------------------------------------------------------------------------
+-- Adapt type annotations of equations to the corresponding type scheme from
+-- the value environment
+-- ----------------------------------------------------------------------------
+
+fixEqnType :: [PDecl PredType] -> TCM [PDecl PredType]
+fixEqnType pds = mapM (\(i,d) -> fixEqnTypeDecl d >>= (return . (i,))) pds
+
+fixEqnTypeDecl :: Decl PredType -> TCM (Decl PredType)
+fixEqnTypeDecl (FunctionDecl spi pty f eqs) = do
+  eqs' <- mapM fixEqnTypeEquation eqs
+  vEnv <- getValueEnv
+  let ForAll _ pty = varType f vEnv
+  -- TODO : implement
+  return $ FunctionDecl spi pty f eqs'
+fixEqnTypeDecl (ClassDecl spi li cx cls tvs fdps ms) 
+  = ClassDecl spi li cx cls tvs fdps <$> mapM fixEqnTypeDecl ms
+fixEqnTypeDecl (InstanceDecl spi li cx qcls inst ds)
+  = InstanceDecl spi li cx qcls inst <$> mapM fixEqnTypeDecl ds
+fixEqnTypeDecl d                  = return d
+
+fixEqnTypeEquation :: Equation PredType -> TCM (Equation PredType)
+fixEqnTypeEquation (Equation p a lhs rhs) =
+  Equation p a lhs <$> fixEqnTypeRhs rhs
+
+fixEqnTypeRhs :: Rhs PredType -> TCM (Rhs PredType)
+fixEqnTypeRhs (SimpleRhs spi li e ds) =
+  SimpleRhs spi li <$> fixEqnTypeExpr e <*> mapM fixEqnTypeDecl ds
+fixEqnTypeRhs (GuardedRhs spi li es ds) =
+  GuardedRhs spi li <$> mapM fixEqnTypeCondExpr es <*> mapM fixEqnTypeDecl ds
+
+fixEqnTypeCondExpr :: CondExpr PredType -> TCM (CondExpr PredType)
+fixEqnTypeCondExpr (CondExpr spi g e) 
+  = CondExpr spi <$> fixEqnTypeExpr g <*> fixEqnTypeExpr e
+
+fixEqnTypeExpr :: Expression PredType -> TCM (Expression PredType)
+fixEqnTypeExpr (Paren spi e) = Paren spi <$> fixEqnTypeExpr e
+fixEqnTypeExpr (Typed spi e qty)
+  = Typed spi <$> fixEqnTypeExpr e <*> return qty
+fixEqnTypeExpr (Record spi a c fs) = Record spi a c <$> mapM fixEqnTypeField fs
+fixEqnTypeExpr (RecordUpdate spi e fs)
+  = RecordUpdate spi <$> fixEqnTypeExpr e <*> mapM fixEqnTypeField fs
+fixEqnTypeExpr (Tuple spi es) = Tuple spi <$> mapM fixEqnTypeExpr es
+fixEqnTypeExpr (List spi a es) = List spi a <$> mapM fixEqnTypeExpr es
+fixEqnTypeExpr (ListCompr spi e qs)
+  = ListCompr spi <$> fixEqnTypeExpr e <*> mapM fixEqnTypeStmt qs
+fixEqnTypeExpr (EnumFrom spi e) = EnumFrom spi <$> fixEqnTypeExpr e
+fixEqnTypeExpr (EnumFromThen spi e1 e2)
+  = EnumFromThen spi <$> fixEqnTypeExpr e1 <*> fixEqnTypeExpr e2
+fixEqnTypeExpr (EnumFromTo spi e1 e2)
+  = EnumFromTo spi <$> fixEqnTypeExpr e1 <*> fixEqnTypeExpr e2
+fixEqnTypeExpr (EnumFromThenTo spi e1 e2 e3) =   EnumFromThenTo spi
+                                             <$> fixEqnTypeExpr e1
+                                             <*> fixEqnTypeExpr e2
+                                             <*> fixEqnTypeExpr e3
+fixEqnTypeExpr (UnaryMinus spi e) = UnaryMinus spi <$> fixEqnTypeExpr e
+fixEqnTypeExpr (Apply spi e1 e2)
+  = Apply spi <$> fixEqnTypeExpr e1 <*> fixEqnTypeExpr e2
+fixEqnTypeExpr (InfixApply spi e1 op e2) =   InfixApply spi
+                                         <$> fixEqnTypeExpr e1
+                                         <*> return op
+                                         <*> fixEqnTypeExpr e2
+fixEqnTypeExpr (LeftSection spi e op) 
+  = LeftSection spi <$> fixEqnTypeExpr e <*> return op
+fixEqnTypeExpr (RightSection spi op e) 
+  = RightSection spi op <$> fixEqnTypeExpr e
+fixEqnTypeExpr (Lambda spi ts e) = Lambda spi ts <$> fixEqnTypeExpr e
+fixEqnTypeExpr (Let spi li ds e)
+  = Let spi li <$> mapM fixEqnTypeDecl ds <*> fixEqnTypeExpr e
+fixEqnTypeExpr (Do spi li sts e)
+  = Do spi li <$> mapM fixEqnTypeStmt sts <*> fixEqnTypeExpr e
+fixEqnTypeExpr (IfThenElse spi e1 e2 e3) =   IfThenElse spi
+                                         <$> fixEqnTypeExpr e1
+                                         <*> fixEqnTypeExpr e2
+                                         <*> fixEqnTypeExpr e3
+fixEqnTypeExpr (Case spi li ct e as)
+  = Case spi li ct <$> fixEqnTypeExpr e <*> mapM fixEqnTypeAlt as
+fixEqnTypeExpr e = return e
+
+fixEqnTypeField :: Field (Expression PredType) 
+                -> TCM (Field (Expression PredType))
+fixEqnTypeField (Field spi qid e) = Field spi qid <$> fixEqnTypeExpr e
+
+fixEqnTypeAlt :: Alt PredType -> TCM (Alt PredType)
+fixEqnTypeAlt (Alt spi t rhs) = Alt spi t <$> fixEqnTypeRhs rhs
+
+fixEqnTypeStmt :: Statement PredType -> TCM (Statement PredType)
+fixEqnTypeStmt (StmtExpr spi e) = StmtExpr spi <$> fixEqnTypeExpr e
+fixEqnTypeStmt (StmtDecl spi li ds) 
+  = StmtDecl spi li <$> mapM fixEqnTypeDecl ds
+fixEqnTypeStmt (StmtBind spi t e) = StmtBind spi t <$> fixEqnTypeExpr e
 
 -- Instantiation and Generalization:
 -- We use negative offsets for fresh type variables.

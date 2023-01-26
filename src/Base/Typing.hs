@@ -122,6 +122,19 @@ matchPredTypeSafe :: PredType -> PredType -> Maybe (TypeSubst -> TypeSubst)
 matchPredTypeSafe (PredType ps1 ty1) (PredType ps2 ty2) =
   matchPredTypeSafe' ps1 ty1 ps2 ty2
 
+matchPredsSafe :: [Pred] -> [Pred] -> Maybe (TypeSubst -> TypeSubst)
+matchPredsSafe []       []       = Just id
+matchPredsSafe (p1:ps1) (p2:ps2) = do
+  theta <- matchPredSafe p1 p2
+  theta' <- matchPredsSafe ps1 ps2
+  return (theta . theta')
+matchPredsSafe _         _       = Nothing
+
+matchPredSafe :: Pred -> Pred -> Maybe (TypeSubst -> TypeSubst)
+matchPredSafe (Pred _ qcls1 tys1) (Pred _ qcls2 tys2)
+  | qcls1 == qcls2 = matchTypesSafe tys1 tys2
+  | otherwise      = Nothing
+
 matchPredTypeSafe' :: [Pred] -> Type -> [Pred] -> Type -> Maybe (TypeSubst -> TypeSubst)
 matchPredTypeSafe' ps1 ty1 ps2 ty2 = do
   theta  <- matchPredsSafe ps1 ps2
@@ -137,7 +150,7 @@ matchTypesSafe (ty1:tys1) (ty2:tys2) = do
 matchTypesSafe _          _          = Nothing
 
 matchTypeSafe :: Type -> Type -> Maybe (TypeSubst -> TypeSubst)
-matchTypeSafe (TypeVariable tv) ty = 
+matchTypeSafe (TypeVariable tv) ty
   | ty == TypeVariable tv = Just id
   | otherwise             = Just $ bindSubst tv ty
 matchTypeSafe (TypeConstructor tc1) (TypeConstructor tc2)
@@ -159,6 +172,7 @@ matchTypeSafe (TypeApply ty11 ty12) (TypeArrow ty21 ty22) = do
 matchTypeSafe (TypeArrow ty11 ty12) (TypeApply ty21 ty22) = do
   theta <- matchTypeSafe (TypeApply (TypeConstructor qArrowId) ty11) ty21
   theta' <- matchTypeSafe ty12 ty22
+  return (theta . theta')
 matchTypeSafe (TypeForall _ ty1) (TypeForall _ ty2) = matchTypeSafe ty1 ty2
 matchTypeSafe (TypeForall _ ty1) ty2                = matchTypeSafe ty1 ty2
 matchTypeSafe ty1                (TypeForall _ ty2) = matchTypeSafe ty1 ty2
