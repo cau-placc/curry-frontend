@@ -53,9 +53,12 @@ import qualified Control.Monad.State as S
 import           Data.Function       (on)
 import           Data.List           (nub, nubBy, partition, sortBy, (\\))
 import qualified Data.Map            as Map (Map, empty, insert, lookup)
-import           Data.Maybe                 (fromJust, fromMaybe, isJust)
+import           Data.Maybe                 ( fromJust, fromMaybe, isJust
+                                            , listToMaybe, catMaybes )
 import qualified Data.Set.Extra      as Set ( Set, empty, fromList, insert
                                             , member, notMember)
+
+import GHC.Stack (HasCallStack)
 
 import Curry.Base.Ident
 import Curry.Base.Pretty
@@ -72,6 +75,7 @@ import Base.TopEnv
 import Base.TypeExpansion
 import Base.Types
 import Base.TypeSubst
+import Base.Typing hiding (declVars)
 import Base.Utils (foldr2, fst3, thd3, uncurry3, mapAccumM)
 
 import Env.Class
@@ -617,7 +621,8 @@ tcEqns eqs = do
   let (plss, tys, eqs') = unzip3 plsEqs 
       poss              = map getSpanInfo eqs
       docs              = map pPrint eqs
-  pls' <- unifyList poss "equation" docs plss tys
+  plss' <- mapM reducePredSet plss
+  pls' <- unifyList poss "equation" docs plss' tys
   let eqs'' = setPredType pls' tys eqs'
   return (pls', tys, eqs'')
  where
@@ -1846,10 +1851,14 @@ fixEqnType pds = mapM (\(i,d) -> fixEqnTypeDecl d >>= (return . (i,))) pds
 fixEqnTypeDecl :: Decl PredType -> TCM (Decl PredType)
 fixEqnTypeDecl (FunctionDecl spi pty f eqs) = do
   eqs' <- mapM fixEqnTypeEquation eqs
-  vEnv <- getValueEnv
-  let ForAll _ pty = varType f vEnv
-  -- TODO : implement
-  return $ FunctionDecl spi pty f eqs'
+  let mpty = fmap (\(Equation _ a _ _ )-> a) (listToMaybe eqs')
+  case mpty of
+    Just (Just pty') -> do pty'' <- reorderPredList pty pty'
+                           let eqs'' = map (setEquationType pty'') eqs'
+                           return $ FunctionDecl spi pty f eqs'' 
+    _         -> return $ FunctionDecl spi pty f eqs' 
+ where
+   setEquationType predty (Equation p _ lhs rhs) = Equation p (Just predty) lhs rhs
 fixEqnTypeDecl (ClassDecl spi li cx cls tvs fdps ms) 
   = ClassDecl spi li cx cls tvs fdps <$> mapM fixEqnTypeDecl ms
 fixEqnTypeDecl (InstanceDecl spi li cx qcls inst ds)
@@ -1926,6 +1935,36 @@ fixEqnTypeStmt (StmtExpr spi e) = StmtExpr spi <$> fixEqnTypeExpr e
 fixEqnTypeStmt (StmtDecl spi li ds) 
   = StmtDecl spi li <$> mapM fixEqnTypeDecl ds
 fixEqnTypeStmt (StmtBind spi t e) = StmtBind spi t <$> fixEqnTypeExpr e
+
+
+-- reordering the predicates of the equation annotations to be
+reorderPredList :: PredType -> PredType -> TCM PredType
+reorderPredList pty1@(PredType pls1 ty1) pty2@(PredType pls2 ty2) = do
+  let match1 = fromMaybe errMsg1 $ matchTypeSafe ty1 ty2 idSubst
+      (pls1',pls2') = (subst match1 pls1, subst match1 pls2)
+      prOrd         = findPredOrder [] idSubst pls1' pls2'
+  -- needs to be changed
+  case prOrd of
+    Nothing         -> return $ pty2
+    Just (pls2'',_) -> return $ PredType pls2'' ty2
+
+ where
+  errMsg1 = internalError $ "Checks.TypeCheck.reorderPredList: types can not be matched:"
+            ++ show ty1 ++ " and " ++ show ty2
+
+
+findPredOrder :: [Pred] -> TypeSubst -> [Pred] -> [Pred] -> Maybe ([Pred], TypeSubst)
+findPredOrder plsAcc theta []       []   = Just (reverse plsAcc, theta)
+findPredOrder plsAcc theta (pr:pls) pls2 = 
+  let (pls2a, pls2b) = partition (isJust . (\pr' -> matchPredSafe pr pr' theta)) pls2
+  in listToMaybe $ catMaybes $ map (f pls2b) (chooseElem pls2a)
+  where f pls'' (pr',pls') = let theta' = fromJust $ matchPredSafe pr pr' theta
+                             in findPredOrder (pr':plsAcc) theta' pls (pls' ++ pls'')
+
+chooseElem :: [a] -> [(a,[a])]
+chooseElem []     = [] 
+chooseElem (x:xs) = (x,xs) : map (fmap (x:)) (chooseElem xs)
+
 
 -- Instantiation and Generalization:
 -- We use negative offsets for fresh type variables.

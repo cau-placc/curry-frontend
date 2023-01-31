@@ -20,11 +20,14 @@
 module Base.Typing
   ( Typeable (..)
   , withType, matchPredType, matchPredType', matchPreds, matchPred, matchType
+  , matchPredTypeSafe, matchPredTypeSafe', matchPredsSafe, matchPredSafe
+  , matchTypesSafe, matchTypeSafe
   , bindDecls, bindDecl, bindPatterns, bindPattern, declVars, patternVars
   ) where
 
 import           Data.List (nub)
-import           Data.Maybe (fromMaybe)
+import           Data.Maybe (fromMaybe, isJust)
+import qualified Data.Map as Map
 
 import Curry.Base.Ident
 import Curry.Syntax
@@ -35,6 +38,7 @@ import Debug.Trace
 
 import Base.Messages (internalError)
 import Base.PrettyTypes ()
+import Base.Subst
 import Base.Types
 import Base.TypeSubst
 import Base.Utils (fst3)
@@ -118,65 +122,72 @@ instance Typeable a => Typeable (Alt a) where
 withType :: (Functor f, Typeable (f Type)) => Type -> f Type -> f Type
 withType ty e = fmap (subst (matchType (typeOf e) ty idSubst)) e
 
-matchPredTypeSafe :: PredType -> PredType -> Maybe (TypeSubst -> TypeSubst)
+matchPredTypeSafe :: PredType -> PredType -> TypeSubst -> Maybe TypeSubst
 matchPredTypeSafe (PredType ps1 ty1) (PredType ps2 ty2) =
   matchPredTypeSafe' ps1 ty1 ps2 ty2
 
-matchPredsSafe :: [Pred] -> [Pred] -> Maybe (TypeSubst -> TypeSubst)
-matchPredsSafe []       []       = Just id
-matchPredsSafe (p1:ps1) (p2:ps2) = do
-  theta <- matchPredSafe p1 p2
-  theta' <- matchPredsSafe ps1 ps2
-  return (theta . theta')
-matchPredsSafe _         _       = Nothing
+matchPredsSafe :: [Pred] -> [Pred] -> TypeSubst -> Maybe TypeSubst
+matchPredsSafe []       []       theta = Just theta
+matchPredsSafe (p1:ps1) (p2:ps2) theta = do
+  theta'  <- matchPredSafe p1 p2 theta
+  theta'' <- matchPredsSafe ps1 ps2 theta'
+  return theta''
+matchPredsSafe _         _       _     = Nothing
 
-matchPredSafe :: Pred -> Pred -> Maybe (TypeSubst -> TypeSubst)
-matchPredSafe (Pred _ qcls1 tys1) (Pred _ qcls2 tys2)
-  | qcls1 == qcls2 = matchTypesSafe tys1 tys2
+matchPredSafe :: Pred -> Pred -> TypeSubst -> Maybe TypeSubst
+matchPredSafe (Pred _ qcls1 tys1) (Pred _ qcls2 tys2) theta
+  | qcls1 == qcls2 = matchTypesSafe tys1 tys2 theta
   | otherwise      = Nothing
 
-matchPredTypeSafe' :: [Pred] -> Type -> [Pred] -> Type -> Maybe (TypeSubst -> TypeSubst)
-matchPredTypeSafe' ps1 ty1 ps2 ty2 = do
-  theta  <- matchPredsSafe ps1 ps2
-  theta' <- matchTypeSafe ty1 ty2
-  return (theta' . theta)
+matchPredTypeSafe' :: [Pred] -> Type -> [Pred] -> Type -> TypeSubst 
+                   -> Maybe TypeSubst
+matchPredTypeSafe' ps1 ty1 ps2 ty2 theta = do
+  theta'  <- matchPredsSafe ps1 ps2 theta
+  theta'' <- matchTypeSafe ty1 ty2 theta'
+  return theta''
 
-matchTypesSafe :: [Type] -> [Type] -> Maybe (TypeSubst -> TypeSubst)
-matchTypesSafe []         []         = Just id
-matchTypesSafe (ty1:tys1) (ty2:tys2) = do
-  theta  <- matchTypeSafe ty1 ty2
-  theta' <- matchTypesSafe tys1 tys2
-  return (theta . theta')
-matchTypesSafe _          _          = Nothing
+matchTypesSafe :: [Type] -> [Type] -> TypeSubst -> Maybe TypeSubst
+matchTypesSafe []         []         theta = Just theta
+matchTypesSafe (ty1:tys1) (ty2:tys2) theta = do
+  theta'  <- matchTypeSafe ty1 ty2 theta
+  theta'' <- matchTypesSafe tys1 tys2 theta'
+  return theta''
+matchTypesSafe _          _          _     = Nothing
 
-matchTypeSafe :: Type -> Type -> Maybe (TypeSubst -> TypeSubst)
-matchTypeSafe (TypeVariable tv) ty
-  | ty == TypeVariable tv = Just id
-  | otherwise             = Just $ bindSubst tv ty
-matchTypeSafe (TypeConstructor tc1) (TypeConstructor tc2)
-  | tc1 == tc2 = Just id
-matchTypeSafe (TypeConstrained _ tv1) (TypeConstrained _ tv2)
-  | tv1 == tv2 = Just id
-matchTypeSafe (TypeApply ty11 ty12) (TypeApply ty21 ty22) = do
-  theta <- matchTypeSafe ty11 ty21
-  theta' <- matchTypeSafe ty12 ty22
-  return (theta . theta')
-matchTypeSafe (TypeArrow ty11 ty12) (TypeArrow ty21 ty22) = do
-  theta <- matchTypeSafe ty11 ty21
-  theta' <- matchTypeSafe ty12 ty22
-  return (theta . theta')
-matchTypeSafe (TypeApply ty11 ty12) (TypeArrow ty21 ty22) = do
-  theta <- matchTypeSafe ty11 (TypeApply (TypeConstructor qArrowId) ty21)
-  theta' <- matchTypeSafe ty12 ty22
-  return (theta . theta')
-matchTypeSafe (TypeArrow ty11 ty12) (TypeApply ty21 ty22) = do
-  theta <- matchTypeSafe (TypeApply (TypeConstructor qArrowId) ty11) ty21
-  theta' <- matchTypeSafe ty12 ty22
-  return (theta . theta')
-matchTypeSafe (TypeForall _ ty1) (TypeForall _ ty2) = matchTypeSafe ty1 ty2
-matchTypeSafe (TypeForall _ ty1) ty2                = matchTypeSafe ty1 ty2
-matchTypeSafe ty1                (TypeForall _ ty2) = matchTypeSafe ty1 ty2
-matchTypeSafe _                  _                  = Nothing
+matchTypeSafe :: Type -> Type -> TypeSubst -> Maybe TypeSubst
+matchTypeSafe (TypeVariable tv) ty theta
+  | ty == TypeVariable tv                       = Just theta
+--  | isBound theta tv && substVar theta tv /= ty = Nothing
+  | otherwise                                   = Just $ bindVar tv ty theta
+-- where isBound (Subst _ thetaMap) tv = isJust $ Map.lookup tv thetaMap
+matchTypeSafe (TypeConstructor tc1) (TypeConstructor tc2) theta
+  | tc1 == tc2 = Just theta
+matchTypeSafe (TypeConstrained _ tv1) (TypeConstrained _ tv2) theta
+  | tv1 == tv2 = Just theta
+matchTypeSafe (TypeApply ty11 ty12) (TypeApply ty21 ty22) theta = do
+  theta' <- matchTypeSafe ty11 ty21 theta
+  theta'' <- matchTypeSafe ty12 ty22 theta'
+  return theta''
+matchTypeSafe (TypeArrow ty11 ty12) (TypeArrow ty21 ty22) theta = do
+  theta' <- matchTypeSafe ty11 ty21 theta
+  theta'' <- matchTypeSafe ty12 ty22 theta'
+  return theta''
+matchTypeSafe (TypeApply ty11 ty12) (TypeArrow ty21 ty22) theta = do
+  theta' <- matchTypeSafe ty11 (TypeApply (TypeConstructor qArrowId) ty21) theta
+  theta'' <- matchTypeSafe ty12 ty22 theta'
+  return theta''
+matchTypeSafe (TypeArrow ty11 ty12) (TypeApply ty21 ty22) theta = do
+  theta' <- matchTypeSafe (TypeApply (TypeConstructor qArrowId) ty11) ty21 theta
+  theta'' <- matchTypeSafe ty12 ty22 theta'
+  return theta''
+matchTypeSafe (TypeForall _ ty1) (TypeForall _ ty2) theta 
+  = matchTypeSafe ty1 ty2 theta
+matchTypeSafe (TypeForall _ ty1) ty2                theta
+  = matchTypeSafe ty1 ty2 theta
+matchTypeSafe ty1                (TypeForall _ ty2) theta 
+  = matchTypeSafe ty1 ty2 theta
+matchTypeSafe _                  _                  _     = Nothing
+ 
 
 matchPredType :: HasCallStack => PredType -> PredType -> TypeSubst -> TypeSubst
 matchPredType (PredType ps1 ty1) (PredType ps2 ty2) =
