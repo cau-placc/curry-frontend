@@ -884,7 +884,7 @@ qualMatch' f pls1 ty1 pls2 ps ty2 maxDictTv = {- trace ("call qualMatch' with fu
         renamePsTvs = foldr2 bindSubst idSubst psTvs freshTys
         pls1' = subst renamePsTvs pls1
         pls2' = ps
-    in trace (show (pPrint (pls1',pls1,ty1,pls2',ty2') )) $ Just $ subst (matchPredType' pls1 ty1 pls2' ty2' idSubst) 
+    in {- trace (show (pPrint (pls1',pls1,ty1,pls2',ty2') )) $ -} Just $ subst (matchPredType' pls1 ty1 pls2' ty2' idSubst) 
             $ pls1'
   Nothing -> Nothing
 

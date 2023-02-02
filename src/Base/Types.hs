@@ -33,6 +33,7 @@ module Base.Types
   , partitionPredListOnlyVars, minPredList, maxPredList, qualifyPredList
   , unqualifyPredList, funDepCoveragePredList, plUnion, plUnions, plDeleteMin
   , plConcatMap, plConcatMapM, plInsert, plDifference, plLookupMin
+  , impliedPredicatesList
   , PredType (..), predType, unpredType, qualifyPredType, unqualifyPredType
   , ambiguousTypeVars
   , PredTypes (..), qualifyPredTypes, unqualifyPredTypes

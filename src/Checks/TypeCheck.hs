@@ -83,6 +83,8 @@ import Env.Instance
 import Env.TypeConstructor
 import Env.Value
 
+import Debug.Trace
+
 -- TODO: Check if the set operations on predicate sets (like union) could be
 --         problematic with the 'PredIsICC' field.
 
@@ -530,7 +532,7 @@ tcPDeclGroup pls pds = do
   (pls'', expPds') <- mapAccumM (uncurry . tcCheckPDecl) gpls expPds
   -- We have to adapt the contexts of the annotations of equations so that it
   -- matches the corresponding entry in the value environment
-  pds3 <- fixEqnType (impPds'' ++ expPds')
+  --pds3 <- fixEqnType (impPds'' ++ expPds')
   return (pls'', impPds'' ++ expPds')
 
 partitionPDecls :: SigEnv -> [PDecl a] -> ([PDecl a], [(QualTypeExpr, PDecl a)])
@@ -730,7 +732,8 @@ tcCheckPDecl pls qty pd = withLocalExplPreds $ do
   lpls'' <- defaultPDecl fvs lpls' ty pd
   let ty' = subst theta ty
       tySc = if poly then gen fvs lpls'' ty' else monoType ty'
-  checkPDeclType qty gpls tySc pd'
+  (pls'',pd'') <- checkPDeclType qty gpls tySc pd'
+  makeContextEquivalent pls'' (map getPred lpls'') ty' pd'' 
 
 checkPDeclType :: QualTypeExpr -> LPredList -> TypeScheme -> PDecl PredType
                -> TCM (LPredList, PDecl PredType)
@@ -795,6 +798,53 @@ eqTypes t1 t2 = fst (eq [] t1 t2)
           (res2, is2) = eqs is1 ts1 ts2
       in  (res1 && res2, is2)
  eqs is _         _         = (False, is)
+
+
+makeContextEquivalent :: [LPred] -> [Pred] -> Type -> PDecl PredType
+                      -> TCM (LPredList, PDecl PredType)
+makeContextEquivalent pls pls2 ty2 (i, FunctionDecl p pty@(PredType pls1 ty1) f eqs) = do
+  clsEnv <- getClassEnv  
+  let theta = fromMaybe (internalError "TypeCheck.checkPDeclType") 
+                        (matchTypeSafe ty2 ty1 idSubst)
+      impPlss = map (impliedPredicatesList clsEnv) pls1
+      sigPls = zip pls1 impPlss
+      (pls2',theta') = makeEquivalent sigPls pls2 theta
+--  traceM $ show $ pPrint (pls1,ty1,pls2,ty2,pls2')
+  let eqs' = map (setPredType $ PredType pls2' ty2) eqs
+  return (pls, (i,FunctionDecl p pty f eqs'))
+  where
+    setPredType pty (Equation p _ lhs rhs) = Equation p (Just pty) lhs rhs
+makeContextEquivalent pls _ _ d = return (pls,d)
+
+
+makeEquivalent :: [(Pred,[Pred])] -> [Pred] -> TypeSubst -> ([Pred],TypeSubst)
+makeEquivalent []         _      theta = ([], theta)
+makeEquivalent (pls:plss) infPls theta = 
+  let (plss', theta') = makeEquivalent plss infPls theta
+      matchPreds = map (fmap fromJust) $ filter (isJust . snd) 
+                   $ map (\pr -> (pr, findSafeMatch pr pls theta')) infPls
+  in case matchPreds of
+          []                    -> let tvs = typeVars infPls
+                                       thetaInv = invSubst tvs theta'
+                                   in (subst thetaInv (fst pls) : plss', theta')
+          (pr,(pr', theta'')):_ -> let tvs = typeVars pr
+                                       thetaInv = invSubst tvs theta''
+                                   in  (subst thetaInv pr':plss', theta'')
+
+findSafeMatch :: Pred -> (Pred, [Pred]) -> TypeSubst -> Maybe (Pred, TypeSubst)
+findSafeMatch pr (pr',impPls) theta = case matchPredSafe pr pr' theta of
+  Nothing     -> let thetas = map (\pr'' -> fmap (pr',) $ matchPredSafe pr pr'' theta) impPls
+                 in listToMaybe $ catMaybes thetas
+  Just theta' -> Just (pr',theta')
+
+
+invSubst :: [Int] -> TypeSubst -> TypeSubst
+invSubst tvs theta = 
+  let subList = catMaybes $ map (typeVarIndex . (\tv -> (tv,substVar theta tv))) tvs
+  in foldr (\(i,j) sub -> bindVar j (TypeVariable i) sub) idSubst subList
+  where
+    typeVarIndex (tv,TypeVariable tv2) = Just (tv,tv2)
+    typeVarIndex _                     = Nothing
 
 -- In Curry, a non-expansive expression is either
 --
@@ -971,23 +1021,26 @@ tcTopPDecl _ = internalError "TypeCheck.tcTopDecl"
 tcClassMethodPDecl :: QualIdent -> [Ident] -> PDecl a -> TCM (PDecl PredType)
 tcClassMethodPDecl qcls tvs pd@(_, FunctionDecl _ _ f _) = do
   methTy <- classMethodType qualify f
-  (tySc, pd') <- tcMethodPDecl qcls methTy pd
+  (PredType pls ty',tySc, pd') <- tcMethodPDecl qcls methTy pd
   sigs <- getSigEnv
   let QualTypeExpr spi cx ty = fromJust $ lookupTypeSig f sigs
       icc = Constraint NoSpanInfo qcls (map (VariableType NoSpanInfo) tvs)
       qty = QualTypeExpr spi (icc : cx) ty
-  checkClassMethodType qty tySc pd'
+  pd'' <- checkClassMethodType qty tySc pd'
+  fmap snd $ makeContextEquivalent [] pls ty' pd''
 tcClassMethodPDecl _ _ _ = internalError "TypeCheck.tcClassMethodPDecl"
 
 tcInstanceMethodPDecl :: QualIdent -> PredTypes -> PDecl a
                       -> TCM (PDecl PredType)
 tcInstanceMethodPDecl qcls ptys pd@(_, FunctionDecl _ _ f _) = do
   methTy <- instMethodType (qualifyLike qcls) ptys f
-  (tySc, pd') <- tcMethodPDecl qcls (typeScheme methTy) pd
-  checkInstMethodType (normalize 0 methTy) tySc pd'
+  (PredType pls ty, tySc, pd') <- tcMethodPDecl qcls (typeScheme methTy) pd
+  pd'' <- checkInstMethodType (normalize 0 methTy) tySc pd'
+  fmap snd $ makeContextEquivalent [] pls ty pd''
 tcInstanceMethodPDecl _ _ _ = internalError "TypeCheck.tcInstanceMethodPDecl"
 
-tcMethodPDecl :: QualIdent -> TypeScheme -> PDecl a -> TCM (TypeScheme, PDecl PredType)
+tcMethodPDecl :: QualIdent -> TypeScheme -> PDecl a 
+              -> TCM (PredType, TypeScheme, PDecl PredType)
 tcMethodPDecl qcls tySc (i, FunctionDecl p _ f eqs) = withLocalValueEnv $ do
   m <- getModuleIdent
   modifyValueEnv $ bindFun m f (Just qcls) (eqnArity $ head eqs) tySc
@@ -999,7 +1052,8 @@ tcMethodPDecl qcls tySc (i, FunctionDecl p _ f eqs) = withLocalValueEnv $ do
   pls' <- reducePredSet pls
   pls'' <- applyDefaultsDecl p what empty fvs pls' ty
   theta' <- getTypeSubst
-  return (gen Set.empty pls'' $ subst theta' ty, pd)
+  return (PredType (map getPred pls'') ty
+         , gen Set.empty pls'' $ subst theta' ty, pd)
 tcMethodPDecl _ _ _ = internalError "TypeCheck.tcMethodPDecl"
 
 checkClassMethodType :: QualTypeExpr -> TypeScheme -> PDecl PredType

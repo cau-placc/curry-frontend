@@ -157,9 +157,9 @@ matchTypesSafe _          _          _     = Nothing
 matchTypeSafe :: Type -> Type -> TypeSubst -> Maybe TypeSubst
 matchTypeSafe (TypeVariable tv) ty theta
   | ty == TypeVariable tv                       = Just theta
---  | isBound theta tv && substVar theta tv /= ty = Nothing
+  | isBound theta tv && substVar theta tv /= ty = Nothing
   | otherwise                                   = Just $ bindVar tv ty theta
--- where isBound (Subst _ thetaMap) tv = isJust $ Map.lookup tv thetaMap
+ where isBound (Subst _ thetaMap) tv = isJust $ Map.lookup tv thetaMap
 matchTypeSafe (TypeConstructor tc1) (TypeConstructor tc2) theta
   | tc1 == tc2 = Just theta
 matchTypeSafe (TypeConstrained _ tv1) (TypeConstrained _ tv2) theta
