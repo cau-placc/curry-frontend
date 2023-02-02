@@ -733,6 +733,8 @@ tcCheckPDecl pls qty pd = withLocalExplPreds $ do
   let ty' = subst theta ty
       tySc = if poly then gen fvs lpls'' ty' else monoType ty'
   (pls'',pd'') <- checkPDeclType qty gpls tySc pd'
+  -- Because the constraints in the inferred context may be in
+  -- the wrong order, we must make both contexts "equivalent"
   makeContextEquivalent pls'' (map getPred lpls'') ty' pd'' 
 
 checkPDeclType :: QualTypeExpr -> LPredList -> TypeScheme -> PDecl PredType
@@ -800,6 +802,9 @@ eqTypes t1 t2 = fst (eq [] t1 t2)
  eqs is _         _         = (False, is)
 
 
+-- makes the context of the annotated type in the equation "equivalent"
+-- to the context of the type annotated on the function declaration
+-- and therefore also to the context of the entry in the value environment
 makeContextEquivalent :: [LPred] -> [Pred] -> Type -> PDecl PredType
                       -> TCM (LPredList, PDecl PredType)
 makeContextEquivalent pls pls2 ty2 (i, FunctionDecl p pty@(PredType pls1 ty1) f eqs) = do
@@ -816,7 +821,10 @@ makeContextEquivalent pls pls2 ty2 (i, FunctionDecl p pty@(PredType pls1 ty1) f 
     setPredType pty (Equation p _ lhs rhs) = Equation p (Just pty) lhs rhs
 makeContextEquivalent pls _ _ d = return (pls,d)
 
-
+-- first argument: all predicates from the function, with their implied predicates
+-- predicates from the inferred context
+-- type subst: matching computed by matching the unpredicated inferred and
+-- function annotated type
 makeEquivalent :: [(Pred,[Pred])] -> [Pred] -> TypeSubst -> ([Pred],TypeSubst)
 makeEquivalent []         _      theta = ([], theta)
 makeEquivalent (pls:plss) infPls theta = 
@@ -831,13 +839,17 @@ makeEquivalent (pls:plss) infPls theta =
                                        thetaInv = invSubst tvs theta''
                                    in  (subst thetaInv pr':plss', theta'')
 
+-- finds out if a given inferred predicate matches a given predicate from the
+-- function annotation or some predicate implied by the latter one
 findSafeMatch :: Pred -> (Pred, [Pred]) -> TypeSubst -> Maybe (Pred, TypeSubst)
 findSafeMatch pr (pr',impPls) theta = case matchPredSafe pr pr' theta of
   Nothing     -> let thetas = map (\pr'' -> fmap (pr',) $ matchPredSafe pr pr'' theta) impPls
                  in listToMaybe $ catMaybes thetas
   Just theta' -> Just (pr',theta')
 
-
+-- Inverses a given type substitution regarding the given type variables
+-- returns only variables that are matched to variables
+-- TODO: This may have to be changed when implementing FlexibleContexts
 invSubst :: [Int] -> TypeSubst -> TypeSubst
 invSubst tvs theta = 
   let subList = catMaybes $ map (typeVarIndex . (\tv -> (tv,substVar theta tv))) tvs
