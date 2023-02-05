@@ -46,6 +46,9 @@ execEXC ecm s =
 enableExtensions :: Set.Set KnownExtension -> EXCM ()
 enableExtensions es = S.modify $ \s -> s { extensions = Set.union es $ extensions s }
 
+disableExtensions :: Set.Set KnownExtension -> EXCM ()
+disableExtensions es = S.modify $ \s -> s { extensions = Set.difference (extensions s) es }
+
 report :: Message -> EXCM ()
 report msg = S.modify $ \s -> s { errors = msg : errors s }
 
@@ -64,7 +67,9 @@ checkPragma (LanguagePragma _ exts) = mapM_ checkExtension exts
 checkPragma (OptionsPragma  _  _ _) = ok
 
 checkExtension :: Extension -> EXCM ()
-checkExtension (KnownExtension   _ e) = enableExtensions $ impliedClosure $ Set.singleton e
+checkExtension (KnownExtension   _ e) = do
+  disableExtensions $ removedExtensions e
+  enableExtensions $ impliedClosure $ Set.singleton e
 checkExtension (UnknownExtension p e) = report $ errUnknownExtension p e
 
 -- ---------------------------------------------------------------------------
@@ -75,6 +80,12 @@ checkExtension (UnknownExtension p e) = report $ errUnknownExtension p e
 impliedExtensions :: KnownExtension -> Set.Set KnownExtension
 impliedExtensions NoImplicitPrelude = Set.singleton NoDataDeriving
 impliedExtensions _                 = Set.empty
+
+-- |Extensions removed by the given extension.
+removedExtensions :: KnownExtension -> Set.Set KnownExtension
+removedExtensions NoAnonFreeVars       = Set.singleton AnonFreeVars
+removedExtensions NoFunctionalPatterns = Set.singleton FunctionalPatterns
+removedExtensions _                    = Set.empty
 
 -- |Extensions implied (possibly transitively) by the given extensions.
 impliedClosure :: Set.Set KnownExtension -> Set.Set KnownExtension
