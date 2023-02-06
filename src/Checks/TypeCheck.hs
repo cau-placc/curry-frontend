@@ -527,13 +527,14 @@ tcPDeclGroup pls pds = do
   lpls'' <- foldM (uncurry . defaultPDecl fvs') lpls' impPds'
   theta' <- getTypeSubst
   let impPds'' = map (uncurry (fixType . gen fvs' lpls'' . subst theta')) impPds'
+      impPds3  = map (filterEqnType (map getPred lpls'')) impPds''
   mapM_ (reportFlexibleContextDecl m) impPds''
   modifyValueEnv $ flip (rebindVars m) (concatMap (declVars . snd) impPds'')
   (pls'', expPds') <- mapAccumM (uncurry . tcCheckPDecl) gpls expPds
   -- We have to adapt the contexts of the annotations of equations so that it
   -- matches the corresponding entry in the value environment
   --pds3 <- fixEqnType (impPds'' ++ expPds')
-  return (pls'', impPds'' ++ expPds')
+  return (pls'', impPds3 ++ expPds')
 
 partitionPDecls :: SigEnv -> [PDecl a] -> ([PDecl a], [(QualTypeExpr, PDecl a)])
 partitionPDecls sigs =
@@ -698,6 +699,18 @@ fixType ~(ForAll _ pty) pd@(i, PatternDecl p t rhs) = case t of
     -> (i, PatternDecl p (VariablePattern spi pty v) rhs)
   _ -> pd
 fixType _ _ = internalError "TypeCheck.fixType"
+
+filterEqnType :: [Pred] -> PDecl PredType -> PDecl PredType
+filterEqnType lpls (i, FunctionDecl p f pty eqs) = 
+  (i, FunctionDecl p f pty $ map (filterEqnType' lpls) eqs)
+filterEqnType _    d                             = d
+
+filterEqnType' :: [Pred] -> Equation PredType -> Equation PredType
+filterEqnType' lpls (Equation p (Just (PredType pls ty)) lhs rhs) =
+  Equation p (Just $ PredType (filter (`elem` lpls) pls) ty) lhs rhs
+filterEqnType' lpls eqn@(Equation _ Nothing _ _) = eqn
+
+
 
 declVars :: Decl PredType -> [(Ident, Int, TypeScheme)]
 declVars (FunctionDecl _ pty f eqs) = 
@@ -1917,14 +1930,7 @@ fixEqnType pds = mapM (\(i,d) -> fixEqnTypeDecl d >>= (return . (i,))) pds
 fixEqnTypeDecl :: Decl PredType -> TCM (Decl PredType)
 fixEqnTypeDecl (FunctionDecl spi pty f eqs) = do
   eqs' <- mapM fixEqnTypeEquation eqs
-  let mpty = fmap (\(Equation _ a _ _ )-> a) (listToMaybe eqs')
-  case mpty of
-    Just (Just pty') -> do pty'' <- reorderPredList pty pty'
-                           let eqs'' = map (setEquationType pty'') eqs'
-                           return $ FunctionDecl spi pty f eqs'' 
-    _         -> return $ FunctionDecl spi pty f eqs' 
- where
-   setEquationType predty (Equation p _ lhs rhs) = Equation p (Just predty) lhs rhs
+  return $ FunctionDecl spi pty f eqs' 
 fixEqnTypeDecl (ClassDecl spi li cx cls tvs fdps ms) 
   = ClassDecl spi li cx cls tvs fdps <$> mapM fixEqnTypeDecl ms
 fixEqnTypeDecl (InstanceDecl spi li cx qcls inst ds)
@@ -2001,36 +2007,6 @@ fixEqnTypeStmt (StmtExpr spi e) = StmtExpr spi <$> fixEqnTypeExpr e
 fixEqnTypeStmt (StmtDecl spi li ds) 
   = StmtDecl spi li <$> mapM fixEqnTypeDecl ds
 fixEqnTypeStmt (StmtBind spi t e) = StmtBind spi t <$> fixEqnTypeExpr e
-
-
--- reordering the predicates of the equation annotations to be
-reorderPredList :: PredType -> PredType -> TCM PredType
-reorderPredList pty1@(PredType pls1 ty1) pty2@(PredType pls2 ty2) = do
-  let match1 = fromMaybe errMsg1 $ matchTypeSafe ty1 ty2 idSubst
-      (pls1',pls2') = (subst match1 pls1, subst match1 pls2)
-      prOrd         = findPredOrder [] idSubst pls1' pls2'
-  -- needs to be changed
-  case prOrd of
-    Nothing         -> return $ pty2
-    Just (pls2'',_) -> return $ PredType pls2'' ty2
-
- where
-  errMsg1 = internalError $ "Checks.TypeCheck.reorderPredList: types can not be matched:"
-            ++ show ty1 ++ " and " ++ show ty2
-
-
-findPredOrder :: [Pred] -> TypeSubst -> [Pred] -> [Pred] -> Maybe ([Pred], TypeSubst)
-findPredOrder plsAcc theta []       []   = Just (reverse plsAcc, theta)
-findPredOrder plsAcc theta (pr:pls) pls2 = 
-  let (pls2a, pls2b) = partition (isJust . (\pr' -> matchPredSafe pr pr' theta)) pls2
-  in listToMaybe $ catMaybes $ map (f pls2b) (chooseElem pls2a)
-  where f pls'' (pr',pls') = let theta' = fromJust $ matchPredSafe pr pr' theta
-                             in findPredOrder (pr':plsAcc) theta' pls (pls' ++ pls'')
-
-chooseElem :: [a] -> [(a,[a])]
-chooseElem []     = [] 
-chooseElem (x:xs) = (x,xs) : map (fmap (x:)) (chooseElem xs)
-
 
 -- Instantiation and Generalization:
 -- We use negative offsets for fresh type variables.
