@@ -2,14 +2,23 @@
 # Makefile for installing the Curry front end
 ##############################################################################
 
+# Essential system dependencies
+STACKBIN := $(shell which stack)
+
+ifeq ($(STACKBIN),)
+$(error Please make sure that 'stack' (The Haskell Stack build tool) is on your PATH or specify it explicitly by passing 'make STACKBIN=...')
+endif
+
 # the root directory of the installation
 export ROOT=$(CURDIR)
 # binary directory and executables
 export BINDIR=$(ROOT)/bin
 # The frontend binary
 export FRONTEND = $(BINDIR)/curry-frontend
-# The stack binary
-STACK = stack
+# The stack root directory
+STACKROOT = $(ROOT)/.stack
+# The actual stack command with local root directory
+STACK = $(STACKBIN) --stack-root $(STACKROOT)
 
 # install front end (if sources are present):
 .PHONY: frontend
@@ -23,6 +32,7 @@ clean:
 .PHONY: cleanall
 cleanall:
 	$(STACK) clean --full
+	rm -rf $(STACKROOT)
 	rm -f $(FRONTEND) && rm -rf bin
 
 .PHONY: runtests
