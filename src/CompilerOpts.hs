@@ -124,7 +124,7 @@ defaultOptions = Options
   , optPrepOpts      = defaultPrepOpts
   , optWarnOpts      = defaultWarnOpts
   , optTargetTypes   = []
-  , optExtensions    = []
+  , optExtensions    = kielExtensions
   , optDebugOpts     = defaultDebugOpts
   , optCaseMode      = CaseModeFree
   , optCppOpts       = defaultCppOpts
@@ -327,6 +327,10 @@ extensions =
     , "enable functional patterns"                   )
   , ( NegativeLiterals         , "NegativeLiterals"
     , "desugar negated literals as negative literal" )
+  , ( NoAnonFreeVars           , "NoAnonFreeVars"
+    , "disable anonymous free variables"             )
+  , ( NoFunctionalPatterns     , "NoFunctionalPatterns"
+    , "disable functional patterns"                  )
   , ( NoImplicitPrelude        , "NoImplicitPrelude"
     , "do not implicitly import the Prelude"         )
   , ( NoDataDeriving           , "NoDataDeriving"
@@ -493,9 +497,8 @@ options =
       "execute preprocessor with option <option>"
   -- extensions
   , Option "e"  ["extended"]
-      (NoArg (onOpts $ \ opts -> opts { optExtensions =
-        nub $ kielExtensions ++ optExtensions opts }))
-      "enable extended Curry functionalities"
+      (NoArg (onOpts id))
+      "enable extended Curry functionalities (deprecated, enabled by default and kept for backwards compatibility)"
   , mkOptDescr onOpts      "c" ["case-mode"] "mode" "case mode"           caseModeDescriptions
   , mkOptDescr onOpts      "X" []            "ext"  "language extension"  extDescriptions
   , mkOptDescr onWarnOpts  "W" []            "opt"  "warning option"      warnDescriptions

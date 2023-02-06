@@ -51,6 +51,8 @@ data KnownExtension
   | CPP                       -- ^ C preprocessor
   | FunctionalPatterns        -- ^ functional patterns
   | NegativeLiterals          -- ^ negative literals
+  | NoAnonFreeVars            -- ^ no anonymous free variables
+  | NoFunctionalPatterns      -- ^ no functional patterns
   | NoImplicitPrelude         -- ^ no implicit import of the prelude
   | NoDataDeriving            -- ^ no implicit deriving of the Data class
     deriving (Eq, Ord, Read, Show, Enum, Bounded, Generic, Binary)

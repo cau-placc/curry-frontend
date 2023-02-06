@@ -15,7 +15,7 @@
 -}
 module Checks.ExtensionCheck (extensionCheck) where
 
-import qualified Control.Monad.State as S (State, execState, modify)
+import qualified Control.Monad.State as S (State, execState, modify, gets)
 import qualified Data.Set as Set
 import qualified Data.Set.Extra as Set
 
@@ -28,7 +28,7 @@ import Base.Messages (Message, spanInfoMessage)
 import CompilerOpts
 
 extensionCheck :: Options -> Module a -> ([KnownExtension], [Message])
-extensionCheck opts mdl = execEXC (checkModule mdl) initState
+extensionCheck opts mdl = execEXC (checkModule mdl >> applyImplicitExtensions) initState
   where
     initState = EXCState (Set.fromList $ optExtensions opts) []
 
@@ -46,15 +46,18 @@ execEXC ecm s =
 enableExtensions :: Set.Set KnownExtension -> EXCM ()
 enableExtensions es = S.modify $ \s -> s { extensions = Set.union es $ extensions s }
 
+disableExtensions :: Set.Set KnownExtension -> EXCM ()
+disableExtensions es = S.modify $ \s -> s { extensions = Set.difference (extensions s) es }
+
 report :: Message -> EXCM ()
 report msg = S.modify $ \s -> s { errors = msg : errors s }
 
 ok :: EXCM ()
 ok = return ()
 
--- The extension check iterates over all given pragmas in the module and
--- gathers all extensions mentioned in a language pragma. An error is reported
--- if an extension is unknown.
+-- In the first phase, the extension check iterates over all given pragmas in the
+-- module and gathers all extensions mentioned in a language pragma. An error is
+-- reported if an extension is unknown.
 
 checkModule :: Module a -> EXCM ()
 checkModule (Module _ _ ps _ _ _ _) = mapM_ checkPragma ps
@@ -64,8 +67,16 @@ checkPragma (LanguagePragma _ exts) = mapM_ checkExtension exts
 checkPragma (OptionsPragma  _  _ _) = ok
 
 checkExtension :: Extension -> EXCM ()
-checkExtension (KnownExtension   _ e) = enableExtensions $ impliedClosure $ Set.singleton e
+checkExtension (KnownExtension   _ e) = enableExtensions $ Set.singleton e
 checkExtension (UnknownExtension p e) = report $ errUnknownExtension p e
+
+-- In the second phase, the extension check updates the set of extensions with
+-- implicitly added and removed extensions.
+
+applyImplicitExtensions :: EXCM ()
+applyImplicitExtensions = do
+  enableExtensions . impliedClosure =<< S.gets extensions
+  disableExtensions . Set.concatMap removedExtensions =<< S.gets extensions
 
 -- ---------------------------------------------------------------------------
 -- Implied extensions
@@ -75,6 +86,12 @@ checkExtension (UnknownExtension p e) = report $ errUnknownExtension p e
 impliedExtensions :: KnownExtension -> Set.Set KnownExtension
 impliedExtensions NoImplicitPrelude = Set.singleton NoDataDeriving
 impliedExtensions _                 = Set.empty
+
+-- |Extensions removed by the given extension.
+removedExtensions :: KnownExtension -> Set.Set KnownExtension
+removedExtensions NoAnonFreeVars       = Set.singleton AnonFreeVars
+removedExtensions NoFunctionalPatterns = Set.singleton FunctionalPatterns
+removedExtensions _                    = Set.empty
 
 -- |Extensions implied (possibly transitively) by the given extensions.
 impliedClosure :: Set.Set KnownExtension -> Set.Set KnownExtension
