@@ -29,10 +29,14 @@ frontend:
 clean:
 	$(STACK) clean
 
-.PHONY: cleanall
-cleanall:
+# clean components only used for installation, i.e., `stack` related stuff
+.PHONY: cleaninstall
+cleaninstall:
 	$(STACK) clean --full
 	rm -rf $(STACKROOT)
+
+.PHONY: cleanall
+cleanall: cleaninstall
 	rm -f $(FRONTEND) && rm -rf bin
 
 .PHONY: runtests
