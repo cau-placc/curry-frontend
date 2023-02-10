@@ -119,6 +119,56 @@ instance Typeable a => Typeable (Alt a) where
 -- with the corresponding types in the variable or function's annotated
 -- type.
 
+unifyPredSafe :: IsPred a => a -> a -> Maybe TypeSubst
+unifyPredSafe pr1 pr2 = unifyPredSafe' (getPred pr1) (getPred pr2)
+
+unifyPredSafe' :: Pred -> Pred -> Maybe TypeSubst
+unifyPredSafe' (Pred _ qcls1 tys1) (Pred _ qcls2 tys2)
+  | qcls1 == qcls2 = unifyTypesSafe tys1 tys2
+  | otherwise      = Nothing
+
+
+unifyTypesSafe :: [Type] -> [Type] -> Maybe TypeSubst
+unifyTypesSafe []         []         = Just idSubst
+unifyTypesSafe (ty1:tys1) (ty2:tys2) = do
+  theta  <- unifyTypesSafe tys1 tys2
+  theta' <- unifyTypeSafe (subst theta ty1) (subst theta ty2)
+  return (theta' `compose` theta)
+unifyTypesSafe _           _         = Nothing
+
+unifyTypeSafe :: Type -> Type -> Maybe TypeSubst
+unifyTypeSafe (TypeVariable tv1) (TypeVariable tv2)
+  | tv1 == tv2 = Just idSubst
+  | otherwise  = Just $ singleSubst tv1 (TypeVariable tv2)
+unifyTypeSafe (TypeVariable tv) ty
+  | tv `elem` typeVars ty = Nothing
+  | otherwise             = Just $ singleSubst tv ty
+unifyTypeSafe ty (TypeVariable tv)
+  | tv `elem` typeVars ty = Nothing
+  | otherwise             = Just $ singleSubst tv ty
+unifyTypeSafe (TypeConstrained tys1 tv1) (TypeConstrained tys2 tv2)
+  | tv1  == tv2           = Just idSubst
+  | tys1 == tys2          = Just $ singleSubst tv1 (TypeConstrained tys2 tv2)
+unifyTypeSafe (TypeConstrained tys tv) ty =
+  foldr (choose . unifyTypeSafe ty) Nothing tys
+  where choose Nothing theta' = theta'
+        choose (Just theta) _ = Just (bindSubst tv ty theta)
+unifyTypeSafe ty (TypeConstrained tys tv) =
+  foldr (choose . unifyTypeSafe ty) Nothing tys
+  where choose Nothing theta' = theta'
+        choose (Just theta) _ = Just (bindSubst tv ty theta)
+unifyTypeSafe (TypeConstructor tc1) (TypeConstructor tc2)
+  | tc1 == tc2            = Just idSubst
+unifyTypeSafe (TypeApply ty11 ty12) (TypeApply ty21 ty22) =
+  unifyTypesSafe [ty11,ty12] [ty21,ty22]
+unifyTypeSafe (TypeArrow ty11 ty12) (TypeArrow ty21 ty22) =
+  unifyTypesSafe [ty11,ty12] [ty21,ty22]
+unifyTypeSafe (TypeArrow ty11 ty12) ty2@(TypeApply _ _) =
+  unifyTypeSafe (TypeApply (TypeApply (TypeConstructor qArrowId) ty11) ty12) ty2
+unifyTypeSafe ty1@(TypeApply _ _) (TypeArrow ty21 ty22) =
+  unifyTypeSafe ty1 (TypeApply (TypeApply (TypeConstructor qArrowId) ty21) ty22)
+unifyTypeSafe _ _ = Nothing 
+
 withType :: (Functor f, Typeable (f Type)) => Type -> f Type -> f Type
 withType ty e = fmap (subst (matchType (typeOf e) ty idSubst)) e
 
