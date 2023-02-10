@@ -54,7 +54,8 @@ import           Data.Function       (on)
 import           Data.List           (nub, nubBy, partition, sortBy, (\\))
 import qualified Data.Map            as Map (Map, empty, insert, lookup)
 import           Data.Maybe                 ( fromJust, fromMaybe, isJust
-                                            , listToMaybe, catMaybes )
+                                            , listToMaybe, catMaybes
+                                            , isNothing )
 import qualified Data.Set.Extra      as Set ( Set, empty, fromList, insert
                                             , member, notMember)
 
@@ -530,11 +531,11 @@ tcPDeclGroup pls pds = do
       impPds3  = map (filterEqnType (map getPred lpls'')) impPds''
   mapM_ (reportFlexibleContextDecl m) impPds''
   modifyValueEnv $ flip (rebindVars m) (concatMap (declVars . snd) impPds'')
+  impPds4 <- fixVarAnnots impPds3
   (pls'', expPds') <- mapAccumM (uncurry . tcCheckPDecl) gpls expPds
   -- We have to adapt the contexts of the annotations of equations so that it
   -- matches the corresponding entry in the value environment
-  --pds3 <- fixEqnType (impPds'' ++ expPds')
-  return (pls'', impPds3 ++ expPds')
+  return (pls'', impPds4 ++ expPds')
 
 partitionPDecls :: SigEnv -> [PDecl a] -> ([PDecl a], [(QualTypeExpr, PDecl a)])
 partitionPDecls sigs =
@@ -707,7 +708,7 @@ filterEqnType _    d                             = d
 
 filterEqnType' :: [Pred] -> Equation PredType -> Equation PredType
 filterEqnType' lpls (Equation p (Just (PredType pls ty)) lhs rhs) =
-  Equation p (Just $ PredType (filter (`elem` lpls) pls) ty) lhs rhs
+  Equation p (Just $ PredType lpls ty) lhs rhs
 filterEqnType' lpls eqn@(Equation _ Nothing _ _) = eqn
 
 
@@ -1924,89 +1925,113 @@ isSimpleNumClass = (elem (qNumId, [0]) .) . flip allSuperClasses
 -- the value environment
 -- ----------------------------------------------------------------------------
 
-fixEqnType :: [PDecl PredType] -> TCM [PDecl PredType]
-fixEqnType pds = mapM (\(i,d) -> fixEqnTypeDecl d >>= (return . (i,))) pds
+fixVarAnnots :: [PDecl PredType] -> TCM [PDecl PredType]
+fixVarAnnots pds = mapM (\(i,d) -> fixVarAnnotsDecl [] d >>= (return . (i,))) pds
 
-fixEqnTypeDecl :: Decl PredType -> TCM (Decl PredType)
-fixEqnTypeDecl (FunctionDecl spi pty f eqs) = do
-  eqs' <- mapM fixEqnTypeEquation eqs
+fixVarAnnotsDecl :: [Pred] -> Decl PredType -> TCM (Decl PredType)
+fixVarAnnotsDecl pls (FunctionDecl spi pty f eqs) = do
+  eqs' <- mapM (fixVarAnnotsEquation pls) eqs
   return $ FunctionDecl spi pty f eqs' 
-fixEqnTypeDecl (ClassDecl spi li cx cls tvs fdps ms) 
-  = ClassDecl spi li cx cls tvs fdps <$> mapM fixEqnTypeDecl ms
-fixEqnTypeDecl (InstanceDecl spi li cx qcls inst ds)
-  = InstanceDecl spi li cx qcls inst <$> mapM fixEqnTypeDecl ds
-fixEqnTypeDecl d                  = return d
+fixVarAnnotsDecl pls (ClassDecl spi li cx cls tvs fdps ms) 
+  = ClassDecl spi li cx cls tvs fdps <$> mapM (fixVarAnnotsDecl pls) ms
+fixVarAnnotsDecl pls (InstanceDecl spi li cx qcls inst ds)
+  = InstanceDecl spi li cx qcls inst <$> mapM (fixVarAnnotsDecl pls) ds
+fixVarAnnotsDecl _ d = return d
 
-fixEqnTypeEquation :: Equation PredType -> TCM (Equation PredType)
-fixEqnTypeEquation (Equation p a lhs rhs) =
-  Equation p a lhs <$> fixEqnTypeRhs rhs
+fixVarAnnotsEquation :: [Pred] -> Equation PredType -> TCM (Equation PredType)
+fixVarAnnotsEquation pls (Equation p mpty lhs rhs) = case mpty of
+    Nothing                -> Equation p mpty lhs <$> fixVarAnnotsRhs pls rhs
+    Just (PredType pls' _) -> Equation p mpty lhs
+                              <$> fixVarAnnotsRhs (plUnion pls pls') rhs
 
-fixEqnTypeRhs :: Rhs PredType -> TCM (Rhs PredType)
-fixEqnTypeRhs (SimpleRhs spi li e ds) =
-  SimpleRhs spi li <$> fixEqnTypeExpr e <*> mapM fixEqnTypeDecl ds
-fixEqnTypeRhs (GuardedRhs spi li es ds) =
-  GuardedRhs spi li <$> mapM fixEqnTypeCondExpr es <*> mapM fixEqnTypeDecl ds
+fixVarAnnotsRhs :: [Pred] -> Rhs PredType -> TCM (Rhs PredType)
+fixVarAnnotsRhs pls (SimpleRhs spi li e ds) =
+  SimpleRhs spi li <$> fixVarAnnotsExpr pls e <*> mapM (fixVarAnnotsDecl pls) ds
+fixVarAnnotsRhs pls (GuardedRhs spi li es ds) =
+  GuardedRhs spi li <$> mapM (fixVarAnnotsCondExpr pls) es 
+                    <*> mapM (fixVarAnnotsDecl pls) ds
 
-fixEqnTypeCondExpr :: CondExpr PredType -> TCM (CondExpr PredType)
-fixEqnTypeCondExpr (CondExpr spi g e) 
-  = CondExpr spi <$> fixEqnTypeExpr g <*> fixEqnTypeExpr e
+fixVarAnnotsCondExpr :: [Pred] -> CondExpr PredType -> TCM (CondExpr PredType)
+fixVarAnnotsCondExpr pls (CondExpr spi g e) 
+  = CondExpr spi <$> fixVarAnnotsExpr pls g <*> fixVarAnnotsExpr pls e
 
-fixEqnTypeExpr :: Expression PredType -> TCM (Expression PredType)
-fixEqnTypeExpr (Paren spi e) = Paren spi <$> fixEqnTypeExpr e
-fixEqnTypeExpr (Typed spi e qty)
-  = Typed spi <$> fixEqnTypeExpr e <*> return qty
-fixEqnTypeExpr (Record spi a c fs) = Record spi a c <$> mapM fixEqnTypeField fs
-fixEqnTypeExpr (RecordUpdate spi e fs)
-  = RecordUpdate spi <$> fixEqnTypeExpr e <*> mapM fixEqnTypeField fs
-fixEqnTypeExpr (Tuple spi es) = Tuple spi <$> mapM fixEqnTypeExpr es
-fixEqnTypeExpr (List spi a es) = List spi a <$> mapM fixEqnTypeExpr es
-fixEqnTypeExpr (ListCompr spi e qs)
-  = ListCompr spi <$> fixEqnTypeExpr e <*> mapM fixEqnTypeStmt qs
-fixEqnTypeExpr (EnumFrom spi e) = EnumFrom spi <$> fixEqnTypeExpr e
-fixEqnTypeExpr (EnumFromThen spi e1 e2)
-  = EnumFromThen spi <$> fixEqnTypeExpr e1 <*> fixEqnTypeExpr e2
-fixEqnTypeExpr (EnumFromTo spi e1 e2)
-  = EnumFromTo spi <$> fixEqnTypeExpr e1 <*> fixEqnTypeExpr e2
-fixEqnTypeExpr (EnumFromThenTo spi e1 e2 e3) =   EnumFromThenTo spi
-                                             <$> fixEqnTypeExpr e1
-                                             <*> fixEqnTypeExpr e2
-                                             <*> fixEqnTypeExpr e3
-fixEqnTypeExpr (UnaryMinus spi e) = UnaryMinus spi <$> fixEqnTypeExpr e
-fixEqnTypeExpr (Apply spi e1 e2)
-  = Apply spi <$> fixEqnTypeExpr e1 <*> fixEqnTypeExpr e2
-fixEqnTypeExpr (InfixApply spi e1 op e2) =   InfixApply spi
-                                         <$> fixEqnTypeExpr e1
-                                         <*> return op
-                                         <*> fixEqnTypeExpr e2
-fixEqnTypeExpr (LeftSection spi e op) 
-  = LeftSection spi <$> fixEqnTypeExpr e <*> return op
-fixEqnTypeExpr (RightSection spi op e) 
-  = RightSection spi op <$> fixEqnTypeExpr e
-fixEqnTypeExpr (Lambda spi ts e) = Lambda spi ts <$> fixEqnTypeExpr e
-fixEqnTypeExpr (Let spi li ds e)
-  = Let spi li <$> mapM fixEqnTypeDecl ds <*> fixEqnTypeExpr e
-fixEqnTypeExpr (Do spi li sts e)
-  = Do spi li <$> mapM fixEqnTypeStmt sts <*> fixEqnTypeExpr e
-fixEqnTypeExpr (IfThenElse spi e1 e2 e3) =   IfThenElse spi
-                                         <$> fixEqnTypeExpr e1
-                                         <*> fixEqnTypeExpr e2
-                                         <*> fixEqnTypeExpr e3
-fixEqnTypeExpr (Case spi li ct e as)
-  = Case spi li ct <$> fixEqnTypeExpr e <*> mapM fixEqnTypeAlt as
-fixEqnTypeExpr e = return e
+fixVarAnnotsExpr :: [Pred] -> Expression PredType -> TCM (Expression PredType)
+fixVarAnnotsExpr pls (Variable spi pty v) = do
+  mid <- getModuleIdent
+  vEnv <- getValueEnv
+  thetaGlobal <- getTypeSubst
+  let pty1@(PredType pls1 ty1) = subst thetaGlobal pty
+  case funTypeSafe False mid v vEnv of
+    Nothing -> return $ Variable spi pty v
+    Just (ForAll _ pty2@(PredType pls2 ty2)) ->
+        case matchPredTypeSafe pty2 pty1 idSubst of
+          Just _  -> return $ Variable spi pty1 v
+          Nothing -> let theta = fromJust $ matchTypeSafe ty2 ty1 idSubst
+                         pls1' = filter (`plElem` pls) (subst theta pls2)
+                     in return $ Variable spi (PredType pls1' ty1) v
+fixVarAnnotsExpr pls (Paren spi e) = Paren spi <$> fixVarAnnotsExpr pls e
+fixVarAnnotsExpr pls (Typed spi e qty)
+  = Typed spi <$> fixVarAnnotsExpr pls e <*> return qty
+fixVarAnnotsExpr pls (Record spi a c fs) 
+  = Record spi a c <$> mapM (fixVarAnnotsField pls) fs
+fixVarAnnotsExpr pls (RecordUpdate spi e fs)
+  = RecordUpdate spi <$> fixVarAnnotsExpr pls e 
+                     <*> mapM (fixVarAnnotsField pls) fs
+fixVarAnnotsExpr pls (Tuple spi es) 
+  = Tuple spi <$> mapM (fixVarAnnotsExpr pls) es
+fixVarAnnotsExpr pls (List spi a es) 
+  = List spi a <$> mapM (fixVarAnnotsExpr pls) es
+fixVarAnnotsExpr pls (ListCompr spi e qs)
+  = ListCompr spi <$> fixVarAnnotsExpr pls e <*> mapM (fixVarAnnotsStmt pls) qs
+fixVarAnnotsExpr pls (EnumFrom spi e) = EnumFrom spi <$> fixVarAnnotsExpr pls e
+fixVarAnnotsExpr pls (EnumFromThen spi e1 e2)
+  = EnumFromThen spi <$> fixVarAnnotsExpr pls e1 <*> fixVarAnnotsExpr pls e2
+fixVarAnnotsExpr pls (EnumFromTo spi e1 e2)
+  = EnumFromTo spi <$> fixVarAnnotsExpr pls e1 <*> fixVarAnnotsExpr pls e2
+fixVarAnnotsExpr pls (EnumFromThenTo spi e1 e2 e3) = EnumFromThenTo spi
+                                                 <$> fixVarAnnotsExpr pls e1
+                                                 <*> fixVarAnnotsExpr pls e2
+                                                 <*> fixVarAnnotsExpr pls e3
+fixVarAnnotsExpr pls (UnaryMinus spi e) 
+  = UnaryMinus spi <$> fixVarAnnotsExpr pls e
+fixVarAnnotsExpr pls (Apply spi e1 e2)
+  = Apply spi <$> fixVarAnnotsExpr pls e1 <*> fixVarAnnotsExpr pls e2
+fixVarAnnotsExpr pls (InfixApply spi e1 op e2) =   InfixApply spi
+                                              <$> fixVarAnnotsExpr pls e1
+                                              <*> return op
+                                              <*> fixVarAnnotsExpr pls e2
+fixVarAnnotsExpr pls (LeftSection spi e op) 
+  = LeftSection spi <$> fixVarAnnotsExpr pls e <*> return op
+fixVarAnnotsExpr pls (RightSection spi op e) 
+  = RightSection spi op <$> fixVarAnnotsExpr pls e
+fixVarAnnotsExpr pls (Lambda spi ts e) 
+  = Lambda spi ts <$> fixVarAnnotsExpr pls e
+fixVarAnnotsExpr pls (Let spi li ds e)
+  = Let spi li <$> mapM (fixVarAnnotsDecl pls) ds <*> fixVarAnnotsExpr pls e
+fixVarAnnotsExpr pls (Do spi li sts e)
+  = Do spi li <$> mapM (fixVarAnnotsStmt pls) sts <*> fixVarAnnotsExpr pls e
+fixVarAnnotsExpr pls (IfThenElse spi e1 e2 e3) = IfThenElse spi
+                                              <$> fixVarAnnotsExpr pls e1
+                                              <*> fixVarAnnotsExpr pls e2
+                                              <*> fixVarAnnotsExpr pls e3
+fixVarAnnotsExpr pls (Case spi li ct e as)
+  = Case spi li ct <$> fixVarAnnotsExpr pls e <*> mapM (fixVarAnnotsAlt pls) as
+fixVarAnnotsExpr _ e = return e
 
-fixEqnTypeField :: Field (Expression PredType) 
+fixVarAnnotsField :: [Pred] -> Field (Expression PredType) 
                 -> TCM (Field (Expression PredType))
-fixEqnTypeField (Field spi qid e) = Field spi qid <$> fixEqnTypeExpr e
+fixVarAnnotsField pls (Field spi qid e) 
+  = Field spi qid <$> fixVarAnnotsExpr pls e
 
-fixEqnTypeAlt :: Alt PredType -> TCM (Alt PredType)
-fixEqnTypeAlt (Alt spi t rhs) = Alt spi t <$> fixEqnTypeRhs rhs
+fixVarAnnotsAlt :: [Pred] -> Alt PredType -> TCM (Alt PredType)
+fixVarAnnotsAlt pls (Alt spi t rhs) = Alt spi t <$> fixVarAnnotsRhs pls rhs
 
-fixEqnTypeStmt :: Statement PredType -> TCM (Statement PredType)
-fixEqnTypeStmt (StmtExpr spi e) = StmtExpr spi <$> fixEqnTypeExpr e
-fixEqnTypeStmt (StmtDecl spi li ds) 
-  = StmtDecl spi li <$> mapM fixEqnTypeDecl ds
-fixEqnTypeStmt (StmtBind spi t e) = StmtBind spi t <$> fixEqnTypeExpr e
+fixVarAnnotsStmt :: [Pred] -> Statement PredType -> TCM (Statement PredType)
+fixVarAnnotsStmt pls (StmtExpr spi e) = StmtExpr spi <$> fixVarAnnotsExpr pls e
+fixVarAnnotsStmt pls (StmtDecl spi li ds) 
+  = StmtDecl spi li <$> mapM (fixVarAnnotsDecl pls) ds
+fixVarAnnotsStmt pls (StmtBind spi t e) 
+  = StmtBind spi t <$> fixVarAnnotsExpr pls e
 
 -- Instantiation and Generalization:
 -- We use negative offsets for fresh type variables.
@@ -2153,6 +2178,18 @@ funType False m f vEnv = case qualLookupValue f vEnv of
     _ -> internalError $ "TypeCheck.funType: " ++ show f
 funType True  m f vEnv = let ForAll n (PredType pls ty) = funType False m f vEnv
                          in  ForAll n (PredType (removeICCFlagList pls) ty)
+
+funTypeSafe :: Bool -> ModuleIdent -> QualIdent -> ValueEnv -> Maybe TypeScheme
+funTypeSafe False m f vEnv = case qualLookupValue f vEnv of
+  [Value _ _ _ tySc] -> Just $ tySc
+  [Label _ _ tySc] -> Just $ tySc
+  _ -> case qualLookupValue (qualQualify m f) vEnv of
+    [Value _ _ _ tySc] -> Just $ tySc
+    [Label _ _ tySc] -> Just $ tySc
+    _ -> Nothing
+funTypeSafe True  m f vEnv = fmap remICC $ funTypeSafe False m f vEnv
+  where remICC (ForAll n (PredType pls ty)) = 
+          ForAll n (PredType (removeICCFlagList pls) ty)
 
 labelType :: ModuleIdent -> QualIdent -> ValueEnv -> TypeScheme
 labelType m l vEnv = case qualLookupValue l vEnv of
