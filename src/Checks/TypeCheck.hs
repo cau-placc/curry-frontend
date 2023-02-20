@@ -57,7 +57,7 @@ import           Data.Maybe                 ( fromJust, fromMaybe, isJust
                                             , listToMaybe, catMaybes
                                             , isNothing )
 import qualified Data.Set.Extra      as Set ( Set, empty, fromList, insert
-                                            , member, notMember)
+                                            , member, notMember, toAscList)
 
 import GHC.Stack (HasCallStack)
 
@@ -79,7 +79,7 @@ import Base.TypeSubst
 import Base.Typing hiding (declVars)
 import Base.Utils (foldr2, fst3, thd3, uncurry3, mapAccumM)
 
-import Env.Class
+import Env.Class            as CE
 import Env.Instance
 import Env.TypeConstructor
 import Env.Value
@@ -492,7 +492,8 @@ tcPDeclGroup pls [(i, FreeDecl p fvs)] = do
   (vs', pls') <- unzip <$> mapM addDataPred vs
   modifyValueEnv $ flip (bindVars m) vs'
   let d = FreeDecl p (map (\(v, _, ForAll _ ty) -> Var ty v) vs')
-  return (plUnion pls (plUnions pls'), [(i, d)])
+  pls'' <- improvePreds NoSpanInfo "" empty $ plUnion pls (plUnions pls')
+  return (pls'', [(i, d)])
   where
     addDataPred (idt, n, ForAll ids ty1) = do
       (pls2, ty2) <- freshDataType
@@ -525,17 +526,19 @@ tcPDeclGroup pls pds = do
       (gpls, (mpls, lpls)) = fmap (splitPredListAny fvs') $
                                 splitPredListAll fvs' $ subst theta pls'
   lpls' <- plUnion mpls <$> reducePredSet lpls
-  lpls'' <- foldM (uncurry . defaultPDecl fvs') lpls' impPds'
+  lpls'' <- improvePreds NoSpanInfo "" empty lpls'
+  lpls3 <- foldM (uncurry . defaultPDecl fvs') lpls'' impPds'
   theta' <- getTypeSubst
-  let impPds'' = map (uncurry (fixType . gen fvs' lpls'' . subst theta')) impPds'
-      impPds3  = map (filterEqnType (map getPred lpls'')) impPds''
+  let impPds'' = map (uncurry (fixType . gen fvs' lpls3 . subst theta')) impPds'
+      impPds3  = map (filterEqnType (map getPred lpls3)) impPds''
   mapM_ (reportFlexibleContextDecl m) impPds''
   modifyValueEnv $ flip (rebindVars m) (concatMap (declVars . snd) impPds'')
   impPds4 <- fixVarAnnots impPds3
   (pls'', expPds') <- mapAccumM (uncurry . tcCheckPDecl) gpls expPds
+  pls3 <- improvePreds NoSpanInfo "" empty pls''
   -- We have to adapt the contexts of the annotations of equations so that it
   -- matches the corresponding entry in the value environment
-  return (pls'', impPds4 ++ expPds')
+  return (pls3, impPds4 ++ expPds')
 
 partitionPDecls :: SigEnv -> [PDecl a] -> ([PDecl a], [(QualTypeExpr, PDecl a)])
 partitionPDecls sigs =
@@ -648,8 +651,9 @@ tcEqn p lhs rhs = do
     return (pls, tys, lhs', pls', ty, rhs')
   let pls'' = plUnion pls pls'
       ty' = foldr TypeArrow ty tys
-  pls3 <- reducePredSet pls''
-  return (pls3, ty', Equation p (Just (PredType (map getPred pls'') ty')) lhs' rhs')
+  pls3 <- improvePreds NoSpanInfo "" empty pls''
+  pls4 <- reducePredSet pls3
+  return (pls4, ty', Equation p (Just (PredType (map getPred pls'') ty')) lhs' rhs')
 
 bindLambdaVars :: QuantExpr t => t -> TCM ()
 bindLambdaVars t = do
@@ -1199,7 +1203,8 @@ tcPatternHelper _ t@(VariablePattern spi _ v) = do
           then return $ [(LPred (dataPred ty) spi what (pPrint t))]
           else S.put (Set.insert v used) >> return []
   let pls'' = plUnion pls' (map (\pr -> LPred pr spi what (pPrint t)) pls)
-  return (pls'', ty, VariablePattern spi (PredType (map getPred pls'') ty) v)
+  pls3 <- lift $ improvePreds NoSpanInfo "" empty pls''
+  return (pls3, ty, VariablePattern spi (PredType (map getPred pls'') ty) v)
 tcPatternHelper p t@(ConstructorPattern spi _ c ts) = do
   m <- lift getModuleIdent
   vEnv <- lift getValueEnv
@@ -1208,7 +1213,8 @@ tcPatternHelper p t@(ConstructorPattern spi _ c ts) = do
       pls' = map (\pr -> LPred pr spi "constructor pattern" doc) pls
   (pls'', ts') <- mapAccumM (uncurry . ptcPatternArg p "pattern" doc) pls'
                            (zip tys ts)
-  return (pls'', ty', ConstructorPattern spi (predType ty') c ts')
+  pls3 <- lift $ improvePreds NoSpanInfo "" empty pls''
+  return (pls3, ty', ConstructorPattern spi (predType ty') c ts')
 tcPatternHelper p t@(InfixPattern spi a t1 op t2) = do
   (pls, ty, t') <- tcPatternHelper p (ConstructorPattern NoSpanInfo a op [t1,t2])
   let doc = pPrint t
@@ -1230,15 +1236,18 @@ tcPatternHelper _ t@(RecordPattern spi _ c fs) = do
   (pls'', fs') <- lift $ mapAccumM (tcField (tcPatternWith used) "pattern"
     (\t' -> pPrintPrec 0 t $-$ text "Term:" <+> pPrintPrec 0 t') ty) pls' fs
   S.put $ foldr Set.insert used $ concatMap bv fs
-  return (pls'', ty, RecordPattern spi (predType ty) c fs')
+  pls3 <- lift $ improvePreds NoSpanInfo "" empty pls''
+  return (pls3, ty, RecordPattern spi (predType ty) c fs')
 tcPatternHelper p (TuplePattern spi ts) = do
   (plss, tys, ts') <- unzip3 <$> mapM (tcPatternHelper p) ts
-  return (plUnions plss, tupleType tys, TuplePattern spi ts')
+  pls <- lift $ improvePreds NoSpanInfo "" empty $ plUnions plss
+  return (pls, tupleType tys, TuplePattern spi ts')
 tcPatternHelper p t@(ListPattern spi _ ts) = do
   ty <- lift freshTypeVar
   (pls, ts') <- mapAccumM (flip (ptcPatternArg p "pattern" (pPrintPrec 0 t)) ty)
                          [] ts
-  return (pls, listType ty, ListPattern spi (predType $ listType ty) ts')
+  pls' <- lift $ improvePreds NoSpanInfo "" empty pls
+  return (pls', listType ty, ListPattern spi (predType $ listType ty) ts')
 tcPatternHelper p t@(AsPattern spi v t') = do
   vEnv <- lift getValueEnv
   (_, ty) <- lift $ inst (varType v vEnv)
@@ -1249,10 +1258,12 @@ tcPatternHelper p t@(AsPattern spi v t') = do
           else S.put (Set.insert v used) >> return []
   (pls'', t'') <- tcPatternHelper p t' >>-
     (\pls' ty' -> lift $ unify p "pattern" (pPrintPrec 0 t) pls ty pls' ty')
-  return (pls'', ty, AsPattern spi v t'')
+  pls3 <- lift $ improvePreds NoSpanInfo "" empty pls''
+  return (pls3, ty, AsPattern spi v t'')
 tcPatternHelper p (LazyPattern spi t) = do
   (pls, ty, t') <- tcPatternHelper p t
-  return (pls, ty, LazyPattern spi t')
+  pls' <- lift $ improvePreds NoSpanInfo "" empty pls
+  return (pls', ty, LazyPattern spi t')
 tcPatternHelper p t@(FunctionPattern spi _ f ts) = do
   m <- lift getModuleIdent
   vEnv <- lift getValueEnv
@@ -1260,14 +1271,16 @@ tcPatternHelper p t@(FunctionPattern spi _ f ts) = do
   let pls' = map (\pr -> LPred pr spi "functional pattern" (pPrint t)) pls
   -- insert all
   S.modify (flip (foldr Set.insert) (bv t))
-  tcFuncPattern p spi (pPrintPrec 0 t) f id pls' ty ts
+  pls'' <- lift $ improvePreds NoSpanInfo "" empty pls'
+  tcFuncPattern p spi (pPrintPrec 0 t) f id pls'' ty ts
 tcPatternHelper p t@(InfixFuncPattern spi a t1 op t2) = do
   (pls, ty, t') <- tcPatternHelper p (FunctionPattern spi a op [t1, t2])
   let doc = pPrint t
       pls' = map (\lpr@(LPred pr spi' what _) ->
                     if spi == spi' then LPred pr spi what doc else lpr) pls
       FunctionPattern _ a' op' [t1', t2'] = t'
-  return (pls', ty, InfixFuncPattern spi a' t1' op' t2')
+  pls'' <- lift $ improvePreds NoSpanInfo "" empty pls'
+  return (pls'', ty, InfixFuncPattern spi a' t1' op' t2')
 
 tcFuncPattern :: HasSpanInfo p => p -> SpanInfo -> Doc -> QualIdent
               -> ([Pattern PredType] -> [Pattern PredType])
@@ -1275,7 +1288,8 @@ tcFuncPattern :: HasSpanInfo p => p -> SpanInfo -> Doc -> QualIdent
               -> PTCM (LPredList, Type, Pattern PredType)
 tcFuncPattern _ spi doc f ts pls ty [] =
   let pls' = plInsert (LPred (dataPred ty) spi "functional pattern" doc) pls
-  in return (pls', ty, FunctionPattern spi (predType ty) f (ts []))
+  in do pls'' <- lift $ improvePreds NoSpanInfo "" empty pls'
+        return (pls'', ty, FunctionPattern spi (predType ty) f (ts []))
 tcFuncPattern p spi doc f ts pls ty (t':ts') = do
   (alpha, beta) <- lift $
     tcArrow p "functional pattern" (doc $-$ text "Term:" <+> pPrintPrec 0 t) ty
@@ -1302,7 +1316,7 @@ tcRhs (SimpleRhs p li e ds) = do
     (pls, ds') <- tcDecls ds
     (pls', ty, e') <- tcExpr e
     return (pls, ds', pls', ty, e')
-  let pls'' = plUnion pls pls'
+  pls'' <- improvePreds NoSpanInfo "" empty $ plUnion pls pls'
   pls3 <- reducePredSet pls''
   return (pls3, ty, SimpleRhs p li e' ds')
 tcRhs (GuardedRhs spi li es ds) = withLocalValueEnv $ do
@@ -1321,7 +1335,8 @@ tcExpr :: Expression a -> TCM (LPredList, Type, Expression PredType)
 tcExpr e@(Literal spi _ l) = do
   (pls, ty) <- tcLiteral True l
   let pls' = map (\pr -> LPred pr spi "literal" (pPrint e)) pls
-  return (pls', ty, Literal spi (predType ty) l)
+  pls'' <- improvePreds NoSpanInfo "" empty pls'
+  return (pls'', ty, Literal spi (predType ty) l)
 tcExpr e@(Variable spi _ v) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
@@ -1329,13 +1344,15 @@ tcExpr e@(Variable spi _ v) = do
                                          else inst (funType True m v vEnv)
   -- TODO: Maybe use a different "what" for anonymous variables
   let pls' = map (\pr -> LPred pr spi "variable" (pPrint e)) pls
-  return (pls', ty, Variable spi (PredType pls ty) v)
+  pls'' <- improvePreds NoSpanInfo "" empty pls'
+  return (pls'', ty, Variable spi (PredType pls ty) v)
 tcExpr e@(Constructor spi _ c) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (pls, ty) <- inst (constrType m c vEnv)
   let pls' = map (\pr -> LPred pr spi "constructor" (pPrint e)) pls
-  return (pls', ty, Constructor spi (predType ty) c)
+  pls'' <- improvePreds NoSpanInfo "" empty pls'
+  return (pls'', ty, Constructor spi (predType ty) c)
 tcExpr (Paren spi e) = do
   (pls, ty, e') <- tcExpr e
   return (pls, ty, Paren spi e')
@@ -1356,7 +1373,8 @@ tcExpr te@(Typed spi e qty) = do
     m <- getModuleIdent
     report $
       errTypeSigTooGeneral m (text "Expression:" <+> pPrintPrec 0 e) qty tySc
-  return (plUnion pls' gpls, ty, Typed spi e' qty)
+  pls2 <- improvePreds NoSpanInfo "" empty $ plUnion pls' gpls
+  return (pls2, ty, Typed spi e' qty)
 tcExpr e@(Record spi _ c fs) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
@@ -1373,7 +1391,8 @@ tcExpr e@(RecordUpdate spi e1 fs) = do
   (pls, ty, e1') <- tcExpr e1
   (pls', fs') <- mapAccumM (tcField (const tcExpr) "update"
     (\e' -> pPrintPrec 0 e $-$ text "Term:" <+> pPrintPrec 0 e') ty) pls fs
-  return (pls', ty, RecordUpdate spi e1' fs')
+  pls2 <- improvePreds NoSpanInfo "" empty pls'
+  return (pls2, ty, RecordUpdate spi e1' fs')
 tcExpr (Tuple spi es) = do
   (plss, tys, es') <- liftM unzip3 $ mapM (tcExpr) es
   return (plUnions plss, tupleType tys, Tuple spi es')
@@ -1381,65 +1400,76 @@ tcExpr e@(List spi _ es) = do
   ty <- freshTypeVar
   (pls, es') <- mapAccumM (flip (tcArg spi "expression" (pPrintPrec 0 e)) ty)
                  [] es
-  return (pls, listType ty, List spi (predType $ listType ty) es')
+  pls' <- improvePreds NoSpanInfo "" empty pls
+  return (pls', listType ty, List spi (predType $ listType ty) es')
 tcExpr (ListCompr spi e qs) = do
   (pls, qs', pls', ty, e') <- withLocalValueEnv $ do
     (pls, qs') <- mapAccumM (tcQual spi) [] qs
     (pls', ty, e') <- tcExpr e
     return (pls, qs', pls', ty, e')
   let pls'' = plUnion pls pls'
-  pls3 <- reducePredSet pls''
-  return (pls3, listType ty, ListCompr spi e' qs')
+  pls3 <- improvePreds NoSpanInfo "" empty pls''
+  pls4 <- reducePredSet pls3
+  return (pls4, listType ty, ListCompr spi e' qs')
 tcExpr e@(EnumFrom spi e1) = do
   (pls, ty) <- freshEnumType
   let pls' = map (\pr -> LPred pr spi "arithmetic sequence" (pPrint e)) pls
   (pls'', e1') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) pls' ty e1
-  return (pls'', listType ty, EnumFrom spi e1')
+  pls3 <- improvePreds NoSpanInfo "" empty pls''
+  return (pls3, listType ty, EnumFrom spi e1')
 tcExpr e@(EnumFromThen spi e1 e2) = do
   (pls, ty) <- freshEnumType
   let pls' = map (\pr -> LPred pr spi "arithmetic sequence" (pPrint e)) pls
   (pls'', e1') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) pls' ty e1
   (pls''', e2') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) pls'' ty e2
-  return (pls''', listType ty, EnumFromThen spi e1' e2')
+  pls4 <- improvePreds NoSpanInfo "" empty pls'''
+  return (pls4, listType ty, EnumFromThen spi e1' e2')
 tcExpr e@(EnumFromTo spi e1 e2) = do
   (pls, ty) <- freshEnumType
   let pls' = map (\pr -> LPred pr spi "arithmetic sequence" (pPrint e)) pls
   (pls'', e1') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) pls' ty e1
   (pls''', e2') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) pls'' ty e2
-  return (pls''', listType ty, EnumFromTo spi e1' e2')
+  pls4 <- improvePreds NoSpanInfo "" empty pls'''
+  return (pls4, listType ty, EnumFromTo spi e1' e2')
 tcExpr e@(EnumFromThenTo spi e1 e2 e3) = do
   (pls, ty) <- freshEnumType
   let pls' = map (\pr -> LPred pr spi "arithmetic sequence" (pPrint e)) pls
   (pls2, e1') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) pls' ty e1
   (pls3, e2') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) pls2 ty e2
   (pls4, e3') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) pls3 ty e3
-  return (pls4, listType ty, EnumFromThenTo spi e1' e2' e3')
+  pls5 <- improvePreds NoSpanInfo "" empty pls4
+  return (pls5, listType ty, EnumFromThenTo spi e1' e2' e3')
 tcExpr e@(UnaryMinus spi e1) = do
   (pls, ty) <- freshNumType
   let pls' = map (\pr -> LPred pr spi "unary negation" (pPrint e)) pls
   (pls'', e1') <- tcArg spi "unary negation" (pPrintPrec 0 e) pls' ty e1
-  return (pls'', ty, UnaryMinus spi e1')
+  pls3 <- improvePreds NoSpanInfo "" empty pls''
+  return (pls3, ty, UnaryMinus spi e1')
 tcExpr e@(Apply spi e1 e2) = do
   (pls, (alpha, beta), e1') <- tcExpr e1 >>=-
     tcArrow spi "application" (pPrintPrec 0 e $-$ text "Term:" <+> pPrintPrec 0 e1)
   (pls', e2') <- tcArg spi "application" (pPrintPrec 0 e) pls alpha e2
-  return (pls', beta, Apply spi e1' e2')
+  pls2 <- improvePreds NoSpanInfo "" empty pls'
+  return (pls2, beta, Apply spi e1' e2')
 tcExpr e@(InfixApply spi e1 op e2) = do
   (pls, (alpha, beta, gamma), op') <- tcInfixOp op >>=-
     tcBinary spi "infix application" (pPrintPrec 0 e $-$ text "Operator:" <+> pPrint op)
   (pls', e1') <- tcArg spi "infix application" (pPrintPrec 0 e) pls alpha e1
   (pls'', e2') <- tcArg spi "infix application" (pPrintPrec 0 e) pls' beta e2
-  return (pls'', gamma, InfixApply spi e1' op' e2')
+  pls3 <- improvePreds NoSpanInfo "" empty pls''
+  return (pls3, gamma, InfixApply spi e1' op' e2')
 tcExpr e@(LeftSection spi e1 op) = do
   (pls, (alpha, beta), op') <- tcInfixOp op >>=-
     tcArrow spi "left section" (pPrintPrec 0 e $-$ text "Operator:" <+> pPrint op)
   (pls', e1') <- tcArg spi "left section" (pPrintPrec 0 e) pls alpha e1
-  return (pls', beta, LeftSection spi e1' op')
+  pls2 <- improvePreds NoSpanInfo "" empty pls'
+  return (pls2, beta, LeftSection spi e1' op')
 tcExpr e@(RightSection spi op e1) = do
   (pls, (alpha, beta, gamma), op') <- tcInfixOp op >>=-
     tcBinary spi "right section" (pPrintPrec 0 e $-$ text "Operator:" <+> pPrint op)
   (pls', e1') <- tcArg spi "right section" (pPrintPrec 0 e) pls beta e1
-  return (pls', TypeArrow alpha gamma, RightSection spi op' e1')
+  pls2 <- improvePreds NoSpanInfo "" empty pls'
+  return (pls2, TypeArrow alpha gamma, RightSection spi op' e1')
 tcExpr (Lambda spi ts e) = do
   (plss, tys, ts', pls, ty, e') <- withLocalValueEnv $ do
     bindLambdaVars ts
@@ -1448,15 +1478,17 @@ tcExpr (Lambda spi ts e) = do
     return (plss, tys, ts', pls, ty, e')
   let pls' = plUnions (pls : plss)
   pls2 <- reducePredSet pls'
-  return (pls2, foldr TypeArrow ty tys, Lambda spi ts' e')
+  pls3 <- improvePreds NoSpanInfo "" empty pls2
+  return (pls3, foldr TypeArrow ty tys, Lambda spi ts' e')
 tcExpr (Let spi li ds e) = do
   (pls, ds', pls', ty, e') <- withLocalValueEnv $ do
     (pls, ds') <- tcDecls ds
     (pls', ty, e') <- tcExpr e
     return (pls, ds', pls', ty, e')
   let pls'' = plUnion pls pls'
-  pls3 <- reducePredSet pls''
-  return (pls3, ty, Let spi li ds' e')
+  pls3 <- improvePreds NoSpanInfo "" empty pls''
+  pls4 <- reducePredSet pls3
+  return (pls4, ty, Let spi li ds' e')
 tcExpr (Do spi li sts e) = do
   (sts', ty, pls', e') <- withLocalValueEnv $ do
     ((pls, mTy), sts') <-
@@ -1464,17 +1496,20 @@ tcExpr (Do spi li sts e) = do
     ty <- liftM (maybe id TypeApply mTy) freshTypeVar
     (pls', e') <- tcExpr e >>- unify spi "statement" (pPrintPrec 0 e) pls ty
     return (sts', ty, pls', e')
-  return (pls', ty, Do spi li sts' e')
+  pls'' <- improvePreds NoSpanInfo "" empty pls'
+  return (pls'', ty, Do spi li sts' e')
 tcExpr e@(IfThenElse spi e1 e2 e3) = do
   (pls, e1') <- tcArg spi "expression" (pPrintPrec 0 e) [] boolType e1
   (pls', ty, e2') <- tcExpr e2
   (pls'', e3') <- tcArg spi "expression" (pPrintPrec 0 e) (plUnion pls pls') ty e3
-  return (pls'', ty, IfThenElse spi e1' e2' e3')
+  pls3 <- improvePreds NoSpanInfo "" empty pls''
+  return (pls3, ty, IfThenElse spi e1' e2' e3')
 tcExpr (Case spi li ct e as) = do
   (pls, tyLhs, e') <- tcExpr e
   tyRhs <- freshTypeVar
   (pls', as') <- mapAccumM (tcAlt tyLhs tyRhs) pls as
-  return (pls', tyRhs, Case spi li ct e' as')
+  pls'' <- improvePreds NoSpanInfo "" empty pls'
+  return (pls'', tyRhs, Case spi li ct e' as')
 
 tcArg :: HasSpanInfo p => p -> String -> Doc -> LPredList -> Type -> Expression a
       -> TCM (LPredList, Expression PredType)
@@ -1497,7 +1532,8 @@ tcAltern tyLhs p t rhs = do
     (pls', ty', rhs') <- tcRhs rhs
     return (pls, t', pls', ty', rhs')
   let pls'' = plUnion pls pls'
-  pls3 <- reducePredSet pls''
+  pls2 <- improvePreds NoSpanInfo "" empty pls''
+  pls3 <- reducePredSet pls2
   return (pls3, ty', Alt p t' rhs')
 
 tcQual :: HasSpanInfo p => p -> LPredList -> Statement a
@@ -1507,13 +1543,15 @@ tcQual p pls (StmtExpr spi e) = do
   return (pls', StmtExpr spi e')
 tcQual _ pls (StmtDecl spi li ds) = do
   (pls', ds') <- tcDecls ds
-  return (plUnion pls pls', StmtDecl spi li ds')
+  pls2 <- improvePreds NoSpanInfo "" empty $ plUnion pls pls'
+  return (pls2, StmtDecl spi li ds')
 tcQual p pls q@(StmtBind spi t e) = do
   alpha <- freshTypeVar
   (pls', e') <- tcArg p "generator" (pPrint q) pls (listType alpha) e
   bindLambdaVars t
   (pls'', t') <- tcPatternArg p "generator" (pPrint q) pls' alpha t
-  return (pls'', StmtBind spi t' e')
+  pls3 <- improvePreds NoSpanInfo "" empty pls''
+  return (pls3, StmtBind spi t' e')
 
 tcStmt :: HasSpanInfo p => p -> LPredList -> Maybe Type -> Statement a
        -> TCM ((LPredList, Maybe Type), Statement PredType)
@@ -1523,10 +1561,12 @@ tcStmt p pls mTy (StmtExpr spi e) = do
   alpha <- freshTypeVar
   (pls''', e') <- tcExpr e >>-
     unify p "statement" (pPrintPrec 0 e) (plUnion pls pls'') (applyType ty [alpha])
-  return ((pls''', Just ty), StmtExpr spi e')
+  pls4 <- improvePreds NoSpanInfo "" empty pls'''
+  return ((pls4, Just ty), StmtExpr spi e')
 tcStmt _ pls mTy (StmtDecl spi li ds) = do
   (pls', ds') <- tcDecls ds
-  return ((plUnion pls pls', mTy), StmtDecl spi li ds')
+  pls'' <- improvePreds NoSpanInfo "" empty $ plUnion pls pls'
+  return ((pls'', mTy), StmtDecl spi li ds')
 tcStmt p pls mTy st@(StmtBind spi t e) = do
   failable <- checkFailableBind t
   let freshMType = if failable then freshMonadFailType else freshMonadType
@@ -1537,7 +1577,8 @@ tcStmt p pls mTy st@(StmtBind spi t e) = do
     tcArg p "statement" (pPrint st) (plUnion pls pls'') (applyType ty [alpha]) e
   bindLambdaVars t
   (pls4, t') <- tcPatternArg p "statement" (pPrint st) pls3 alpha t
-  return ((pls4, Just ty), StmtBind spi t' e')
+  pls5 <- improvePreds NoSpanInfo "" empty pls4
+  return ((pls5, Just ty), StmtBind spi t' e')
 
 checkFailableBind :: Pattern a -> TCM Bool
 checkFailableBind (ConstructorPattern _ _ idt ps   ) = do
@@ -1749,7 +1790,8 @@ reducePredSet pls = do
                     minPredList clsEnv <$> reducePreds inEnv pls'
   theta' <- foldM (reportMissingInstance m inEnv) idSubst pls2
   modifyTypeSubst $ compose theta'
-  return pls1
+  pls3 <- improvePreds NoSpanInfo "" empty pls1
+  return pls3
   where
     reducePreds inEnv = plConcatMapM $ reducePred inEnv
     reducePred inEnv pr@(LPred (Pred OPred _ _) _ _ _) =
@@ -1859,6 +1901,96 @@ reportFlexibleContextPattern _ (FunctionPattern     _ _ _ _) =
   report $ internalError "TypeCheck.reportFlexibleContextPattern"
 reportFlexibleContextPattern _ (InfixFuncPattern  _ _ _ _ _) =
   report $ internalError "TypeCheck.reportFlexibleContextPattern"
+
+improvePreds :: HasSpanInfo p => p -> String -> Doc -> [LPred] -> TCM [LPred]
+improvePreds p what doc pls = do
+  traceM "improve preds"
+  let pls' = chooseElem pls
+  substM <- mapM (uncurry $ findImprovingSubstitutions p what doc) pls'
+  let substs = concat substM
+  case listToMaybe substs of
+    Nothing    -> return pls
+    Just theta -> if subst theta pls == pls then return pls
+                  else improvePreds p what doc (subst theta pls)
+
+
+chooseElem :: [a] -> [(a,[a])]
+chooseElem []     = []
+chooseElem (x:xs) = (x,xs) : map (fmap (x:)) (chooseElem xs)
+
+findImprovingSubstitutions :: HasSpanInfo p => p -> String -> Doc -> LPred 
+                           -> [LPred] -> TCM [TypeSubst] 
+findImprovingSubstitutions p what doc lpr lprs = do 
+  let Pred _ qcls tys = getPred lpr
+  clsEnv <- getClassEnv
+  mid <- getModuleIdent
+  let fds = classFunDeps qcls clsEnv
+  substs1 <- imprSubstFirstRule p mid what doc lpr lprs fds
+  case substs1 of
+    []    -> do substs2 <- imprSubstSecondRule p mid what doc lpr fds
+                return substs2
+    (_:_) -> return substs1
+  
+
+imprSubstFirstRule :: HasSpanInfo p => p -> ModuleIdent -> String -> Doc 
+                   -> LPred -> [LPred] -> [CE.FunDep] -> TCM [TypeSubst]
+imprSubstFirstRule p m what doc lpr lprs fds = catMaybes <$>
+  mapM (uncurry imprFirstRule') [ (lpr',fd) | lpr' <- lprs, fd <- fds ]
+  where
+    Pred _ qcls tys = getPred lpr
+    imprFirstRule' lpr' (lixs,rixs) = 
+      let Pred _ qcls2 tys2 = getPred lpr'
+          lixs' = Set.toAscList lixs
+          rixs' = Set.toAscList rixs
+      in if qcls == qcls2 && 
+             (filterIndices tys lixs') == (filterIndices tys2 lixs')
+         then (let sub = unifyTypesSafe (filterIndices tys rixs') 
+                                        (filterIndices tys2 rixs')
+               in if isJust sub 
+                  then return sub 
+                  else internalError $ "TC.imprSubstFirstRule: " 
+                       ++ show tys ++ " " ++ show tys2)
+         else return Nothing
+
+imprSubstSecondRule :: HasSpanInfo p => p -> ModuleIdent -> String -> Doc 
+                    ->  LPred -> [CE.FunDep] -> TCM [TypeSubst]
+imprSubstSecondRule p m what doc lpr fds = do
+  inEnv <- getInstEnv
+  let Pred _ qcls tys = getPred lpr
+      inms = lookupInstMatch qcls tys (fst inEnv)
+  substs <- secRuleSubsts m lpr fds inms
+  return $ catMaybes substs
+
+secRuleSubsts :: ModuleIdent -> LPred -> [CE.FunDep] -> [InstMatchInfo] 
+              -> TCM [Maybe TypeSubst]
+secRuleSubsts m lpr fds inms = mapM (uncurry secRuleSubsts')
+    [(fd,imatch) | fd <- fds, imatch <- inms' ]
+  where
+    Pred _ qcls tys = getPred lpr
+    inms' = map (\(_,_,types,_,sigma) -> (types,sigma)) inms
+
+    secRuleSubsts' (lixs,rixs) (tys', sigma) = 
+      let tys'' = subst sigma tys'
+          lixs' = Set.toAscList lixs
+          rixs' = Set.toAscList rixs
+          n     = length rixs'
+      in case (filterIndices tys lixs') == (filterIndices tys'' lixs') of
+           True -> let sub = unifyTypesSafe (filterIndices tys rixs') 
+                                            (filterIndices tys'' rixs')
+                   in if isJust sub 
+                      then return sub 
+                      else internalError $ "TC.secRuleSubsts: " ++ show tys ++ " " ++ show tys''
+           False -> return Nothing
+
+
+filterIndices :: [a] -> [Int] -> [a]
+filterIndices xs is = filterIndices' 0 is xs
+  where
+    filterIndices' _ []  _         = []
+    filterIndices' _ _      []     = []
+    filterIndices' i (j:js) (x:xs) 
+      | j == i    = x : filterIndices' (i+1) js xs
+      | otherwise = filterIndices' (i+1) (j:js) xs
 
 -- When a constrained type variable that is not free in the type environment
 -- disappears from the current type, the type becomes ambiguous. For instance,

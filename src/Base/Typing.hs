@@ -21,7 +21,7 @@ module Base.Typing
   ( Typeable (..)
   , withType, matchPredType, matchPredType', matchPreds, matchPred, matchType
   , matchPredTypeSafe, matchPredTypeSafe', matchPredsSafe, matchPredSafe
-  , matchTypesSafe, matchTypeSafe
+  , matchTypesSafe, matchTypeSafe, unifyTypeSafe, unifyTypesSafe, unifyPredSafe
   , bindDecls, bindDecl, bindPatterns, bindPattern, declVars, patternVars
   ) where
 
@@ -131,6 +131,7 @@ unifyPredSafe' (Pred _ qcls1 tys1) (Pred _ qcls2 tys2)
 unifyTypesSafe :: [Type] -> [Type] -> Maybe TypeSubst
 unifyTypesSafe []         []         = Just idSubst
 unifyTypesSafe (ty1:tys1) (ty2:tys2) = do
+  traceM "unifying types"
   theta  <- unifyTypesSafe tys1 tys2
   theta' <- unifyTypeSafe (subst theta ty1) (subst theta ty2)
   return (theta' `compose` theta)

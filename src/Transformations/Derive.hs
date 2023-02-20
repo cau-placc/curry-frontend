@@ -647,25 +647,25 @@ prelEq :: Expression PredType -> Expression PredType -> Expression PredType
 prelEq e1 e2 = foldl1 (Apply NoSpanInfo)
   [Variable NoSpanInfo pty qEqOpId, e1, e2]
   where ty = typeOf e1
-        pty = predType $ foldr1 TypeArrow [ty, ty, boolType]
+        pty = PredType [Pred OPred qEqId [ty]] $ foldr1 TypeArrow [ty, ty, boolType]
 
 prelDataEq :: Expression PredType -> Expression PredType -> Expression PredType
 prelDataEq e1 e2 = foldl1 (Apply NoSpanInfo)
   [Variable NoSpanInfo pty qDataEqId, e1, e2]
   where ty = typeOf e1
-        pty = predType $ foldr1 TypeArrow [ty, ty, boolType]
+        pty = PredType [Pred OPred qDataId [ty]] $ foldr1 TypeArrow [ty, ty, boolType]
 
 prelLeq :: Expression PredType -> Expression PredType -> Expression PredType
 prelLeq e1 e2 = foldl1 (Apply NoSpanInfo)
   [Variable NoSpanInfo pty qLeqOpId, e1, e2]
   where ty = typeOf e1
-        pty = predType $ foldr1 TypeArrow [ty, ty, boolType]
+        pty = PredType [Pred OPred qOrdId [ty]] $ foldr1 TypeArrow [ty, ty, boolType]
 
 prelLt :: Expression PredType -> Expression PredType -> Expression PredType
 prelLt e1 e2 = foldl1 (Apply NoSpanInfo)
   [Variable NoSpanInfo pty qLtOpId, e1, e2]
   where ty = typeOf e1
-        pty = predType $ foldr1 TypeArrow [ty, ty, boolType]
+        pty = PredType [Pred OPred qOrdId [ty]] $ foldr1 TypeArrow [ty, ty, boolType]
 
 prelOr :: Expression PredType -> Expression PredType -> Expression PredType
 prelOr e1 e2 = foldl1 (Apply NoSpanInfo)
