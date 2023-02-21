@@ -1918,6 +1918,22 @@ chooseElem :: [a] -> [(a,[a])]
 chooseElem []     = []
 chooseElem (x:xs) = (x,xs) : map (fmap (x:)) (chooseElem xs)
 
+
+-- finding improving substitutions follows two rules
+-- Given a predicate set P and a predicate C t_1 ... t_m, the following rules
+-- define an improving substitution. We assume that the class declaration of
+-- C looks like this:
+--   class ... => C u_1 ... u_m | ... , l_1 ... l_max -> r_1 ... r_max, ...
+-- Let L be the set of left indices and R the set of right indices of the
+-- functional dependency
+-- 1. If there is a constraint C tau_1 ... tau_m in P with t_i = tau_i
+--    for all i in L, then the mgu U with U(t_j) = U(tau_j) for all j in R
+--    is an improving substitution
+-- 2. If there is an instance declaration of the form
+--         instance ... => C tau_1 ... tau_m where
+--    and there exists a substitution S with S(tau_i) = t_i for all i in L,
+--    then the mgu U with U(t_j) = U(S(tau_j)) for all j in R is an
+--    improving substitution.
 findImprovingSubstitutions :: HasSpanInfo p => p -> String -> Doc -> LPred 
                            -> [LPred] -> TCM [TypeSubst] 
 findImprovingSubstitutions p what doc lpr lprs = do 
