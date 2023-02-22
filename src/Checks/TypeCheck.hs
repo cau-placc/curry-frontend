@@ -1904,14 +1904,18 @@ reportFlexibleContextPattern _ (InfixFuncPattern  _ _ _ _ _) =
 
 improvePreds :: HasSpanInfo p => p -> String -> Doc -> [LPred] -> TCM [LPred]
 improvePreds p what doc pls = do
-  traceM "improve preds"
-  let pls' = chooseElem pls
-  substM <- mapM (uncurry $ findImprovingSubstitutions p what doc) pls'
+  sigma <- getTypeSubst
+  let pls'  = subst sigma pls
+      pls'' = chooseElem pls'
+  substM <- mapM (uncurry $ findImprovingSubstitutions p what doc) pls''
   let substs = concat substM
   case listToMaybe substs of
     Nothing    -> return pls
-    Just theta -> if subst theta pls == pls then return pls
-                  else improvePreds p what doc (subst theta pls)
+    Just theta -> if subst theta pls' == pls' 
+                  then do modifyTypeSubst $ compose theta 
+                          return pls'
+                  else do modifyTypeSubst $ compose theta 
+                          improvePreds p what doc (subst theta pls')
 
 
 chooseElem :: [a] -> [(a,[a])]
