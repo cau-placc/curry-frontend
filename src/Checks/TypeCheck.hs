@@ -1791,7 +1791,11 @@ reducePredSet pls = do
   theta' <- foldM (reportMissingInstance m inEnv) idSubst pls2
   modifyTypeSubst $ compose theta'
   pls3 <- improvePreds NoSpanInfo "" empty pls1
-  return pls3
+  theta' <- getTypeSubst
+  let pls4 = subst theta' pls'
+  if all (`elem` pls4) pls3 && all (`elem` pls3) pls4
+  then return pls3
+  else reducePredSet pls3
   where
     reducePreds inEnv = plConcatMapM $ reducePred inEnv
     reducePred inEnv pr@(LPred (Pred OPred _ _) _ _ _) =
@@ -1957,7 +1961,8 @@ imprSubstFirstRule :: HasSpanInfo p => p -> ModuleIdent -> String -> Doc
 imprSubstFirstRule p m what doc lpr lprs fds = catMaybes <$>
   mapM (uncurry imprFirstRule') [ (lpr',fd) | lpr' <- lprs, fd <- fds ]
   where
-    Pred _ qcls tys = getPred lpr
+    LPred pr spi what' doc' = lpr
+    Pred _ qcls tys = pr
     imprFirstRule' lpr' (lixs,rixs) = 
       let Pred _ qcls2 tys2 = getPred lpr'
           lixs' = Set.toAscList lixs
@@ -1968,8 +1973,8 @@ imprSubstFirstRule p m what doc lpr lprs fds = catMaybes <$>
                                         (filterIndices tys2 rixs')
                in if isJust sub 
                   then return sub 
-                  else internalError $ "TC.imprSubstFirstRule: " 
-                       ++ show tys ++ " " ++ show tys2)
+                  else report (errMissingInstance m spi what' doc' pr)
+                       >> return sub)
          else return Nothing
 
 imprSubstSecondRule :: HasSpanInfo p => p -> ModuleIdent -> String -> Doc 
@@ -1986,7 +1991,8 @@ secRuleSubsts :: ModuleIdent -> LPred -> [CE.FunDep] -> [InstMatchInfo]
 secRuleSubsts m lpr fds inms = mapM (uncurry secRuleSubsts')
     [(fd,imatch) | fd <- fds, imatch <- inms' ]
   where
-    Pred _ qcls tys = getPred lpr
+    LPred pr spi what doc = lpr
+    Pred _ qcls tys = pr
     inms' = map (\(_,_,types,_,sigma) -> (types,sigma)) inms
 
     secRuleSubsts' (lixs,rixs) (tys', sigma) = 
@@ -1999,7 +2005,8 @@ secRuleSubsts m lpr fds inms = mapM (uncurry secRuleSubsts')
                                             (filterIndices tys'' rixs')
                    in if isJust sub 
                       then return sub 
-                      else internalError $ "TC.secRuleSubsts: " ++ show tys ++ " " ++ show tys''
+                      else report (errMissingInstance m spi what doc pr)
+                           >> return sub
            False -> return Nothing
 
 
