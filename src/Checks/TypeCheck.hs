@@ -1791,6 +1791,11 @@ reducePredSet pls = do
   theta' <- foldM (reportMissingInstance m inEnv) idSubst pls2
   modifyTypeSubst $ compose theta'
   pls3 <- improvePreds pls1
+  -- If we reduce a predicate set, we have to consider that
+  -- reducing a constraint can introduce new improving substitution
+  -- that can influence the reduction of another constraint.
+  -- Therefore, we have to reduce the predicates, improve them, and
+  -- reduce and improve again until nothing changes.
   theta' <- getTypeSubst
   let pls4 = subst theta' pls'
   if all (`elem` pls4) pls3 && all (`elem` pls3) pls4
