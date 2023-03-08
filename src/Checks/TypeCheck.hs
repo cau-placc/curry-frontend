@@ -50,6 +50,7 @@ import           Control.Monad.Extra ( allM, filterM, foldM, liftM, (&&^)
 import qualified Control.Monad.State as S
                                      (State, StateT, get, gets, put, modify,
                                       runState, evalStateT)
+import           Data.Either         (partitionEithers)
 import           Data.Function       (on)
 import           Data.List           (nub, nubBy, partition, sortBy, (\\))
 import qualified Data.Map            as Map (Map, empty, insert, lookup)
@@ -1335,8 +1336,7 @@ tcExpr :: Expression a -> TCM (LPredList, Type, Expression PredType)
 tcExpr e@(Literal spi _ l) = do
   (pls, ty) <- tcLiteral True l
   let pls' = map (\pr -> LPred pr spi "literal" (pPrint e)) pls
-  pls'' <- improvePreds pls'
-  return (pls'', ty, Literal spi (predType ty) l)
+  return (pls', ty, Literal spi (predType ty) l)
 tcExpr e@(Variable spi _ v) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
@@ -1344,15 +1344,13 @@ tcExpr e@(Variable spi _ v) = do
                                          else inst (funType True m v vEnv)
   -- TODO: Maybe use a different "what" for anonymous variables
   let pls' = map (\pr -> LPred pr spi "variable" (pPrint e)) pls
-  pls'' <- improvePreds pls'
-  return (pls'', ty, Variable spi (PredType pls ty) v)
+  return (pls', ty, Variable spi (PredType pls ty) v)
 tcExpr e@(Constructor spi _ c) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   (pls, ty) <- inst (constrType m c vEnv)
   let pls' = map (\pr -> LPred pr spi "constructor" (pPrint e)) pls
-  pls'' <- improvePreds pls'
-  return (pls'', ty, Constructor spi (predType ty) c)
+  return (pls', ty, Constructor spi (predType ty) c)
 tcExpr (Paren spi e) = do
   (pls, ty, e') <- tcExpr e
   return (pls, ty, Paren spi e')
@@ -1400,8 +1398,7 @@ tcExpr e@(List spi _ es) = do
   ty <- freshTypeVar
   (pls, es') <- mapAccumM (flip (tcArg spi "expression" (pPrintPrec 0 e)) ty)
                  [] es
-  pls' <- improvePreds pls
-  return (pls', listType ty, List spi (predType $ listType ty) es')
+  return (pls, listType ty, List spi (predType $ listType ty) es')
 tcExpr (ListCompr spi e qs) = do
   (pls, qs', pls', ty, e') <- withLocalValueEnv $ do
     (pls, qs') <- mapAccumM (tcQual spi) [] qs
@@ -1415,30 +1412,26 @@ tcExpr e@(EnumFrom spi e1) = do
   (pls, ty) <- freshEnumType
   let pls' = map (\pr -> LPred pr spi "arithmetic sequence" (pPrint e)) pls
   (pls'', e1') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) pls' ty e1
-  pls3 <- improvePreds pls''
-  return (pls3, listType ty, EnumFrom spi e1')
+  return (pls'', listType ty, EnumFrom spi e1')
 tcExpr e@(EnumFromThen spi e1 e2) = do
   (pls, ty) <- freshEnumType
   let pls' = map (\pr -> LPred pr spi "arithmetic sequence" (pPrint e)) pls
   (pls'', e1') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) pls' ty e1
   (pls''', e2') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) pls'' ty e2
-  pls4 <- improvePreds pls'''
-  return (pls4, listType ty, EnumFromThen spi e1' e2')
+  return (pls''', listType ty, EnumFromThen spi e1' e2')
 tcExpr e@(EnumFromTo spi e1 e2) = do
   (pls, ty) <- freshEnumType
   let pls' = map (\pr -> LPred pr spi "arithmetic sequence" (pPrint e)) pls
   (pls'', e1') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) pls' ty e1
   (pls''', e2') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) pls'' ty e2
-  pls4 <- improvePreds pls'''
-  return (pls4, listType ty, EnumFromTo spi e1' e2')
+  return (pls''', listType ty, EnumFromTo spi e1' e2')
 tcExpr e@(EnumFromThenTo spi e1 e2 e3) = do
   (pls, ty) <- freshEnumType
   let pls' = map (\pr -> LPred pr spi "arithmetic sequence" (pPrint e)) pls
   (pls2, e1') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) pls' ty e1
   (pls3, e2') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) pls2 ty e2
   (pls4, e3') <- tcArg spi "arithmetic sequence" (pPrintPrec 0 e) pls3 ty e3
-  pls5 <- improvePreds pls4
-  return (pls5, listType ty, EnumFromThenTo spi e1' e2' e3')
+  return (pls4, listType ty, EnumFromThenTo spi e1' e2' e3')
 tcExpr e@(UnaryMinus spi e1) = do
   (pls, ty) <- freshNumType
   let pls' = map (\pr -> LPred pr spi "unary negation" (pPrint e)) pls
@@ -1912,25 +1905,49 @@ reportFlexibleContextPattern _ (InfixFuncPattern  _ _ _ _ _) =
   report $ internalError "TypeCheck.reportFlexibleContextPattern"
 
 improvePreds :: [LPred] -> TCM [LPred]
-improvePreds pls = do
+improvePreds lps = improvePreds' [] lps
+
+improvePreds' :: [LPred] -> [LPred] -> TCM [LPred]
+improvePreds' errPreds pls = do
   sigma <- getTypeSubst
   let pls'  = subst sigma pls
       pls'' = chooseElem pls'
   substM <- mapM (uncurry findImprovingSubstitutions) pls''
-  let substs = concat substM
+  let substs = concat (map snd substM)
+      preds  = nub (concat (map fst substM))
+  mid <- getModuleIdent
+  let errPreds' = errPreds ++ preds
+      errPreds'' = nub errPreds'
   case listToMaybe substs of
-    Nothing    -> return pls
-    Just theta -> if subst theta pls' == pls' 
-                  then do modifyTypeSubst $ compose theta 
-                          return pls'
+    Nothing    -> do mapM_ (\(LPred pr spi what doc) ->
+                            report
+                           $ errMissingInstance mid spi what doc pr) errPreds''
+                     return (pls' \\ errPreds'') 
+    Just theta -> if subst theta pls' == pls'
+                  then do modifyTypeSubst $ compose theta
+                          mapM_ (\(LPred pr spi what doc) ->
+                                   report
+                                   $ errMissingInstance mid spi what doc pr) errPreds''
+                          return (pls' \\ errPreds'')
                   else do modifyTypeSubst $ compose theta 
-                          improvePreds (subst theta pls')
+                          improvePreds' errPreds' (subst theta pls')
 
 
 chooseElem :: [a] -> [(a,[a])]
 chooseElem []     = []
 chooseElem (x:xs) = (x,xs) : map (fmap (x:)) (chooseElem xs)
 
+mapFst :: (a -> b) -> (a,c) -> (b,c)
+mapFst f (x,y) = (f x, y)
+
+data ImpError = TypeError LPred
+              | OtherError
+  deriving (Eq,Show)
+
+filterTypeErrors :: [ImpError] -> [LPred]
+filterTypeErrors []                       = []
+filterTypeErrors (TypeError pr : imperrs) = pr : filterTypeErrors imperrs
+filterTypeErrors (_            : imperrs) = filterTypeErrors imperrs 
 
 -- finding improving substitutions follows two rules
 -- Given a predicate set P and a predicate C t_1 ... t_m, the following rules
@@ -1947,22 +1964,20 @@ chooseElem (x:xs) = (x,xs) : map (fmap (x:)) (chooseElem xs)
 --    and there exists a substitution S with S(tau_i) = t_i for all i in L,
 --    then the mgu U with U(t_j) = U(S(tau_j)) for all j in R is an
 --    improving substitution.
-findImprovingSubstitutions :: LPred -> [LPred] -> TCM [TypeSubst] 
+findImprovingSubstitutions :: LPred -> [LPred] -> TCM ([LPred], [TypeSubst]) 
 findImprovingSubstitutions lpr lprs = do 
   let Pred _ qcls tys = getPred lpr
   clsEnv <- getClassEnv
   mid <- getModuleIdent
   let fds = classFunDeps qcls clsEnv
-  substs1 <- imprSubstFirstRule mid lpr lprs fds
-  case substs1 of
-    []    -> do substs2 <- imprSubstSecondRule mid lpr fds
-                return substs2
-    (_:_) -> return substs1
+  (errPreds1, substs1) <- imprSubstFirstRule mid lpr lprs fds
+  (errPreds2, substs2) <- imprSubstSecondRule mid lpr fds
+  return (errPreds1 ++ errPreds2, substs1 ++ substs2)
   
 
 imprSubstFirstRule :: ModuleIdent -> LPred -> [LPred] -> [CE.FunDep] 
-                   -> TCM [TypeSubst]
-imprSubstFirstRule m lpr lprs fds = catMaybes <$>
+                   -> TCM ([LPred],[TypeSubst])
+imprSubstFirstRule m lpr lprs fds = mapFst filterTypeErrors <$> partitionEithers <$>
   mapM (uncurry imprFirstRule') [ (lpr',fd) | lpr' <- lprs, fd <- fds ]
   where
     LPred pr spi what' doc' = lpr
@@ -1976,21 +1991,20 @@ imprSubstFirstRule m lpr lprs fds = catMaybes <$>
          then (let sub = unifyTypesSafe (filterIndices tys rixs') 
                                         (filterIndices tys2 rixs')
                in if isJust sub 
-                  then return sub 
-                  else report (errMissingInstance m spi what' doc' pr)
-                       >> return sub)
-         else return Nothing
+                  then return (Right (fromJust sub)) 
+                  else return (Left (TypeError lpr)))
+         else return (Left OtherError)
 
-imprSubstSecondRule :: ModuleIdent ->  LPred -> [CE.FunDep] -> TCM [TypeSubst]
+imprSubstSecondRule :: ModuleIdent ->  LPred -> [CE.FunDep] -> TCM ([LPred],[TypeSubst])
 imprSubstSecondRule m lpr fds = do
   inEnv <- getInstEnv
   let Pred _ qcls tys = getPred lpr
       inms = lookupInstMatch qcls tys (fst inEnv)
   substs <- secRuleSubsts m lpr fds inms
-  return $ catMaybes substs
+  return $ mapFst filterTypeErrors $ partitionEithers substs
 
 secRuleSubsts :: ModuleIdent -> LPred -> [CE.FunDep] -> [InstMatchInfo] 
-              -> TCM [Maybe TypeSubst]
+              -> TCM [Either ImpError TypeSubst]
 secRuleSubsts m lpr fds inms = mapM (uncurry secRuleSubsts')
     [(fd,imatch) | fd <- fds, imatch <- inms' ]
   where
@@ -2007,10 +2021,9 @@ secRuleSubsts m lpr fds inms = mapM (uncurry secRuleSubsts')
            True -> let sub = unifyTypesSafe (filterIndices tys rixs') 
                                             (filterIndices tys'' rixs')
                    in if isJust sub 
-                      then return sub 
-                      else report (errMissingInstance m spi what doc pr)
-                           >> return sub
-           False -> return Nothing
+                      then return (Right (fromJust sub)) 
+                      else return (Left (TypeError lpr))
+           False -> return (Left OtherError)
 
 
 filterIndices :: [a] -> [Int] -> [a]
