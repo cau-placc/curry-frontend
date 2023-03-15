@@ -877,15 +877,14 @@ qualMatch pls1 ty1 pls2 ty2 maxDictTv = case predListMatch pls2 ty2 of
   Nothing -> Nothing
 
 qualMatch' :: HasCallStack => Ident -> [Pred] -> Type -> [Pred] -> PredList -> Type -> Int -> Maybe [Pred]
-qualMatch' f pls1 ty1 pls2 ps ty2 maxDictTv = {- trace ("call qualMatch' with function " ++ show (ppIdent f)) $ -} case predListMatch pls2 ty2 of
+qualMatch' f pls1 ty1 pls2 ps ty2 maxDictTv = case predListMatch pls2 ty2 of
   Just ty2' ->
     let freshTys = map TypeVariable [maximum (maxDictTv : typeVars ty2') + 1 ..]
         psTvs = [maximum (-1 : typeVars ty1) + 1 .. maximum (-1 : typeVars pls1)]
         renamePsTvs = foldr2 bindSubst idSubst psTvs freshTys
         pls1' = subst renamePsTvs pls1
         pls2' = ps
-    in {- trace (show (pPrint (pls1',pls1,ty1,pls2',ty2') )) $ -} Just $ subst (matchPredType' pls1 ty1 pls2' ty2' idSubst) 
-            $ pls1'
+    in Just $ subst (matchPredType' pls1 ty1 pls2' ty2' idSubst) $ pls1
   Nothing -> Nothing
 
 predListMatch :: [Pred] -> Type -> Maybe Type
