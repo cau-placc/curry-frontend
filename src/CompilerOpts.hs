@@ -319,6 +319,10 @@ extensions =
     , "enable anonymous free variables"                      )
   , ( CPP                      , "CPP"
     , "run C preprocessor"                                   )
+  , (FlexibleContexts          , "FlexibleContexts"          
+    , "remove syntax restrictions on contexts"               )
+  , (FlexibleInstances         , "FlexibleInstances"         
+    , "remove syntax restrictions on instance declarations"  )
   , ( FunctionalDependencies   , "FunctionalDependencies"
     , "enable functional dependencies"                       )
   , ( FunctionalPatterns       , "FunctionalPatterns"

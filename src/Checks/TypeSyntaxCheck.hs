@@ -219,11 +219,18 @@ checkSimpleConstraint c@(Constraint _ _ tys) =
 checkInstanceType :: SpanInfo -> InstanceType -> TSCM ()
 checkInstanceType p inst = do
   tEnv <- getTypeEnv
-  unless (isSimpleType inst &&
-    not (isTypeSyn (typeConstr inst) tEnv) &&
-    not (any isAnonId $ typeVariables inst) &&
-    isNothing (findDouble $ fv inst)) $
-      report $ errIllegalInstanceType p inst
+  -- with FlexibleInstances, instance types must not contain anonymous
+  -- variables or quantifiers, but can contain type synonyms or duplicate
+  -- variables or may not be simple types.
+  -- inspired by Leif-Erik Krueger
+  exts <- getExtensions
+  let flex = elem FlexibleInstances exts
+  if any isAnonId (typeVariables inst) || containsForall inst
+  then report $ errIllegalFlexibleInstanceType p inst
+  else unless (flex || (isSimpleType inst &&
+        not (isTypeSyn (typeConstr inst) tEnv) &&
+        isNothing (findDouble $ fv inst))) $
+          report $ errIllegalInstanceType p inst
 
 checkTypeLhs :: [Ident] -> TSCM ()
 checkTypeLhs = checkTypeVars "left hand side of type declaration"
@@ -519,6 +526,14 @@ errIllegalInstanceType spi inst = spanInfoMessage spi $ vcat
   , text "Each instance type must be of the form (T u_1 ... u_n),"
   , text "where T is not a type synonym and u_1, ..., u_n are"
   , text "mutually distinct, non-anonymous type variables."
+  , text "Use FlexibleInstances if you want to disable this."
+  ]
+
+errIllegalFlexibleInstanceType :: SpanInfo -> InstanceType -> Message
+errIllegalFlexibleInstanceType spi inst = spanInfoMessage spi $ vcat
+  [ text "Illegal instance type" <+> ppInstanceType inst
+  , text "Each instance type must not contain anonymous"
+  , text "type variables or quantified types."
   ]
 
 errIllegalDataInstance :: QualIdent -> Message

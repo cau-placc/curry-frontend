@@ -24,7 +24,7 @@ module Curry.Syntax.Utils
   , isFunctionDecl, isExternalDecl, patchModuleId
   , isVariablePattern
   , isVariableType, isSimpleType
-  , typeConstr, typeVariables, varIdent
+  , typeConstr, typeVariables, containsForall, varIdent
   , flatLhs, eqnArity, fieldLabel, fieldTerm, field2Tuple, opName
   , funDecl, mkEquation, simpleRhs, patDecl, varDecl, constrPattern, caseAlt
   , mkLet, mkVar, mkCase, mkLambda
@@ -171,6 +171,18 @@ typeVariables (ListType             _ ty) = typeVariables ty
 typeVariables (ArrowType       _ ty1 ty2) = typeVariables ty1 ++ typeVariables ty2
 typeVariables (ParenType            _ ty) = typeVariables ty
 typeVariables (ForallType        _ vs ty) = vs ++ typeVariables ty
+
+-- |Checks if a type expression contains a `forall'-expression
+--   taken from Leif-Erik Krueger
+containsForall :: TypeExpr -> Bool
+containsForall (ConstructorType     _ _) = False
+containsForall (ApplyType     _ ty1 ty2) = containsForall ty1 || containsForall ty2
+containsForall (VariableType       _ tv) = False
+containsForall (TupleType         _ tys) = any containsForall tys
+containsForall (ListType           _ ty) = containsForall ty
+containsForall (ArrowType     _ ty1 ty2) = containsForall ty1 || containsForall ty2
+containsForall (ParenType          _ ty) = containsForall ty
+containsForall (ForallType        _ _ _) = True
 
 -- |Return the identifier of a variable.
 varIdent :: Var a -> Ident
