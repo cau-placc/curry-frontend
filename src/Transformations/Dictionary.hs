@@ -776,7 +776,7 @@ instFunApp m tys pls p@(Pred _ cls _) = apply (Variable NoSpanInfo ty' f)
 instPredList :: Pred -> DTM (ModuleIdent, [Type], [Pred])
 instPredList (Pred _ cls tys) = do
   inEnv <- getInstEnv
-  case lookupInstMatch cls tys inEnv of
+  case fst (lookupInstMatch cls tys inEnv) of
     [] -> internalError $ "Dictionary.instPredList: " ++
                             "Could not find an instance for " ++ show (cls, tys)
     [(m, pls, itys, _, tau)] -> return (m, itys, subst tau pls)

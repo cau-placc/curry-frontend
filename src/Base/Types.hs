@@ -20,8 +20,9 @@
 module Base.Types
   ( -- * Representation of types
     Type (..), applyType, unapplyType, rootOfType
+  , isTypeVariable, isAppliedTypeVariable
   , isArrowType, arrowArity, arrowArgs, arrowBase, arrowUnapply
-  , IsType (..), typeConstrs
+  , IsType (..), typeConstrs, removeTypeConstrained
   , qualifyType, unqualifyType, qualifyTC
     -- * Representation of predicates, predicate sets and predicated types
   , Pred (..), PredIsICC (..), IsPred (..), LPred (..), qualifyPred
@@ -29,11 +30,11 @@ module Base.Types
   , PredSet, emptyPredSet, LPredSet, emptyLPredSet, psMember, removeICCFlag
   , partitionPredSetSomeVars, partitionPredSetOnlyVars, minPredSet, maxPredSet
   , qualifyPredSet, unqualifyPredSet, funDepCoveragePredSet
-  , PredList, LPredList, plElem, removeICCFlagList, partitionPredListSomeVars
-  , partitionPredListOnlyVars, minPredList, maxPredList, qualifyPredList
-  , unqualifyPredList, funDepCoveragePredList, plUnion, plUnions, plDeleteMin
-  , plConcatMap, plConcatMapM, plInsert, plDifference, plLookupMin
-  , impliedPredicatesList
+  , PredList, LPredList, plElem, removeICCFlagList, partitionPredList
+  , partitionPredListOnlyVars, partitionPredListSomeVars
+  , minPredList, maxPredList, qualifyPredList, unqualifyPredList
+  , funDepCoveragePredList, plUnion, plUnions, plDeleteMin, plConcatMap
+  , plConcatMapM, plInsert, plDifference, plLookupMin, impliedPredicatesList
   , PredType (..), predType, unpredType, qualifyPredType, unqualifyPredType
   , ambiguousTypeVars
   , PredTypes (..), qualifyPredTypes, unqualifyPredTypes
@@ -132,6 +133,19 @@ unapplyType dflt ty = unapply ty []
       | otherwise = (TypeConstrained tys tv, tys')
     unapply (TypeForall     tvs ty') tys  = (TypeForall tvs ty', tys)
 
+-- Checks if a type is a simple type variable.
+-- taken from Leif-Erik Krueger
+isTypeVariable :: Type -> Bool
+isTypeVariable (TypeVariable _) = True
+isTypeVariable _                = False
+
+-- Checks if a type is a type variable or a type variable applied to types.
+-- Taken from Leif-Erik Krueger
+isAppliedTypeVariable :: Type -> Bool
+isAppliedTypeVariable = isTypeVariable . fst . unapplyType False
+
+
+
 -- The function 'rootOfType' returns the name of the type constructor at the
 -- root of a type. This function must not be applied to a type whose root is
 -- a type variable or a skolem type.
@@ -176,6 +190,19 @@ typeConstrs ty = constrs ty [] where
   constrs (TypeConstrained _ _) tcs = tcs
   constrs (TypeArrow   ty1 ty2) tcs = constrs ty1 (constrs ty2 tcs)
   constrs (TypeForall    _ ty') tcs = constrs ty' tcs
+
+-- taken from Leif-Erik Krueger
+removeTypeConstrained :: Type -> Type
+removeTypeConstrained t@(TypeConstructor  _) = t
+removeTypeConstrained t@(TypeVariable     _) = t
+removeTypeConstrained (TypeConstrained _ tv) = TypeVariable tv
+removeTypeConstrained (TypeApply      t1 t2) =
+  TypeApply (removeTypeConstrained t1) (removeTypeConstrained t2)
+removeTypeConstrained (TypeArrow      t1 t2) =
+  TypeArrow (removeTypeConstrained t1) (removeTypeConstrained t2)
+removeTypeConstrained (TypeForall     tvs t) =
+  TypeForall tvs (removeTypeConstrained t)
+
 
 -- The method 'typeVars' returns a list of all type variables occurring in a
 -- type t. Note that 'TypeConstrained' variables are not included in the set of
@@ -374,7 +401,7 @@ partitionPredSetSomeVars :: (IsPred a, IsPred b) => Set.Set a -> Set.Set b
 partitionPredSetSomeVars = partitionPredSet any
 
 partitionPredListSomeVars :: (IsPred a, IsPred b) => [a] -> [b] -> ([b],[b])
-partitionPredListSomeVars = partitionPredList any
+partitionPredListSomeVars = partitionPredList' any
 
 -- Partitions the given predicate set such that all predicates in the first
 -- element of the returned tuple have only type variables (or type variables
@@ -386,7 +413,7 @@ partitionPredSetOnlyVars :: IsPred a => Set.Set a -> (Set.Set a, Set.Set a)
 partitionPredSetOnlyVars = partitionPredSet all emptyPredSet
 
 partitionPredListOnlyVars :: IsPred a => [a] -> ([a],[a])
-partitionPredListOnlyVars = partitionPredList all ([] :: PredList)
+partitionPredListOnlyVars = partitionPredList' all ([] :: PredList)
 
 partitionPredSet :: (IsPred a, IsPred b) => ((Type -> Bool) -> [Type] -> Bool)
                  -> Set.Set a -> Set.Set b -> (Set.Set b, Set.Set b)
@@ -397,14 +424,19 @@ partitionPredSet f ps = Set.partition $
     isTypeVariable (TypeApply ty _) = isTypeVariable ty
     isTypeVariable _                = False
 
-partitionPredList :: (IsPred a, IsPred b) => ((Type -> Bool) -> [Type] -> Bool)
+partitionPredList' :: (IsPred a, IsPred b) => ((Type -> Bool) -> [Type] -> Bool)
                   -> [a] -> [b] -> ([b],[b])
-partitionPredList f pl = partition $
-  (\pr@(Pred _ _ tys) -> pr `plElem` pl || f isTypeVariable tys) . getPred
+partitionPredList' f pl = partition $
+ (\pr@(Pred _ _ tys) -> pr `plElem` pl || f isTypeVariable tys) . getPred
   where
     isTypeVariable (TypeVariable _) = True
     isTypeVariable (TypeApply ty _) = isTypeVariable ty
     isTypeVariable _                = False
+
+-- taken from Leif-Erik Krueger
+partitionPredList :: IsPred a => [a] -> ([a],[a])
+partitionPredList = partition $ 
+  (\(Pred _ _ tys) -> all isAppliedTypeVariable tys) . getPred
 
 -------------------------------------------------------------------------------
 -- Operations on predicate lists

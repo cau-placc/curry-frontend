@@ -19,12 +19,15 @@
 -}
 module Checks.InstanceCheck (instanceCheck) where
 
-import           Control.Monad.Extra        ( concatMapM, maybeM, unless, when
-                                            , whileM )
+import           Control.Monad.Extra        ( concatMapM, maybeM, unless, void
+                                            , when, whileM )
 import qualified Control.Monad.State as S   (State, execState, gets, modify)
+import           Data.Either                (either, isRight, lefts)
 import           Data.List                  ( (\\), nub, partition, sortBy
                                             , tails )
-import qualified Data.Map            as Map (toList)
+import qualified Data.Map            as Map ( Map, elems, keysSet, restrictKeys
+                                            , singleton, toList, unions )
+import qualified Data.Set            as Set (fromList, toList)
 import           Data.Maybe                 (isJust)
 
 import Curry.Base.Ident
@@ -187,8 +190,9 @@ bindInstance tcEnv clsEnv (InstanceDecl p _ cx qcls inst ds) = do
       PredTypes ipls itys = normalize 0 $ PredTypes pls tys
   term <- checkInstanceTermination m False (nub $ fv (inst, cx)) p opls qcls otys
   fdCov <- checkFunDepCoverage clsEnv p qcls (getOrigName m qcls tcEnv) inst
-  when (term && fdCov) $ modifyInstEnv $
-    bindInstInfo (getOrigName m qcls tcEnv, itys) (m, ipls, impls [] ds)
+  when fdCov $ modifyInstEnv $
+    bindInstInfo (getOrigName m qcls tcEnv, itys) 
+                    (m, if term then ipls else [], impls [] ds)
   where impls is [] = is
         impls is (FunctionDecl _ _ f eqs:ds')
           | f' `elem` map fst is = impls is ds'
@@ -291,6 +295,8 @@ bindDerivedInstance clsEnv p pty cls = do
   m <- getModuleIdent
   (((_, tys), pls), enter) <- inferPredList clsEnv p pty [] cls
   when enter $ modifyInstEnv (bindInstInfo (cls, tys) (m, pls, impls))
+               -- taken from Leif-Erik Krueger
+               >> checkMissingImplementations clsEnv p cls tys (map fst impls)
   where impls | cls == qEqId      = [(eqOpId, 2)]
               | cls == qOrdId     = [(leqOpId, 2)]
               | cls == qEnumId    = [ (succId, 1), (predId, 1), (toEnumId, 1)
@@ -311,7 +317,7 @@ inferPredLists clsEnv (DeriveInfo spi pty@(PredType _ inst) tys clss) = do
   mapM (inferPredList clsEnv spi pty tys) clss'
 
 -- TODO: The following probably has to be reworked with FlexibleInstances
-
+-- inspired by Leif-Erik Krueger
 inferPredList :: HasSpanInfo s => ClassEnv -> s -> PredType -> [Type]
               -> QualIdent -> INCM ((InstIdent, PredList), Bool)
 inferPredList clsEnv p (PredType pls inst) tys cls = do
@@ -322,18 +328,13 @@ inferPredList clsEnv p (PredType pls inst) tys cls = do
       pls''  = [Pred OPred scls [inst] | (scls, [0]) <- sclsInfos]
       pls''' = plUnions [pls, pls',  pls'']
   (pls4, novarpls) <-
-    reducePredList (cls == qDataId) p "derived instance" doc clsEnv pls'''
-  let pls5 = filter noPolyPred pls4
-  if any (isDataPred m) (novarpls ++ pls5) && cls == qDataId
+    reducePredList (Derive $ cls == qDataId) p doc clsEnv pls'''
+  if cls == qDataId && (not (null novarpls) || any noPolyPred pls4)
     then return    (((cls, [inst]), pls4), False)
-    else do mapM_ (reportUndecidable p "derived instance" doc) pls5
-            enter <- checkInstanceTermination m True [] p pls4 cls [inst]
-            return (((cls, [inst]), pls4), enter)
+    else do term <- checkInstanceTermination m True [] p pls4 cls [inst]
+            return (((cls, [inst]), if term then pls4 else []), True)
   where
-    noPolyPred (Pred _ _ tys') = any (not . isSimpleTypeVar) tys'
-    isSimpleTypeVar (TypeVariable _) = True
-    isSimpleTypeVar _                = False
-    isDataPred _ (Pred _ qid _) = qid == qDataId
+    noPolyPred (Pred _ _ tys') = any (not . isTypeVariable) tys'
 
 updatePredLists :: [((InstIdent, PredList), Bool)] -> INCM Bool
 updatePredLists = fmap or . mapM (uncurry updatePredList)
@@ -350,13 +351,6 @@ updatePredList (i, pls) enter = do
         modifyInstEnv $ bindInstInfo i (m, pls, is)
         return True
     _ -> internalError "InstanceCheck.updatePredList"
-
-reportUndecidable :: HasSpanInfo s => s -> String -> Doc -> Pred -> INCM ()
-reportUndecidable p what doc pr@(Pred _ _ tys) = do
-  m <- getModuleIdent
-  unless (all isTypeVar tys) $ report $ errMissingInstance m p what doc pr
-  where isTypeVar (TypeVariable _) = True
-        isTypeVar _                = False
 
 -- Checks if the instance given by its span info, context, class identifier and
 -- instance types follows the instance termination rules.
@@ -449,21 +443,48 @@ checkFunDepCoverage clsEnv p cls qcls itys =
 -- and that the context of the corresponding instance declaration is satisfied
 -- by cx.
 
+-- inspired by Leif-Erik Krueger
 checkInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
-checkInstance tcEnv clsEnv (InstanceDecl p _ cx cls inst _) = do
+checkInstance tcEnv clsEnv (InstanceDecl p _ cx cls inst ds) = do
   m <- getModuleIdent
   let PredTypes pls tys = expandInst m tcEnv clsEnv cx inst
       ocls = getOrigName m cls tcEnv
       pls' = [ uncurry (Pred OPred) (applySuperClass tys sclsInfo)
              | sclsInfo <- superClasses ocls clsEnv ]
       doc = ppPred m $ Pred OPred cls tys
-      what = "instance declaration"
   -- TODO: Is there a better span for these, for example by combining the 'cls'
   --         and 'inst' spans?
-  (pls'', _) <- reducePredList False p what doc clsEnv pls'
-  mapM_ (report . errMissingInstance m p what doc) $
-    plDifference pls'' (maxPredList clsEnv pls)
+  _ <- reducePredList (SuperClass $ maxPredList clsEnv pls) p doc clsEnv pls'
+  checkMissingImplementations clsEnv p ocls tys (concatMap impls ds)
+ where
+  impls (FunctionDecl _ _ f _) = [unRenameIdent f]
+  impls _                      = []
 checkInstance _ _ _ = ok
+
+-- Taken from Leif-Erik Krueger
+-- Next, we report cases where an overlapping instance error would occur in the
+-- dictionary translation because of a missing method implementation. For
+-- example, if an instance for Eq String only implementing (==) was added, then
+-- there would be multiple possible implementations of (/=): The default
+-- implementation of (/=) uses (==) and both the added instance for Eq String
+-- and the predefined instance for Eq [a] would provide a fitting implementation
+-- of (==). To prevent such ambiguities, we must ensure that an instance, which
+-- is completely overlapped by another instance (so the latter instance always
+-- matches when the former one does), implements every class method.
+
+-- taken from Leif-Erik Krueger
+checkMissingImplementations :: HasSpanInfo p => ClassEnv -> p -> QualIdent
+                            -> [Type] -> [Ident] -> INCM ()
+checkMissingImplementations clsEnv p qcls tys impls = do
+  m <- getModuleIdent
+  inEnv <- getInstEnv
+  let missingImpls = classMethods qcls clsEnv \\ impls
+      miDoc = nest 2 $ list (map ppIdent missingImpls)
+      miError = instPredList MissingImpls m p miDoc (Pred OPred qcls tys) inEnv
+  unless (null missingImpls || isRight miError) $ mapM_ report (lefts [miError])
+
+
+
 
 -- All types specified in the optional default declaration of a module
 -- must be instances of the Num class. Since these types are used to resolve
@@ -480,10 +501,8 @@ checkDefaultType tcEnv clsEnv ty = do
   m <- getModuleIdent
   let PredType _ ty' = expandPolyType OPred m tcEnv clsEnv $
                          QualTypeExpr NoSpanInfo [] ty
-  (pls, _) <- reducePredList False ty what empty clsEnv
-    [Pred OPred qNumId [ty']]
-  mapM_ (report . errMissingInstance m ty what empty) pls
-  where what = "default declaration"
+ -- taken from Leif-Erik Krueger
+  void $ reducePredList Default ty empty clsEnv [Pred OPred qNumId [ty']]
 
 -- The function 'reducePredSet' simplifies a predicate set of the form
 -- (C_1 tau_{1,1} ... tau_{1,n_1}, ..., C_m tau_{m,1} ... tau_{m,n_m}) where the
@@ -494,33 +513,86 @@ checkDefaultType tcEnv clsEnv ty = do
 -- within the same set.
 -- When the flag is set, all missing Data preds are ignored.
 
-reducePredList :: HasSpanInfo s => Bool -> s -> String -> Doc -> ClassEnv -> PredList
+-- The following is taken from Leif-Erik Krueger
+-- The specifics of this reduction and how predicates remaining after the
+-- reduction are treated, depends on an 'ReductionMode' argument. The following
+-- modes are used in the instance check:
+
+-- * 'Derive' is used when inferring predicate sets of derived instances. In
+--   this mode, we also consider overlap between unifiable instances (see the
+--   instance environment for information about matching and unifiable
+--   instances), which matches the behaviour of the GHC. After the reduction, we
+--   report every remaining predicate which is not of the form C a_1 ... a_n
+--   with C being a class and a_1 ... a_n being type variables. An exception to
+--   this is made for derived instances for the Data class, which are marked by
+--   a flag included in this mode: Since these are derived automatically, we do
+--   not report remaining Data predicates for them, but instead remove the
+--   instance from the environment if there are remaining predicates that do not
+--   match the required form (see 'inferPredSet' and 'updatePredSet').
+
+-- * 'SuperClass' is used when determining missing super class instances. If a
+--   predicate found within the set given with this mode, which represents the
+--   instance context, occurs during the reduction, it is directly removed. We
+--   can therefore simply report all predicates remaining after the reduction,
+--   as they belong to missing super class instances or unsatisfied constraints
+--   of existing super class instances.
+
+-- * 'Default' is used when checking whether a type given in a default
+--   declaration is an instance of the Num class. All predicates remaining after
+--   the reduction are reported.
+
+-- * 'MissingImpls' is used to determine whether an instance is completely
+--   overlapped by another instance to prevent errors arising from missing
+--   method implementations (see 'checkMissingImplementations'). This mode is
+--   not used with 'reducePredSet', but only with its helper function
+--   'instPredSet'.
+
+-- taken from Leif-Erik Krueger
+data ReductionMode = Derive Bool | SuperClass [Pred] | Default | MissingImpls
+  deriving Eq
+
+
+reducePredList :: HasSpanInfo s => ReductionMode -> s -> Doc -> ClassEnv -> PredList
               -> INCM (PredList, PredList)
-reducePredList b p what doc clsEnv pls = do
+reducePredList rm p doc clsEnv pls = do
   m <- getModuleIdent
   inEnv <- getInstEnv
-  (pls1, pls2) <-
-    partitionPredListOnlyVars <$> minPredList clsEnv <$> reducePreds inEnv pls
-  let pls2' = if b then filter (isNotDataPred m) pls2 else pls2
-  mapM_ (reportMissing m) pls2' >> return (pls1, pls2)
+  -- taken from Leif-Erik Krueger
+  let pm = reducePreds m inEnv pls
+      pls' = minPredList clsEnv (Set.toList $ Map.keysSet pm)
+      (pls1,pls2) = partitionPredList pls'
+      plsNoPoly = pls2 `plUnion` filter noPolyPred pls1
+      plsReport = case rm of Derive True  -> filter isNotDataPred plsNoPoly
+                             Derive False -> plsNoPoly
+                             _            -> pls'
+  mapM_ report (Map.elems (Map.restrictKeys pm (Set.fromList plsReport)))
+  return (pls1, pls2)
   where
-    isNotDataPred _ (Pred _ qid _) = qid /= qDataId
-    reportMissing m pr =
-      report $ errMissingInstance m p what doc pr
-    reducePreds inEnv = plConcatMapM $ reducePred inEnv
-    reducePred inEnv predicate =
-      maybeM (return [predicate]) (reducePreds inEnv)
-        (instPredList p what doc inEnv predicate)
+    noPolyPred (Pred _ _ tys') = any (not . isTypeVariable) tys'
+    isNotDataPred (Pred _ qid _) = qid /= qDataId
+    -- taken from Leif-Erik Krueger
+    reducePreds :: ModuleIdent -> InstEnv -> [Pred] -> Map.Map Pred Message
+    reducePreds m inEnv = Map.unions . map (reducePred m inEnv)
+    
+    -- taken from Leif-Erik Krueger
+    reducePred :: ModuleIdent -> InstEnv -> Pred -> Map.Map Pred Message
+    reducePred m inEnv predicate =
+      either (Map.singleton predicate) (reducePreds m inEnv)
+        (instPredList rm m p doc predicate inEnv)
 
-instPredList :: HasSpanInfo p => p -> String -> Doc -> InstEnv -> Pred
-            -> INCM (Maybe PredList)
-instPredList p what doc inEnv pr@(Pred _ qcls tys) =
-  case lookupInstMatch qcls tys inEnv of
-    [] -> return Nothing
-    [(_, pls, _, _, sigma)] -> return $ Just (subst sigma pls)
-    insts -> do m <- getModuleIdent
-                report $ errInstanceOverlap m p what doc pr insts
-                return $ Just []
+-- taken from Leif-Erik Krueger
+instPredList :: HasSpanInfo p => ReductionMode -> ModuleIdent -> p -> Doc -> Pred
+             -> InstEnv -> Either Message PredList
+instPredList rm m p doc pr@(Pred _ qcls tys) inEnv =
+  if pr `plElem` getGivenPreds rm
+  then Right []
+  else case lookupInstMatch qcls tys inEnv of
+         ([],_) -> Left $ errMissingInstance rm m p doc pr
+         ([(_, pls, _, _, sigma)], insts) ->
+             if isDeriveMode rm && length insts > 1
+             then Left $ errInstanceOverlap rm True m p doc pr insts
+             else Right $ subst sigma pls
+         (insts, _) -> Left $ errInstanceOverlap rm False m p doc pr insts
 
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions
@@ -566,8 +638,11 @@ unqualType tcEnv (TypeForall      tvs ty) = TypeForall tvs (unqualType tcEnv ty)
 -- TODO: With FlexibleInstances, where some types after expansion might not
 --         be in scope, is using 'head' safe or should the given name be
 --         returned as a default option?
+-- taken from Leif-Erik Krueger
 unqualTC :: TCEnv -> QualIdent -> QualIdent
-unqualTC tcEnv = head . flip reverseLookupByOrigName tcEnv
+unqualTC tcEnv otc = case flip reverseLookupByOrigName tcEnv otc of
+   []   -> otc
+   tc:_ -> tc
 
 isFunType :: Type -> Bool
 isFunType (TypeArrow         _ _) = True
@@ -575,6 +650,23 @@ isFunType (TypeApply       t1 t2) = isFunType t1 || isFunType t2
 isFunType (TypeForall      _  ty) = isFunType ty
 isFunType (TypeConstrained tys _) = any isFunType tys
 isFunType _                       = False
+
+-- taken from Leif-Erik Krueger
+redModeWhatDoc :: ReductionMode -> Doc
+redModeWhatDoc (Derive _)     = text "derived instance for"
+redModeWhatDoc (SuperClass _) = text "instance declaration for"
+redModeWhatDoc Default        = text "default declaration"
+redModeWhatDoc MissingImpls   = text "default method implementation(s) for"
+
+-- taken from Leif-Erik Krueger
+getGivenPreds :: ReductionMode -> [Pred]
+getGivenPreds (SuperClass instcx) = instcx
+getGivenPreds _                   = []
+
+-- taken from Leif-Erik Krueger
+isDeriveMode :: ReductionMode -> Bool
+isDeriveMode (Derive _) = True
+isDeriveMode _          = False
 
 -- ---------------------------------------------------------------------------
 -- Error messages
@@ -599,22 +691,26 @@ ppInstSource :: TCEnv -> InstSource -> Doc
 ppInstSource tcEnv (InstSource i m) = ppInstIdent (unqualInstIdent tcEnv i) <+>
   parens (text "defined in" <+> ppMIdent m)
 
-errMissingInstance :: HasSpanInfo s => ModuleIdent -> s -> String -> Doc -> Pred
-                   -> Message
-errMissingInstance m p what doc predicate = spanInfoMessage (getSpanInfo p) $ vcat
+-- taken from Leif-Erik Krueger
+errMissingInstance :: HasSpanInfo s => ReductionMode -> ModuleIdent -> s -> Doc
+                   -> Pred -> Message
+errMissingInstance rm m p doc predicate = spanInfoMessage (getSpanInfo p) $ vcat
   [ text "Missing instance for" <+> ppPred m predicate
-  , text "in" <+> text what <+> doc
+  , text "in" <+> redModeWhatDoc rm
+  , doc
   ]
 
-errInstanceOverlap :: HasSpanInfo p => ModuleIdent -> p -> String -> Doc -> Pred
-                                    -> [InstMatchInfo] -> Message
-errInstanceOverlap m p what doc pr@(Pred _ qcls _) insts = spanInfoMessage p $
-  vcat [ text "Instance overlap for" <+> ppPred m pr
-       , text "arising in" <+> text what
+-- taken from Leif-Erik Krueger
+errInstanceOverlap :: HasSpanInfo p => ReductionMode -> Bool -> ModuleIdent -> p 
+                   -> Doc -> Pred -> [InstMatchInfo] -> Message
+errInstanceOverlap rm tvChoice m p doc pr@(Pred _ qcls _) insts = 
+  spanInfoMessage p $ vcat $
+       [ text "Instance overlap for" <+> ppPred m pr
+       , text "arising in" <+> redModeWhatDoc rm
        , doc
        , text "Matching instances:"
        , nest 2 $ vcat $ map displayMatchingInst insts
-       ]
+       ] ++ note
  where
   -- TODO: This function is very similar to 'ppInstSource', but the latter
   --         currently needs a 'TCEnv', which would need to be carried around in
@@ -623,6 +719,14 @@ errInstanceOverlap m p what doc pr@(Pred _ qcls _) insts = spanInfoMessage p $
   displayMatchingInst :: InstMatchInfo -> Doc
   displayMatchingInst (m', _, itys, _, _) =
     ppPred m (Pred OPred qcls itys) <+> parens (text "defined in" <+> pPrint m')
+
+  note = map text $ case (rm, tvChoice) of
+    (MissingImpls, _) -> [ "(Add implementations for all class methods in"
+                         , "an explicit instance declaration to avoid this.)" ]
+    (_, True)         -> [ "(The choice depends on the"
+                         , "instantiation of type variables.)" ]
+    _                 -> []
+
 
 errVarQuantityConstraint :: HasSpanInfo p => Bool -> p -> Doc -> Doc -> Ident
                                           -> Message

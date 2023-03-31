@@ -50,15 +50,18 @@ import           Control.Monad.Extra ( allM, filterM, foldM, liftM, (&&^)
 import qualified Control.Monad.State as S
                                      (State, StateT, get, gets, put, modify,
                                       runState, evalStateT)
-import           Data.Either         (partitionEithers)
+import           Data.Either         (either,partitionEithers)
 import           Data.Function       (on)
 import           Data.List           (nub, nubBy, partition, sortBy, (\\))
-import qualified Data.Map            as Map (Map, empty, insert, lookup)
+import qualified Data.Map            as Map ( Map, empty, elems, insert
+                                            , insertWith, lookup, keysSet
+                                            , restrictKeys, singleton, unions )
 import           Data.Maybe                 ( fromJust, fromMaybe, isJust
                                             , listToMaybe, catMaybes
                                             , isNothing )
 import qualified Data.Set.Extra      as Set ( Set, empty, fromList, insert
-                                            , member, notMember, toAscList)
+                                            , member, notMember, toAscList
+                                            , toList )
 
 import GHC.Stack (HasCallStack)
 
@@ -98,7 +101,7 @@ import Debug.Trace
 typeCheck :: ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv -> InstEnv -> [Decl a]
           -> ([Decl PredType], ValueEnv, [Message])
 typeCheck m tcEnv vEnv clsEnv inEnv ds = runTCM (checkDecls ds) initState
-  where initState = TcState m tcEnv vEnv clsEnv (inEnv, Map.empty) []
+  where initState = TcState m tcEnv vEnv clsEnv (inEnv, Map.empty)
                             [intType, floatType] idSubst emptySigEnv 1 []
 
 checkDecls :: [Decl a] -> TCM [Decl PredType]
@@ -144,7 +147,6 @@ data TcState = TcState
   , valueEnv     :: ValueEnv
   , classEnv     :: ClassEnv
   , instEnv      :: InstEnv'    -- instances (static and dynamic)
-  , explPreds    :: PredList    -- predicates implied by the type signature
   , defaultTypes :: [Type]
   , typeSubst    :: TypeSubst
   , sigEnv       :: SigEnv
@@ -201,18 +203,16 @@ getInstEnv = S.gets instEnv
 modifyInstEnv :: (InstEnv' -> InstEnv') -> TCM ()
 modifyInstEnv f = S.modify $ \s -> s { instEnv = f $ instEnv s }
 
-getExplPreds :: TCM PredList
-getExplPreds = S.gets explPreds
+-- taken from Leif-Erik Krueger
+bindDynamicInst :: Pred -> InstEnv' -> InstEnv'
+bindDynamicInst (Pred _ qcls tys) = fmap $ Map.insertWith (++) qcls [tys]
 
-modifyExplPreds :: (PredList -> PredList) -> TCM ()
-modifyExplPreds f =
-  S.modify $ \s -> s { explPreds = f $ explPreds s }
-
-withLocalExplPreds :: TCM a -> TCM a
-withLocalExplPreds act = do
-  oldEnv <- getExplPreds
+-- taken from Leif-Erik Krueger
+withLocalInstEnv :: TCM a -> TCM a
+withLocalInstEnv act = do
+  oldEnv <- getInstEnv
   res <- act
-  modifyExplPreds $ const oldEnv
+  modifyInstEnv $ const oldEnv
   return res
 
 getDefaultTypes :: TCM [Type]
@@ -526,7 +526,7 @@ tcPDeclGroup pls pds = do
       -- declarations.
       (gpls, (mpls, lpls)) = fmap (splitPredListAny fvs') $
                                 splitPredListAll fvs' $ subst theta pls'
-  lpls' <- plUnion mpls <$> reducePredSet lpls
+  lpls' <- plUnion mpls <$> reducePredSet False lpls
   lpls'' <- improvePreds lpls'
   lpls3 <- foldM (uncurry . defaultPDecl fvs') lpls'' impPds'
   theta' <- getTypeSubst
@@ -590,6 +590,16 @@ tcPDecl :: LPredList -> PDecl a -> TCM (LPredList, (Type, PDecl PredType))
 tcPDecl pls (i, FunctionDecl p _ f eqs) = do
   vEnv <- getValueEnv
   tcFunctionPDecl i pls (varType f vEnv) p f eqs
+-- taken from Leif-Erik Krueger
+tcPDecl pls (i, d@(PatternDecl p (VariablePattern p' _ v) rhs)) = do
+  clsEnv <- getClassEnv
+  vEnv <- getValueEnv
+  (exPls, ty) <- inst (varType v vEnv)
+  modifyInstEnv $ flip (foldr bindDynamicInst) $ maxPredList clsEnv exPls
+  (pls', rhs') <- tcRhs rhs >>-
+    unify p "variable declaration" (pPrint d) pls ty
+  let t' = VariablePattern p' (predType ty) v
+  return (pls', (ty, (i, PatternDecl p t' rhs')))
 tcPDecl pls (i, d@(PatternDecl p t rhs)) = do
   (pls', ty', t') <- tcPattern p t
   (pls'', rhs') <- tcRhs rhs >>-
@@ -604,7 +614,10 @@ tcPDecl _ _ = internalError "TypeCheck.tcPDecl"
 tcFunctionPDecl :: Int -> LPredList -> TypeScheme -> SpanInfo -> Ident
                 -> [Equation a] -> TCM (LPredList, (Type, PDecl PredType))
 tcFunctionPDecl i pls tySc@(ForAll _ pty) p f eqs = do
-  (_, ty) <- inst tySc
+  -- changes taken from Leif-Erik Krueger
+  clsEnv <- getClassEnv
+  (exPls, ty) <- inst tySc
+  modifyInstEnv $ flip (foldr bindDynamicInst) $ maxPredList clsEnv exPls
   (pls', eqs') <- tcEquations p ty pls eqs
   return (pls', (ty, (i, FunctionDecl p pty f eqs')))
 
@@ -614,8 +627,8 @@ tcEquations p ty pls eqs = do
   (pls', tys, eqs') <- tcEqns eqs
   -- TODO : improve span computation
   plss <- mapM (unify p "function definition" empty pls ty pls') tys
-  pls'' <- reducePredSet $ plUnions plss
-  let eqs'' = map (setPredList pls'') eqs'
+  let pls'' = plUnions plss
+      eqs'' = map (setPredList pls'') eqs'
   return (pls'', eqs'')
  where
    setPredList preds (Equation p (Just (PredType _ typ)) lhs rhs)
@@ -629,8 +642,7 @@ tcEqns eqs = do
   let (plss, tys, eqs') = unzip3 plsEqs 
       poss              = map getSpanInfo eqs
       docs              = map pPrint eqs
-  plss' <- mapM reducePredSet plss
-  pls' <- unifyList poss "equation" docs plss' tys
+  pls' <- unifyList poss "equation" docs plss tys
   let eqs'' = setPredType pls' tys eqs'
   return (pls', tys, eqs'')
  where
@@ -653,8 +665,7 @@ tcEqn p lhs rhs = do
   let pls'' = plUnion pls pls'
       ty' = foldr TypeArrow ty tys
   pls3 <- improvePreds pls''
-  pls4 <- reducePredSet pls3
-  return (pls4, ty', Equation p (Just (PredType (map getPred pls'') ty')) lhs' rhs')
+  return (pls3, ty', Equation p (Just (PredType (map getPred pls'') ty')) lhs' rhs')
 
 bindLambdaVars :: QuantExpr t => t -> TCM ()
 bindLambdaVars t = do
@@ -738,16 +749,14 @@ declVars _ = internalError "TypeCheck.declVars"
 
 tcCheckPDecl :: LPredList -> QualTypeExpr -> PDecl a
              -> TCM (LPredList, PDecl PredType)
-tcCheckPDecl pls qty pd = withLocalExplPreds $ do
-  clsEnv <- getClassEnv
-  PredType newExPs _ <- expandPoly qty
-  modifyExplPreds $ flip plUnion (maxPredList clsEnv newExPs)
+tcCheckPDecl pls qty pd = withLocalInstEnv $ do
   (pls', (ty, pd')) <- tcPDecl pls pd
   theta <- getTypeSubst
+  clsEnv <- getClassEnv
   fvs <- funDepCoveragePredList clsEnv (subst theta pls') <$> computeFvEnv
   let (gpls, lpls) = splitPredListAny fvs (subst theta pls')
   poly <- isNonExpansive $ snd pd
-  lpls' <- reducePredSet lpls
+  lpls' <- reducePredSet True lpls
   lpls'' <- defaultPDecl fvs lpls' ty pd
   let ty' = subst theta ty
       tySc = if poly then gen fvs lpls'' ty' else monoType ty'
@@ -1080,7 +1089,7 @@ tcMethodPDecl qcls tySc (i, FunctionDecl p _ f eqs) = withLocalValueEnv $ do
   clsEnv <- getClassEnv
   theta <- getTypeSubst
   fvs <- funDepCoveragePredList clsEnv (subst theta pls) <$> computeFvEnv
-  pls' <- reducePredSet pls
+  pls' <- reducePredSet True pls
   pls'' <- applyDefaultsDecl p what empty fvs pls' ty
   theta' <- getTypeSubst
   return (PredType (map getPred pls'') ty
@@ -1318,8 +1327,7 @@ tcRhs (SimpleRhs p li e ds) = do
     (pls', ty, e') <- tcExpr e
     return (pls, ds', pls', ty, e')
   pls'' <- improvePreds $ plUnion pls pls'
-  pls3 <- reducePredSet pls''
-  return (pls3, ty, SimpleRhs p li e' ds')
+  return (pls'', ty, SimpleRhs p li e' ds')
 tcRhs (GuardedRhs spi li es ds) = withLocalValueEnv $ do
   (pls, ds') <- tcDecls ds
   ty <- freshTypeVar
@@ -1354,17 +1362,19 @@ tcExpr e@(Constructor spi _ c) = do
 tcExpr (Paren spi e) = do
   (pls, ty, e') <- tcExpr e
   return (pls, ty, Paren spi e')
-tcExpr te@(Typed spi e qty) = do
+tcExpr te@(Typed spi e qty) = withLocalInstEnv $ do
   let what = "explicitly typed expression"
+  clsEnv <- getClassEnv
   pty <- expandPoly qty
   (pls, ty) <- inst (typeScheme pty)
+  -- taken from Leif-Erik Krueger
+  modifyInstEnv $ flip (foldr bindDynamicInst) $ maxPredList clsEnv pls
   let pls' = map (\pr -> LPred pr spi what (pPrint te)) pls
   (pls'', e') <- tcExpr e >>- unify spi what (pPrintPrec 0 e) [] ty
-  clsEnv <- getClassEnv
   theta <- getTypeSubst
   fvs <- funDepCoveragePredList clsEnv (subst theta pls'') <$> computeFvEnv
   let (gpls, lpls) = splitPredListAny fvs (subst theta pls'')
-  lpls' <- reducePredSet lpls
+  lpls' <- reducePredSet True lpls
   lpls'' <- applyDefaultsDecl spi what (pPrint te) fvs lpls' ty
   let tySc = gen fvs lpls'' (subst theta ty)
   unlessM (checkTypeSig pty tySc) $ do
@@ -1406,8 +1416,7 @@ tcExpr (ListCompr spi e qs) = do
     return (pls, qs', pls', ty, e')
   let pls'' = plUnion pls pls'
   pls3 <- improvePreds pls''
-  pls4 <- reducePredSet pls3
-  return (pls4, listType ty, ListCompr spi e' qs')
+  return (pls3, listType ty, ListCompr spi e' qs')
 tcExpr e@(EnumFrom spi e1) = do
   (pls, ty) <- freshEnumType
   let pls' = map (\pr -> LPred pr spi "arithmetic sequence" (pPrint e)) pls
@@ -1470,8 +1479,7 @@ tcExpr (Lambda spi ts e) = do
     (pls, ty, e') <- tcExpr e
     return (plss, tys, ts', pls, ty, e')
   let pls' = plUnions (pls : plss)
-  pls2 <- reducePredSet pls'
-  pls3 <- improvePreds pls2
+  pls3 <- improvePreds pls'
   return (pls3, foldr TypeArrow ty tys, Lambda spi ts' e')
 tcExpr (Let spi li ds e) = do
   (pls, ds', pls', ty, e') <- withLocalValueEnv $ do
@@ -1480,8 +1488,7 @@ tcExpr (Let spi li ds e) = do
     return (pls, ds', pls', ty, e')
   let pls'' = plUnion pls pls'
   pls3 <- improvePreds pls''
-  pls4 <- reducePredSet pls3
-  return (pls4, ty, Let spi li ds' e')
+  return (pls3, ty, Let spi li ds' e')
 tcExpr (Do spi li sts e) = do
   (sts', ty, pls', e') <- withLocalValueEnv $ do
     ((pls, mTy), sts') <-
@@ -1526,8 +1533,7 @@ tcAltern tyLhs p t rhs = do
     return (pls, t', pls', ty', rhs')
   let pls'' = plUnion pls pls'
   pls2 <- improvePreds pls''
-  pls3 <- reducePredSet pls2
-  return (pls3, ty', Alt p t' rhs')
+  return (pls2, ty', Alt p t' rhs')
 
 tcQual :: HasSpanInfo p => p -> LPredList -> Statement a
        -> TCM (LPredList, Statement PredType)
@@ -1701,7 +1707,7 @@ unify p what doc pls1 ty1 pls2 ty2 = do
   case unifyTypes m ty1' ty2' of
     Left reason -> report $ errTypeMismatch p what doc m ty1' ty2' reason
     Right sigma -> modifyTypeSubst (compose sigma)
-  reducePredSet $ plUnion pls1 pls2
+  return $ plUnion pls1 pls2
 
 -- List version of unify
 unifyList :: HasSpanInfo p => [p] -> String -> [Doc] -> [LPredList] -> [Type] 
@@ -1711,7 +1717,7 @@ unifyList _ _    _   [pls] _                        = return pls
 unifyList (p:ps) what (doc:docs) (pls1:pls2:plss) (ty1:ty2:tys) = do
   pls'  <- unifyList ps what docs (pls2:plss) (ty2:tys)
   pls'' <- unify p what doc pls1 ty1 pls2 ty2
-  reducePredSet $ plUnion pls' pls''
+  return $ plUnion pls' pls''
 
 unifyTypes :: ModuleIdent -> Type -> Type -> Either Doc TypeSubst
 unifyTypes _ (TypeVariable tv1) (TypeVariable tv2)
@@ -1771,38 +1777,54 @@ unifyTypeLists m (ty1 : tys1) (ty2 : tys2) =
 -- restricted by the current predicate set after the reduction and thus
 -- may cause a further extension of the current type substitution.
 
-reducePredSet :: LPredList -> TCM LPredList
-reducePredSet pls = do
+reducePredSet :: Bool -> LPredList -> TCM LPredList
+reducePredSet reportPreds pls = do
   m <- getModuleIdent
   clsEnv <- getClassEnv
   theta <- getTypeSubst
   inEnv <- fmap (fmap (subst theta)) <$> getInstEnv
-  exPs <- getExplPreds
   let pls' = subst theta pls
-  (pls1, pls2) <- partitionPredListSomeVars exPs <$>
-                    minPredList clsEnv <$> reducePreds inEnv pls'
-  theta' <- foldM (reportMissingInstance m inEnv) idSubst pls2
+      -- inspired by Leif-Erik Krueger
+      pm = reducePreds m inEnv (subst theta pls')
+      (plsDefaultable, (plsReportable, pls'')) = fmap (partition isReportable) $
+        partition isDefaultable $ minPredList clsEnv (Set.toList (Map.keysSet pm))
+  theta' <- foldM (defaultTypeConstrained m inEnv) idSubst plsDefaultable
   modifyTypeSubst $ compose theta'
-  pls3 <- improvePreds pls1
+  mapM_ report $ Map.elems $ Map.restrictKeys pm (Set.fromList plsReportable)
+  pls3 <- improvePreds pls''
   -- If we reduce a predicate set, we have to consider that
   -- reducing a constraint can introduce new improving substitution
   -- that can influence the reduction of another constraint.
   -- Therefore, we have to reduce the predicates, improve them, and
   -- reduce and improve again until nothing changes.
-  theta' <- getTypeSubst
-  let pls4 = subst theta' pls'
+  theta'' <- getTypeSubst
+  let pls4 = subst theta'' pls''
   if all (`elem` pls4) pls3 && all (`elem` pls3) pls4
   then return pls3
-  else reducePredSet pls3
+  else reducePredSet reportPreds pls3
   where
-    reducePreds inEnv = plConcatMapM $ reducePred inEnv
-    reducePred inEnv pr@(LPred (Pred OPred _ _) _ _ _) =
-      maybeM (return $ [pr]) (reducePreds inEnv) (instPredList pr inEnv)
-    -- TODO: Check if there is any possibility of this method being applied to
-    --         an implicit class constraint. (With FlexibleInstances or nullary
-    --         type classes, instances for reducing ICCs could exist.)
-    --         If so, add the 'removeDoubleICC' predicate set reduction.
-    reducePred _ pr@(LPred (Pred ICC _ _) _ _ _) =
+  
+    isDefaultable :: LPred -> Bool
+    isDefaultable (LPred (Pred _ qcls [TypeConstrained _ _]) _ _ _) =
+      isPreludeClass qcls
+    isDefaultable _ = False
+
+    isReportable :: LPred -> Bool
+    isReportable (LPred (Pred _ _ tys) _ _ _) = null (typeVars tys) ||
+      reportPreds && not (all isAppliedTypeVariable tys) ||
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- the defaulting restrictions described in a comment below.
+      map removeTypeConstrained tys /= tys
+
+-- taken from Leif-Erik Krueger
+reducePreds :: ModuleIdent -> InstEnv' -> [LPred] -> Map.Map LPred Message
+reducePreds m inEnv = Map.unions . map reducePred
+  where
+    reducePred :: LPred -> Map.Map LPred Message
+    reducePred pr@(LPred (Pred OPred _ _) _ _ _) =
+      either (Map.singleton pr) (reducePreds m inEnv) (instPredList m inEnv pr)
+    reducePred pr@(LPred (Pred ICC _ _) _ _ _) =
       internalError $ "TypeCheck.reducePredSet: " ++
         "tried to reduce the implicit class constraint " ++ show pr
 
@@ -1811,52 +1833,24 @@ reducePredSet pls = do
 --         Example: class C a b | a -> b
 --                  instance C [a] Int
 --                  Then, a constraint like C [a] b can be reduced.
-instPredList :: LPred -> InstEnv' -> TCM (Maybe LPredList)
-instPredList lpr@(LPred (Pred _ qcls tys) p what doc) inEnv =
+-- taken from Leif-Erik Krueger
+instPredList :: ModuleIdent -> InstEnv' -> LPred -> Either Message LPredList
+instPredList m inEnv (LPred pr@(Pred _ qcls tys) p what doc) =
   case Map.lookup qcls $ snd inEnv of
-    Just tyss | tys `elem` tyss -> return $ Just []
+    Just tyss | tys `elem` tyss -> Right []
     _ -> case lookupInstMatch qcls tys (fst inEnv) of
-          [] -> return Nothing
-          [(_, pls, _, _, sigma)] -> return $
-            Just (map (\pr -> LPred pr p what doc) (subst sigma pls))
-          insts -> do m <- getModuleIdent
-                      report $ errInstanceOverlap m lpr insts
-                      return $ Just []
+           ([], _)                -> Left $ errMissingInstance m lpr
+           (insts@(_ : _ : _), _) -> Left $ errInstanceOverlap m lpr insts False
+           (_, insts@(_ : _ : _)) -> Left $ errInstanceOverlap m lpr insts True
+           ([(_, ps, _, _, sigma)], _) ->
+             Right $ nub (map (\pr -> LPred pr p what doc) (subst sigma ps))
+  where lpr = LPred (Pred OPred qcls (map removeTypeConstrained tys)) p what doc
 
--- TODO: If FlexibleContexts is implemented, this method should suggest
---         activating that extension if there is an instance missing.
-reportMissingInstance :: ModuleIdent -> InstEnv' -> TypeSubst -> LPred
-                      -> TCM TypeSubst
-reportMissingInstance m inEnv theta (LPred (Pred _ qcls tys) p what doc) =
-  case subst theta tys of
-    -- TODO: Here, only unary constraints are taken into account. Reworking this
-    --         to work with n-ary constraints would be difficult, but it also
-    --         probably isn't necessary since Haskell doesn't take into account
-    --         these constraints either. Actually, Haskell checks if all
-    --         constraints are of the form C v with C being a Prelude class and
-    --         v being an ambiguous type variable and if one of these classes is
-    --         'Num' or a subclass of it. This test could be implemented in
-    --         Curry. 
-    tys'@[TypeConstrained tyOpts tv] ->
-      case concat (filter (hasInstance inEnv qcls) (map (: []) tyOpts)) of
-        [] -> do
-          report $ errMissingInstance m p what doc (Pred OPred qcls tys')
-          return theta
-        [ty] -> return (bindSubst tv ty theta)
-        tyOpts'
-          | length tyOpts == length tyOpts' -> return theta
-          | otherwise ->
-              liftM (flip (bindSubst tv) theta) (freshConstrained tyOpts')
-    tys'
-      | hasInstance inEnv qcls tys' -> return theta
-      | otherwise -> do
-        report $ errMissingInstance m p what doc (Pred OPred qcls tys')
-        return theta
 
--- TODO: Is 'lookupInstExact' sufficient here?
-hasInstance :: InstEnv' -> QualIdent -> [Type] -> Bool
-hasInstance inEnv qcls tys = isJust (lookupInstExact (qcls, tys) (fst inEnv)) ||
-  maybe False (tys `elem`) (Map.lookup qcls (snd inEnv))
+-- taken from Leif-Erik Krueger
+hasInstance :: ModuleIdent -> InstEnv' -> QualIdent -> [Type] -> Bool
+hasInstance m inEnv qcls =
+  null . reducePreds m inEnv . (:[]) . getFromPred . Pred OPred qcls
 
 -- Predicates which have both type variables and other types as predicate types
 -- (like @C Bool a@) cannot be reported in 'reducePredSet', because that would
@@ -1868,7 +1862,7 @@ hasInstance inEnv qcls tys = isJust (lookupInstExact (qcls, tys) (fst inEnv)) ||
 
 reportFlexibleContextDecl :: ModuleIdent -> PDecl PredType -> TCM ()
 reportFlexibleContextDecl m (_, FunctionDecl spi (PredType pls _) f _) =
-  let flexCs = snd $ partitionPredListOnlyVars pls
+  let flexCs = snd $ partitionPredList pls
       what   = "function declaration"
   in mapM_ (report . errFlexibleContext m spi what f) flexCs
 reportFlexibleContextDecl m (_, PatternDecl _ t _) =
@@ -1880,7 +1874,7 @@ reportFlexibleContextPattern :: ModuleIdent -> Pattern PredType -> TCM ()
 reportFlexibleContextPattern _ (LiteralPattern  _ _ _) = ok
 reportFlexibleContextPattern _ (NegativePattern _ _ _) = ok
 reportFlexibleContextPattern m (VariablePattern spi (PredType pls _) v) =
-  let flexCs = snd $ partitionPredListOnlyVars pls
+  let flexCs = snd $ partitionPredList pls
       what   = "variable"
   in mapM_ (report . errFlexibleContext m spi what v) flexCs
 reportFlexibleContextPattern m (ConstructorPattern _ _ _ ts) =
@@ -1919,15 +1913,13 @@ improvePreds' errPreds pls = do
   let errPreds' = errPreds ++ preds
       errPreds'' = nub errPreds'
   case listToMaybe substs of
-    Nothing    -> do mapM_ (\(LPred pr spi what doc) ->
-                            report
-                           $ errMissingInstance mid spi what doc pr) errPreds''
+    Nothing    -> do mapM_ (\lpr -> report $ errMissingInstance mid lpr) 
+                              errPreds''
                      return (pls' \\ errPreds'') 
     Just theta -> if subst theta pls' == pls'
                   then do modifyTypeSubst $ compose theta
-                          mapM_ (\(LPred pr spi what doc) ->
-                                   report
-                                   $ errMissingInstance mid spi what doc pr) errPreds''
+                          mapM_ (\lpr -> report $
+                                   errMissingInstance mid lpr) errPreds''
                           return (pls' \\ errPreds'')
                   else do modifyTypeSubst $ compose theta 
                           improvePreds' errPreds' (subst theta pls')
@@ -1999,7 +1991,7 @@ imprSubstSecondRule :: ModuleIdent ->  LPred -> [CE.FunDep] -> TCM ([LPred],[Typ
 imprSubstSecondRule m lpr fds = do
   inEnv <- getInstEnv
   let Pred _ qcls tys = getPred lpr
-      inms = lookupInstMatch qcls tys (fst inEnv)
+      inms = fst $ lookupInstMatch qcls tys (fst inEnv)
   substs <- secRuleSubsts m lpr fds inms
   return $ mapFst filterTypeErrors $ partitionEithers substs
 
@@ -2035,6 +2027,59 @@ filterIndices xs is = filterIndices' 0 is xs
       | j == i    = x : filterIndices' (i+1) js xs
       | otherwise = filterIndices' (i+1) (j:js) xs
 
+-- taken from Leif-Erik Krueger
+-- -----------------------------------------------------------------------------
+-- Defaulting
+-- -----------------------------------------------------------------------------
+
+-- There are two different defaulting mechanisms in the type check, which are
+-- both applied after the main part of context reduction and before generalizing
+-- the inferred type to a type scheme:
+
+-- * The type of a numeric literal appearing in a pattern is represented by a
+--   'TypeConstrained', which is a special type variable annotated with a list
+--   of possible types. If multiple of these types remain after the type
+--   inference, they are further restricted to those that satisfy the predicates
+--   on them in 'defaultTypeConstrained'. An error is reported if no such type
+--   belongs to the possible types. Otherwise, the type variable is later
+--   defaulted to the first of the remaining types.
+
+-- * Regular type variables are defaulted in 'applyDefaults', if they are
+--   ambiguous. This is explained in detail in the comment for that function.
+--   In constrast to the defaulting of 'TypeConstrained's, the priority list for
+--   the regular defaulting mechanism can be defined in a default declaration
+--   and can therefore contain user-defined types.
+
+-- Both defaulting mechanisms only default 'TypeConstrained's or ambiguous type
+-- variables that only occur in simple predicates of the form C a, where C is
+-- a Prelude class (like 'Eq', 'Num' or 'Show'). This restriction allows for a
+-- simple defaulting mechanism and prevents unexpected defaulting behaviour.
+
+-- taken from Leif-Erik Krueger
+defaultTypeConstrained :: ModuleIdent -> InstEnv' -> TypeSubst -> LPred
+                       -> TCM TypeSubst
+defaultTypeConstrained m inEnv theta (LPred (Pred _ qcls tys) p what doc) =
+  case subst theta tys of
+    tys'@[TypeConstrained tyOpts tv] ->
+      case concat (filter (hasInstance m inEnv qcls) (map (: []) tyOpts)) of
+        [] -> do
+          report $
+            errMissingInstance m (LPred (Pred OPred qcls tys') p what doc)
+          return theta
+        [ty] -> return (bindSubst tv ty theta)
+        tyOpts'
+          | length tyOpts == length tyOpts' -> return theta
+          | otherwise ->
+              liftM (flip (bindSubst tv) theta) (freshConstrained tyOpts')
+    tys'
+      | hasInstance m inEnv qcls tys' -> return theta
+      | otherwise -> do
+        report $ errMissingInstance m (LPred (Pred OPred qcls tys') p what doc)
+        return theta
+
+
+
+
 -- When a constrained type variable that is not free in the type environment
 -- disappears from the current type, the type becomes ambiguous. For instance,
 -- the type of the expression
@@ -2061,32 +2106,40 @@ applyDefaults p what doc fvs pls ty = do
   m <- getModuleIdent
   clsEnv <- getClassEnv
   inEnv <- getInstEnv
-  exPs <- getExplPreds
   defs <- getDefaultTypes
   let pls'  = map getPred pls
-      theta = foldr (bindDefault defs inEnv pls') idSubst $ nub
+      -- inspired by Leif-Erik Krueger
+      theta = foldr (bindDefault m defs inEnv pls') idSubst $ nub
                 [ tv | Pred _ qcls [TypeVariable tv] <- pls'
-                     , tv `Set.notMember` fvs, isSimpleNumClass clsEnv qcls ]
-      pls'' = filter (\pr -> pr `plElem` exPs || not (null (typeVars pr)))
+                     , tv `Set.notMember` fvs, isSimpleNumClass clsEnv qcls
+                     , all (\pr -> isDefaultable pr || tv `notElem` typeVars pr) pls']
+      pls'' = filter (\pr -> not (null (typeVars pr)))
                          (subst theta pls)
       ty'   = subst theta ty
       tvs'  = ambiguousTypeVars clsEnv (PredType (map getPred pls'') ty') fvs
   mapM_ (report . errAmbiguousTypeVariable m p what doc pls'' ty') tvs'
   modifyTypeSubst $ compose theta
   return pls''
+ where
+   -- taken from Leif-Erik Krueger
+  isDefaultable :: Pred -> Bool
+  isDefaultable (Pred _ qcls [TypeVariable _]) = isPreludeClass qcls
+  isDefaultable _                              = False
 
-bindDefault :: [Type] -> InstEnv' -> PredList -> Int -> TypeSubst -> TypeSubst
-bindDefault defs inEnv pls tv =
-  case foldr (defaultType inEnv tv) defs pls of
+
+
+bindDefault :: ModuleIdent -> [Type] -> InstEnv' -> PredList -> Int -> TypeSubst -> TypeSubst
+bindDefault m defs inEnv pls tv =
+  case foldr (defaultType m inEnv tv) defs pls of
     [] -> id
     ty:_ -> bindSubst tv ty
 
 -- TODO: The second TODO comment of 'reportMissingInstance' applies here too.
-defaultType :: InstEnv' -> Int -> Pred -> [Type] -> [Type]
-defaultType inEnv tv (Pred _ qcls [TypeVariable tv'])
-  | tv == tv' = concat . filter (hasInstance inEnv qcls) . map (: [])
+defaultType :: ModuleIdent -> InstEnv' -> Int -> Pred -> [Type] -> [Type]
+defaultType m inEnv tv (Pred _ qcls [TypeVariable tv'])
+  | tv == tv' = concat . filter (hasInstance m inEnv qcls) . map (: [])
   | otherwise = id
-defaultType _ _ _ = id
+defaultType _ _ _ _ = id
 
 -- TODO: Check if a more generalized version of this working with
 --         multi-parameter type classes would be useful.
@@ -2094,6 +2147,13 @@ defaultType _ _ _ = id
 --         might be useful.
 isSimpleNumClass :: ClassEnv -> QualIdent -> Bool
 isSimpleNumClass = (elem (qNumId, [0]) .) . flip allSuperClasses
+
+-- taken from Leif-Erik Krueger
+isPreludeClass :: QualIdent -> Bool
+isPreludeClass qcls = qcls `elem`
+  [ qEqId, qOrdId, qEnumId, qBoundedId, qReadId, qShowId, qNumId, qFractionalId
+  , qRealId, qIntegralId, qRealFracId, qFloatingId, qMonoidId, qFunctorId
+  , qApplicativeId, qAlternativeId, qMonadId, qMonadFailId, qDataId ]
 
 -- ----------------------------------------------------------------------------
 -- Adapt type annotations of equations to the corresponding type scheme from
@@ -2493,23 +2553,26 @@ errIncompatibleLabelTypes p m l ty1 ty2 = spanInfoMessage p $ sep
   , text "are incompatible"
   ]
 
-errMissingInstance :: HasSpanInfo a => ModuleIdent -> a -> String -> Doc -> Pred
-                   -> Message
-errMissingInstance m p what doc pr = spanInfoMessage p $ vcat
+-- taken from Leif-Erik Krueger
+errMissingInstance :: ModuleIdent -> LPred -> Message
+errMissingInstance m (LPred pr p what doc) = spanInfoMessage p $ vcat
   [ text "Missing instance for" <+> ppPred m pr
   , text "arising from" <+> text what
   , doc
   ]
 
-errInstanceOverlap :: ModuleIdent -> LPred -> [InstMatchInfo] -> Message
-errInstanceOverlap m (LPred pr@(Pred _ qcls _) p what doc) insts =
-  spanInfoMessage p $ vcat
+-- taken from Leif-Erik Krueger
+errInstanceOverlap :: ModuleIdent -> LPred -> [InstMatchInfo] -> Bool -> Message
+errInstanceOverlap m (LPred pr@(Pred _ qcls _) p what doc) insts tvChoice =
+  spanInfoMessage p $ vcat $
     [ text "Instance overlap for" <+> ppPred m pr
     , text "arising from" <+> text what
     , doc
     , text "Matching instances:"
     , nest 2 $ vcat $ map displayMatchingInst insts
-    ]
+    ] ++ if tvChoice then [ text "(The choice depends on the"
+                          , text "instantiation of type variables.)" ]
+                     else []
  where
   displayMatchingInst :: InstMatchInfo -> Doc
   displayMatchingInst (m', _, itys, _, _) =
