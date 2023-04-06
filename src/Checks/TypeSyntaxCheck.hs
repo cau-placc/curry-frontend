@@ -171,7 +171,7 @@ checkDecl (ClassDecl p li cx cls clsvars funDeps ds) = do
   checkMPTCExtClass p cls clsvars
   checkFunDepExt p cls funDeps
   checkTypeVars "class declaration" clsvars
-  cx' <- checkClosedContext clsvars cx
+  cx' <- checkClosedContext True clsvars cx
   checkSimpleContext cx'
   funDeps' <- filterM (checkClosedFunDep clsvars) funDeps
   ds' <- mapM checkDecl ds
@@ -179,8 +179,8 @@ checkDecl (ClassDecl p li cx cls clsvars funDeps ds) = do
 checkDecl (InstanceDecl p li cx qcls inst ds) = do
   checkMPTCExtInstance p qcls inst
   checkClass True qcls
-  (cx', inst') <- checkQualTypes cx inst
-  checkSimpleContext cx'
+  -- taken from Leif-Erik Krueger
+  (cx', inst') <- checkQualTypes True cx inst
   mapM_ (checkInstanceType p) inst'
   InstanceDecl p li cx' qcls inst' <$> mapM checkDecl ds
 checkDecl d                                   = return d
@@ -323,31 +323,42 @@ checkFieldExpr (Field spi l e) = Field spi l <$> checkExpr e
 -- identifier in a position where a type variable is admissible, it will
 -- interpret the identifier as such.
 
+-- taken from Leif-Erik Krueger
 checkQualType :: QualTypeExpr -> TSCM QualTypeExpr
-checkQualType (QualTypeExpr spi cx ty) =
-  QualTypeExpr spi <$> checkContext cx <*> checkType ty
+checkQualType (QualTypeExpr spi cx ty) = do
+  (cx', ty') <- checkQualTypes False cx [ty]
+  return $ QualTypeExpr spi cx' (head ty')
 
-checkQualTypes :: Context -> [TypeExpr] -> TSCM (Context, [TypeExpr])
-checkQualTypes cx tys = (,) <$> checkContext cx <*> mapM checkType tys
+-- taken from Leif-Erik Krueger
+checkQualTypes :: Bool -> Context -> [TypeExpr] -> TSCM (Context, [TypeExpr])
+checkQualTypes simplecx cx tys = do
+  tys' <- mapM checkType tys
+  cx' <- checkClosedContext simplecx (fv tys') cx
+  return (cx', tys')
 
-checkClosedContext :: [Ident] -> Context -> TSCM Context
-checkClosedContext tvs = mapM (checkClosedConstraint tvs)
+-- taken from Leif-Erik Krueger
+checkClosedContext :: Bool -> [Ident] -> Context -> TSCM Context
+checkClosedContext simplecx tvs = mapM (checkClosedConstraint simplecx tvs)
 
-checkContext :: Context -> TSCM Context
-checkContext = mapM checkConstraint
-
-checkClosedConstraint :: [Ident] -> Constraint -> TSCM Constraint
-checkClosedConstraint tvs c = do
-  c'@(Constraint _ _ tys) <- checkConstraint c
+-- taken from Leif-Erik Krueger
+checkClosedConstraint :: Bool -> [Ident] -> Constraint -> TSCM Constraint
+checkClosedConstraint simplecx tvs c = do
+  c'@(Constraint _ _ tys) <- checkConstraint simplecx c
   mapM_ (checkClosed tvs) tys
   return c'
 
-checkConstraint :: Constraint -> TSCM Constraint
-checkConstraint c@(Constraint spi qcls tys) = do
+checkConstraint :: Bool -> Constraint -> TSCM Constraint
+checkConstraint simplecx c@(Constraint spi qcls tys) = do
   checkClass False qcls
   tys' <- mapM checkType tys
-  unless (all (isVariableType . rootType) tys') $ report $
-    errIllegalConstraint c
+  -- taken from Leif-Erik Krueger
+  flex <- elem FlexibleContexts <$> getExtensions
+  case (any containsForall tys', simplecx) of
+    (True , _    ) -> report $ errIllegalFlexibleConstraint c
+    (False, True ) -> unless (flex || all isVariableType tys') $
+                        report $ errIllegalSimpleConstraint c
+    (False, False) -> unless (flex || all (isVariableType . rootType) tys') $
+                        report $ errIllegalConstraint c
   return $ Constraint spi qcls tys'
   where
     rootType (ApplyType _ ty _) = rootType ty
@@ -520,6 +531,14 @@ errIllegalSimpleConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
   , text "and u_1, ..., u_n are type variables."
   ]
 
+-- taken from Leif-Erik Krueger
+errIllegalFlexibleConstraint :: Constraint -> Message
+errIllegalFlexibleConstraint c = spanInfoMessage c $ vcat
+  [ text "Illegal class constraint" <+> pPrint c
+  , text "Constraints must not contain type quantifiers."
+  ]
+
+-- taken from Leif-Erik Krueger
 errIllegalInstanceType :: SpanInfo -> InstanceType -> Message
 errIllegalInstanceType spi inst = spanInfoMessage spi $ vcat
   [ text "Illegal instance type" <+> ppInstanceType inst
@@ -529,6 +548,7 @@ errIllegalInstanceType spi inst = spanInfoMessage spi $ vcat
   , text "Use FlexibleInstances if you want to disable this."
   ]
 
+-- taken from Leif-Erik Krueger
 errIllegalFlexibleInstanceType :: SpanInfo -> InstanceType -> Message
 errIllegalFlexibleInstanceType spi inst = spanInfoMessage spi $ vcat
   [ text "Illegal instance type" <+> ppInstanceType inst

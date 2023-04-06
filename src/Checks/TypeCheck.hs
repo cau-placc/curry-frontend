@@ -98,10 +98,10 @@ import Debug.Trace
 -- value environment and then a type inference for all function and
 -- value definitions is performed.
 
-typeCheck :: ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv -> InstEnv -> [Decl a]
-          -> ([Decl PredType], ValueEnv, [Message])
-typeCheck m tcEnv vEnv clsEnv inEnv ds = runTCM (checkDecls ds) initState
-  where initState = TcState m tcEnv vEnv clsEnv (inEnv, Map.empty)
+typeCheck :: [KnownExtension] -> ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv 
+          -> InstEnv -> [Decl a] -> ([Decl PredType], ValueEnv, [Message])
+typeCheck exts m tcEnv vEnv clsEnv inEnv ds = runTCM (checkDecls ds) initState
+  where initState = TcState exts m tcEnv vEnv clsEnv (inEnv, Map.empty)
                             [intType, floatType] idSubst emptySigEnv 1 []
 
 checkDecls :: [Decl a] -> TCM [Decl PredType]
@@ -142,15 +142,16 @@ type TCM = S.State TcState
 type InstEnv' = (InstEnv, Map.Map QualIdent [[Type]])
 
 data TcState = TcState
-  { moduleIdent  :: ModuleIdent -- read only
+  { extensions   :: [KnownExtension]
+  , moduleIdent  :: ModuleIdent      -- read only
   , tyConsEnv    :: TCEnv
   , valueEnv     :: ValueEnv
   , classEnv     :: ClassEnv
-  , instEnv      :: InstEnv'    -- instances (static and dynamic)
+  , instEnv      :: InstEnv'         -- instances (static and dynamic)
   , defaultTypes :: [Type]
   , typeSubst    :: TypeSubst
   , sigEnv       :: SigEnv
-  , nextId       :: Int         -- automatic counter
+  , nextId       :: Int              -- automatic counter
   , errors       :: [Message]
   }
 
@@ -174,6 +175,9 @@ m >>=- f = do
 runTCM :: TCM a -> TcState -> (a, ValueEnv, [Message])
 runTCM tcm ts = let (a, s') = S.runState tcm ts
                in  (a, typeSubst s' `subst` valueEnv s', reverse $ errors s')
+
+getExtensions :: TCM [KnownExtension]
+getExtensions = S.gets extensions
 
 getModuleIdent :: TCM ModuleIdent
 getModuleIdent = S.gets moduleIdent
@@ -532,7 +536,8 @@ tcPDeclGroup pls pds = do
   theta' <- getTypeSubst
   let impPds'' = map (uncurry (fixType . gen fvs' lpls3 . subst theta')) impPds'
       impPds3  = map (filterEqnType (map getPred lpls3)) impPds''
-  mapM_ (reportFlexibleContextDecl m) impPds''
+  unlessM (elem FlexibleContexts <$> getExtensions) $ 
+    mapM_ (reportFlexibleContextDecl m) impPds''
   modifyValueEnv $ flip (rebindVars m) (concatMap (declVars . snd) impPds'')
   impPds4 <- fixVarAnnots impPds3
   (pls'', expPds') <- mapAccumM (uncurry . tcCheckPDecl) gpls expPds
@@ -2145,8 +2150,10 @@ defaultType _ _ _ _ = id
 --         multi-parameter type classes would be useful.
 --       In the other direction, restricting this to Prelude subclasses of 'Num'
 --         might be useful.
+-- taken from Leif-Erik Krueger
 isSimpleNumClass :: ClassEnv -> QualIdent -> Bool
-isSimpleNumClass = (elem (qNumId, [0]) .) . flip allSuperClasses
+isSimpleNumClass = 
+  (plElem (Pred OPred qNumId [TypeVariable 0]) .) . flip allSuperClasses
 
 -- taken from Leif-Erik Krueger
 isPreludeClass :: QualIdent -> Bool

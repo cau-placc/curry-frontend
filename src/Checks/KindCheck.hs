@@ -171,7 +171,7 @@ instance HasType NewConstrDecl where
 
 -- TODO: Has to be changed for the FlexibleContexts extension
 instance HasType Constraint where
-  fts m (Constraint _ qcls _) = fts m qcls
+  fts m (Constraint _ qcls tys) = fts m qcls . fts m tys
 
 instance HasType QualTypeExpr where
   fts m (QualTypeExpr _ cx ty) = fts m cx . fts m ty
@@ -396,12 +396,10 @@ bindTypeVar ident k = bindTopEnv ident (TypeVar k)
 bindClass :: ModuleIdent -> TCEnv -> ClassEnv -> Decl a -> ClassEnv
 bindClass m tcEnv clsEnv (ClassDecl _ _ cx cls tvs fds ds) =
   bindClassInfo qcls (ar, sclss, fds', ms) clsEnv
+  -- taken from Leif-Erik Krueger
   where qcls = qualifyWith m cls
         ar = length tvs
-        sclss = nub $ map (constraintToSuperClass tvs) cx'
-        cx' = map (\(Constraint p scls tys) ->
-                     Constraint p (getOrigName m scls tcEnv) tys)
-                  cx
+        sclss = expandClassContext m tcEnv tvs cx
         fds' = map (toFunDep tvs) fds
         ms = map (\f -> (f, f `elem` fs)) $ concatMap methods ds
         fs = concatMap impls ds

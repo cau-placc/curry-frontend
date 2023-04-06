@@ -22,19 +22,24 @@ module Env.Class
   , ClassInfo, SuperClassInfo, FunDep, bindClassInfo, mergeClassInfo
   , constraintToSuperClass, lookupClassInfo, superClasses, classFunDeps
   , classMethods, hasDefaultImpl, applySuperClass, allSuperClasses
-  , applyAllSuperClasses, toFunDep, fromFunDep, getFunDepLhs, getFunDepRhs
+  , toFunDep, fromFunDep, getFunDepLhs, getFunDepRhs
   , deleteVarFunDep, renameVarFunDep, renameFunDep, removeTrivialFunDeps
-  , getRhsOnLhsMatch, funDepCoverage
+  , getRhsOnLhsMatch, funDepCoverage, funDepCoveragePredList, ambiguousTypeVars
+  , minPredList, maxPredList, impliedPredicatesList
   ) where
 
 import           Data.Containers.ListUtils (nubOrd)
-import           Data.List                 (elemIndex, partition, sort)
+import           Data.List                 (elemIndex, nub, partition, sort)
 import qualified Data.Map as Map           (Map, empty, insertWith, lookup)
 import           Data.Maybe                (fromMaybe)
-import qualified Data.Set as Set           ( Set, delete, difference, fromList
-                                           , insert, isSubsetOf, lookupMax, map
-                                           , member, null, size, toList
-                                           , unions )
+import qualified Data.Set as Set           ( Set, delete, difference, findMax
+                                           , fromList, insert, isSubsetOf
+                                           , lookupMax, map, member, notMember
+                                           , null, singleton, size, toList
+                                           , union, unions )
+
+import           Base.Types
+import           Base.TypeSubst (expandAliasType)
 
 import           Curry.Base.Ident
 import           Curry.Base.SpanInfo
@@ -48,7 +53,7 @@ import Base.Messages (internalError)
 -- Type Synonyms
 -- ---------------------------------------------------------------------------
 
-type ClassInfo = (Int, [SuperClassInfo], [FunDep], [(Ident, Bool)])
+type ClassInfo = (Int, [Pred], [FunDep], [(Ident, Bool)])
 
 -- The list represents the type variables of the superclass from left to right.
 -- The integers within this list are the indices of these variables in the
@@ -115,7 +120,7 @@ classArity cls clsEnv = case lookupClassInfo cls clsEnv of
   Just (arity, _, _, _) -> arity
   _ -> internalError $ "Env.Classes.classArity: " ++ show cls
 
-superClasses :: QualIdent -> ClassEnv -> [SuperClassInfo]
+superClasses :: QualIdent -> ClassEnv -> [Pred]
 superClasses cls clsEnv = case lookupClassInfo cls clsEnv of
   Just (_, sclss, _, _) -> sclss
   _ -> internalError $ "Env.Classes.superClasses: " ++ show cls
@@ -155,17 +160,40 @@ applySuperClass tys (scls, varIs) = (scls, reorderTypes varIs)
   at _        _         =
     internalError $ "Env.Classes.applySuperClass: " ++ show scls
 
-allSuperClasses :: QualIdent -> ClassEnv -> [SuperClassInfo]
-allSuperClasses cls clsEnv =
-  nubOrd $ allSuperClasses' (cls, [0 .. classArity cls clsEnv - 1])
+-- taken from Leif-Erik Krueger
+-- Computes the set of all super class predicates of a class, including the
+-- indirect super class predicates and a predicate for the given class itself.
+allSuperClasses :: QualIdent -> ClassEnv -> [Pred]
+allSuperClasses cls clsEnv = allSuperClasses' $
+  Pred OPred cls $ map TypeVariable [0 .. classArity cls clsEnv - 1]
  where
-  allSuperClasses' sclsInfo@(scls, varIs) =
-    sclsInfo : concatMap (allSuperClasses' . applySuperClass varIs)
-                         (superClasses scls clsEnv)
+  allSuperClasses' pr@(Pred _ scls tys) =
+    pr `plInsert` plConcatMap (allSuperClasses' . expandAliasType tys)
+                                  (superClasses scls clsEnv)
 
-applyAllSuperClasses :: QualIdent -> [a] -> ClassEnv -> [(QualIdent, [a])]
-applyAllSuperClasses cls tys clsEnv =
-  map (applySuperClass tys) (allSuperClasses cls clsEnv)
+-- The function 'minPredSet' transforms a predicate set by removing all
+-- predicates from the predicate set which are implied by other predicates
+-- according to the super class hierarchy. Inversely, the function 'maxPredSet'
+-- adds all predicates to a predicate set which are implied by the predicates
+-- in the given predicate set.
+
+-- List version of minPredList
+minPredList :: IsPred a => ClassEnv -> [a] -> [a]
+minPredList clsEnv pls = 
+  plDifference pls (plConcatMap (impliedPredicatesList clsEnv) pls)
+
+-- List version of maxPredSet
+maxPredList :: IsPred a => ClassEnv -> [a] -> [a]
+maxPredList clsEnv pls =
+  plUnion pls (concatMap (impliedPredicatesList clsEnv) pls)
+
+impliedPredicatesList :: IsPred a => ClassEnv -> a -> [a]
+impliedPredicatesList clsEnv pr = plDelete (getFromPred (Pred OPred cls tys)) $
+  nub $ map (flip modifyPred pr . const . expandAliasType tys)
+            (allSuperClasses cls clsEnv)
+  where Pred _ cls tys = getPred pr
+
+
 
 -- ---------------------------------------------------------------------------
 -- Functional Dependencies
@@ -247,3 +275,35 @@ funDepCoverage fds covSet =
       covSet' = Set.unions $ covSet : (map snd useFds)
   in if Set.size covSet == Set.size covSet' then covSet
                                             else funDepCoverage oFds covSet'
+
+funDepCoveragePredList :: IsPred a => ClassEnv -> [a] -> Set.Set Int
+                                  -> Set.Set Int
+funDepCoveragePredList clsEnv pls tvSet =
+  let predList = map getPred pls
+      tvSetPs = Set.fromList (typeVars predList)
+      freshVar = Set.findMax (Set.insert (-1) (tvSet `Set.union` tvSetPs)) + 1
+      funDeps = removeTrivialFunDeps $ predListFunDeps freshVar predList
+  in funDepCoverage funDeps tvSet
+ where
+  predListFunDeps :: Int -> [Pred] -> [FunDep]
+  predListFunDeps _ [] = []
+  predListFunDeps freshVar (Pred _ cls tys : preds) =
+    let (freshVar', funDeps) = instantiateFunDeps tys freshVar $
+          map (renameFunDep freshVar) $ classFunDeps cls clsEnv
+    in funDeps ++ predListFunDeps freshVar' preds
+
+  instantiateFunDeps :: [Type] -> Int -> [FunDep] -> (Int, [FunDep])
+  instantiateFunDeps [] i funDeps = (i, funDeps)
+  instantiateFunDeps (ty : tys) i funDeps = instantiateFunDeps tys (i + 1) $
+    case nub (typeVars ty) of
+      []   -> map (deleteVarFunDep i) funDeps
+      [tv] -> map (renameVarFunDep i tv) funDeps
+      tvs  -> let (tvs', freshVar) = (Set.fromList tvs, Set.singleton i)
+              in (tvs', freshVar) : (freshVar, tvs') : funDeps
+
+
+ambiguousTypeVars :: ClassEnv -> PredType -> Set.Set Int -> [Int]
+ambiguousTypeVars clsEnv (PredType pls ty) fvs =
+  let coveredVars = funDepCoveragePredList clsEnv pls $
+                      Set.fromList (typeVars ty) `Set.union` fvs
+  in filter (`Set.notMember` coveredVars) (typeVars pls)

@@ -32,7 +32,8 @@ import Curry.Base.Ident
 import Curry.Syntax
 
 import Base.CurryKinds (fromKind', fromClassKind)
-import Base.CurryTypes (fromQualType, fromQualPredType, fromQualPredTypes)
+import Base.CurryTypes ( fromQualPredList, fromQualType, fromQualPredType
+                       , fromQualPredTypes )
 import Base.Messages
 import Base.Types
 
@@ -130,10 +131,7 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
     [TypeClass qcls k ms] ->
       IClassDecl NoPos cx qcls' k' clsvars funDeps ms' hs : ds
       where qcls'   = qualUnqualify m qcls
-            cx      = [ Constraint NoSpanInfo (qualUnqualify m qscls)
-                          (map (VariableType NoSpanInfo) sclsvars)
-                      | sclsInfo <- superClasses qcls clsEnv
-                      , let (qscls, sclsvars) = applySuperClass tvs sclsInfo ]
+            cx      = fromQualPredList m clsvars (superClasses qcls clsEnv)
             n       = kindArity k
             k'      = fromClassKind k n
             clsvars = take n tvs
@@ -405,18 +403,17 @@ hiddenTypes m tcEnv clsEnv tvs d =
   hiddenTypeDecl tc = case qualLookupTypeInfo (qualQualify m tc) tcEnv of
     [DataType     _ k _] -> hidingDataDecl k
     [RenamingType _ k _] -> hidingDataDecl k
-    [TypeClass  cls k _] -> hidingClassDecl cls k
+    -- taken from Leif-Erik Krueger
+    [TypeClass  cls k _] -> hidingClassDecl cls k (superClasses cls clsEnv)
     _                    ->
       internalError $ "Exports.hiddenTypeDecl: " ++ show tc
    where
     hidingDataDecl k = let n  = kindArity k
                            k' = fromKind' k n
                        in  HidingDataDecl NoPos tc k' $ take n tvs
-    hidingClassDecl qcls k =
-      let cx       = [ Constraint NoSpanInfo (qualUnqualify m qscls)
-                         (map (VariableType NoSpanInfo) sclsvars)
-                     | sclsInfo <- superClasses qcls clsEnv
-                     , let (qscls, sclsvars) = applySuperClass tvs sclsInfo ]
+    -- taken from Leif Erik Krueger
+    hidingClassDecl qcls k sclss =
+      let cx      = fromQualPredList m clsvars sclss
           n       = kindArity k
           k'      = fromClassKind k n
           clsvars = take n tvs

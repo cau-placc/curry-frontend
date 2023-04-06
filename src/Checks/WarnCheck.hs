@@ -47,7 +47,7 @@ import Curry.Syntax
 import Curry.Syntax.Utils  ()
 import Curry.Syntax.Pretty ()
 
-import Base.CurryTypes (ppTypeScheme, fromPred, toPredSet)
+import Base.CurryTypes (ppTypeScheme, fromPred, toPredList, toPredSet)
 import Base.Messages   (Message, spanInfoMessage, internalError)
 import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                        , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv
@@ -56,7 +56,7 @@ import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
 import Base.Types
 import Base.Utils (findMultiples)
 import Env.ModuleAlias
-import Env.Class (ClassEnv, classMethods, hasDefaultImpl)
+import Env.Class (ClassEnv, classMethods, hasDefaultImpl, minPredList)
 import Env.TypeConstructor ( TCEnv, TypeInfo (..), lookupTypeInfo
                            , qualLookupTypeInfo, getOrigName )
 import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
@@ -1475,25 +1475,25 @@ isDataDeclName _               _     = True
 checkRedContext :: [Decl a] -> WCM ()
 checkRedContext = warnFor WarnRedundantContext . mapM_ checkRedContextDecl
 
-getRedPredSet :: ModuleIdent -> ClassEnv -> TCEnv -> PredSet -> PredSet
-getRedPredSet m cenv tcEnv ps =
-  Set.map (pm Map.!) $ Set.difference qps $ minPredSet cenv qps --or fromJust $ Map.lookup
-  where (qps, pm) = Set.foldr qualifyAndAddPred (Set.empty, Map.empty) ps
-        qualifyAndAddPred p@(Pred isIcc qid tys) (ps', pm') =
+getRedPredSet :: ModuleIdent -> ClassEnv -> TCEnv -> PredList -> PredList
+getRedPredSet m cenv tcEnv pls =
+  map (pm Map.!) $ plDifference qps $ minPredList cenv qps --or fromJust $ Map.lookup
+  where (qps, pm) = foldr qualifyAndAddPred ([], Map.empty) pls
+        qualifyAndAddPred p@(Pred isIcc qid tys) (pls', pm') =
           let qp = Pred isIcc (getOrigName m qid tcEnv) tys
-          in (Set.insert qp ps', Map.insert qp p pm')
+          in (plInsert qp pls', Map.insert qp p pm')
 
-getPredFromContext :: Context -> ([Ident], PredSet)
+getPredFromContext :: Context -> ([Ident], PredList)
 getPredFromContext cx =
   let vs = [v | Constraint _ _ tys <- cx, ty <- tys, v <- typeVariables ty]
-  in (vs, toPredSet vs OPred cx)
+  in (vs, toPredList vs OPred cx)
 
-checkRedContext' :: (Pred -> Message) -> PredSet -> WCM ()
-checkRedContext' f ps = do
+checkRedContext' :: (Pred -> Message) -> PredList -> WCM ()
+checkRedContext' f pls = do
   m     <- gets moduleId
   cenv  <- gets classEnv
   tcEnv <- gets tyConsEnv
-  mapM_ (report . f) (getRedPredSet m cenv tcEnv ps)
+  mapM_ (report . f) (getRedPredSet m cenv tcEnv pls)
 
 checkRedContextDecl :: Decl a -> WCM ()
 checkRedContextDecl (TypeSig _ ids (QualTypeExpr _ cx _)) =

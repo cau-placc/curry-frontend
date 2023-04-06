@@ -28,8 +28,9 @@ import Curry.Base.Monad
 import Curry.Syntax
 
 import Base.CurryKinds (toKind', toClassKind)
-import Base.CurryTypes ( toQualType, toQualTypes, toQualPredType
-                       , toQualPredTypes, toConstrType, toMethodType )
+import Base.CurryTypes ( toQualType, toQualTypes, toQualPredList
+                       , toQualPredType, toQualPredTypes, toConstrType
+                       , toMethodType )
 
 import Base.Kinds
 import Base.Messages
@@ -167,10 +168,7 @@ bindClass m (HidingClassDecl p cx cls k tvs fds) =
 bindClass m (IClassDecl _ cx cls _ tvs fds ds ids) =
   bindClassInfo (qualQualify m cls) (ar, sclss, fds', ms)
   where ar = length tvs
-        sclss = nub $ map (constraintToSuperClass tvs) cx'
-        cx' = map
-          (\(Constraint p scls tys) -> Constraint p (qualQualify m scls) tys)
-          cx
+        sclss = toQualPredList m tvs OPred cx
         fds' = map (toFunDep tvs) fds
         ms = map (\d -> (imethod d, isJust $ imethodArity d)) $ filter isVis ds
         isVis (IMethodDecl _ idt _ _ ) = idt `notElem` ids

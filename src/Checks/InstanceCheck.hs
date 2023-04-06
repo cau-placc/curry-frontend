@@ -323,9 +323,9 @@ inferPredList :: HasSpanInfo s => ClassEnv -> s -> PredType -> [Type]
 inferPredList clsEnv p (PredType pls inst) tys cls = do
   m <- getModuleIdent
   let doc = ppPred m $ Pred OPred cls [inst]
-      sclsInfos = superClasses cls clsEnv
       pls'   = [Pred OPred cls [ty] | ty <- tys]
-      pls''  = [Pred OPred scls [inst] | (scls, [0]) <- sclsInfos]
+      -- taken from Leif-Erik Krueger
+      pls''  = expandAliasType [inst] (superClasses cls clsEnv)
       pls''' = plUnions [pls, pls',  pls'']
   (pls4, novarpls) <-
     reducePredList (Derive $ cls == qDataId) p doc clsEnv pls'''
@@ -449,8 +449,8 @@ checkInstance tcEnv clsEnv (InstanceDecl p _ cx cls inst ds) = do
   m <- getModuleIdent
   let PredTypes pls tys = expandInst m tcEnv clsEnv cx inst
       ocls = getOrigName m cls tcEnv
-      pls' = [ uncurry (Pred OPred) (applySuperClass tys sclsInfo)
-             | sclsInfo <- superClasses ocls clsEnv ]
+      -- taken from Leif-Erik Krueger
+      pls' = expandAliasType tys (superClasses ocls clsEnv)
       doc = ppPred m $ Pred OPred cls tys
   -- TODO: Is there a better span for these, for example by combining the 'cls'
   --         and 'inst' spans?

@@ -28,15 +28,14 @@ module Base.Types
   , Pred (..), PredIsICC (..), IsPred (..), LPred (..), qualifyPred
   , unqualifyPred
   , PredSet, emptyPredSet, LPredSet, emptyLPredSet, psMember, removeICCFlag
-  , partitionPredSetSomeVars, partitionPredSetOnlyVars, minPredSet, maxPredSet
-  , qualifyPredSet, unqualifyPredSet, funDepCoveragePredSet
+  , partitionPredSetSomeVars, partitionPredSetOnlyVars
+  , qualifyPredSet, unqualifyPredSet
   , PredList, LPredList, plElem, removeICCFlagList, partitionPredList
   , partitionPredListOnlyVars, partitionPredListSomeVars
-  , minPredList, maxPredList, qualifyPredList, unqualifyPredList
-  , funDepCoveragePredList, plUnion, plUnions, plDeleteMin, plConcatMap
-  , plConcatMapM, plInsert, plDifference, plLookupMin, impliedPredicatesList
+  , qualifyPredList, unqualifyPredList
+  , plUnion, plUnions, plDeleteMin, plDelete, plConcatMap
+  , plConcatMapM, plInsert, plDifference, plLookupMin
   , PredType (..), predType, unpredType, qualifyPredType, unqualifyPredType
-  , ambiguousTypeVars
   , PredTypes (..), qualifyPredTypes, unqualifyPredTypes
     -- * Representation of data constructors
   , DataConstr (..), constrIdent, constrTypes, recLabels, recLabelTypes
@@ -65,10 +64,6 @@ import Curry.Base.Pretty
 import Curry.Base.SpanInfo
 
 import Base.Messages (internalError)
-
-import Env.Class ( ClassEnv, FunDep, applyAllSuperClasses, classFunDeps
-                 , deleteVarFunDep, funDepCoverage, removeTrivialFunDeps
-                 , renameFunDep, renameVarFunDep )
 
 -- ---------------------------------------------------------------------------
 -- Types
@@ -493,42 +488,10 @@ plDeleteMin pls = case minIndex pls of
     deleteIndex 0 (_:xs) = xs
     deleteIndex n (x:xs) = x : deleteIndex (n-1) xs
 
--- The function 'minPredSet' transforms a predicate set by removing all
--- predicates from the predicate set which are implied by other predicates
--- according to the super class hierarchy. Inversely, the function 'maxPredSet'
--- adds all predicates to a predicate set which are implied by the predicates
--- in the given predicate set.
-
-minPredSet :: IsPred a => ClassEnv -> Set.Set a -> Set.Set a
-minPredSet clsEnv ps =
-  ps `Set.difference` Set.concatMap (impliedPredicates clsEnv) ps
-
--- List version of minPredList
-minPredList :: IsPred a => ClassEnv -> [a] -> [a]
-minPredList clsEnv pls = 
-  plDifference pls (plConcatMap (impliedPredicatesList clsEnv) pls)
-
-maxPredSet :: IsPred a => ClassEnv -> Set.Set a -> Set.Set a
-maxPredSet clsEnv ps =
-  ps `Set.union` Set.concatMap (impliedPredicates clsEnv) ps
-
--- List version of maxPredSet
-maxPredList :: IsPred a => ClassEnv -> [a] -> [a]
-maxPredList clsEnv pls =
-  plUnion pls (concatMap (impliedPredicatesList clsEnv) pls)
-
--- Returns the set of all predicates implied by the given predicate, excluding
--- the given predicate.
-impliedPredicates :: IsPred a => ClassEnv -> a -> Set.Set a
-impliedPredicates clsEnv pr =
-  Set.fromList $ tail $ map (flip modifyPred pr . const . uncurry (Pred OPred))
-    ((\(Pred _ qcls tys) -> applyAllSuperClasses qcls tys clsEnv) (getPred pr))
-
-impliedPredicatesList :: IsPred a => ClassEnv -> a -> [a]
-impliedPredicatesList clsEnv pr = 
-    tail $ map (flip modifyPred pr . const . uncurry (Pred OPred))
-    ((\(Pred _ qcls tys) -> applyAllSuperClasses qcls tys clsEnv) (getPred pr))
-
+plDelete :: Eq a => a -> [a] -> [a]
+plDelete _ []     = []
+plDelete x (y:ys) | x == y    = plDelete x ys
+                  | otherwise = y : plDelete x ys
 
 qualifyPredSet :: IsPred a => ModuleIdent -> Set.Set a -> Set.Set a
 qualifyPredSet m = Set.map (qualifyPred m)
@@ -541,56 +504,6 @@ qualifyPredList m = map (qualifyPred m)
 
 unqualifyPredList :: IsPred a => ModuleIdent -> [a] -> [a]
 unqualifyPredList m = map (unqualifyPred m)
-
-funDepCoveragePredSet :: IsPred a => ClassEnv -> Set.Set a -> Set.Set Int
-                                  -> Set.Set Int
-funDepCoveragePredSet clsEnv ps tvSet =
-  let predList = map getPred (Set.toList ps)
-      tvSetPs = Set.fromList (typeVars predList)
-      freshVar = Set.findMax (Set.insert (-1) (tvSet `Set.union` tvSetPs)) + 1
-      funDeps = removeTrivialFunDeps $ predListFunDeps freshVar predList
-  in funDepCoverage funDeps tvSet
- where
-  predListFunDeps :: Int -> [Pred] -> [FunDep]
-  predListFunDeps _ [] = []
-  predListFunDeps freshVar (Pred _ cls tys : preds) =
-    let (freshVar', funDeps) = instantiateFunDeps tys freshVar $
-          map (renameFunDep freshVar) $ classFunDeps cls clsEnv
-    in funDeps ++ predListFunDeps freshVar' preds
-
-  instantiateFunDeps :: [Type] -> Int -> [FunDep] -> (Int, [FunDep])
-  instantiateFunDeps [] i funDeps = (i, funDeps)
-  instantiateFunDeps (ty : tys) i funDeps = instantiateFunDeps tys (i + 1) $
-    case nub (typeVars ty) of
-      []   -> map (deleteVarFunDep i) funDeps
-      [tv] -> map (renameVarFunDep i tv) funDeps
-      tvs  -> let (tvs', freshVar) = (Set.fromList tvs, Set.singleton i)
-              in (tvs', freshVar) : (freshVar, tvs') : funDeps
-
-funDepCoveragePredList :: IsPred a => ClassEnv -> [a] -> Set.Set Int
-                                  -> Set.Set Int
-funDepCoveragePredList clsEnv pls tvSet =
-  let predList = map getPred pls
-      tvSetPs = Set.fromList (typeVars predList)
-      freshVar = Set.findMax (Set.insert (-1) (tvSet `Set.union` tvSetPs)) + 1
-      funDeps = removeTrivialFunDeps $ predListFunDeps freshVar predList
-  in funDepCoverage funDeps tvSet
- where
-  predListFunDeps :: Int -> [Pred] -> [FunDep]
-  predListFunDeps _ [] = []
-  predListFunDeps freshVar (Pred _ cls tys : preds) =
-    let (freshVar', funDeps) = instantiateFunDeps tys freshVar $
-          map (renameFunDep freshVar) $ classFunDeps cls clsEnv
-    in funDeps ++ predListFunDeps freshVar' preds
-
-  instantiateFunDeps :: [Type] -> Int -> [FunDep] -> (Int, [FunDep])
-  instantiateFunDeps [] i funDeps = (i, funDeps)
-  instantiateFunDeps (ty : tys) i funDeps = instantiateFunDeps tys (i + 1) $
-    case nub (typeVars ty) of
-      []   -> map (deleteVarFunDep i) funDeps
-      [tv] -> map (renameVarFunDep i tv) funDeps
-      tvs  -> let (tvs', freshVar) = (Set.fromList tvs, Set.singleton i)
-              in (tvs', freshVar) : (freshVar, tvs') : funDeps
 
 -- ---------------------------------------------------------------------------
 -- Predicated types
@@ -619,12 +532,6 @@ qualifyPredType m (PredType pls ty) =
 unqualifyPredType :: ModuleIdent -> PredType -> PredType
 unqualifyPredType m (PredType pls ty) =
   PredType (unqualifyPredList m pls) (unqualifyType m ty)
-
-ambiguousTypeVars :: ClassEnv -> PredType -> Set.Set Int -> [Int]
-ambiguousTypeVars clsEnv (PredType pls ty) fvs =
-  let coveredVars = funDepCoveragePredList clsEnv pls $
-                      Set.fromList (typeVars ty) `Set.union` fvs
-  in filter (`Set.notMember` coveredVars) (typeVars pls)
 
 -- The 'PredTypes' data type stores a predicate list and a list of types all
 -- constrained by this predicate set. It can be used to represent the context

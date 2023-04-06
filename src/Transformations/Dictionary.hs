@@ -223,8 +223,8 @@ classDictConstrPredType m tcEnv vEnv clsEnv cls =
   PredType pls $ foldr TypeArrow ty mtys
  where
   varTys = map TypeVariable [0 .. kindArity (clsKind m cls tcEnv) - 1]
-  pls    = [ uncurry (Pred OPred) (applySuperClass varTys sclsInfo)
-           | sclsInfo <- superClasses cls clsEnv ]
+  -- taken from Leif-Erik Krueger
+  pls    = superClasses cls clsEnv
   fs     = classMethods cls clsEnv
   mptys  = map (classMethodType vEnv cls) fs
   ty     = dictType $ Pred OPred cls varTys
@@ -354,10 +354,11 @@ createStubs _ = return []
 createDictPattern :: Type -> QualIdent -> [(Type, Ident)] -> Pattern Type
 createDictPattern a cls = constrPattern a (qDictConstrId cls)
 
-createSuperDictStubDecl :: Pattern Type -> QualIdent -> Type -> SuperClassInfo
+-- taken from Leif-Erik Krueger
+createSuperDictStubDecl :: Pattern Type -> QualIdent -> Type -> Pred
                         -> (Type, Ident) -> Decl Type
-createSuperDictStubDecl t cls a sclsInfo v =
-  createStubDecl t a (superDictStubId cls sclsInfo) v
+createSuperDictStubDecl t cls a sclsPred v =
+  createStubDecl t a (superDictStubId cls sclsPred) v
 
 createMethodStubDecl :: Pattern Type -> Type -> Ident -> (Type, Ident) -> Decl Type
 createMethodStubDecl = createStubDecl
@@ -375,9 +376,10 @@ createStubEquation t f v =
         [apply (Variable NoSpanInfo (TypeArrow unitType (typeOf t)) (qualify $ mkIdent "_#temp"))
           [Constructor NoSpanInfo unitType qUnitId]])
 
-superDictStubType :: QualIdent -> SuperClassInfo -> [Type] -> Type
-superDictStubType cls sclsInfo tys = TypeArrow (rtDictType $ Pred OPred cls tys)
-  (rtDictType $ uncurry (Pred OPred) $ applySuperClass tys sclsInfo)
+-- changes taken from Leif-Erik Krueger
+superDictStubType :: QualIdent -> Pred -> [Type] -> Type
+superDictStubType cls sclsPred tys = TypeArrow (rtDictType $ Pred OPred cls tys)
+  (rtDictType $ expandAliasType tys sclsPred)
 
 -- -----------------------------------------------------------------------------
 -- Entering new bindings into the environments
@@ -393,9 +395,8 @@ bindDictType m clsEnv (TypeClass cls k ms) = bindEntity m tc ti
   ti     = DataType tc (dictTypeKind cls k) [c]
   tc     = qDictTypeId cls
   c      = DataConstr (dictConstrId cls) (map rtDictType pls ++ tys)
-  varTys = map TypeVariable [0 ..]
-  pls    = [ uncurry (Pred OPred) (applySuperClass varTys sclsInfo)
-           | sclsInfo <- superClasses cls clsEnv ]
+  -- taken from Leif-Erik Krueger
+  pls    = superClasses cls clsEnv
   tys    = map (generalizeMethodType . transformMethodPredType . methodType) ms
 bindDictType _ _      _                     = id
 
@@ -409,13 +410,14 @@ bindClassDecls m tcEnv clsEnv =
 -- maybe no default implementation has been provided) if the method has
 -- been augmented.
 
+-- changes taken from Leif-Erik Krueger
 bindClassEntities :: ModuleIdent -> TCEnv -> ClassEnv -> TypeInfo -> ValueEnv
                   -> ValueEnv
 bindClassEntities m tcEnv clsEnv (TypeClass cls _ ms) =
-  bindClassDict m tcEnv clsEnv cls . bindSuperStubs m tcEnv cls sclsInfos .
+  bindClassDict m tcEnv clsEnv cls . bindSuperStubs m tcEnv cls sclss .
     bindDefaultMethods m cls fs
-  where fs        = zip (map methodName ms) (map (fromMaybe 0 . methodArity) ms)
-        sclsInfos = superClasses cls clsEnv
+  where fs    = zip (map methodName ms) (map (fromMaybe 0 . methodArity) ms)
+        sclss = superClasses cls clsEnv
 bindClassEntities _ _ _ _ = id
 
 bindClassDict :: ModuleIdent -> TCEnv -> ClassEnv -> QualIdent -> ValueEnv
@@ -438,17 +440,18 @@ bindDefaultMethod :: ModuleIdent -> QualIdent -> (Ident, Int) -> ValueEnv
 bindDefaultMethod m cls (f, n) vEnv =
   bindMethod m (qDefaultMethodId cls f) n (classMethodType vEnv cls f) vEnv
 
-bindSuperStubs :: ModuleIdent -> TCEnv -> QualIdent -> [SuperClassInfo]
+-- changes taken from Leif-Erik Krueger
+bindSuperStubs :: ModuleIdent -> TCEnv -> QualIdent -> [Pred]
                -> ValueEnv -> ValueEnv
 bindSuperStubs m tcEnv = flip . foldr . bindSuperStub m tcEnv
 
-bindSuperStub :: ModuleIdent -> TCEnv -> QualIdent -> SuperClassInfo -> ValueEnv
+bindSuperStub :: ModuleIdent -> TCEnv -> QualIdent -> Pred -> ValueEnv
               -> ValueEnv
-bindSuperStub m tcEnv cls sclsInfo =
+bindSuperStub m tcEnv cls sclsPred =
   bindEntity m f $ Value f Nothing 1 $ polyType ty
-  where f  = qSuperDictStubId cls sclsInfo
+  where f  = qSuperDictStubId cls sclsPred
         ar = kindArity (clsKind m cls tcEnv)
-        ty = superDictStubType cls sclsInfo (map TypeVariable [0 .. ar])
+        ty = superDictStubType cls sclsPred (map TypeVariable [0 .. ar])
 
 bindInstDecls :: ModuleIdent -> ClassEnv -> InstEnv -> ValueEnv -> ValueEnv
 bindInstDecls m clsEnv = flip (foldr $ bindInstFuns m clsEnv) . instEnvList
@@ -740,12 +743,13 @@ addDictArgs pls ts = do
           | otherwise = vs ++ dicts clsEnv (concatMap (superDicts clsEnv) vs)
         superDicts clsEnv (Pred _ cls tys, e) =
           map (superDict cls tys e) (superClasses cls clsEnv)
-        superDict cls tys e sclsInfo =
-          ( uncurry (Pred OPred) (applySuperClass tys sclsInfo)
-          , Apply NoSpanInfo (superDictExpr cls sclsInfo tys) e )
-        superDictExpr cls sclsInfo tys =
-          Variable NoSpanInfo (superDictStubType cls sclsInfo tys)
-            (qSuperDictStubId cls sclsInfo)
+        -- changes taken from Leif-Erik Krueger
+        superDict cls tys e sclsPred =
+          ( expandAliasType tys sclsPred
+          , Apply NoSpanInfo (superDictExpr cls sclsPred tys) e )
+        superDictExpr cls sclsPred tys =
+          Variable NoSpanInfo (superDictStubType cls sclsPred tys)
+            (qSuperDictStubId cls sclsPred)
 
 -- The function 'dictArg' constructs the dictionary argument for a predicate
 -- from the predicates of a class method or an overloaded function. It checks
@@ -1171,11 +1175,12 @@ defaultMethodId cls f = mkIdent $ "_def#" ++ idName f ++ '#' : qualName cls
 qDefaultMethodId :: QualIdent -> Ident -> QualIdent
 qDefaultMethodId cls = qualifyLike cls . defaultMethodId cls
 
-superDictStubId :: QualIdent -> SuperClassInfo -> Ident
-superDictStubId cls (scls, varIs) = mkIdent $ "_super#" ++ qualName cls ++
-  '#' : qualName scls ++ concatMap (typeId . TypeVariable) varIs
+-- taken from Leif-Erik Krueger
+superDictStubId :: QualIdent -> Pred -> Ident
+superDictStubId cls (Pred _ scls tys) = mkIdent $ "_super#" ++ qualName cls ++
+  '#' : qualName scls ++ concatMap typeId tys
 
-qSuperDictStubId :: QualIdent -> SuperClassInfo -> QualIdent
+qSuperDictStubId :: QualIdent -> Pred -> QualIdent
 qSuperDictStubId cls = qualifyLike cls . superDictStubId cls
 
 instFunId :: QualIdent -> [Type] -> Ident

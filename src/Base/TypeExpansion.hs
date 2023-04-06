@@ -20,6 +20,8 @@ import qualified Data.Set.Extra as Set (map)
 import Curry.Base.Ident
 import Curry.Syntax
 
+import Data.List (nub)
+
 import Base.CurryTypes
 import Base.Messages
 import Base.Types
@@ -67,9 +69,6 @@ expandPred m tcEnv (Pred isIcc qcls tys) = case qualLookupTypeInfo qcls tcEnv of
     [TypeClass ocls _ _] -> Pred isIcc ocls (map (expandType m tcEnv) tys)
     _ -> internalError $ "Base.TypeExpansion.expandPred: " ++ show qcls
 
-expandPredSet :: ModuleIdent -> TCEnv -> ClassEnv -> PredSet -> PredSet
-expandPredSet m tcEnv clsEnv = minPredSet clsEnv . Set.map (expandPred m tcEnv)
-
 expandPredList :: ModuleIdent -> TCEnv -> ClassEnv -> PredList -> PredList
 expandPredList m tcEnv clsEnv = minPredList clsEnv . map (expandPred m tcEnv)
 
@@ -98,6 +97,11 @@ expandInst
   :: ModuleIdent -> TCEnv -> ClassEnv -> Context -> [InstanceType] -> PredTypes
 expandInst m tcEnv clsEnv cx =
   normalize 0 . expandPredTypes m tcEnv clsEnv . toPredTypes [] OPred cx
+
+--taken from Leif-Erik Krueger
+expandClassContext :: ModuleIdent -> TCEnv -> [Ident] -> Context -> PredList
+expandClassContext m tcEnv clsvars =
+  nub . map (expandPred m tcEnv) . toPredList clsvars OPred
 
 -- The function 'expandConstrType' computes the predicated type for a data
 -- or newtype constructor. Similar to 'toConstrType' from 'CurryTypes', the
