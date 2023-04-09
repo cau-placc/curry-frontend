@@ -332,7 +332,9 @@ extensions =
   , ( NoFunctionalPatterns     , "NoFunctionalPatterns"
     , "disable functional patterns"                  )
   , ( NoImplicitPrelude        , "NoImplicitPrelude"
-    , "do not implicitly import the Prelude"                 )
+    , "do not implicitly import the Prelude"         )
+  , ( NoDataDeriving           , "NoDataDeriving"
+    , "do not implicitly derive the Data class"      )
   ]
 
 -- -----------------------------------------------------------------------------

@@ -63,6 +63,7 @@ instance Binary KnownExtension where
   put MultiParamTypeClasses  = putWord8 4
   put NegativeLiterals       = putWord8 5
   put NoImplicitPrelude      = putWord8 6
+  put NoDataDeriving         = putWord8 7
 
   get = do
     x <- getWord8
@@ -74,6 +75,7 @@ instance Binary KnownExtension where
       4 -> return MultiParamTypeClasses
       5 -> return NegativeLiterals
       6 -> return NoImplicitPrelude
+      7 -> return NoDataDeriving
       _ -> fail "Invalid encoding for KnownExtension"
 
 -- |Known language extensions of Curry.
@@ -87,6 +89,7 @@ data KnownExtension
   | NoAnonFreeVars            -- ^ no anonymous free variables
   | NoFunctionalPatterns      -- ^ no functional patterns
   | NoImplicitPrelude         -- ^ no implicit import of the prelude
+  | NoDataDeriving            -- ^ no implicit deriving of the Data class
     deriving (Eq, Read, Show, Enum, Bounded)
 
 -- |Classifies a 'String' as an 'Extension'
