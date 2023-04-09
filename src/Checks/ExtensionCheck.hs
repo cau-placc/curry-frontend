@@ -13,7 +13,9 @@
 -}
 module Checks.ExtensionCheck (extensionCheck) where
 
-import qualified Control.Monad.State as S (State, execState, modify)
+import qualified Control.Monad.State as S (State, execState, modify, gets)
+import qualified Data.Set as Set
+import qualified Data.Set.Extra as Set
 
 import Curry.Base.SpanInfo
 import Curry.Base.Pretty
@@ -24,7 +26,7 @@ import Base.Messages (Message, spanInfoMessage)
 import CompilerOpts
 
 extensionCheck :: Options -> Module a -> ([KnownExtension], [Message])
-extensionCheck opts mdl = execEXC (checkModule mdl) initState
+extensionCheck opts mdl = execEXC (checkModule mdl >> applyImplicitExtensions) initState
   where
     initState = EXCState (optExtensions opts) []
 
@@ -51,9 +53,9 @@ report msg = S.modify $ \s -> s { errors = msg : errors s }
 ok :: EXCM ()
 ok = return ()
 
--- The extension check iterates over all given pragmas in the module and
--- gathers all extensions mentioned in a language pragma. An error is reported
--- if an extension is unknown.
+-- In the first phase, the extension check iterates over all given pragmas in the
+-- module and gathers all extensions mentioned in a language pragma. An error is
+-- reported if an extension is unknown.
 
 checkModule :: Module a -> EXCM ()
 checkModule (Module _ _ ps _ _ _ _) = mapM_ checkPragma ps
@@ -63,10 +65,16 @@ checkPragma (LanguagePragma _ exts) = mapM_ checkExtension exts
 checkPragma (OptionsPragma  _  _ _) = ok
 
 checkExtension :: Extension -> EXCM ()
-checkExtension (KnownExtension   _ e) = do
-  disableExtensions $ removedExtensions e
-  enableExtensions $ impliedClosure $ Set.singleton e
+checkExtension (KnownExtension   _ e) = enableExtensions $ Set.singleton e
 checkExtension (UnknownExtension p e) = report $ errUnknownExtension p e
+
+-- In the second phase, the extension check updates the set of extensions with
+-- implicitly added and removed extensions.
+
+applyImplicitExtensions :: EXCM ()
+applyImplicitExtensions = do
+  enableExtensions . impliedClosure =<< S.gets extensions
+  disableExtensions . Set.concatMap removedExtensions =<< S.gets extensions
 
 -- ---------------------------------------------------------------------------
 -- Implied extensions
