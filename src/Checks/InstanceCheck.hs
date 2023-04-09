@@ -20,7 +20,7 @@
 module Checks.InstanceCheck (instanceCheck) where
 
 import           Control.Monad.Extra        ( concatMapM, maybeM, unless, when
-                                            , whileM )
+                                            , whileM, unlessM )
 import qualified Control.Monad.State as S   (State, execState, gets, modify)
 import           Data.List                  ( (\\), nub, partition, sortBy
                                             , tails )
@@ -141,6 +141,9 @@ getInstEnv = S.gets instEnv
 modifyInstEnv :: (InstEnv -> InstEnv) -> INCM ()
 modifyInstEnv f = S.modify $ \s -> s { instEnv = f $ instEnv s }
 
+hasExtension :: KnownExtension -> INCM Bool
+hasExtension ext = S.gets $ elem ext . extensions
+
 report :: Message -> INCM ()
 report err = S.modify (\s -> s { errors = err : errors s })
 
@@ -150,9 +153,9 @@ ok = return ()
 checkDecls :: TCEnv -> ClassEnv -> [Decl a] -> INCM ()
 checkDecls tcEnv clsEnv ds = do
   mapM_ (bindInstance tcEnv clsEnv) ids
-  -- TODO: unless NoDataDeriving...
-  mapM (declDeriveDataInfo tcEnv clsEnv) (filter isDataDecl tds) >>=
-    mapM_ (bindDerivedInstances clsEnv) . groupDeriveInfos
+  unlessM (hasExtension NoDataDeriving) $
+    mapM (declDeriveDataInfo tcEnv clsEnv) (filter isDataDecl tds) >>=
+      mapM_ (bindDerivedInstances clsEnv) . groupDeriveInfos
   mapM (declDeriveInfo tcEnv clsEnv) (filter hasDerivedInstances tds) >>=
     mapM_ (bindDerivedInstances clsEnv) . groupDeriveInfos
   mapM_ (checkInstance tcEnv clsEnv) ids
