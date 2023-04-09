@@ -16,13 +16,14 @@
 module Curry.Syntax.Extension
   ( -- * Extensions
     Extension (..), KnownExtension (..), classifyExtension, kielExtensions
+  , impliedExtensions, impliedClosure
     -- * Tools
   , Tool (..), classifyTool
   ) where
 
-import Data.Binary  (Binary)
-import Data.Char    (toUpper)
-import GHC.Generics (Generic)
+import qualified Data.Set.Extra as Set
+import Control.Monad
+import qualified Data.Set as Set
 
 import Curry.Base.Ident    (Ident (..))
 import Curry.Base.Position
@@ -57,7 +58,7 @@ data KnownExtension
   | NoFunctionalPatterns      -- ^ no functional patterns
   | NoImplicitPrelude         -- ^ no implicit import of the prelude
   | NoDataDeriving            -- ^ no implicit deriving of the Data class
-    deriving (Eq, Read, Show, Enum, Bounded, Generic, Binary)
+    deriving (Eq, Ord, Read, Show, Enum, Bounded, Generic, Binary)
 
 -- |Classifies a 'String' as an 'Extension'
 classifyExtension :: Ident -> Extension
@@ -69,6 +70,17 @@ classifyExtension i = case reads extName of
 -- |'Extension's available by Kiel's Curry compilers.
 kielExtensions :: [KnownExtension]
 kielExtensions = [AnonFreeVars, FunctionalPatterns]
+
+-- |Extensions implied by the given extension.
+impliedExtensions :: KnownExtension -> Set.Set KnownExtension
+impliedExtensions NoImplicitPrelude = Set.singleton NoDataDeriving
+impliedExtensions _                 = Set.empty
+
+-- |Extensions implied (possibly transitively) by the given extensions.
+impliedClosure :: Set.Set KnownExtension -> Set.Set KnownExtension
+impliedClosure exts | exts == exts' = exts
+                    | otherwise     = impliedClosure exts'
+  where exts' = Set.union exts $ Set.concatMap impliedExtensions exts
 
 -- |Different Curry tools which may accept compiler options.
 data Tool = KICS2 | PAKCS | CYMAKE | FRONTEND | UnknownTool String
