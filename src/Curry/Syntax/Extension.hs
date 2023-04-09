@@ -20,11 +20,9 @@ module Curry.Syntax.Extension
   , Tool (..), classifyTool
   ) where
 
-import Data.Binary
+import Data.Binary         (Binary)
 import Data.Char           (toUpper)
-import qualified Data.Set.Extra as Set
-import Control.Monad
-import qualified Data.Set as Set
+import GHC.Generics        (Generic)
 
 import Curry.Base.Ident    (Ident (..))
 import Curry.Base.Position

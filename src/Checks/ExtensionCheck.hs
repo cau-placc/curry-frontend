@@ -15,7 +15,7 @@
 -}
 module Checks.ExtensionCheck (extensionCheck) where
 
-import qualified Control.Monad.State as S (State, execState, modify)
+import qualified Control.Monad.State as S (State, execState, modify, gets)
 import qualified Data.Set as Set
 import qualified Data.Set.Extra as Set
 
