@@ -1417,7 +1417,7 @@ errWrongArity c arity' argc = spanInfoMessage c $ hsep (map text
 
 errMissingLanguageExtension :: SpanInfo -> String -> KnownExtension -> Message
 errMissingLanguageExtension spi what ext = spanInfoMessage spi $
-  text what <+> text "are not supported in standard Curry." $+$
+  text what <+> text "are not enabled." $+$
   nest 2 (text "Use flag or -X" <+> text (show ext)
           <+> text "to enable this extension.")
 

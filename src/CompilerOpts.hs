@@ -326,7 +326,11 @@ extensions =
   , ( MultiParamTypeClasses    , "MultiParamTypeClasses"
     , "enable type classes with none or multiple parameters" )
   , ( NegativeLiterals         , "NegativeLiterals"
-    , "desugar negated literals as negative literal"         )
+    , "desugar negated literals as negative literal" )
+  , ( NoAnonFreeVars           , "NoAnonFreeVars"
+    , "disable anonymous free variables"             )
+  , ( NoFunctionalPatterns     , "NoFunctionalPatterns"
+    , "disable functional patterns"                  )
   , ( NoImplicitPrelude        , "NoImplicitPrelude"
     , "do not implicitly import the Prelude"                 )
   ]

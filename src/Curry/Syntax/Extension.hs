@@ -84,6 +84,8 @@ data KnownExtension
   | FunctionalPatterns        -- ^ functional patterns
   | MultiParamTypeClasses     -- ^ multi-parameter type classes
   | NegativeLiterals          -- ^ negative literals
+  | NoAnonFreeVars            -- ^ no anonymous free variables
+  | NoFunctionalPatterns      -- ^ no functional patterns
   | NoImplicitPrelude         -- ^ no implicit import of the prelude
     deriving (Eq, Read, Show, Enum, Bounded)
 
