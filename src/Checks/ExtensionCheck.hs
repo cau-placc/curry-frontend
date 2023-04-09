@@ -9,11 +9,13 @@
     Portability :  portable
 
    First of all, the compiler scans a source file for file-header pragmas
-   that may activate language extensions.
+   that may activate language extensions. The extension check then adds
+   all, possibly transitively, implied extensions to the set of enabled
+   extensions.
 -}
 module Checks.ExtensionCheck (extensionCheck) where
 
-import qualified Control.Monad.State as S (State, execState, modify, gets)
+import qualified Control.Monad.State as S (State, execState, modify)
 import qualified Data.Set as Set
 import qualified Data.Set.Extra as Set
 
@@ -28,21 +30,21 @@ import CompilerOpts
 extensionCheck :: Options -> Module a -> ([KnownExtension], [Message])
 extensionCheck opts mdl = execEXC (checkModule mdl >> applyImplicitExtensions) initState
   where
-    initState = EXCState (optExtensions opts) []
+    initState = EXCState (Set.fromList $ optExtensions opts) []
 
 type EXCM = S.State EXCState
 
 data EXCState = EXCState
-  { extensions :: [KnownExtension]
+  { extensions :: Set.Set KnownExtension
   , errors     :: [Message]
   }
 
 execEXC :: EXCM a -> EXCState -> ([KnownExtension], [Message])
 execEXC ecm s =
-  let s' = S.execState ecm s in (extensions s', reverse $ errors s')
+  let s' = S.execState ecm s in (Set.toList $ extensions s', reverse $ errors s')
 
-enableExtension :: KnownExtension -> EXCM ()
-enableExtension e = S.modify $ \s -> s { extensions = e : extensions s }
+enableExtensions :: Set.Set KnownExtension -> EXCM ()
+enableExtensions es = S.modify $ \s -> s { extensions = Set.union es $ extensions s }
 
 disableExtensions :: Set.Set KnownExtension -> EXCM ()
 disableExtensions es = S.modify $ \s -> s { extensions = Set.difference (extensions s) es }
