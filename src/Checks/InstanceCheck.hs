@@ -46,9 +46,9 @@ import Env.Class
 import Env.Instance
 import Env.TypeConstructor
 
-instanceCheck :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Decl a]
+instanceCheck :: [KnownExtension] -> ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Decl a]
               -> (InstEnv, [Message])
-instanceCheck m tcEnv clsEnv inEnv ds =
+instanceCheck exts m tcEnv clsEnv inEnv ds =
   case multipleErrs ++ funDepConflictErrs of
     []   -> execINCM (checkDecls tcEnv clsEnv ds) state
     errs -> (inEnv, errs)
@@ -59,7 +59,7 @@ instanceCheck m tcEnv clsEnv inEnv ds =
                      map (flip InstSource m) localInsts ++ importedISs
     funDepConflictErrs = map (errFunDepConflict tcEnv) $
                            findFunDepConflicts m clsEnv inEnv localInsts
-    state = INCState m inEnv []
+    state = INCState m inEnv exts []
 
 -- In order to provide better error messages, we use the following data type
 -- to keep track of an instance's source, i.e., the module it was defined in.
@@ -124,6 +124,7 @@ type INCM = S.State INCState
 data INCState = INCState
   { moduleIdent :: ModuleIdent
   , instEnv     :: InstEnv
+  , extensions  :: [KnownExtension]
   , errors      :: [Message]
   }
 
@@ -149,6 +150,7 @@ ok = return ()
 checkDecls :: TCEnv -> ClassEnv -> [Decl a] -> INCM ()
 checkDecls tcEnv clsEnv ds = do
   mapM_ (bindInstance tcEnv clsEnv) ids
+  -- TODO: unless NoDataDeriving...
   mapM (declDeriveDataInfo tcEnv clsEnv) (filter isDataDecl tds) >>=
     mapM_ (bindDerivedInstances clsEnv) . groupDeriveInfos
   mapM (declDeriveInfo tcEnv clsEnv) (filter hasDerivedInstances tds) >>=
