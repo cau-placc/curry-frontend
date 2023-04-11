@@ -113,13 +113,11 @@ checkIDecl (IFunctionDecl p f cm n qty) =
 checkIDecl (HidingClassDecl p cx qcls k clsvars funDeps) = do
   checkTypeVars "hiding class declaration" clsvars
   cx' <- checkClosedContext clsvars cx
-  checkSimpleContext cx'
   funDeps' <- filterM (checkClosedFunDep clsvars) funDeps
   return $ HidingClassDecl p cx' qcls k clsvars funDeps'
 checkIDecl (IClassDecl p cx qcls k clsvars funDeps ms hs) = do
   checkTypeVars "class declaration" clsvars
   cx' <- checkClosedContext clsvars cx
-  checkSimpleContext cx'
   funDeps' <- filterM (checkClosedFunDep clsvars) funDeps
   ms' <- mapM checkIMethodDecl ms
   checkHidden (errNoElement "method" "class") qcls (map imethod ms') hs
@@ -127,7 +125,6 @@ checkIDecl (IClassDecl p cx qcls k clsvars funDeps ms hs) = do
 checkIDecl (IInstanceDecl p cx qcls inst is m) = do
   checkClass qcls
   (cx', inst') <- checkQualTypes cx inst
-  checkSimpleContext cx'
   mapM_ checkInstanceType inst'
   mapM_ (report . errMultipleImplementation . head) $ findMultiples $ map fst is
   return $ IInstanceDecl p cx' qcls inst' is m
@@ -172,33 +169,30 @@ checkNewConstrDecl tvs (NewRecordDecl p c (l, ty)) = do
   ty' <- checkClosedType tvs ty
   return $ NewRecordDecl p c (l, ty')
 
-checkSimpleContext :: Context -> ISC ()
-checkSimpleContext = mapM_ checkSimpleConstraint
-
-checkSimpleConstraint :: Constraint -> ISC ()
-checkSimpleConstraint c@(Constraint _ _ tys) =
-  unless (all isVariableType tys) $ report $ errIllegalSimpleConstraint c
-
 checkIMethodDecl :: IMethodDecl -> ISC IMethodDecl
 checkIMethodDecl (IMethodDecl p f a qty) =
   IMethodDecl p f a <$> checkQualType qty
 
+-- taken from Leif-Erik Krueger
 checkInstanceType :: InstanceType -> ISC ()
 checkInstanceType inst = do
   tEnv <- getTypeEnv
-  unless (isSimpleType inst &&
-    not (isTypeSyn (typeConstr inst) tEnv) &&
-    null (filter isAnonId $ typeVars inst) &&
-    isNothing (findDouble $ fv inst)) $
-      report $ errIllegalInstanceType inst inst
+  when (any isAnonId (typeVars inst) || containsForall inst) $
+    report $ errIllegalInstanceType inst
 
+
+-- take from Leif-Erik Krueger
 checkQualType :: QualTypeExpr -> ISC QualTypeExpr
-checkQualType (QualTypeExpr spi cx ty) =
-  QualTypeExpr spi <$> checkContext cx <*> checkType ty
+checkQualType (QualTypeExpr spi cx ty) = do
+  (cx', ty') <- checkQualTypes cx [ty]
+  return $ QualTypeExpr spi cx' (head ty')
 
--- TODO: Maybe apply instance termination checks here.
+-- taken from Leif-Erik Krueger
 checkQualTypes :: Context -> [TypeExpr] -> ISC (Context, [TypeExpr])
-checkQualTypes cx tys = (,) <$> checkContext cx <*> mapM checkType tys
+checkQualTypes cx tys = do
+  tys' <- mapM checkType tys
+  cx'  <- checkClosedContext (fv tys') cx
+  return (cx', tys')
 
 checkClosedContext :: [Ident] -> Context -> ISC Context
 checkClosedContext tvs = mapM (checkClosedConstraint tvs)
@@ -212,10 +206,13 @@ checkClosedConstraint tvs c = do
   mapM_ (checkClosed tvs) tys
   return c'
 
+-- taken from Leif-Erik Krueger
 checkConstraint :: Constraint -> ISC Constraint
-checkConstraint (Constraint spi qcls tys) = do
+checkConstraint c@(Constraint spi qcls tys) = do
   checkClass qcls
-  Constraint spi qcls `liftM` (mapM checkType tys)
+  when (any containsForall tys) $ report $ errIllegalConstraint c
+  Constraint spi qcls `liftM` mapM checkType tys
+
 
 checkClosedFunDep :: [Ident] -> FunDep -> ISC Bool
 checkClosedFunDep clsvars (FunDep _ ltvs rtvs) = do
@@ -336,18 +333,18 @@ errNoElement :: String -> String -> QualIdent -> Ident -> Message
 errNoElement what for tc x = spanInfoMessage x $ hsep $ map text
   [ "Hidden", what, escName x, "is not defined for", for, qualName tc ]
 
-errIllegalSimpleConstraint :: Constraint -> Message
-errIllegalSimpleConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
+-- taken from Leif-Erik Krueger
+errIllegalConstraint :: Constraint -> Message
+errIllegalConstraint c = spanInfoMessage c $ vcat
   [ text "Illegal class constraint" <+> pPrint c
-  , text "Constraints in class and instance declarations must be of"
-  , text "the form C u_1 ... u_n, where C is a type class"
-  , text "and u_1, ..., u_n are type variables."
+  , text "Constraints must not contain type quantifiers."
   ]
 
-errIllegalInstanceType :: HasSpanInfo s => s -> InstanceType -> Message
-errIllegalInstanceType p inst = spanInfoMessage p $ vcat
+
+-- taken from Leif-Erik Krueger
+errIllegalInstanceType :: InstanceType -> Message
+errIllegalInstanceType inst = spanInfoMessage inst $ vcat
   [ text "Illegal instance type" <+> pPrint inst
-  , text "Each instance type must be of the form (T u_1 ... u_n),"
-  , text "where T is not a type synonym and u_1, ..., u_n are"
-  , text "mutually distinct, non-anonymous type variables."
+  , text "An instance type must not contain anonymous"
+  , text "type variables or type quantifiers."
   ]

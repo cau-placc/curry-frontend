@@ -2591,6 +2591,7 @@ errFlexibleContext m p what v pr = spanInfoMessage p $ vcat
   [ text "Constraint with non-variable argument" <+> ppPred m pr
   , text "occurring in the context of the inferred type for" <+> text what <+>
       text (escName v)
+  , text "Use FlexibleContexts if you want do disable this."
   ]
 
 errAmbiguousTypeVariable :: HasSpanInfo a => ModuleIdent -> a -> String -> Doc
