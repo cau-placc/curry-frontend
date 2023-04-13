@@ -19,10 +19,10 @@
 -}
 module Checks.InstanceCheck (instanceCheck) where
 
-import           Control.Monad.Extra        ( concatMapM, maybeM, unless, void
+import           Control.Monad.Extra        ( concatMapM, unless, void
                                             , when, whileM )
 import qualified Control.Monad.State as S   (State, execState, gets, modify)
-import           Data.Either                (either, isRight, lefts)
+import           Data.Either                (isRight, lefts)
 import           Data.List                  ( (\\), nub, partition, sortBy
                                             , tails )
 import qualified Data.Map            as Map ( Map, elems, keysSet, restrictKeys

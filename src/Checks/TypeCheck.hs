@@ -45,25 +45,22 @@ import           Control.Applicative        ((<$>), (<*>))
 #endif
 import           Control.Monad.Trans (lift)
 import           Control.Monad.Extra ( allM, filterM, foldM, liftM, (&&^)
-                                     , maybeM, notM, replicateM, when, unless
-                                     , unlessM)
+                                     , notM, replicateM, when, unless
+                                     , unlessM )
 import qualified Control.Monad.State as S
                                      (State, StateT, get, gets, put, modify,
                                       runState, evalStateT)
-import           Data.Either         (either,partitionEithers)
+import           Data.Either         (partitionEithers)
 import           Data.Function       (on)
 import           Data.List           (nub, nubBy, partition, sortBy, (\\))
 import qualified Data.Map            as Map ( Map, empty, elems, insert
                                             , insertWith, lookup, keysSet
                                             , restrictKeys, singleton, unions )
 import           Data.Maybe                 ( fromJust, fromMaybe, isJust
-                                            , listToMaybe, catMaybes
-                                            , isNothing )
+                                            , listToMaybe, catMaybes )
 import qualified Data.Set.Extra      as Set ( Set, empty, fromList, insert
                                             , member, notMember, toAscList
                                             , toList )
-
-import GHC.Stack (HasCallStack)
 
 import Curry.Base.Ident
 import Curry.Base.Pretty
@@ -87,8 +84,6 @@ import Env.Class            as CE
 import Env.Instance
 import Env.TypeConstructor
 import Env.Value
-
-import Debug.Trace
 
 -- TODO: Check if the set operations on predicate sets (like union) could be
 --         problematic with the 'PredIsICC' field.
@@ -636,8 +631,8 @@ tcEquations p ty pls eqs = do
       eqs'' = map (setPredList pls'') eqs'
   return (pls'', eqs'')
  where
-   setPredList preds (Equation p (Just (PredType _ typ)) lhs rhs)
-     = Equation p (Just $ PredType (map getPred preds) typ) lhs rhs
+   setPredList preds (Equation p' (Just (PredType _ typ)) lhs rhs)
+     = Equation p' (Just $ PredType (map getPred preds) typ) lhs rhs
    setPredList _     eqn = eqn
 
 tcEqns :: [Equation a]
@@ -657,7 +652,7 @@ tcEqns eqs = do
     = Equation p (Just $ PredType (map getPred preds) ty) lhs rhs
 
 tcEquation :: Equation a -> TCM (LPredList, Type, Equation PredType)
-tcEquation eqn@(Equation p _ lhs rhs) = tcEqn p lhs rhs
+tcEquation (Equation p _ lhs rhs) = tcEqn p lhs rhs
 
 tcEqn :: SpanInfo -> Lhs a -> Rhs a
       -> TCM (LPredList, Type, Equation PredType)
@@ -728,9 +723,9 @@ filterEqnType lpls (i, FunctionDecl p f pty eqs) =
 filterEqnType _    d                             = d
 
 filterEqnType' :: [Pred] -> Equation PredType -> Equation PredType
-filterEqnType' lpls (Equation p (Just (PredType pls ty)) lhs rhs) =
+filterEqnType' lpls (Equation p (Just (PredType _ ty)) lhs rhs) =
   Equation p (Just $ PredType lpls ty) lhs rhs
-filterEqnType' lpls eqn@(Equation _ Nothing _ _) = eqn
+filterEqnType' _ eqn@(Equation _ Nothing _ _) = eqn
 
 
 
@@ -851,7 +846,8 @@ makeContextEquivalent pls pls2 ty2 (i, FunctionDecl p pty@(PredType pls1 ty1) f 
   let eqs' = map (setPredType $ PredType pls2' ty2) eqs
   return (pls, (i,FunctionDecl p pty f eqs'))
   where
-    setPredType pty (Equation p _ lhs rhs) = Equation p (Just pty) lhs rhs
+    setPredType predtype (Equation spi _ lhs rhs) 
+      = Equation spi (Just predtype) lhs rhs
 makeContextEquivalent pls _ _ d = return (pls,d)
 
 -- first argument: all predicates from the function, with their implied predicates
@@ -862,9 +858,9 @@ makeEquivalent :: [(Pred,[Pred])] -> [Pred] -> TypeSubst -> ([Pred],TypeSubst)
 makeEquivalent []         _      theta = ([], theta)
 makeEquivalent (pls:plss) infPls theta = 
   let (plss', theta') = makeEquivalent plss infPls theta
-      matchPreds = map (fmap fromJust) $ filter (isJust . snd) 
+      matchedPreds = map (fmap fromJust) $ filter (isJust . snd) 
                    $ map (\pr -> (pr, findSafeMatch pr pls theta')) infPls
-  in case matchPreds of
+  in case matchedPreds of
           []                    -> let tvs = typeVars infPls
                                        thetaInv = invSubst tvs theta'
                                    in (subst thetaInv (fst pls) : plss', theta')
@@ -1723,6 +1719,7 @@ unifyList (p:ps) what (doc:docs) (pls1:pls2:plss) (ty1:ty2:tys) = do
   pls'  <- unifyList ps what docs (pls2:plss) (ty2:tys)
   pls'' <- unify p what doc pls1 ty1 pls2 ty2
   return $ plUnion pls' pls''
+unifyList _ _ _ _ _ = internalError $ "TypeCheck.unifyList"
 
 unifyTypes :: ModuleIdent -> Type -> Type -> Either Doc TypeSubst
 unifyTypes _ (TypeVariable tv1) (TypeVariable tv2)
@@ -1840,7 +1837,7 @@ reducePreds m inEnv = Map.unions . map reducePred
 --                  Then, a constraint like C [a] b can be reduced.
 -- taken from Leif-Erik Krueger
 instPredList :: ModuleIdent -> InstEnv' -> LPred -> Either Message LPredList
-instPredList m inEnv (LPred pr@(Pred _ qcls tys) p what doc) =
+instPredList m inEnv (LPred (Pred _ qcls tys) p what doc) =
   case Map.lookup qcls $ snd inEnv of
     Just tyss | tys `elem` tyss -> Right []
     _ -> case lookupInstMatch qcls tys (fst inEnv) of
@@ -1963,21 +1960,20 @@ filterTypeErrors (_            : imperrs) = filterTypeErrors imperrs
 --    improving substitution.
 findImprovingSubstitutions :: LPred -> [LPred] -> TCM ([LPred], [TypeSubst]) 
 findImprovingSubstitutions lpr lprs = do 
-  let Pred _ qcls tys = getPred lpr
+  let Pred _ qcls _ = getPred lpr
   clsEnv <- getClassEnv
-  mid <- getModuleIdent
   let fds = classFunDeps qcls clsEnv
-  (errPreds1, substs1) <- imprSubstFirstRule mid lpr lprs fds
-  (errPreds2, substs2) <- imprSubstSecondRule mid lpr fds
+  (errPreds1, substs1) <- imprSubstFirstRule lpr lprs fds
+  (errPreds2, substs2) <- imprSubstSecondRule lpr fds
   return (errPreds1 ++ errPreds2, substs1 ++ substs2)
   
 
-imprSubstFirstRule :: ModuleIdent -> LPred -> [LPred] -> [CE.FunDep] 
+imprSubstFirstRule ::  LPred -> [LPred] -> [CE.FunDep] 
                    -> TCM ([LPred],[TypeSubst])
-imprSubstFirstRule m lpr lprs fds = mapFst filterTypeErrors <$> partitionEithers <$>
+imprSubstFirstRule lpr lprs fds = mapFst filterTypeErrors <$> partitionEithers <$>
   mapM (uncurry imprFirstRule') [ (lpr',fd) | lpr' <- lprs, fd <- fds ]
   where
-    LPred pr spi what' doc' = lpr
+    LPred pr _ _ _ = lpr
     Pred _ qcls tys = pr
     imprFirstRule' lpr' (lixs,rixs) = 
       let Pred _ qcls2 tys2 = getPred lpr'
@@ -1992,28 +1988,27 @@ imprSubstFirstRule m lpr lprs fds = mapFst filterTypeErrors <$> partitionEithers
                   else return (Left (TypeError lpr)))
          else return (Left OtherError)
 
-imprSubstSecondRule :: ModuleIdent ->  LPred -> [CE.FunDep] -> TCM ([LPred],[TypeSubst])
-imprSubstSecondRule m lpr fds = do
+imprSubstSecondRule :: LPred -> [CE.FunDep] -> TCM ([LPred],[TypeSubst])
+imprSubstSecondRule lpr fds = do
   inEnv <- getInstEnv
   let Pred _ qcls tys = getPred lpr
       inms = fst $ lookupInstMatch qcls tys (fst inEnv)
-  substs <- secRuleSubsts m lpr fds inms
+  substs <- secRuleSubsts lpr fds inms
   return $ mapFst filterTypeErrors $ partitionEithers substs
 
-secRuleSubsts :: ModuleIdent -> LPred -> [CE.FunDep] -> [InstMatchInfo] 
+secRuleSubsts :: LPred -> [CE.FunDep] -> [InstMatchInfo] 
               -> TCM [Either ImpError TypeSubst]
-secRuleSubsts m lpr fds inms = mapM (uncurry secRuleSubsts')
+secRuleSubsts lpr fds inms = mapM (uncurry secRuleSubsts')
     [(fd,imatch) | fd <- fds, imatch <- inms' ]
   where
-    LPred pr spi what doc = lpr
-    Pred _ qcls tys = pr
+    LPred pr _ _ _ = lpr
+    Pred _ _ tys = pr
     inms' = map (\(_,_,types,_,sigma) -> (types,sigma)) inms
 
     secRuleSubsts' (lixs,rixs) (tys', sigma) = 
       let tys'' = subst sigma tys'
           lixs' = Set.toAscList lixs
           rixs' = Set.toAscList rixs
-          n     = length rixs'
       in case (filterIndices tys lixs') == (filterIndices tys'' lixs') of
            True -> let sub = unifyTypesSafe (filterIndices tys rixs') 
                                             (filterIndices tys'' rixs')
@@ -2028,9 +2023,9 @@ filterIndices xs is = filterIndices' 0 is xs
   where
     filterIndices' _ []  _         = []
     filterIndices' _ _      []     = []
-    filterIndices' i (j:js) (x:xs) 
-      | j == i    = x : filterIndices' (i+1) js xs
-      | otherwise = filterIndices' (i+1) (j:js) xs
+    filterIndices' i (j:js) (y:ys) 
+      | j == i    = y : filterIndices' (i+1) js ys
+      | otherwise = filterIndices' (i+1) (j:js) ys
 
 -- taken from Leif-Erik Krueger
 -- -----------------------------------------------------------------------------
@@ -2176,8 +2171,8 @@ fixVarAnnotsDecl pls (FunctionDecl spi pty f eqs) = do
   return $ FunctionDecl spi pty f eqs' 
 fixVarAnnotsDecl pls (ClassDecl spi li cx cls tvs fdps ms) 
   = ClassDecl spi li cx cls tvs fdps <$> mapM (fixVarAnnotsDecl pls) ms
-fixVarAnnotsDecl pls (InstanceDecl spi li cx qcls inst ds)
-  = InstanceDecl spi li cx qcls inst <$> mapM (fixVarAnnotsDecl pls) ds
+fixVarAnnotsDecl pls (InstanceDecl spi li cx qcls insty ds)
+  = InstanceDecl spi li cx qcls insty <$> mapM (fixVarAnnotsDecl pls) ds
 fixVarAnnotsDecl _ d = return d
 
 fixVarAnnotsEquation :: [Pred] -> Equation PredType -> TCM (Equation PredType)
@@ -2202,7 +2197,7 @@ fixVarAnnotsExpr pls (Variable spi pty v) = do
   mid <- getModuleIdent
   vEnv <- getValueEnv
   thetaGlobal <- getTypeSubst
-  let pty1@(PredType pls1 ty1) = subst thetaGlobal pty
+  let pty1@(PredType _ ty1) = subst thetaGlobal pty
   case funTypeSafe False mid v vEnv of
     Nothing -> return $ Variable spi pty v
     Just (ForAll _ pty2@(PredType pls2 ty2)) ->

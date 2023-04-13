@@ -35,7 +35,6 @@ import           Data.List
   ((\\), intersect, intersectBy, nub, sort, unionBy)
 import           Data.Char
   (isLower, isUpper, toLower, toUpper, isAlpha)
-import qualified Data.Set.Extra as Set
 import           Data.Tuple.Extra
   (snd3)
 
@@ -47,7 +46,7 @@ import Curry.Syntax
 import Curry.Syntax.Utils  ()
 import Curry.Syntax.Pretty ()
 
-import Base.CurryTypes (ppTypeScheme, fromPred, toPredList, toPredSet)
+import Base.CurryTypes (ppTypeScheme, fromPred, toPredList)
 import Base.Messages   (Message, spanInfoMessage, internalError)
 import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                        , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv

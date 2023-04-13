@@ -27,15 +27,14 @@ module Checks.InterfaceSyntaxCheck (intfSyntaxCheck) where
 import Prelude hiding ((<>))
 #endif
 
-import           Control.Monad            (filterM, liftM, liftM2, unless, when)
+import           Control.Monad            (filterM, liftM, liftM2, when)
 import qualified Control.Monad.State as S
 import           Data.List                (nub, partition)
-import           Data.Maybe               (isNothing)
 
 import Base.Expr
 import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.TopEnv
-import Base.Utils    (findMultiples, findDouble)
+import Base.Utils    (findMultiples)
 
 import Env.TypeConstructor
 import Env.Type
@@ -175,8 +174,7 @@ checkIMethodDecl (IMethodDecl p f a qty) =
 
 -- taken from Leif-Erik Krueger
 checkInstanceType :: InstanceType -> ISC ()
-checkInstanceType inst = do
-  tEnv <- getTypeEnv
+checkInstanceType inst = 
   when (any isAnonId (typeVars inst) || containsForall inst) $
     report $ errIllegalInstanceType inst
 
@@ -196,9 +194,6 @@ checkQualTypes cx tys = do
 
 checkClosedContext :: [Ident] -> Context -> ISC Context
 checkClosedContext tvs = mapM (checkClosedConstraint tvs)
-
-checkContext :: Context -> ISC Context
-checkContext = mapM checkConstraint
 
 checkClosedConstraint :: [Ident] -> Constraint -> ISC Constraint
 checkClosedConstraint tvs c = do
@@ -290,10 +285,6 @@ typeVars (ArrowType      _ ty1 ty2) = typeVars ty1 ++ typeVars ty2
 typeVars (ParenType           _ ty) = typeVars ty
 typeVars (ForallType       _ vs ty) = vs ++ typeVars ty
 
-isTypeSyn :: QualIdent -> TypeEnv -> Bool
-isTypeSyn tc tEnv = case qualLookupTypeKind tc tEnv of
-  [Alias _] -> True
-  _ -> False
 
 -- ---------------------------------------------------------------------------
 -- Error messages

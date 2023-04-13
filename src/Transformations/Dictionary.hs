@@ -30,14 +30,10 @@ import           Data.List         (inits, nub, partition, tails)
 import qualified Data.Map   as Map (Map, empty, insert, lookup)
 import           Data.Maybe        (fromMaybe, isJust)
 
-import Debug.Trace
-import GHC.Stack (HasCallStack)
-
 import Curry.Base.Ident
 import Curry.Base.Position
 import Curry.Base.SpanInfo
 import Curry.Syntax
-import Curry.Syntax.Pretty (ppIdent)
 
 import Base.CurryKinds
 import Base.CurryTypes
@@ -57,8 +53,6 @@ import Env.Interface
 import Env.OpPrec
 import Env.TypeConstructor
 import Env.Value
-
-import qualified CompilerEnv as CE
 
 data DTState = DTState
   { moduleIdent :: ModuleIdent
@@ -585,12 +579,11 @@ emptyDictEnv :: DictEnv
 emptyDictEnv = []
 
 class DictTrans a where
-  dictTrans :: HasCallStack => a PredType -> DTM (a Type)
+  dictTrans ::  a PredType -> DTM (a Type)
 
 instance DictTrans Module where
   dictTrans (Module spi li ps m es is ds) = do
     liftedDs <- concatMapM liftDecls ds
-    --traceM (show $ filter (\d -> isFunDecl d) liftedDs)
     stubDs <- concatMapM createStubs ds
     tcEnv <- getTyConsEnv
     clsEnv <- getClassEnv
@@ -598,18 +591,11 @@ instance DictTrans Module where
     modifyValueEnv $ bindClassDecls m tcEnv clsEnv
     modifyValueEnv $ bindInstDecls m clsEnv inEnv
     modifyTyConsEnv $ bindDictTypes m clsEnv
-    vEnv <- getValueEnv
-    --traceM (show $ CE.ppAL True $ allLocalBindings vEnv)
     transDs <- mapM dictTrans liftedDs
     modifyValueEnv $ dictTransValues
     modifyTyConsEnv $ dictTransTypes
     dictEs <- addExports es <$> concatMapM dictExports ds
     return $ Module spi li ps m dictEs is $ transDs ++ stubDs
-   where
-     isFunDecl (FunctionDecl _ _ _ _) = True
-     isFunDecl _                      = False
-
-     funName (FunctionDecl _ _ f _) = show (ppIdent f)
 
 -- We use and transform the type from the type constructor environment for
 -- transforming a constructor declaration as it contains the reduced and
@@ -662,7 +648,7 @@ instance DictTrans Equation where
   dictTrans (Equation p (Just pty) (FunLhs _ f ts) rhs) =
     withLocalValueEnv $ withLocalDictEnv $ do
       m <- getModuleIdent
-      pls <- matchPredList' f (varType m f) pty
+      pls <- matchPredList' (varType m f) pty
       ts' <- addDictArgs pls ts
       modifyValueEnv $ bindPatterns ts'
       Equation p Nothing (FunLhs NoSpanInfo f ts') <$> dictTrans rhs
@@ -802,7 +788,7 @@ instPredList (Pred _ cls tys) = do
 -- tries to find a suffix of the context whose transformation matches the
 -- initial arrows of the instance type.
 
-matchPredList :: HasCallStack => (ValueEnv -> TypeScheme) -> Type -> DTM [Pred]
+matchPredList :: (ValueEnv -> TypeScheme) -> Type -> DTM [Pred]
 matchPredList tySc ty2 = do
   ForAll _ (PredType ps ty1) <- tySc <$> getValueEnv
   dictEnvPreds <- map fst <$> getDictEnv
@@ -815,13 +801,12 @@ matchPredList tySc ty2 = do
   inEnv <- getInstEnv
   return $ inferDependentVars clsEnv inEnv dictEnvPreds argPreds
 
-matchPredList' :: HasCallStack => Ident -> (ValueEnv -> TypeScheme)  -> PredType -> DTM [Pred]
-matchPredList' f tySc (PredType ps2 ty2) = do
+matchPredList' :: (ValueEnv -> TypeScheme)  -> PredType -> DTM [Pred]
+matchPredList' tySc (PredType ps2 ty2) = do
   ForAll _ (PredType ps ty1) <- tySc <$> getValueEnv
   dictEnvPreds <- map fst <$> getDictEnv
-  let maxDictTv = maximum (-1 : typeVars dictEnvPreds)
-      argPreds = foldr (\(pls1, pls2) pls' -> fromMaybe pls' $
-                          qualMatch' f pls1 ty1 pls2 ps2 ty2 maxDictTv)
+  let argPreds = foldr (\(pls1, pls2) pls' -> fromMaybe pls' $
+                          qualMatch' pls1 ty1 pls2 ps2 ty2)
                        (internalError $ "Dictionary.matchPredList': " ++ show ps)
                        (splits ps)
   clsEnv <- getClassEnv
@@ -871,7 +856,7 @@ inferDependentVarsInstEnv clsEnv inEnv (Pred _ argCls argTys) sigma =
         unzip $ typeDepsInstEnv argCls (subst sigma argTys) clsEnv inEnv
   in foldr2 matchType sigma argTys' instTys
 
-qualMatch :: HasCallStack => [Pred] -> Type -> [Pred] -> Type -> Int -> Maybe [Pred]
+qualMatch :: [Pred] -> Type -> [Pred] -> Type -> Int -> Maybe [Pred]
 qualMatch pls1 ty1 pls2 ty2 maxDictTv = case predListMatch pls2 ty2 of
   Just ty2' ->
     let freshTys = map TypeVariable [maximum (maxDictTv : typeVars ty2') + 1 ..]
@@ -880,14 +865,10 @@ qualMatch pls1 ty1 pls2 ty2 maxDictTv = case predListMatch pls2 ty2 of
     in Just $ subst (matchType ty1 ty2' idSubst) $ subst renamePsTvs pls1
   Nothing -> Nothing
 
-qualMatch' :: HasCallStack => Ident -> [Pred] -> Type -> [Pred] -> PredList -> Type -> Int -> Maybe [Pred]
-qualMatch' f pls1 ty1 pls2 ps ty2 maxDictTv = case predListMatch pls2 ty2 of
+qualMatch' :: [Pred] -> Type -> [Pred] -> PredList -> Type -> Maybe [Pred]
+qualMatch' pls1 ty1 pls2 ps ty2 = case predListMatch pls2 ty2 of
   Just ty2' ->
-    let freshTys = map TypeVariable [maximum (maxDictTv : typeVars ty2') + 1 ..]
-        psTvs = [maximum (-1 : typeVars ty1) + 1 .. maximum (-1 : typeVars pls1)]
-        renamePsTvs = foldr2 bindSubst idSubst psTvs freshTys
-        pls1' = subst renamePsTvs pls1
-        pls2' = ps
+    let pls2' = ps
     in Just $ subst (matchPredType' pls1 ty1 pls2' ty2' idSubst) $ pls1
   Nothing -> Nothing
 

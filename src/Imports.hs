@@ -17,7 +17,7 @@
 -}
 module Imports (importInterfaces, importModules, qualifyEnv) where
 
-import           Data.List                  (nub, nubBy)
+import           Data.List                  (nubBy)
 import qualified Data.Map            as Map
 import           Data.Maybe                 (catMaybes, fromMaybe, isJust)
 import qualified Data.Set            as Set

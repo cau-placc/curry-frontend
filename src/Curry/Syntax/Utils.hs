@@ -177,7 +177,7 @@ typeVariables (ForallType        _ vs ty) = vs ++ typeVariables ty
 containsForall :: TypeExpr -> Bool
 containsForall (ConstructorType     _ _) = False
 containsForall (ApplyType     _ ty1 ty2) = containsForall ty1 || containsForall ty2
-containsForall (VariableType       _ tv) = False
+containsForall (VariableType        _ _) = False
 containsForall (TupleType         _ tys) = any containsForall tys
 containsForall (ListType           _ ty) = containsForall ty
 containsForall (ArrowType     _ ty1 ty2) = containsForall ty1 || containsForall ty2

@@ -15,8 +15,6 @@ module Base.TypeExpansion
   ( module Base.TypeExpansion
   ) where
 
-import qualified Data.Set.Extra as Set (map)
-
 import Curry.Base.Ident
 import Curry.Syntax
 

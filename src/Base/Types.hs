@@ -28,10 +28,8 @@ module Base.Types
   , Pred (..), PredIsICC (..), IsPred (..), LPred (..), qualifyPred
   , unqualifyPred
   , PredSet, emptyPredSet, LPredSet, emptyLPredSet, psMember, removeICCFlag
-  , partitionPredSetSomeVars, partitionPredSetOnlyVars
   , qualifyPredSet, unqualifyPredSet
   , PredList, LPredList, plElem, removeICCFlagList, partitionPredList
-  , partitionPredListOnlyVars, partitionPredListSomeVars
   , qualifyPredList, unqualifyPredList
   , plUnion, plUnions, plDeleteMin, plDelete, plConcatMap
   , plConcatMapM, plInsert, plDifference, plLookupMin
@@ -391,12 +389,6 @@ removeICCFlagList (p : ps)
 -- first predicate set given is used to not report predicates without fitting
 -- instances, if they are mentioned as constraints of an explicit type
 -- signature.
-partitionPredSetSomeVars :: (IsPred a, IsPred b) => Set.Set a -> Set.Set b
-                                                 -> (Set.Set b, Set.Set b)
-partitionPredSetSomeVars = partitionPredSet any
-
-partitionPredListSomeVars :: (IsPred a, IsPred b) => [a] -> [b] -> ([b],[b])
-partitionPredListSomeVars = partitionPredList' any
 
 -- Partitions the given predicate set such that all predicates in the first
 -- element of the returned tuple have only type variables (or type variables
@@ -404,29 +396,6 @@ partitionPredListSomeVars = partitionPredList' any
 --
 -- This function is used to report constraints that would only be allowed with
 -- a FlexibleContexts language extension when all predicate types are known.
-partitionPredSetOnlyVars :: IsPred a => Set.Set a -> (Set.Set a, Set.Set a)
-partitionPredSetOnlyVars = partitionPredSet all emptyPredSet
-
-partitionPredListOnlyVars :: IsPred a => [a] -> ([a],[a])
-partitionPredListOnlyVars = partitionPredList' all ([] :: PredList)
-
-partitionPredSet :: (IsPred a, IsPred b) => ((Type -> Bool) -> [Type] -> Bool)
-                 -> Set.Set a -> Set.Set b -> (Set.Set b, Set.Set b)
-partitionPredSet f ps = Set.partition $
-  (\pr@(Pred _ _ tys) -> pr `psMember` ps || f isTypeVariable tys) . getPred
-  where
-    isTypeVariable (TypeVariable _) = True
-    isTypeVariable (TypeApply ty _) = isTypeVariable ty
-    isTypeVariable _                = False
-
-partitionPredList' :: (IsPred a, IsPred b) => ((Type -> Bool) -> [Type] -> Bool)
-                  -> [a] -> [b] -> ([b],[b])
-partitionPredList' f pl = partition $
- (\pr@(Pred _ _ tys) -> pr `plElem` pl || f isTypeVariable tys) . getPred
-  where
-    isTypeVariable (TypeVariable _) = True
-    isTypeVariable (TypeApply ty _) = isTypeVariable ty
-    isTypeVariable _                = False
 
 -- taken from Leif-Erik Krueger
 partitionPredList :: IsPred a => [a] -> ([a],[a])

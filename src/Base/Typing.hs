@@ -34,8 +34,6 @@ import Curry.Syntax
 
 import GHC.Stack (HasCallStack)
 
-import Debug.Trace
-
 import Base.Messages (internalError)
 import Base.PrettyTypes ()
 import Base.Subst
@@ -209,7 +207,7 @@ matchTypeSafe (TypeVariable tv) ty theta
   | ty == TypeVariable tv                       = Just theta
   | isBound theta tv && substVar theta tv /= ty = Nothing
   | otherwise                                   = Just $ bindVar tv ty theta
- where isBound (Subst _ thetaMap) tv = isJust $ Map.lookup tv thetaMap
+ where isBound (Subst _ thetaMap) tvar = isJust $ Map.lookup tvar thetaMap
 matchTypeSafe (TypeConstructor tc1) (TypeConstructor tc2) theta
   | tc1 == tc2 = Just theta
 matchTypeSafe (TypeConstrained _ tv1) (TypeConstrained _ tv2) theta
