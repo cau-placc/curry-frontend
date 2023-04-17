@@ -25,12 +25,13 @@ module Env.Class
   , toFunDep, fromFunDep, getFunDepLhs, getFunDepRhs
   , deleteVarFunDep, renameVarFunDep, renameFunDep, removeTrivialFunDeps
   , getRhsOnLhsMatch, funDepCoverage, funDepCoveragePredList, ambiguousTypeVars
-  , minPredList, maxPredList, impliedPredicatesList
+  , minPredList, maxPredList, impliedPredicatesList, toFunDepMap
   ) where
 
 import           Data.Containers.ListUtils (nubOrd)
 import           Data.List                 (elemIndex, nub, partition, sort)
-import qualified Data.Map as Map           (Map, empty, insertWith, lookup)
+import qualified Data.Map as Map           ( Map, empty, insertWith, lookup
+                                           , map )
 import           Data.Maybe                (fromMaybe)
 import qualified Data.Set as Set           ( Set, delete, difference, findMax
                                            , fromList, insert, isSubsetOf
@@ -307,3 +308,12 @@ ambiguousTypeVars clsEnv (PredType pls ty) fvs =
   let coveredVars = funDepCoveragePredList clsEnv pls $
                       Set.fromList (typeVars ty) `Set.union` fvs
   in filter (`Set.notMember` coveredVars) (typeVars pls)
+
+
+-------------------------------------------------------------------------------
+-- Conversion to simplified class environment for Type Syntax Check
+-------------------------------------------------------------------------------
+
+
+toFunDepMap :: ClassEnv -> Map.Map QualIdent [FunDep]
+toFunDepMap = Map.map (\(_,_,fds,_) -> fds)

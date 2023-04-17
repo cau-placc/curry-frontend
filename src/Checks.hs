@@ -71,7 +71,8 @@ typeSyntaxCheck :: Monad m => Check m (Module a)
 typeSyntaxCheck _ (env, mdl)
   | null msgs = ok (env, mdl')
   | otherwise = failMessages msgs
-  where (mdl', msgs) = TSC.typeSyntaxCheck (extensions env) (tyConsEnv env) mdl
+  where (mdl', msgs) = TSC.typeSyntaxCheck (extensions env) (tyConsEnv env) 
+                                           (classEnv env) mdl
 
 -- |Check the kinds of type definitions and signatures.
 --

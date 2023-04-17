@@ -30,7 +30,10 @@ import           Control.Applicative      ((<$>), (<*>), pure)
 import           Control.Monad            (filterM, unless, when)
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 import           Data.List                (nub)
+import qualified Data.Map            as Map (Map, insert, lookup)
 import           Data.Maybe               (isNothing)
+import qualified Data.Set            as Set ( Set, fromList, isSubsetOf, size
+                                            , toAscList, union, unions )
 
 import Curry.Base.Ident
 import Curry.Base.Position
@@ -44,8 +47,12 @@ import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.TopEnv
 import Base.Utils (findMultiples, findDouble)
 
-import Env.TypeConstructor (TCEnv)
-import Env.Type
+import           Env.Class                 (ClassEnv)
+import qualified Env.Class           as CE (FunDep,toFunDep, toFunDepMap)
+import           Env.TypeConstructor       (TCEnv)
+import           Env.Type
+
+import Debug.Trace
 
 -- TODO Use span info for err messages
 
@@ -64,8 +71,8 @@ import Env.Type
 -- within this environment.
 
 typeSyntaxCheck
-  :: [KnownExtension] -> TCEnv -> Module a -> (Module a, [Message])
-typeSyntaxCheck exts tcEnv mdl@(Module _ _ _ m _ _ ds) =
+  :: [KnownExtension] -> TCEnv -> ClassEnv -> Module a -> (Module a, [Message])
+typeSyntaxCheck exts tcEnv clsEnv mdl@(Module _ _ _ m _ _ ds) =
   case findMultiples $ map getIdent tcds of
     [] -> if length dfds <= 1
             then runTSCM (checkModule mdl) state
@@ -73,10 +80,12 @@ typeSyntaxCheck exts tcEnv mdl@(Module _ _ _ m _ _ ds) =
     tss -> (mdl, map errMultipleDeclarations tss)
   where
     tcds = filter isTypeOrClassDecl ds
+    cds  = filter isClassDecl tcds
     dfds = filter isDefaultDecl ds
     dfps = map (\(DefaultDecl p _) -> p) dfds
     tEnv = foldr (bindType m) (fmap toTypeKind tcEnv) tcds
-    state = TSCState exts m tEnv 1 []
+    fdmap = foldr (bindClass m) (CE.toFunDepMap clsEnv) cds
+    state = TSCState exts m tEnv fdmap 1 []
 
 -- Type Syntax Check Monad
 type TSCM = S.State TSCState
@@ -86,9 +95,12 @@ data TSCState = TSCState
   { extensions  :: [KnownExtension]
   , moduleIdent :: ModuleIdent
   , typeEnv     :: TypeEnv
+  , simpClsEnv  :: SimpleClassEnv
   , nextId      :: Integer
   , errors      :: [Message]
   }
+
+type SimpleClassEnv = Map.Map QualIdent [CE.FunDep]
 
 runTSCM :: TSCM a -> TSCState -> (a, [Message])
 runTSCM tscm s = let (a, s') = S.runState tscm s in (a, reverse $ errors s')
@@ -101,6 +113,9 @@ getModuleIdent = S.gets moduleIdent
 
 getTypeEnv :: TSCM TypeEnv
 getTypeEnv = S.gets typeEnv
+
+getSimpleClassEnv :: TSCM SimpleClassEnv
+getSimpleClassEnv = S.gets simpClsEnv
 
 newId :: TSCM Integer
 newId = do
@@ -134,6 +149,12 @@ bindType m (ClassDecl _ _ _ cls _ _ ds) = bindTypeKind m cls (Class qcls ms)
     qcls = qualifyWith m cls
     ms = concatMap methods ds
 bindType _ _ = id
+
+bindClass :: ModuleIdent -> Decl a -> SimpleClassEnv -> SimpleClassEnv
+bindClass m (ClassDecl _ _ _ cls tvs fds _) = let qcls = qualifyWith m cls
+                                                  fds' = map (CE.toFunDep tvs) fds
+                                              in  Map.insert qcls fds'
+bindClass m _                               = id
 
 -- When type declarations are checked, the compiler will allow anonymous
 -- type variables on the left hand side of the declaration, but not on
@@ -333,7 +354,8 @@ checkQualType (QualTypeExpr spi cx ty) = do
 checkQualTypes :: Bool -> Context -> [TypeExpr] -> TSCM (Context, [TypeExpr])
 checkQualTypes simplecx cx tys = do
   tys' <- mapM checkType tys
-  cx' <- checkClosedContext simplecx (fv tys') cx
+  fvs <- Set.toAscList <$> funDepCoverage cx (Set.fromList $ fv tys)
+  cx' <- checkClosedContext simplecx fvs cx
   return (cx', tys')
 
 -- taken from Leif-Erik Krueger
@@ -470,6 +492,45 @@ isTypeSyn :: QualIdent -> TypeEnv -> Bool
 isTypeSyn tc tEnv = case qualLookupTypeKind tc tEnv of
   [Alias _] -> True
   _ -> False
+
+
+funDepCoverage :: Context -> Set.Set Ident -> TSCM (Set.Set Ident)
+funDepCoverage cx tvs = do
+  simpClsEnv <- getSimpleClassEnv
+  tyEnv      <- getTypeEnv
+  let tvs' = funDepCoverage' simpClsEnv tyEnv tvs
+  if Set.size tvs' == Set.size tvs
+  then return tvs
+  else funDepCoverage cx tvs'
+  where
+   funDepCoverage' clsEnv tyEnv covVars =  
+    foldr (funDepCoverage'' clsEnv tyEnv) covVars cx
+  
+   funDepCoverage'' clsEnv tyEnv c@(Constraint _ cls _) covVars =
+    let [Class qcls _] = qualLookupTypeKind cls tyEnv
+        fds = lookupFunDeps qcls clsEnv
+    in foldr (funDepCoverage''' clsEnv c) covVars fds
+
+   funDepCoverage''' clsEnv (Constraint _ _ tys) (lixs,rixs) covVars =
+    let lixs' = Set.toAscList lixs
+        rixs' = Set.toAscList rixs
+    in if Set.fromList (fv (filterIndices tys lixs')) `Set.isSubsetOf` tvs 
+       then covVars `Set.union` Set.fromList (fv (filterIndices tys rixs'))
+       else covVars
+       
+
+lookupFunDeps :: QualIdent -> SimpleClassEnv -> [CE.FunDep]
+lookupFunDeps qcls simpClsEnv = case Map.lookup qcls simpClsEnv of
+  Nothing  -> []
+  Just fds -> fds
+
+filterIndices :: [a] -> [Int] -> [a]
+filterIndices xs is = filterIndices' xs is 0
+  where
+    filterIndices' []     _      _             = []
+    filterIndices' _      []     _             = []
+    filterIndices' (x:xs) (i:is) j | i == j    = x : filterIndices' xs is (j+1)
+                                   | otherwise = filterIndices' xs (i:is) (j+1)
 
 -- ---------------------------------------------------------------------------
 -- Error messages
