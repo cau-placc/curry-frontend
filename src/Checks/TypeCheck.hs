@@ -1964,7 +1964,7 @@ findImprovingSubstitutions lpr lprs = do
   clsEnv <- getClassEnv
   let fds = classFunDeps qcls clsEnv
   (errPreds1, substs1) <- imprSubstFirstRule lpr lprs fds
-  (errPreds2, substs2) <- imprSubstSecondRule lpr fds
+  (errPreds2, substs2) <- imprSubstSecondRule lpr
   return (errPreds1 ++ errPreds2, substs1 ++ substs2)
   
 
@@ -1988,13 +1988,15 @@ imprSubstFirstRule lpr lprs fds = mapFst filterTypeErrors <$> partitionEithers <
                   else return (Left (TypeError lpr)))
          else return (Left OtherError)
 
-imprSubstSecondRule :: LPred -> [CE.FunDep] -> TCM ([LPred],[TypeSubst])
-imprSubstSecondRule lpr fds = do
-  inEnv <- getInstEnv
+imprSubstSecondRule :: LPred -> TCM ([LPred],[TypeSubst])
+imprSubstSecondRule lpr = do
+  inEnv <- fst <$> getInstEnv
+  clsEnv <- getClassEnv
   let Pred _ qcls tys = getPred lpr
-      inms = fst $ lookupInstMatch qcls tys (fst inEnv)
-  substs <- secRuleSubsts lpr fds inms
-  return $ mapFst filterTypeErrors $ partitionEithers substs
+      (utys1,utys2) = unzip $ typeDepsInstEnv qcls tys clsEnv inEnv
+  case unifyTypesSafe utys1 utys2 of
+    Just sub -> return ([],[sub])
+    Nothing  -> return ([lpr],[])
 
 secRuleSubsts :: LPred -> [CE.FunDep] -> [InstMatchInfo] 
               -> TCM [Either ImpError TypeSubst]

@@ -34,6 +34,7 @@ import Curry.Base.Ident
 import Curry.Base.Position
 import Curry.Base.SpanInfo
 import Curry.Syntax
+import Curry.Syntax.Pretty (ppQIdent)
 
 import Base.CurryKinds
 import Base.CurryTypes
@@ -769,6 +770,7 @@ instPredList (Pred _ cls tys) = do
   case fst (lookupInstMatch cls tys inEnv) of
     [] -> internalError $ "Dictionary.instPredList: " ++
                             "Could not find an instance for " ++ show (cls, tys)
+                            ++ " pretty printed: " ++ show (ppQIdent cls, pPrint tys)
     [(m, pls, itys, _, tau)] -> return (m, itys, subst tau pls)
     _ : _ -> internalError $ "Dictionary.instPredList: " ++
                                "Multiple instances for " ++ show (cls, tys)
@@ -797,9 +799,7 @@ matchPredList tySc ty2 = do
                           qualMatch pls1 ty1 pls2 ty2 maxDictTv)
                        (internalError $ "Dictionary.matchPredList: " ++ show ps)
                        (splits ps)
-  clsEnv <- getClassEnv
-  inEnv <- getInstEnv
-  return $ inferDependentVars clsEnv inEnv dictEnvPreds argPreds
+  return argPreds
 
 matchPredList' :: (ValueEnv -> TypeScheme)  -> PredType -> DTM [Pred]
 matchPredList' tySc (PredType ps2 ty2) = do
@@ -809,9 +809,7 @@ matchPredList' tySc (PredType ps2 ty2) = do
                           qualMatch' pls1 ty1 pls2 ps2 ty2)
                        (internalError $ "Dictionary.matchPredList': " ++ show ps)
                        (splits ps)
-  clsEnv <- getClassEnv
-  inEnv <- getInstEnv
-  return $ inferDependentVars clsEnv inEnv dictEnvPreds argPreds
+  return argPreds
 
 -- Note: The functions starting with 'inferDependentVars' and the renaming of
 -- type variables only occurring in the context of a type in 'qualMatch' were
@@ -827,34 +825,6 @@ matchPredList' tySc (PredType ps2 ty2) = do
 -- inferred types, which could be implemented in a similar way in the type
 -- check.
 
-inferDependentVars :: ClassEnv -> InstEnv -> [Pred] -> [Pred] -> [Pred]
-inferDependentVars clsEnv inEnv envPreds argPreds =
-  let sigma = foldr (uncurry3 inferDependentVarsDictEnv) idSubst
-                [ (argTys, envTys, funDep)
-                | Pred _ argCls argTys <- argPreds
-                , Pred _ envCls envTys <- envPreds
-                , argCls == envCls
-                , funDep <- classFunDeps argCls clsEnv
-                ]
-      sigma' = foldr (inferDependentVarsInstEnv clsEnv inEnv) sigma argPreds
-      argPreds' = subst sigma' argPreds
-  in if argPreds == argPreds'
-       then argPreds
-       else inferDependentVars clsEnv inEnv envPreds argPreds'
-
-inferDependentVarsDictEnv :: [Type] -> [Type] -> Env.Class.FunDep -> TypeSubst
-                          -> TypeSubst
-inferDependentVarsDictEnv argTys envTys funDep sigma =
-  case getRhsOnLhsMatch funDep envTys (subst sigma argTys) of
-    Nothing -> sigma
-    Just (envTysRhs, argTysRhs) -> foldr2 matchType sigma argTysRhs envTysRhs
-
-inferDependentVarsInstEnv :: ClassEnv -> InstEnv -> Pred -> TypeSubst
-                          -> TypeSubst
-inferDependentVarsInstEnv clsEnv inEnv (Pred _ argCls argTys) sigma =
-  let (argTys', instTys) =
-        unzip $ typeDepsInstEnv argCls (subst sigma argTys) clsEnv inEnv
-  in foldr2 matchType sigma argTys' instTys
 
 qualMatch :: [Pred] -> Type -> [Pred] -> Type -> Int -> Maybe [Pred]
 qualMatch pls1 ty1 pls2 ty2 maxDictTv = case predListMatch pls2 ty2 of
