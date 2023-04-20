@@ -509,12 +509,13 @@ tcPDeclGroup pls pds = do
   sigs <- getSigEnv
   let (impPds, expPds) = partitionPDecls sigs pds
   (pls', impPds') <- mapAccumM tcPDecl pls impPds
+  plsImp <- improvePreds pls'
   theta <- getTypeSubst
   tvs <- concatMap (typeVars . subst theta . fst) <$>
            filterM (notM . isNonExpansive . snd . snd) impPds'
   clsEnv <- getClassEnv
   let fvs = foldr Set.insert (fvEnv (subst theta vEnv)) tvs
-      fvs' = funDepCoveragePredList clsEnv (subst theta pls') fvs
+      fvs' = funDepCoveragePredList clsEnv (subst theta plsImp) fvs
       -- The predicates from the declarations that are not explicitly typed are
       -- partitioned into three groups: Local predicates, that do not contain
       -- any free type variables, are reduced and added to the types of the
@@ -524,7 +525,7 @@ tcPDeclGroup pls pds = do
       -- predicates containing free type variables from the explicitly typed
       -- declarations.
       (gpls, (mpls, lpls)) = fmap (splitPredListAny fvs') $
-                                splitPredListAll fvs' $ subst theta pls'
+                                splitPredListAll fvs' $ subst theta plsImp
   lpls' <- plUnion mpls <$> reducePredSet False lpls
   lpls'' <- improvePreds lpls'
   lpls3 <- foldM (uncurry . defaultPDecl fvs') lpls'' impPds'
@@ -751,10 +752,11 @@ tcCheckPDecl :: LPredList -> QualTypeExpr -> PDecl a
              -> TCM (LPredList, PDecl PredType)
 tcCheckPDecl pls qty pd = withLocalInstEnv $ do
   (pls', (ty, pd')) <- tcPDecl pls pd
+  plsImp <- improvePreds pls'
   theta <- getTypeSubst
   clsEnv <- getClassEnv
-  fvs <- funDepCoveragePredList clsEnv (subst theta pls') <$> computeFvEnv
-  let (gpls, lpls) = splitPredListAny fvs (subst theta pls')
+  fvs <- funDepCoveragePredList clsEnv (subst theta plsImp) <$> computeFvEnv
+  let (gpls, lpls) = splitPredListAny fvs (subst theta plsImp)
   poly <- isNonExpansive $ snd pd
   lpls' <- reducePredSet True lpls
   lpls'' <- defaultPDecl fvs lpls' ty pd
@@ -1088,9 +1090,10 @@ tcMethodPDecl qcls tySc (i, FunctionDecl p _ f eqs) = withLocalValueEnv $ do
   (pls, (ty, pd)) <- tcFunctionPDecl i [] tySc p f eqs
   let what = "implementation of method " ++ escName f
   clsEnv <- getClassEnv
+  plsImp <- improvePreds pls
   theta <- getTypeSubst
-  fvs <- funDepCoveragePredList clsEnv (subst theta pls) <$> computeFvEnv
-  pls' <- reducePredSet True pls
+  fvs <- funDepCoveragePredList clsEnv (subst theta plsImp) <$> computeFvEnv
+  pls' <- reducePredSet True plsImp
   pls'' <- applyDefaultsDecl p what empty fvs pls' ty
   theta' <- getTypeSubst
   return (PredType (map getPred pls'') ty
@@ -1372,9 +1375,10 @@ tcExpr te@(Typed spi e qty) = withLocalInstEnv $ do
   modifyInstEnv $ flip (foldr bindDynamicInst) $ maxPredList clsEnv pls
   let pls' = map (\pr -> LPred pr spi what (pPrint te)) pls
   (pls'', e') <- tcExpr e >>- unify spi what (pPrintPrec 0 e) [] ty
+  plsImp <- improvePreds pls''
   theta <- getTypeSubst
-  fvs <- funDepCoveragePredList clsEnv (subst theta pls'') <$> computeFvEnv
-  let (gpls, lpls) = splitPredListAny fvs (subst theta pls'')
+  fvs <- funDepCoveragePredList clsEnv (subst theta plsImp) <$> computeFvEnv
+  let (gpls, lpls) = splitPredListAny fvs (subst theta plsImp)
   lpls' <- reducePredSet True lpls
   lpls'' <- applyDefaultsDecl spi what (pPrint te) fvs lpls' ty
   let tySc = gen fvs lpls'' (subst theta ty)
@@ -1792,6 +1796,7 @@ reducePredSet reportPreds pls = do
         partition isDefaultable $ minPredList clsEnv (Set.toList (Map.keysSet pm))
   theta' <- foldM (defaultTypeConstrained m inEnv) idSubst plsDefaultable
   modifyTypeSubst $ compose theta'
+--  traceM $ show $ pPrint $ map getPred pls'
   mapM_ report $ Map.elems $ Map.restrictKeys pm (Set.fromList plsReportable)
   pls3 <- improvePreds pls''
   -- If we reduce a predicate set, we have to consider that
@@ -1912,7 +1917,7 @@ improvePreds' errPreds pls = do
   let substs = concat (map snd substM)
       preds  = nub (concat (map fst substM))
   mid <- getModuleIdent
-  let errPreds' = errPreds ++ preds
+  let errPreds' = subst sigma errPreds ++ preds
       errPreds'' = nub errPreds'
   case listToMaybe substs of
     Nothing    -> do mapM_ (\lpr -> report $ errMissingInstance mid lpr) 
