@@ -44,8 +44,8 @@ import Prelude hiding ((<>))
 import           Control.Applicative        ((<$>), (<*>))
 #endif
 import           Control.Monad.Trans (lift)
-import           Control.Monad.Extra ( allM, filterM, foldM, liftM, (&&^)
-                                     , notM, replicateM, when, unless
+import           Control.Monad.Extra ( allM, concatMapM, filterM, foldM, liftM
+                                     , (&&^), notM, replicateM, when, unless
                                      , unlessM )
 import qualified Control.Monad.State as S
                                      (State, StateT, get, gets, put, modify,
@@ -84,6 +84,8 @@ import Env.Class            as CE
 import Env.Instance
 import Env.TypeConstructor
 import Env.Value
+
+import Debug.Trace
 
 -- TODO: Check if the set operations on predicate sets (like union) could be
 --         problematic with the 'PredIsICC' field.
@@ -754,6 +756,7 @@ tcCheckPDecl pls qty pd = withLocalInstEnv $ do
   (pls', (ty, pd')) <- tcPDecl pls pd
   plsImp <- improvePreds pls'
   theta <- getTypeSubst
+  traceM $ show (pPrint (subst theta (map getPred plsImp), subst theta ty))
   clsEnv <- getClassEnv
   fvs <- funDepCoveragePredList clsEnv (subst theta plsImp) <$> computeFvEnv
   let (gpls, lpls) = splitPredListAny fvs (subst theta plsImp)
@@ -1905,31 +1908,28 @@ reportFlexibleContextPattern _ (FunctionPattern     _ _ _ _) =
 reportFlexibleContextPattern _ (InfixFuncPattern  _ _ _ _ _) =
   report $ internalError "TypeCheck.reportFlexibleContextPattern"
 
+-------------------------------------------------------------------------------
+-- Improving Substitutions
+-------------------------------------------------------------------------------
+
+type TypeEqn = (Type,Type,LPred)
+
 improvePreds :: [LPred] -> TCM [LPred]
-improvePreds lps = improvePreds' [] lps
+improvePreds = improvePreds' []
 
 improvePreds' :: [LPred] -> [LPred] -> TCM [LPred]
 improvePreds' errPreds pls = do
   sigma <- getTypeSubst
   let pls'  = subst sigma pls
-      pls'' = chooseElem pls'
-  substM <- mapM (uncurry findImprovingSubstitutions) pls''
-  let substs = concat (map snd substM)
-      preds  = nub (concat (map fst substM))
+  tEqns <- genTypeEquations pls'
   mid <- getModuleIdent
-  let errPreds' = subst sigma errPreds ++ preds
-      errPreds'' = nub errPreds'
-  case listToMaybe substs of
-    Nothing    -> do mapM_ (\lpr -> report $ errMissingInstance mid lpr) 
-                              errPreds''
-                     return (pls' \\ errPreds'') 
-    Just theta -> if subst theta pls' == pls'
-                  then do modifyTypeSubst $ compose theta
-                          mapM_ (\lpr -> report $
-                                   errMissingInstance mid lpr) errPreds''
-                          return (pls' \\ errPreds'')
-                  else do modifyTypeSubst $ compose theta 
-                          improvePreds' errPreds' (subst theta pls')
+  let (theta, errPreds') = solveTypeEqns tEqns
+      errPreds'' = errPreds ++ errPreds'
+  modifyTypeSubst $ compose theta
+  if subst theta pls' == pls'
+  then do mapM_ (\lpr -> report $ errMissingInstance mid lpr) (nub errPreds'')
+          return (pls' \\ errPreds'')
+  else improvePreds' errPreds'' (subst theta pls')
 
 
 chooseElem :: [a] -> [(a,[a])]
@@ -1938,15 +1938,6 @@ chooseElem (x:xs) = (x,xs) : map (fmap (x:)) (chooseElem xs)
 
 mapFst :: (a -> b) -> (a,c) -> (b,c)
 mapFst f (x,y) = (f x, y)
-
-data ImpError = TypeError LPred
-              | OtherError
-  deriving (Eq,Show)
-
-filterTypeErrors :: [ImpError] -> [LPred]
-filterTypeErrors []                       = []
-filterTypeErrors (TypeError pr : imperrs) = pr : filterTypeErrors imperrs
-filterTypeErrors (_            : imperrs) = filterTypeErrors imperrs 
 
 -- finding improving substitutions follows two rules
 -- Given a predicate set P and a predicate C t_1 ... t_m, the following rules
@@ -1963,66 +1954,54 @@ filterTypeErrors (_            : imperrs) = filterTypeErrors imperrs
 --    and there exists a substitution S with S(tau_i) = t_i for all i in L,
 --    then the mgu U with U(t_j) = U(S(tau_j)) for all j in R is an
 --    improving substitution.
-findImprovingSubstitutions :: LPred -> [LPred] -> TCM ([LPred], [TypeSubst]) 
-findImprovingSubstitutions lpr lprs = do 
-  let Pred _ qcls _ = getPred lpr
-  clsEnv <- getClassEnv
-  let fds = classFunDeps qcls clsEnv
-  (errPreds1, substs1) <- imprSubstFirstRule lpr lprs fds
-  (errPreds2, substs2) <- imprSubstSecondRule lpr
-  return (errPreds1 ++ errPreds2, substs1 ++ substs2)
+genTypeEquations :: [LPred] -> TCM [TypeEqn] 
+genTypeEquations lprs = do 
+  tEqns1 <- firstRuleEquations lprs
+  tEqns2 <- secondRuleEquations lprs
+  return (tEqns1 ++ tEqns2)
   
 
-imprSubstFirstRule ::  LPred -> [LPred] -> [CE.FunDep] 
-                   -> TCM ([LPred],[TypeSubst])
-imprSubstFirstRule lpr lprs fds = mapFst filterTypeErrors <$> partitionEithers <$>
-  mapM (uncurry imprFirstRule') [ (lpr',fd) | lpr' <- lprs, fd <- fds ]
-  where
-    LPred pr _ _ _ = lpr
-    Pred _ qcls tys = pr
-    imprFirstRule' lpr' (lixs,rixs) = 
-      let Pred _ qcls2 tys2 = getPred lpr'
-          lixs' = Set.toAscList lixs
-          rixs' = Set.toAscList rixs
-      in if qcls == qcls2 && 
-             (filterIndices tys lixs') == (filterIndices tys2 lixs')
-         then (let sub = unifyTypesSafe (filterIndices tys rixs') 
-                                        (filterIndices tys2 rixs')
-               in if isJust sub 
-                  then return (Right (fromJust sub)) 
-                  else return (Left (TypeError lpr)))
-         else return (Left OtherError)
+firstRuleEquations :: [LPred] -> TCM [TypeEqn]
+firstRuleEquations []         = return []
+firstRuleEquations (lpr:lprs) = do
+  let Pred _ qcls _  = getPred lpr
+      lprs' = filter ((\(Pred _ qcls' _) -> qcls == qcls') . getPred) lprs
+  clsEnv <- getClassEnv
+  let fds = classFunDeps qcls clsEnv
+      tEqns = firstRuleEquations' fds lpr lprs'
+  tEqns' <- firstRuleEquations lprs
+  return $ tEqns ++ tEqns'
 
-imprSubstSecondRule :: LPred -> TCM ([LPred],[TypeSubst])
-imprSubstSecondRule lpr = do
+
+firstRuleEquations' :: [CE.FunDep] -> LPred -> [LPred] -> [TypeEqn]
+firstRuleEquations' _   _   []          = []
+firstRuleEquations' fds lpr (lpr':lprs) =
+  let Pred _ _ tys  = getPred lpr
+      Pred _ _ tys' = getPred lpr'
+      tEqns  = genTypeEqns lpr tys tys' fds
+      tEqns' = firstRuleEquations' fds lpr lprs
+  in tEqns ++ tEqns'
+
+genTypeEqns :: LPred -> [Type] -> [Type] -> [CE.FunDep] -> [TypeEqn]
+genTypeEqns _ _   _    []                = []
+genTypeEqns lpr tys tys' ((lixs,rixs):fds) = 
+  let lixs' = Set.toList lixs
+      rixs' = Set.toList rixs
+  in if filterIndices tys lixs' == filterIndices tys' lixs'
+     then zip3 (filterIndices tys rixs') (filterIndices tys' rixs') (repeat lpr)
+          ++ genTypeEqns lpr tys tys' fds
+     else genTypeEqns lpr tys tys' fds
+
+secondRuleEquations :: [LPred] -> TCM [TypeEqn]
+secondRuleEquations lprs = concatMapM secondRuleEquations' lprs
+
+secondRuleEquations' :: LPred -> TCM [TypeEqn]  
+secondRuleEquations' lpr = do
   inEnv <- fst <$> getInstEnv
   clsEnv <- getClassEnv
   let Pred _ qcls tys = getPred lpr
-      (utys1,utys2) = unzip $ typeDepsInstEnv qcls tys clsEnv inEnv
-  case unifyTypesSafe utys1 utys2 of
-    Just sub -> return ([],[sub])
-    Nothing  -> return ([lpr],[])
-
-secRuleSubsts :: LPred -> [CE.FunDep] -> [InstMatchInfo] 
-              -> TCM [Either ImpError TypeSubst]
-secRuleSubsts lpr fds inms = mapM (uncurry secRuleSubsts')
-    [(fd,imatch) | fd <- fds, imatch <- inms' ]
-  where
-    LPred pr _ _ _ = lpr
-    Pred _ _ tys = pr
-    inms' = map (\(_,_,types,_,sigma) -> (types,sigma)) inms
-
-    secRuleSubsts' (lixs,rixs) (tys', sigma) = 
-      let tys'' = subst sigma tys'
-          lixs' = Set.toAscList lixs
-          rixs' = Set.toAscList rixs
-      in case (filterIndices tys lixs') == (filterIndices tys'' lixs') of
-           True -> let sub = unifyTypesSafe (filterIndices tys rixs') 
-                                            (filterIndices tys'' rixs')
-                   in if isJust sub 
-                      then return (Right (fromJust sub)) 
-                      else return (Left (TypeError lpr))
-           False -> return (Left OtherError)
+  return $ map (\(ty,ty') -> (ty,ty',lpr)) 
+            $ typeDepsInstEnv qcls tys clsEnv inEnv
 
 
 filterIndices :: [a] -> [Int] -> [a]
@@ -2033,6 +2012,15 @@ filterIndices xs is = filterIndices' 0 is xs
     filterIndices' i (j:js) (y:ys) 
       | j == i    = y : filterIndices' (i+1) js ys
       | otherwise = filterIndices' (i+1) (j:js) ys
+
+solveTypeEqns :: [TypeEqn] -> (TypeSubst, [LPred])
+solveTypeEqns []                     = (idSubst, [])
+solveTypeEqns ((ty,ty',lpr):tEqns) = 
+  let (theta, lprs) = solveTypeEqns tEqns
+  in case unifyTypeSafe (subst theta ty) (subst theta ty') of
+       Nothing     -> (theta, lpr:lprs)
+       Just theta' -> (compose theta' theta, lprs)
+
 
 -- taken from Leif-Erik Krueger
 -- -----------------------------------------------------------------------------

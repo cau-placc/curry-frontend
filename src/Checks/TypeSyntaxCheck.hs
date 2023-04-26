@@ -353,8 +353,9 @@ checkQualType (QualTypeExpr spi cx ty) = do
 -- taken from Leif-Erik Krueger
 checkQualTypes :: Bool -> Context -> [TypeExpr] -> TSCM (Context, [TypeExpr])
 checkQualTypes simplecx cx tys = do
+  m <- getModuleIdent
   tys' <- mapM checkType tys
-  fvs <- Set.toAscList <$> funDepCoverage cx (Set.fromList $ fv tys)
+  fvs <- Set.toAscList <$> funDepCoverage m cx (Set.fromList $ fv tys)
   cx' <- checkClosedContext simplecx fvs cx
   return (cx', tys')
 
@@ -493,23 +494,36 @@ isTypeSyn tc tEnv = case qualLookupTypeKind tc tEnv of
   [Alias _] -> True
   _ -> False
 
+qualClassIdent :: ModuleIdent -> QualIdent -> TypeEnv -> Maybe QualIdent
+qualClassIdent m qcls tEnv = case qualLookupTypeKind qcls tEnv of
+  []              -> Nothing
+  [Class qcls' _] -> Just qcls'
+  [_]             -> Nothing
+  _               -> 
+    case qualLookupTypeKind (qualQualify m qcls) tEnv of
+      []                -> Nothing
+      [Class qcls'  _]  -> Just qcls'
+      [_]               -> Nothing
+      _                 -> Nothing
 
-funDepCoverage :: Context -> Set.Set Ident -> TSCM (Set.Set Ident)
-funDepCoverage cx tvs = do
+funDepCoverage :: ModuleIdent -> Context -> Set.Set Ident -> TSCM (Set.Set Ident)
+funDepCoverage m cx tvs = do
   simpClsEnv <- getSimpleClassEnv
   tyEnv      <- getTypeEnv
   let tvs' = funDepCoverage' simpClsEnv tyEnv tvs
   if Set.size tvs' == Set.size tvs
   then return tvs
-  else funDepCoverage cx tvs'
+  else funDepCoverage m cx tvs'
   where
    funDepCoverage' clsEnv tyEnv covVars =  
     foldr (funDepCoverage'' clsEnv tyEnv) covVars cx
   
    funDepCoverage'' clsEnv tyEnv c@(Constraint _ cls _) covVars =
-    let [Class qcls _] = qualLookupTypeKind cls tyEnv
-        fds = lookupFunDeps qcls clsEnv
-    in foldr (funDepCoverage''' clsEnv c) covVars fds
+    case qualClassIdent m cls tyEnv of
+      Nothing   -> covVars
+      Just qcls -> 
+           let fds = lookupFunDeps qcls clsEnv  
+           in foldr (funDepCoverage''' clsEnv c) covVars fds
 
    funDepCoverage''' clsEnv (Constraint _ _ tys) (lixs,rixs) covVars =
     let lixs' = Set.toAscList lixs
