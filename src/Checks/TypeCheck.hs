@@ -136,7 +136,9 @@ checkDecls ds = do
 
 type TCM = S.State TcState
 
-type InstEnv' = (InstEnv, Map.Map QualIdent [[Type]])
+type IsExtPred = Bool
+
+type InstEnv' = (InstEnv, Map.Map QualIdent [([Type],IsExtPred)])
 
 data TcState = TcState
   { extensions   :: [KnownExtension]
@@ -206,7 +208,7 @@ modifyInstEnv f = S.modify $ \s -> s { instEnv = f $ instEnv s }
 
 -- taken from Leif-Erik Krueger
 bindDynamicInst :: Pred -> InstEnv' -> InstEnv'
-bindDynamicInst (Pred _ qcls tys) = fmap $ Map.insertWith (++) qcls [tys]
+bindDynamicInst (Pred _ qcls tys) = fmap $ Map.insertWith (++) qcls [(tys,False)]
 
 -- taken from Leif-Erik Krueger
 withLocalInstEnv :: TCM a -> TCM a
@@ -756,13 +758,16 @@ tcCheckPDecl pls qty pd = withLocalInstEnv $ do
   (pls', (ty, pd')) <- tcPDecl pls pd
   plsImp <- improvePreds pls'
   theta <- getTypeSubst
-  traceM $ show (pPrint (subst theta (map getPred plsImp), subst theta ty))
+--  traceM $ show (pPrint (subst theta (map getPred plsImp), subst theta ty))
   clsEnv <- getClassEnv
   fvs <- funDepCoveragePredList clsEnv (subst theta plsImp) <$> computeFvEnv
   let (gpls, lpls) = splitPredListAny fvs (subst theta plsImp)
+--  traceM $ "gpls/lpls: " ++ show (pPrint (subst theta (map getPred gpls), subst theta (map getPred lpls)))
   poly <- isNonExpansive $ snd pd
   lpls' <- reducePredSet True lpls
+--  traceM $ "lpls': " ++ show (pPrint (map getPred lpls'))
   lpls'' <- defaultPDecl fvs lpls' ty pd
+--  traceM $ "lpls'':" ++ show (pPrint (map getPred lpls'))
   let ty' = subst theta ty
       tySc = if poly then gen fvs lpls'' ty' else monoType ty'
   (pls'',pd'') <- checkPDeclType qty gpls tySc pd'
@@ -847,7 +852,7 @@ makeContextEquivalent pls pls2 ty2 (i, FunctionDecl p pty@(PredType pls1 ty1) f 
       impPlss = map (impliedPredicatesList clsEnv) pls1
       sigPls = zip pls1 impPlss
       (pls2',theta') = makeEquivalent sigPls pls2 theta
---  traceM $ show $ pPrint (pls1,ty1,pls2,ty2,pls2')
+  traceM $ show $ pPrint (pls1,ty1,pls2,ty2,pls2')
   let eqs' = map (setPredType $ PredType pls2' ty2) eqs
   return (pls, (i,FunctionDecl p pty f eqs'))
   where
@@ -1791,10 +1796,12 @@ reducePredSet reportPreds pls = do
   m <- getModuleIdent
   clsEnv <- getClassEnv
   theta <- getTypeSubst
-  inEnv <- fmap (fmap (subst theta)) <$> getInstEnv
+  inEnv <- fmap (fmap (map (\(tys,b) -> (subst theta tys,b)))) <$> getInstEnv
   let pls' = subst theta pls
       -- inspired by Leif-Erik Krueger
-      pm = reducePreds m inEnv (subst theta pls')
+      (expPls,(dynInsts,pls2)) = fmap (partition (checkDynInst inEnv)) 
+                                      (partition (checkExplPred inEnv) pls')
+      pm = reducePreds m inEnv pls2
       (plsDefaultable, (plsReportable, pls'')) = fmap (partition isReportable) $
         partition isDefaultable $ minPredList clsEnv (Set.toList (Map.keysSet pm))
   theta' <- foldM (defaultTypeConstrained m inEnv) idSubst plsDefaultable
@@ -1810,8 +1817,9 @@ reducePredSet reportPreds pls = do
   theta'' <- getTypeSubst
   let pls4 = subst theta'' pls''
   if all (`elem` pls4) pls3 && all (`elem` pls3) pls4
-  then return pls3
-  else reducePredSet reportPreds pls3
+  then return $ expPls `plUnion` pls3
+  else do pls5 <- reducePredSet reportPreds pls3
+          return $ expPls `plUnion` pls5
   where
   
     isDefaultable :: LPred -> Bool
@@ -1845,10 +1853,8 @@ reducePreds m inEnv = Map.unions . map reducePred
 --                  Then, a constraint like C [a] b can be reduced.
 -- taken from Leif-Erik Krueger
 instPredList :: ModuleIdent -> InstEnv' -> LPred -> Either Message LPredList
-instPredList m inEnv (LPred (Pred _ qcls tys) p what doc) =
-  case Map.lookup qcls $ snd inEnv of
-    Just tyss | tys `elem` tyss -> Right []
-    _ -> case lookupInstMatch qcls tys (fst inEnv) of
+instPredList m inEnv lpred@(LPred (Pred _ qcls tys) p what doc) =
+   case lookupInstMatch qcls tys (fst inEnv) of
            ([], _)                -> Left $ errMissingInstance m lpr
            (insts@(_ : _ : _), _) -> Left $ errInstanceOverlap m lpr insts False
            (_, insts@(_ : _ : _)) -> Left $ errInstanceOverlap m lpr insts True
@@ -1856,6 +1862,18 @@ instPredList m inEnv (LPred (Pred _ qcls tys) p what doc) =
              Right $ nub (map (\pr -> LPred pr p what doc) (subst sigma ps))
   where lpr = LPred (Pred OPred qcls (map removeTypeConstrained tys)) p what doc
 
+
+checkDynInst :: InstEnv' -> LPred -> Bool
+checkDynInst inEnv (LPred (Pred _ qcls tys) _ _ _) =
+   case Map.lookup qcls (snd inEnv) of
+     Nothing   -> False
+     Just tyss -> (tys,True) `elem` tyss
+
+checkExplPred :: InstEnv' -> LPred -> Bool
+checkExplPred inEnv (LPred (Pred _ qcls tys) _ _ _) =
+  case Map.lookup qcls (snd inEnv) of
+    Nothing -> False
+    Just tyss -> (tys,False) `elem` tyss
 
 -- taken from Leif-Erik Krueger
 hasInstance :: ModuleIdent -> InstEnv' -> QualIdent -> [Type] -> Bool
@@ -2333,7 +2351,7 @@ skol (ForAll n (PredType pls ty)) = do
   return ([], expandAliasType tys ty)
   where bindSkolemInsts = flip (foldr bindSkolemInst)
         bindSkolemInst (Pred _ qcls tys) dInEnv =
-          Map.insert qcls (tys : fromMaybe [] (Map.lookup qcls dInEnv)) dInEnv
+          Map.insert qcls ((tys,True) : fromMaybe [] (Map.lookup qcls dInEnv)) dInEnv
 
 -- The function 'gen' generalizes a predicate set ps and a type tau into
 -- a type scheme forall alpha . ps -> tau by universally quantifying all
