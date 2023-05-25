@@ -161,12 +161,18 @@ flattenDeps = fdeps . sortDeps
   imported (_, Source _ _ ms) = ms
   imported (_,             _) = []
 
+  isRecursiveImport :: (ModuleIdent, Source) -> Bool
+  isRecursiveImport (m, Source _ _ imps) = m `elem` imps
+  isRecursiveImport (_, _              ) = False
+
   fdeps :: [[(ModuleIdent, Source)]] -> ([(ModuleIdent, Source)], [Message])
   fdeps = foldr checkdep ([], [])
 
-  checkdep []    (srcs, errs) = (srcs      , errs      )
-  checkdep [src] (srcs, errs) = (src : srcs, errs      )
-  checkdep dep   (srcs, errs) = (srcs      , err : errs)
+  checkdep []    (srcs, errs)                         = (srcs      , errs      )
+  checkdep [src] (srcs, errs) | isRecursiveImport src = (srcs      , err : errs)
+                              | otherwise             = (src : srcs, errs      )
+    where err = errCyclicImport (idents src)
+  checkdep dep   (srcs, errs)                         = (srcs      , err : errs)
     where err = errCyclicImport $ map fst dep
 
 errMissingFile :: FilePath -> Message
