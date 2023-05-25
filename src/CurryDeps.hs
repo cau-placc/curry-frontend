@@ -184,10 +184,10 @@ errWrongModule m m' = message $ sep $
   , text "but found", text (moduleName m') ]
 
 errCyclicImport :: [ModuleIdent] -> Message
-errCyclicImport []  = internalError "CurryDeps.errCyclicImport: empty list"
-errCyclicImport [m] = message $ sep $ map text
+errCyclicImport []       = internalError "CurryDeps.errCyclicImport: empty list"
+errCyclicImport [m]      = spanInfoMessage m $ sep $ map text
   [ "Recursive import for module", moduleName m ]
-errCyclicImport ms  = message $ sep $
+errCyclicImport ms@(m:_) = spanInfoMessage m $ sep $
   text "Cyclic import dependency between modules" : punctuate comma inits
   ++ [text "and", lastm]
   where
