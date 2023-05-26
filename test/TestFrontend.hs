@@ -146,7 +146,9 @@ mkFailTest name errorMsgs = (name, [], [], Nothing, errorMsgs)
 -- test code and the expected error message(s) to the following list
 failInfos :: [TestInfo]
 failInfos = map (uncurry mkFailTest)
-  [ ("DataFail",
+  [ ("CyclicImports/A", ["Cyclic import dependency"])
+  , ("CyclicImports/B", ["Cyclic import dependency"])
+  , ("DataFail",
       [ "Missing instance for Prelude.Data Test1"
       , "Missing instance for Prelude.Data (Test2"
       , "Missing instance for Prelude.Data (Test2"
@@ -201,6 +203,7 @@ failInfos = map (uncurry mkFailTest)
   , ("PragmaError", ["Unknown language extension"])
   , ("PrecedenceRange", ["Precedence out of range"])
   , ("RecordLabelIDs", ["Multiple declarations of `RecordLabelIDs.id'"])
+  , ("RecursiveImport", ["Recursive import for module Recursive"])
   , ("RecursiveTypeSyn", ["Mutually recursive synonym and/or renaming types A and B (line 12.6)"])
   , ("SyntaxError", ["Type error in application"])
   , ("TypedFreeVariables",
