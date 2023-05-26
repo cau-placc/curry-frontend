@@ -201,6 +201,7 @@ failInfos = map (uncurry mkFailTest)
   , ("PragmaError", ["Unknown language extension"])
   , ("PrecedenceRange", ["Precedence out of range"])
   , ("RecordLabelIDs", ["Multiple declarations of `RecordLabelIDs.id'"])
+  , ("RecursiveImport", ["Recursive import for module Recursive"])
   , ("RecursiveTypeSyn", ["Mutually recursive synonym and/or renaming types A and B (line 12.6)"])
   , ("SyntaxError", ["Type error in application"])
   , ("TypedFreeVariables",
