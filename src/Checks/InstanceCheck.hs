@@ -27,12 +27,13 @@ import qualified Data.Set.Extra      as Set
 
 import Curry.Base.Ident
 import Curry.Base.Pretty
+import Curry.Base.Position (HasPosition (..))
 import Curry.Base.SpanInfo
 import Curry.Syntax hiding (impls)
 import Curry.Syntax.Pretty
 
 import Base.CurryTypes
-import Base.Messages (Message, spanInfoMessage, message, internalError)
+import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.SCC (scc)
 import Base.TypeExpansion
 import Base.Types
@@ -50,8 +51,8 @@ instanceCheck exts m tcEnv clsEnv inEnv ds =
     [] -> execINCM (checkDecls tcEnv clsEnv ds) state
     iss -> (inEnv, map (errMultipleInstances tcEnv) iss)
   where
-    local = map (flip InstSource m) $ concatMap (genInstIdents m tcEnv) ds
-    imported = map (uncurry InstSource . fmap fst3) $ Map.toList inEnv
+    local = concatMap (genInstSources m tcEnv) ds
+    imported = map (uncurry (InstSource NoSpanInfo) . fmap fst3) $ Map.toList inEnv
     state = INCState
       { moduleIdent = m
       , instEnv = inEnv
@@ -60,12 +61,20 @@ instanceCheck exts m tcEnv clsEnv inEnv ds =
       }
 
 -- In order to provide better error messages, we use the following data type
--- to keep track of an instance's source, i.e., the module it was defined in.
+-- to keep track of an instance's source, i.e., the span and module where it was defined.
 
-data InstSource = InstSource InstIdent ModuleIdent
+data InstSource = InstSource SpanInfo InstIdent ModuleIdent
+
+instance HasPosition InstSource where
+  getPosition = getStartPosition
+  setPosition = setStartPosition
+
+instance HasSpanInfo InstSource where
+  getSpanInfo (InstSource spi _ _) = spi
+  setSpanInfo spi (InstSource _ i m) = InstSource spi i m
 
 instance Eq InstSource where
-  InstSource i1 _ == InstSource i2 _ = i1 == i2
+  InstSource _ i1 _ == InstSource _ i2 _ = i1 == i2
 
 -- |Instance Check Monad
 type INCM = S.State INCState
@@ -369,6 +378,11 @@ instPredSet inEnv (Pred qcls ty) =
 -- Auxiliary definitions
 -- ---------------------------------------------------------------------------
 
+genInstSources :: ModuleIdent -> TCEnv -> Decl a -> [InstSource]
+genInstSources m tcEnv decl = flip (InstSource spi) m <$> iis
+  where iis = genInstIdents m tcEnv decl
+        spi = getSpanInfo decl
+
 genInstIdents :: ModuleIdent -> TCEnv -> Decl a -> [InstIdent]
 genInstIdents m tcEnv (DataDecl    _ tc _ _ qclss) =
   map (flip (genInstIdent m tcEnv) $ ConstructorType NoSpanInfo $ qualify tc)
@@ -409,11 +423,12 @@ isFunType _                       = False
 -- ---------------------------------------------------------------------------
 
 errMultipleInstances :: TCEnv -> [InstSource] -> Message
-errMultipleInstances tcEnv iss = message $
+errMultipleInstances _ [] = internalError "InstanceCheck.errMultipleInstances: empty [InstSource]"
+errMultipleInstances tcEnv iss@(is:_) = spanInfoMessage is $
   text "Multiple instances for the same class and type" $+$
     nest 2 (vcat (map ppInstSource iss))
   where
-    ppInstSource (InstSource i m) = ppInstIdent (unqualInstIdent tcEnv i) <+>
+    ppInstSource (InstSource _ i m) = ppInstIdent (unqualInstIdent tcEnv i) <+>
       parens (text "defined in" <+> ppMIdent m)
 
 errMissingInstance :: HasSpanInfo s => ModuleIdent -> s -> String -> Doc -> Pred
