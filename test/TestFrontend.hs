@@ -146,7 +146,9 @@ mkFailTest name errorMsgs = (name, [], [], Nothing, errorMsgs)
 -- test code and the expected error message(s) to the following list
 failInfos :: [TestInfo]
 failInfos = map (uncurry mkFailTest)
-  [ ("DataFail",
+  [ ("CyclicImports/A", ["Cyclic import dependency"])
+  , ("CyclicImports/B", ["Cyclic import dependency"])
+  , ("DataFail",
       [ "Missing instance for Prelude.Data Test1"
       , "Missing instance for Prelude.Data (Test2"
       , "Missing instance for Prelude.Data (Test2"
