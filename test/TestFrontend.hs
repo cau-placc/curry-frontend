@@ -191,6 +191,7 @@ failInfos = map (uncurry mkFailTest)
   , ("MissingLabelInUpdate",
       ["Undefined record label `l1'"] )
   , ("MultipleArities", ["Equations for `test' have different arities"])
+  , ("MultipleInstances", ["Multiple instances for the same class and type"])
   , ("MultipleDefinitions",
       ["Multiple definitions for data/record constructor `Rec'"]
     )
