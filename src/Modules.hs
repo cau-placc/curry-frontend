@@ -95,12 +95,12 @@ compileModule opts m fn = do
   writeTokens   opts (fst mdl)
   writeComments opts (fst mdl)
   writeParsed   opts mdl
-  let qmdl = qual mdl
+  qmdl <- qual mdl
   writeHtml     opts qmdl
   writeAST      opts (fst  mdl, fmap (const ()) (snd  mdl))
   writeShortAST opts (fst qmdl, fmap (const ()) (snd qmdl))
   mdl' <- expandExports opts mdl
-  qmdl' <- dumpWith opts CS.showModule pPrint DumpQualified $ qual mdl'
+  qmdl' <- dumpWith opts CS.showModule pPrint DumpQualified =<< qual mdl'
   writeAbstractCurry opts qmdl'
   -- generate interface file
   let intf = uncurry exportInterface qmdl'
@@ -227,7 +227,7 @@ checkInterfaces :: Monad m => Options -> InterfaceEnv -> CYT m ()
 checkInterfaces opts iEnv = mapM_ checkInterface (Map.elems iEnv)
   where
   checkInterface intf = do
-    let env = importInterfaces intf iEnv
+    env <- importInterfaces intf iEnv
     interfaceCheck opts (env, intf)
 
 importSyntaxCheck :: Monad m => InterfaceEnv -> CS.Module a -> CYT m [CS.ImportDecl]

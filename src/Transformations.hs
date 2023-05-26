@@ -10,8 +10,10 @@
 
     This module subsumes the different transformations of the source code.
 -}
+{-# LANGUAGE TupleSections #-}
 module Transformations where
 
+import Curry.Base.Monad (CYT)
 import Curry.Syntax
 
 import Base.Types
@@ -33,8 +35,8 @@ import Imports (qualifyEnv)
 import qualified IL
 
 -- |Fully qualify used constructors and functions.
-qual :: CompEnv (Module a) -> CompEnv (Module a)
-qual (env, mdl) = (qualifyEnv env, mdl')
+qual :: Monad m => CompEnv (Module a) -> CYT m (CompEnv (Module a))
+qual (env, mdl) = (, mdl') <$> qualifyEnv env
   where mdl' = Q.qual (moduleIdent env) (tyConsEnv env) (valueEnv env) mdl
 
 -- |Automatically derive instances.

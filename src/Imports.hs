@@ -15,17 +15,21 @@
     entities into the module's scope, and the function 'qualifyEnv' to
     qualify the environment prior to computing the export interface.
 -}
+{-# LANGUAGE ViewPatterns #-}
 module Imports (importInterfaces, importModules, qualifyEnv) where
 
+import           Data.Foldable              (foldlM, foldrM)
 import           Data.List                  (nubBy, find)
 import qualified Data.Map            as Map
 import           Data.Maybe                 (catMaybes, fromMaybe, isJust)
 import qualified Data.Set            as Set
 
 import Curry.Base.Ident
+import Curry.Base.Pretty (nest, vcat, text)
 import Curry.Base.SpanInfo
 import Curry.Base.Monad
 import Curry.Syntax
+import Curry.Syntax.Pretty (ppMIdent)
 
 import Base.CurryKinds (toKind')
 import Base.CurryTypes ( toQualType, toQualTypes, toQualPredType, toConstrType
@@ -36,6 +40,7 @@ import Base.Messages
 import Base.TopEnv
 import Base.Types
 import Base.TypeSubst
+import Base.Utils (fst3)
 
 import Env.Class
 import Env.Instance
@@ -50,7 +55,7 @@ import CompilerEnv
 importModules :: Monad m => Module a -> InterfaceEnv -> [ImportDecl]
               -> CYT m CompilerEnv
 importModules mdl@(Module _ _ _ mid _ _ _) iEnv expImps
-  = ok $ foldl importModule initEnv expImps
+  = foldlM importModule initEnv expImps
   where
     initEnv = (initCompilerEnv mid)
       { aliasEnv     = importAliases expImps -- import module aliases
@@ -65,9 +70,9 @@ importModules mdl@(Module _ _ _ mid _ _ _) iEnv expImps
 
 -- |The function 'importInterfaces' brings the declarations of all
 -- imported interfaces into scope for the current 'Interface'.
-importInterfaces :: Interface -> InterfaceEnv -> CompilerEnv
+importInterfaces :: Monad m => Interface -> InterfaceEnv -> CYT m CompilerEnv
 importInterfaces (Interface m is _) iEnv
-  = importUnifyData $ foldl importModule initEnv is
+  = importUnifyData <$> foldlM importModule initEnv is
   where
     initEnv = (initCompilerEnv m) { aliasEnv = initAliasEnv, interfaceEnv = iEnv }
     importModule env (IImportDecl _ i) = case Map.lookup i iEnv of
@@ -99,17 +104,18 @@ importInterfaces (Interface m is _) iEnv
 -- Regardless of the type of import, all instance declarations are always
 -- imported into the current module.
 
-importInterface :: ModuleIdent -> Bool -> Maybe ImportSpec -> Interface
-                -> CompilerEnv -> CompilerEnv
-importInterface m q is (Interface mid _ ds) env = env'
-  where
-  env' = env
+importInterface :: Monad m => ModuleIdent -> Bool -> Maybe ImportSpec
+                -> Interface -> CompilerEnv -> CYT m CompilerEnv
+importInterface m q is (Interface mid _ ds) env = do
+  instEnv' <- importInstances mid is ds $ instEnv env
+  return $ env
     { opPrecEnv = importEntities (precs  mid) m q vs id              ds $ opPrecEnv env
     , tyConsEnv = importEntities (types  mid) m q ts (importData vs) ds $ tyConsEnv env
     , valueEnv  = importEntities (values mid) m q vs id              ds $ valueEnv  env
     , classEnv  = importClasses   mid                                ds $ classEnv  env
-    , instEnv   = importInstances mid                                ds $ instEnv   env
+    , instEnv   = instEnv'
     }
+  where
   ts = isVisible addType  is
   vs = isVisible addValue is
 
@@ -171,14 +177,32 @@ bindClass m (IClassDecl _ cx cls _ _ ds ids) =
         isVis (IMethodDecl _ idt _ _ ) = idt `notElem` ids
 bindClass _ _ = id
 
-importInstances :: ModuleIdent -> [IDecl] -> InstEnv -> InstEnv
-importInstances m = flip $ foldr (bindInstance m)
+importInstances :: Monad m => ModuleIdent -> Maybe ImportSpec -> [IDecl] -> InstEnv
+                -> CYT m InstEnv
+importInstances m spec = flip $ foldrM (bindInstance m spec)
 
-bindInstance :: ModuleIdent -> IDecl -> InstEnv -> InstEnv
-bindInstance m (IInstanceDecl _ cx qcls ty is mm) = bindInstInfo
-  (qualQualify m qcls, qualifyTC m $ typeConstr ty) (fromMaybe m mm, ps, is)
+bindInstance :: Monad m => ModuleIdent -> Maybe ImportSpec -> IDecl -> InstEnv
+             -> CYT m InstEnv
+bindInstance m spec (IInstanceDecl _ cx qcls ty is mm) env = do
+  let iid   = (qualQualify m qcls, qualifyTC m $ typeConstr ty)
+      iinfo = (fromMaybe m mm, ps, is)
+
+  case lookupInstInfo iid env of
+    Just (fst3 -> m') | m /= m'
+      -> failMessages [errConflictingInstanceImported (maybe NoSpanInfo getSpanInfo spec) iid [m, m']]
+    _ -> return ()
+
+  return $ bindInstInfo iid iinfo env
   where PredType ps _ = toQualPredType m [] $ QualTypeExpr NoSpanInfo cx ty
-bindInstance _ _ = id
+bindInstance _ _ _ env = return env
+
+errConflictingInstanceImported :: HasSpanInfo s => s -> InstIdent -> [ModuleIdent] -> Message
+errConflictingInstanceImported s iid ms = spanInfoMessage s $ vcat
+  [ text "Instance of the same class and type"
+  , nest 2 $ ppInstIdent iid
+  , text "imported from multiple modules:"
+  , nest 2 $ vcat $ ppMIdent <$> ms
+  ]
 
 -- ---------------------------------------------------------------------------
 -- Building the initial environment
@@ -354,9 +378,9 @@ importUnifyData' tcEnv = fmap (setInfo allTyCons) tcEnv
 -- ---------------------------------------------------------------------------
 
 -- |
-qualifyEnv :: CompilerEnv -> CompilerEnv
-qualifyEnv env = qualifyLocal env
-               $ foldl (flip importInterfaceIntf) initEnv
+qualifyEnv :: Monad m => CompilerEnv -> CYT m CompilerEnv
+qualifyEnv env = fmap (qualifyLocal env)
+               $ foldlM (flip importInterfaceIntf) initEnv
                $ Map.elems
                $ interfaceEnv env
   where initEnv = initCompilerEnv $ moduleIdent env
@@ -386,14 +410,16 @@ qualifyLocal currentEnv initEnv = currentEnv
 -- are imported as well because they may be used in type expressions in
 -- an interface.
 
-importInterfaceIntf :: Interface -> CompilerEnv -> CompilerEnv
-importInterfaceIntf (Interface m _ ds) env = env
-  { opPrecEnv = importEntitiesIntf m (precs  m)       ds $ opPrecEnv env
-  , tyConsEnv = importEntitiesIntf m (hiddenTypes  m) ds $ tyConsEnv env
-  , valueEnv  = importEntitiesIntf m (values m)       ds $ valueEnv  env
-  , classEnv  = importClasses      m                  ds $ classEnv  env
-  , instEnv   = importInstances    m                  ds $ instEnv   env
-  }
+importInterfaceIntf :: Monad m => Interface -> CompilerEnv -> CYT m CompilerEnv
+importInterfaceIntf (Interface m _ ds) env = do
+  instEnv' <- importInstances m Nothing ds $ instEnv env
+  return env
+    { opPrecEnv = importEntitiesIntf m (precs  m)       ds $ opPrecEnv env
+    , tyConsEnv = importEntitiesIntf m (hiddenTypes  m) ds $ tyConsEnv env
+    , valueEnv  = importEntitiesIntf m (values m)       ds $ valueEnv  env
+    , classEnv  = importClasses      m                  ds $ classEnv  env
+    , instEnv   = instEnv'
+    }
 
 importEntitiesIntf :: Entity a => ModuleIdent -> (IDecl -> [a]) -> [IDecl]
                     -> TopEnv a -> TopEnv a
