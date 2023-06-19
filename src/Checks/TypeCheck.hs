@@ -852,7 +852,7 @@ makeContextEquivalent pls pls2 ty2 (i, FunctionDecl p pty@(PredType pls1 ty1) f 
       impPlss = map (impliedPredicatesList clsEnv) pls1
       sigPls = zip pls1 impPlss
       (pls2',theta') = makeEquivalent sigPls pls2 theta
-  traceM $ show $ pPrint (pls1,ty1,pls2,ty2,pls2')
+--  traceM $ show $ pPrint (pls1,ty1,pls2,ty2,pls2')
   let eqs' = map (setPredType $ PredType pls2' ty2) eqs
   return (pls, (i,FunctionDecl p pty f eqs'))
   where

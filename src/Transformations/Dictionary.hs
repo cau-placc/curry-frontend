@@ -55,6 +55,8 @@ import Env.OpPrec
 import Env.TypeConstructor
 import Env.Value
 
+import Debug.Trace
+
 data DTState = DTState
   { moduleIdent :: ModuleIdent
   , tyConsEnv   :: TCEnv
@@ -678,8 +680,10 @@ instance DictTrans Pattern where
 instance DictTrans Expression where
   dictTrans (Literal     _ pty l) =
     return $ Literal NoSpanInfo (unpredType pty) l
-  dictTrans (Variable    _ pty v) = do
-    pls <- matchPredList (funType True v) (unpredType pty)
+  dictTrans (Variable    _ pty@(PredType ps _) v) = do
+    pls <- if null ps
+           then matchPredList (funType True v) (unpredType pty)
+           else matchPredList' (funType True v) pty
     es <- mapM dictArg pls
     let ty = foldr (TypeArrow . typeOf) (unpredType pty) es
     return $ apply (Variable NoSpanInfo ty v) es
@@ -839,7 +843,8 @@ qualMatch' :: [Pred] -> Type -> [Pred] -> PredList -> Type -> Maybe [Pred]
 qualMatch' pls1 ty1 pls2 ps ty2 = case predListMatch pls2 ty2 of
   Just ty2' ->
     let pls2' = ps
-    in Just $ subst (matchPredType' pls1 ty1 pls2' ty2' idSubst) $ pls1
+        resPls = subst (matchPredType' pls1 ty1 pls2' ty2' idSubst) $ pls1 
+    in Just resPls 
   Nothing -> Nothing
 
 predListMatch :: [Pred] -> Type -> Maybe Type
