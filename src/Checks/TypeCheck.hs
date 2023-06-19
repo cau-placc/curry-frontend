@@ -55,9 +55,10 @@ import           Data.Function       (on)
 import           Data.List           (nub, nubBy, partition, sortBy, (\\))
 import qualified Data.Map            as Map ( Map, empty, elems, insert
                                             , insertWith, lookup, keysSet
-                                            , restrictKeys, singleton, unions )
+                                            , partition, restrictKeys
+                                            , singleton, unions )
 import           Data.Maybe                 ( fromJust, fromMaybe, isJust
-                                            , listToMaybe, catMaybes )
+                                            , isNothing, listToMaybe, catMaybes )
 import qualified Data.Set.Extra      as Set ( Set, empty, fromList, insert
                                             , member, notMember, toAscList
                                             , toList )
@@ -1798,16 +1799,15 @@ reducePredSet reportPreds pls = do
   theta <- getTypeSubst
   inEnv <- fmap (fmap (map (\(tys,b) -> (subst theta tys,b)))) <$> getInstEnv
   let pls' = subst theta pls
-      -- inspired by Leif-Erik Krueger
-      (expPls,(dynInsts,pls2)) = fmap (partition (checkDynInst inEnv)) 
-                                      (partition (checkExplPred inEnv) pls')
-      pm = reducePreds m inEnv pls2
+      pm = reducePreds m inEnv pls'
+      (pm1,pm2) = fmap (fmap fromJust) $ Map.partition isNothing pm
+      expPls = Set.toList $ Map.keysSet pm1
       (plsDefaultable, (plsReportable, pls'')) = fmap (partition isReportable) $
-        partition isDefaultable $ minPredList clsEnv (Set.toList (Map.keysSet pm))
+        partition isDefaultable $ minPredList clsEnv (Set.toList (Map.keysSet pm2))
   theta' <- foldM (defaultTypeConstrained m inEnv) idSubst plsDefaultable
   modifyTypeSubst $ compose theta'
 --  traceM $ show $ pPrint $ map getPred pls'
-  mapM_ report $ Map.elems $ Map.restrictKeys pm (Set.fromList plsReportable)
+  mapM_ report $ Map.elems $ Map.restrictKeys pm2 (Set.fromList plsReportable)
   pls3 <- improvePreds pls''
   -- If we reduce a predicate set, we have to consider that
   -- reducing a constraint can introduce new improving substitution
@@ -1836,12 +1836,13 @@ reducePredSet reportPreds pls = do
       map removeTypeConstrained tys /= tys
 
 -- taken from Leif-Erik Krueger
-reducePreds :: ModuleIdent -> InstEnv' -> [LPred] -> Map.Map LPred Message
+reducePreds :: ModuleIdent -> InstEnv' -> [LPred] -> Map.Map LPred (Maybe Message)
 reducePreds m inEnv = Map.unions . map reducePred
   where
-    reducePred :: LPred -> Map.Map LPred Message
+    reducePred :: LPred -> Map.Map LPred (Maybe Message)
     reducePred pr@(LPred (Pred OPred _ _) _ _ _) =
-      either (Map.singleton pr) (reducePreds m inEnv) (instPredList m inEnv pr)
+      three (Map.singleton pr . Just) (flip Map.singleton Nothing)
+            (reducePreds m inEnv) (instPredList m inEnv pr)
     reducePred pr@(LPred (Pred ICC _ _) _ _ _) =
       internalError $ "TypeCheck.reducePredSet: " ++
         "tried to reduce the implicit class constraint " ++ show pr
@@ -1852,16 +1853,26 @@ reducePreds m inEnv = Map.unions . map reducePred
 --                  instance C [a] Int
 --                  Then, a constraint like C [a] b can be reduced.
 -- taken from Leif-Erik Krueger
-instPredList :: ModuleIdent -> InstEnv' -> LPred -> Either Message LPredList
+instPredList :: ModuleIdent -> InstEnv' -> LPred -> Three Message LPred LPredList
 instPredList m inEnv lpred@(LPred (Pred _ qcls tys) p what doc) =
-   case lookupInstMatch qcls tys (fst inEnv) of
-           ([], _)                -> Left $ errMissingInstance m lpr
-           (insts@(_ : _ : _), _) -> Left $ errInstanceOverlap m lpr insts False
-           (_, insts@(_ : _ : _)) -> Left $ errInstanceOverlap m lpr insts True
+  case Map.lookup qcls $ snd inEnv of
+    Just tyss | (tys,True) `elem` tyss  -> Three []
+              | (tys,False) `elem` tyss -> Two lpr
+    _ -> case lookupInstMatch qcls tys (fst inEnv) of
+           ([], _)                -> One $ errMissingInstance m lpr
+           (insts@(_ : _ : _), _) -> One $ errInstanceOverlap m lpr insts False
+           (_, insts@(_ : _ : _)) -> One $ errInstanceOverlap m lpr insts True
            ([(_, ps, _, _, sigma)], _) ->
-             Right $ nub (map (\pr -> LPred pr p what doc) (subst sigma ps))
+             Three $ map (\pr -> LPred pr p what doc) (subst sigma ps)
   where lpr = LPred (Pred OPred qcls (map removeTypeConstrained tys)) p what doc
 
+
+data Three a b c = One a | Two b | Three c
+
+three :: (a -> d) -> (b -> d) -> (c -> d) -> Three a b c -> d
+three f _ _ (One   x) = f x
+three _ g _ (Two   y) = g y
+three _ _ h (Three z) = h z
 
 checkDynInst :: InstEnv' -> LPred -> Bool
 checkDynInst inEnv (LPred (Pred _ qcls tys) _ _ _) =
