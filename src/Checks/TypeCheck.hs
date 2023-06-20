@@ -120,7 +120,12 @@ checkDecls ds = do
 -- static top-level environment and a dynamic environment that maps each class
 -- on the instances which are in scope for it. The rationale behind using this
 -- representation is that it makes it easy to apply the current substitution to
--- the dynamic part of the environment.
+-- the dynamic part of the environment. Because the dynamic instance
+-- environment is also used to store explicitly annotated predicates from type
+-- signatures, all entries in the dynamic instance environment carry a flag
+-- that indicates whether the instance comes from a type signature or from an
+-- existential quantification. True means that it comes from a quantification,
+-- False means that the entry comes from a type signature  
 
 -- A so-called explicit predicate set stores the constraints mentioned in an
 -- explicit type signature and those implied by them through a super class
