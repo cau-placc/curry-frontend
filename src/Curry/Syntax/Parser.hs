@@ -586,6 +586,7 @@ context = (\c -> ([c], [])) <$> constraint
       <|> combine <$> parensSp (constraint `sepBySp` comma)
   where combine ((ctx, ss), sp1, sp2) = (ctx, sp1 : (ss ++ [sp2]))
 
+-- taken from Leif-Erik Krueger
 constraint :: Parser a Token Constraint
 constraint = mkConstraint <$> spanPosition <*> qtycls <*> many type2
   where mkConstraint sp qtc tys = updateEndPos $

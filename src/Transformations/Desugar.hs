@@ -190,14 +190,18 @@ dsNewConstrDecl nc = internalError $ "Desugar.dsNewConstrDecl: " ++ show nc
 -- Desugaring of class and instance declarations
 -- -----------------------------------------------------------------------------
 
+-- changes taken from Leif-Erik Krueger
 dsClassAndInstanceDecl :: Decl PredType -> DsM (Decl PredType)
 dsClassAndInstanceDecl (ClassDecl p li cx cls tvs fds ds) = do
+  cx' <- mapM dsConstraint cx
   tds' <- mapM dsTypeSig tds
   vds' <- dsDeclGroup vds
-  return $ ClassDecl p li cx cls tvs fds $ tds' ++ vds'
+  return $ ClassDecl p li cx' cls tvs fds $ tds' ++ vds'
   where (tds, vds) = partition isTypeSig ds
-dsClassAndInstanceDecl (InstanceDecl p li cx cls tys ds) =
-  InstanceDecl p li cx cls tys <$> dsDeclGroup ds
+dsClassAndInstanceDecl (InstanceDecl p li cx cls tys ds) = do
+  cx' <- mapM dsConstraint cx
+  tys' <- mapM dsTypeExpr tys
+  InstanceDecl p li cx' cls tys' <$> dsDeclGroup ds
 dsClassAndInstanceDecl d = return d
 
 dsTypeSig :: Decl PredType -> DsM (Decl PredType)
@@ -786,6 +790,11 @@ dsExpr p (Case _ _ ct e alts) = dsCase p ct e alts
 dsQualTypeExpr :: QualTypeExpr -> DsM QualTypeExpr
 dsQualTypeExpr (QualTypeExpr _ cx ty) =
   QualTypeExpr NoSpanInfo cx <$> dsTypeExpr ty
+
+-- taken from Leif-Erik Krueger
+dsConstraint :: Constraint -> DsM Constraint
+dsConstraint (Constraint p qcls tys) = Constraint p qcls <$> mapM dsTypeExpr tys
+
 
 dsTypeExpr :: TypeExpr -> DsM TypeExpr
 dsTypeExpr ty = do
