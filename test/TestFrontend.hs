@@ -165,6 +165,18 @@ failInfos = map (uncurry mkFailTest)
   , ("ExportCheck/UndefinedElement", ["`foo' is not a constructor or label of type `Bool'"])
   , ("ExportCheck/UndefinedName", ["Undefined name `foo' in export list"])
   , ("ExportCheck/UndefinedType", ["Undefined type or class `Foo' in export list"])
+  , ("FD_TestSpec", 
+      [ "Missing instance for Test Prelude.Bool Prelude.Int"
+      , "arising from variable"
+      , "use"
+      ]
+    )
+  , ("FD_TypeError2", 
+      ["Missing instance for Collects Prelude.Bool"
+      , "arising from variable"
+      , "insert"
+      ]
+    )
   , ("FP_Cyclic", ["Function `g' used in functional pattern depends on `f'  causing a cyclic dependency"])
   , ("FP_Restrictions",
       [ "Functional patterns are not supported inside a case expression"
@@ -187,6 +199,21 @@ failInfos = map (uncurry mkFailTest)
     )
   , ("MissingLabelInUpdate",
       ["Undefined record label `l1'"] )
+  , ("MPTC_BoundVar",
+      ["Unbound type variable b"]
+    )
+  , ("MPTC_BoundVar2",
+      ["Unbound type variable b"]
+    )
+  , ("MPTC_CovCond",
+      ["MPTC_CovCond"
+      , "Violation of a functional dependency in instance declaration for"
+      , "Mult a [b] [c]"
+      , "The left-hand side instance type types a [b]"
+      , "do not uniquely determine the right-hand side instance type type [c]"
+      , "because the type variable `c' does not occur in the former."
+      ]
+    )
   , ("MPTCAmbiguousTypeVar",
       -- Many parts in these error message are left out due to possible variable
       -- name changes. Example of an actual error message:
@@ -202,7 +229,8 @@ failInfos = map (uncurry mkFailTest)
       , "than the head of the derived instance", "Prelude.Eq (T1 a)"
       , "The type variable `a' occurs more often", "in the constraint C a a"
       , "than in the head of the derived instance" -- Prelude.Eq (T1 a)
-      , "Missing instance for C [a] [b]", "in derived instance Prelude.Eq (T2 a b)"
+      , "Missing instance for C [a] [b]", "in derived instance for"
+      , "Prelude.Eq (T2 a b)"
       , "Instance overlap for C (a, b) (b, b)"
       , "arising in derived instance", "Prelude.Show (T3 a b)"
       , "Matching instances:", "C (a, b) (b, c) (defined in MPTCDeriving)"
@@ -243,7 +271,7 @@ failInfos = map (uncurry mkFailTest)
     )
   , ("MPTCInvalidMethodType",
         -- methodC1 :: a -> c -> a
-      [ "Method type does not mention class variable b"
+      [ "Method type does not uniquely determine class variable `b'"
         -- methodC2 :: Eq b => a -> b -> c
       , "Constraint Eq b", "in method context constrains only class variables"
         -- methodC3 :: D b c a b => a -> b -> c
@@ -260,16 +288,19 @@ failInfos = map (uncurry mkFailTest)
     )
   , ("MPTCMissingSuperClassInstance",
       [ "Missing instance for C Prelude.Int Prelude.Bool"
-      , "in instance declaration D Prelude.Bool Prelude.Int"
+      , "in instance declaration for"
+      , "D Prelude.Bool Prelude.Int"
       , "Missing instance for C (b, a) (a, b)"
-      , "in instance declaration D (a, b) (b, a)"
+      , "in instance declaration for"
+      , "D (a, b) (b, a)"
       , "Instance overlap for C (a, b) (a, b)"
       , "arising in instance declaration", "D (a, b) (a, b)"
       , "Matching instances:"
       , "C (a, b) (a, c) (defined in MPTCMissingSuperClassInstance)"
       , "C (a, b) (c, b) (defined in MPTCMissingSuperClassInstance)"
       , "Missing instance for D Prelude.Bool Prelude.Bool"
-      , "in instance declaration F Prelude.Bool"
+      , "in instance declaration for"
+      , "F Prelude.Bool"
       , "Missing instance for E" -- "in instance declaration F Prelude.Bool"
       ]
     )
@@ -374,10 +405,16 @@ passInfos = map mkPassTest
   , "EmptyWhere"
   , "ExplicitLayout"
   , "FCase"
+  , "FD_ListLike"
+  , "FD_ListLike2"
+  , "FlexC_ListLike"
+  , "FlexI_ListLike"
+  , "FlexI_ListLike2"
   , "FP_Lifting"
   , "FP_NonCyclic"
   , "FP_NonLinearity"
   , "FunctionalPatterns"
+  , "FunDepExample"
   , "HaskellRecords"
   , "HaskellRecordsPass"
   , "Hierarchical"
@@ -394,6 +431,7 @@ passInfos = map mkPassTest
   , "MPTCDeriving"
   , "MPTCListLike"
   , "MPTCNoExtension"
+  , "MPTCNullary"
   , "MPTCNullaryClasses"
   , "MPTCPotentialInstanceOverlap"
   , "MPTCSuperClasses"
