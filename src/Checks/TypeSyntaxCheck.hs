@@ -33,7 +33,7 @@ import           Data.List                (nub)
 import qualified Data.Map            as Map (Map, insert, lookup)
 import           Data.Maybe               (isNothing)
 import qualified Data.Set            as Set ( Set, fromList, isSubsetOf, size
-                                            , toAscList, union, unions )
+                                            , toAscList, union )
 
 import Curry.Base.Ident
 import Curry.Base.Position
@@ -51,8 +51,6 @@ import           Env.Class                 (ClassEnv)
 import qualified Env.Class           as CE (FunDep,toFunDep, toFunDepMap)
 import           Env.TypeConstructor       (TCEnv)
 import           Env.Type
-
-import Debug.Trace
 
 -- TODO Use span info for err messages
 
@@ -154,7 +152,7 @@ bindClass :: ModuleIdent -> Decl a -> SimpleClassEnv -> SimpleClassEnv
 bindClass m (ClassDecl _ _ _ cls tvs fds _) = let qcls = qualifyWith m cls
                                                   fds' = map (CE.toFunDep tvs) fds
                                               in  Map.insert qcls fds'
-bindClass m _                               = id
+bindClass _ _                               = id
 
 -- When type declarations are checked, the compiler will allow anonymous
 -- type variables on the left hand side of the declaration, but not on
@@ -508,9 +506,9 @@ qualClassIdent m qcls tEnv = case qualLookupTypeKind qcls tEnv of
 
 funDepCoverage :: ModuleIdent -> Context -> Set.Set Ident -> TSCM (Set.Set Ident)
 funDepCoverage m cx tvs = do
-  simpClsEnv <- getSimpleClassEnv
+  simpleClsEnv <- getSimpleClassEnv
   tyEnv      <- getTypeEnv
-  let tvs' = funDepCoverage' simpClsEnv tyEnv tvs
+  let tvs' = funDepCoverage' simpleClsEnv tyEnv tvs
   if Set.size tvs' == Set.size tvs
   then return tvs
   else funDepCoverage m cx tvs'
@@ -523,9 +521,9 @@ funDepCoverage m cx tvs = do
       Nothing   -> covVars
       Just qcls -> 
            let fds = lookupFunDeps qcls clsEnv  
-           in foldr (funDepCoverage''' clsEnv c) covVars fds
+           in foldr (funDepCoverage''' c) covVars fds
 
-   funDepCoverage''' clsEnv (Constraint _ _ tys) (lixs,rixs) covVars =
+   funDepCoverage''' (Constraint _ _ tys) (lixs,rixs) covVars =
     let lixs' = Set.toAscList lixs
         rixs' = Set.toAscList rixs
     in if Set.fromList (fv (filterIndices tys lixs')) `Set.isSubsetOf` tvs 
@@ -534,7 +532,7 @@ funDepCoverage m cx tvs = do
        
 
 lookupFunDeps :: QualIdent -> SimpleClassEnv -> [CE.FunDep]
-lookupFunDeps qcls simpClsEnv = case Map.lookup qcls simpClsEnv of
+lookupFunDeps qcls simpleClsEnv = case Map.lookup qcls simpleClsEnv of
   Nothing  -> []
   Just fds -> fds
 
@@ -543,8 +541,8 @@ filterIndices xs is = filterIndices' xs is 0
   where
     filterIndices' []     _      _             = []
     filterIndices' _      []     _             = []
-    filterIndices' (x:xs) (i:is) j | i == j    = x : filterIndices' xs is (j+1)
-                                   | otherwise = filterIndices' xs (i:is) (j+1)
+    filterIndices' (y:ys) (j:js) k | j == k    = y : filterIndices' ys js (k+1)
+                                   | otherwise = filterIndices' ys (j:js) (k+1)
 
 -- ---------------------------------------------------------------------------
 -- Error messages

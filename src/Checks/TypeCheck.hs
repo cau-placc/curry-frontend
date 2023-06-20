@@ -50,7 +50,6 @@ import           Control.Monad.Extra ( allM, concatMapM, filterM, foldM, liftM
 import qualified Control.Monad.State as S
                                      (State, StateT, get, gets, put, modify,
                                       runState, evalStateT)
-import           Data.Either         (partitionEithers)
 import           Data.Function       (on)
 import           Data.List           (nub, nubBy, partition, sortBy, (\\))
 import qualified Data.Map            as Map ( Map, empty, elems, insert
@@ -60,8 +59,7 @@ import qualified Data.Map            as Map ( Map, empty, elems, insert
 import           Data.Maybe                 ( fromJust, fromMaybe, isJust
                                             , isNothing, listToMaybe, catMaybes )
 import qualified Data.Set.Extra      as Set ( Set, empty, fromList, insert
-                                            , member, notMember, toAscList
-                                            , toList )
+                                            , member, notMember, toList )
 
 import Curry.Base.Ident
 import Curry.Base.Pretty
@@ -85,8 +83,6 @@ import Env.Class            as CE
 import Env.Instance
 import Env.TypeConstructor
 import Env.Value
-
-import Debug.Trace
 
 -- TODO: Check if the set operations on predicate sets (like union) could be
 --         problematic with the 'PredIsICC' field.
@@ -759,16 +755,12 @@ tcCheckPDecl pls qty pd = withLocalInstEnv $ do
   (pls', (ty, pd')) <- tcPDecl pls pd
   plsImp <- improvePreds pls'
   theta <- getTypeSubst
---  traceM $ show (pPrint (subst theta (map getPred plsImp), subst theta ty))
   clsEnv <- getClassEnv
   fvs <- funDepCoveragePredList clsEnv (subst theta plsImp) <$> computeFvEnv
   let (gpls, lpls) = splitPredListAny fvs (subst theta plsImp)
---  traceM $ "gpls/lpls: " ++ show (pPrint (subst theta (map getPred gpls), subst theta (map getPred lpls)))
   poly <- isNonExpansive $ snd pd
   lpls' <- reducePredSet True lpls
---  traceM $ "lpls': " ++ show (pPrint (map getPred lpls'))
   lpls'' <- defaultPDecl fvs lpls' ty pd
---  traceM $ "lpls'':" ++ show (pPrint (map getPred lpls'))
   let ty' = subst theta ty
       tySc = if poly then gen fvs lpls'' ty' else monoType ty'
   (pls'',pd'') <- checkPDeclType qty gpls tySc pd'
@@ -853,7 +845,6 @@ makeContextEquivalent pls pls2 ty2 (i, FunctionDecl p pty@(PredType pls1 ty1) f 
       impPlss = map (impliedPredicatesList clsEnv) pls1
       sigPls = zip pls1 impPlss
       (pls2',theta') = makeEquivalent sigPls pls2 theta
---  traceM $ show $ pPrint (pls1,ty1,pls2,ty2,pls2')
   let eqs' = map (setPredType $ PredType pls2' ty2) eqs
   return (pls, (i,FunctionDecl p pty f eqs'))
   where
@@ -1806,7 +1797,6 @@ reducePredSet reportPreds pls = do
         partition isDefaultable $ minPredList clsEnv (Set.toList (Map.keysSet pm2))
   theta' <- foldM (defaultTypeConstrained m inEnv) idSubst plsDefaultable
   modifyTypeSubst $ compose theta'
---  traceM $ show $ pPrint $ map getPred pls'
   mapM_ report $ Map.elems $ Map.restrictKeys pm2 (Set.fromList plsReportable)
   pls3 <- improvePreds pls''
   -- If we reduce a predicate set, we have to consider that
@@ -1854,7 +1844,7 @@ reducePreds m inEnv = Map.unions . map reducePred
 --                  Then, a constraint like C [a] b can be reduced.
 -- taken from Leif-Erik Krueger
 instPredList :: ModuleIdent -> InstEnv' -> LPred -> Three Message LPred LPredList
-instPredList m inEnv lpred@(LPred (Pred _ qcls tys) p what doc) =
+instPredList m inEnv (LPred (Pred _ qcls tys) p what doc) =
   case Map.lookup qcls $ snd inEnv of
     Just tyss | (tys,True) `elem` tyss  -> Three []
               | (tys,False) `elem` tyss -> Two lpr
@@ -1873,18 +1863,6 @@ three :: (a -> d) -> (b -> d) -> (c -> d) -> Three a b c -> d
 three f _ _ (One   x) = f x
 three _ g _ (Two   y) = g y
 three _ _ h (Three z) = h z
-
-checkDynInst :: InstEnv' -> LPred -> Bool
-checkDynInst inEnv (LPred (Pred _ qcls tys) _ _ _) =
-   case Map.lookup qcls (snd inEnv) of
-     Nothing   -> False
-     Just tyss -> (tys,True) `elem` tyss
-
-checkExplPred :: InstEnv' -> LPred -> Bool
-checkExplPred inEnv (LPred (Pred _ qcls tys) _ _ _) =
-  case Map.lookup qcls (snd inEnv) of
-    Nothing -> False
-    Just tyss -> (tys,False) `elem` tyss
 
 -- taken from Leif-Erik Krueger
 hasInstance :: ModuleIdent -> InstEnv' -> QualIdent -> [Type] -> Bool
@@ -1960,13 +1938,6 @@ improvePreds' errPreds pls = do
           return (pls' \\ errPreds'')
   else improvePreds' errPreds'' (subst theta pls')
 
-
-chooseElem :: [a] -> [(a,[a])]
-chooseElem []     = []
-chooseElem (x:xs) = (x,xs) : map (fmap (x:)) (chooseElem xs)
-
-mapFst :: (a -> b) -> (a,c) -> (b,c)
-mapFst f (x,y) = (f x, y)
 
 -- finding improving substitutions follows two rules
 -- Given a predicate set P and a predicate C t_1 ... t_m, the following rules

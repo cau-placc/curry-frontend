@@ -55,8 +55,6 @@ import Env.OpPrec
 import Env.TypeConstructor
 import Env.Value
 
-import Debug.Trace
-
 data DTState = DTState
   { moduleIdent :: ModuleIdent
   , tyConsEnv   :: TCEnv
