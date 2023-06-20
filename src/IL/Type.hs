@@ -90,6 +90,7 @@ data Literal
   = Char  Char
   | Int   Integer
   | Float Double
+  | String String
     deriving (Eq, Show)
 
 data ConstrTerm
