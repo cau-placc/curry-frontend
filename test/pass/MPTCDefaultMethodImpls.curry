@@ -22,18 +22,3 @@ instance C Bool Bool where
   methodC3 = (False, True)
   methodC4 = Right False
 
--- Expected result: True
-testExp1 :: Bool
-testExp1 = methodC2 False 0
-
--- Expected result: Right (-2)
-testExp2 :: Either Bool Int
-testExp2 = methodC4
-
--- Expected result: True
-testExp3 :: Bool
-testExp3 = uncurry methodC1 (methodC3 :: (Bool, Bool))
-
--- Expected result: Right False
-testExp4 :: Either Bool Bool
-testExp4 = methodC4

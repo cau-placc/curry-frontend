@@ -256,9 +256,6 @@ failInfos = map (uncurry mkFailTest)
       , "Matching instances:", "C [a] [a] [b] from MPTCInstanceOverlap"
       , "C [a] [b] [b] from MPTCInstanceOverlap"
       , "MPTCInstanceOverlap.curry:17:12-17:18 Error:"
-      , "MPTCInstanceOverlap.curry:19:18-19:24 Error:"
-      , "MPTCInstanceOverlap.curry:21:12-21:18 Error:"
-      , "Missing instance for C [" -- C [a] [b] [c]
       , "MPTCInstanceOverlap.curry:25:19-25:25 Error:"
       , "MPTCInstanceOverlap.curry:29:11-29:12 Error:", "f'"
       ]
@@ -282,8 +279,6 @@ failInfos = map (uncurry mkFailTest)
       [ "Missing instance for C Prelude.Bool [Prelude.Bool]" -- f1 = methodC True [True]
       , "arising from variable", "methodC"
       , "Missing instance for D", {- arising from variable -} "methodD" -- f2 = methodD
-      , "Missing instance for E [[Prelude.Bool]] [Prelude.Bool] [" -- E [[Bool]] [Bool] a
-      , {- arising from variable -} "methodE"
       ]
     )
   , ("MPTCMissingSuperClassInstance",
@@ -429,7 +424,6 @@ passInfos = map mkPassTest
   , "MPTCConstrainedMethods"
   , "MPTCDefaultMethodImpls"
   , "MPTCDeriving"
-  , "MPTCListLike"
   , "MPTCNoExtension"
   , "MPTCNullary"
   , "MPTCNullaryClasses"

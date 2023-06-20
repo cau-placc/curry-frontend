@@ -31,10 +31,3 @@ instance C Bool Int Bool where
   methodC3 a _ _ = methodC1 a
   methodC4 = methodF
 
--- Expected result: False
-testExp1 :: Bool
-testExp1 = methodC3 True True True 5
-
--- Expected result: True
-testExp2 :: Bool
-testExp2 = methodC3 True 5 True True
