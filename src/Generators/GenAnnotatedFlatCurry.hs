@@ -15,9 +15,9 @@
 {-# LANGUAGE CPP #-}
 module Generators.GenAnnotatedFlatCurry (genAnnotatedFlatCurry) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative        ((<$>), (<*>))
-#endif
+
+
+
 import           Control.Monad              ((<=<))
 import           Control.Monad.Extra        (concatMapM)
 import qualified Control.Monad.State as S   ( State, evalState, get, gets
@@ -203,7 +203,7 @@ trTypeDecl (IL.DataDecl      qid ks []) = do
   c   <- trQualIdent $ qualify (mkIdent $ "_Constr#" ++ idName (unqualify qid))
   let ks' = trKind <$> ks
       tvs = zip [0..] ks'
-  return [Type q' vis tvs [Cons c 1 Private [TCons q' $ TVar <$> fst <$> tvs]]]
+  return [Type q' vis tvs [Cons c 1 Private [TCons q' (TVar . fst <$> tvs)]]]
 trTypeDecl (IL.DataDecl      qid ks cs) = do
   q'  <- trQualIdent qid
   vis <- getTypeVisibility qid
@@ -317,13 +317,14 @@ trAExpr (IL.Letrec   bs e) = inNestedEnv $ do
        <*> (zip <$> mapM (uncurry newVar) vs <*> mapM trAExpr es)
        <*> trAExpr e
 trAExpr (IL.Typed e ty) = ATyped <$> ty' <*> trAExpr e <*> ty'
-  where ty' = trType $ ty
+  where ty' = trType ty
 
 -- Translate a literal
 trLiteral :: IL.Literal -> FlatState Literal
 trLiteral (IL.Char  c) = return $ Charc  c
 trLiteral (IL.Int   i) = return $ Intc   i
 trLiteral (IL.Float f) = return $ Floatc f
+trLiteral (IL.String _) = internalError "trLiteral: string"
 
 -- Translate a higher-order application
 trApply :: IL.Expression -> IL.Expression -> FlatState (AExpr TypeExpr)
@@ -345,7 +346,7 @@ trAlt (IL.Alt p e) = ABranch <$> trPat p <*> trAExpr e
 trPat :: IL.ConstrTerm -> FlatState (APattern TypeExpr)
 trPat (IL.LiteralPattern        ty l) = ALPattern <$> trType ty <*> trLiteral l
 trPat (IL.ConstructorPattern ty c vs) = do
-  qty <- trType $ foldr IL.TypeArrow ty $ map fst vs
+  qty <- trType $ foldr (IL.TypeArrow . fst) ty vs
   APattern  <$> trType ty <*> ((\q -> (q, qty)) <$> trQualIdent c) <*> mapM (uncurry newVar) vs
 trPat (IL.VariablePattern        _ _) = internalError "GenTypeAnnotatedFlatCurry.trPat"
 
@@ -387,7 +388,7 @@ genAComb ty qid es ct = do
 
 genApply :: AExpr TypeExpr -> [IL.Expression] -> FlatState (AExpr TypeExpr)
 genApply e es = do
-  ap  <- trQualIdent $ qApplyId
+  ap  <- trQualIdent qApplyId
   es' <- mapM trAExpr es
   let go e1 e2 = case typeOf e1 of
         t@(FuncType _ ty2)
@@ -475,7 +476,7 @@ instance Normalize a => Normalize (APattern a) where
 trQualIdent :: QualIdent -> FlatState QName
 trQualIdent qid = do
   mid <- getModuleIdent
-  return $ (moduleName $ fromMaybe mid mid', idName i)
+  return (moduleName $ fromMaybe mid mid', idName i)
   where
   mid' | i `elem` [listId, consId, nilId, unitId] || isTupleId i
        = Just preludeMIdent

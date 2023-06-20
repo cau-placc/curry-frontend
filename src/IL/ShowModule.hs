@@ -112,6 +112,10 @@ showsLiteral (Float x)
   = showsString "(Float "
   . shows x
   . showsString ")"
+showsLiteral (String x)
+  = showsString "(String "
+  . shows x
+  . showsString ")"
 
 showsConstrTerm :: ConstrTerm -> ShowS
 showsConstrTerm (LiteralPattern ty lit)

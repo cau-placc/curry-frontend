@@ -121,6 +121,7 @@ ppLiteral :: Literal -> Doc
 ppLiteral (Char  c) = text (show c)
 ppLiteral (Int   i) = integer i
 ppLiteral (Float f) = double f
+ppLiteral (String s) = text ("\"" ++ s ++ "\"")
 
 ppConstrTerm :: ConstrTerm -> Doc
 ppConstrTerm (LiteralPattern     _                    l) = ppLiteral l

@@ -606,26 +606,22 @@ mkStrictEquality x (pty, y) = mkVar pty x =:= mkVar pty y
 -- left to right, which is not the case in Curry except for rigid case
 -- expressions.
 
-dsLiteralPat :: PredType -> Literal
-             -> Either (Pattern PredType) (Pattern PredType)
-dsLiteralPat pty c@(Char _) = Right (LiteralPattern NoSpanInfo pty c)
+dsLiteralPat :: PredType -> Literal -> Pattern PredType
+dsLiteralPat pty c@(Char _) = LiteralPattern NoSpanInfo pty c
 dsLiteralPat pty (Int i) =
-  Right (LiteralPattern NoSpanInfo pty (fixLiteral (unpredType pty)))
+  LiteralPattern NoSpanInfo pty (fixLiteral (unpredType pty))
   where fixLiteral (TypeConstrained tys _) = fixLiteral (head tys)
         fixLiteral ty
           | ty == floatType = Float $ fromInteger i
           | otherwise = Int i
-dsLiteralPat pty f@(Float _) = Right (LiteralPattern NoSpanInfo pty f)
-dsLiteralPat pty (String cs) =
-  Left $ ListPattern NoSpanInfo pty $
-  map (LiteralPattern NoSpanInfo pty' . Char) cs
-  where pty' = predType $ elemType $ unpredType pty
+dsLiteralPat pty f@(Float _) = LiteralPattern NoSpanInfo pty f
+dsLiteralPat pty s@(String _) = LiteralPattern NoSpanInfo pty s
 
 dsPat :: SpanInfo -> [Decl PredType] -> Pattern PredType
       -> DsM ([Decl PredType], Pattern PredType)
 dsPat _ ds v@(VariablePattern       _ _ _) = return (ds, v)
-dsPat p ds (LiteralPattern      _ pty l) =
-  either (dsPat p ds) (return . (,) ds) (dsLiteralPat pty l)
+dsPat _ ds (LiteralPattern      _ pty l) =
+  return (ds, dsLiteralPat pty l)
 dsPat p ds (NegativePattern       _ pty l) =
   dsPat p ds (LiteralPattern NoSpanInfo pty (negateLiteral l))
 dsPat p ds (ConstructorPattern _ pty c ts) =

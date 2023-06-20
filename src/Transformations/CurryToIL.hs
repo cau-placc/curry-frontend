@@ -480,7 +480,7 @@ trLiteral :: Literal -> IL.Literal
 trLiteral (Char  c) = IL.Char c
 trLiteral (Int   i) = IL.Int i
 trLiteral (Float f) = IL.Float f
-trLiteral _         = internalError "CurryToIL.trLiteral"
+trLiteral (String s) = IL.String s
 
 -- -----------------------------------------------------------------------------
 -- Translation of Patterns

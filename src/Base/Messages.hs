@@ -30,6 +30,7 @@ import Curry.Base.Message         ( Message, message, posMessage, spanInfoMessag
                                   , ppWarning, ppMessagesWithPreviews, ppError)
 import Curry.Base.Pretty          (Doc, text)
 import CompilerOpts               (Options (..), WarnOpts (..), Verbosity (..))
+import GHC.Stack (HasCallStack)
 
 -- |Print a status message, depending on the current verbosity
 status :: MonadIO m => Options -> String -> m ()
@@ -71,8 +72,8 @@ warnOrAbort opts msgs = when (wnWarn opts && not (null msgs)) $ do
 -- |Print a list of messages on 'stderr'
 printMessages :: (Message -> Doc) -> [Message] -> IO ()
 printMessages msgType msgs
-  = unless (null msgs) $ putErrLn =<< (fmap show $ ppMessagesWithPreviews msgType $ sort msgs)
+  = unless (null msgs) (putErrLn . show =<< ppMessagesWithPreviews msgType (sort msgs))
 
 -- |Raise an internal error
-internalError :: String -> a
+internalError :: HasCallStack => String -> a
 internalError msg = error $ "Internal error: " ++ msg
