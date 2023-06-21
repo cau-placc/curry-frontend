@@ -276,7 +276,7 @@ dsDeclGroup ds = concatMapM dsDeclLhs (filter isValueDecl ds) >>= mapM dsDeclRhs
 
 dsDeclLhs :: Decl PredType -> DsM [Decl PredType]
 dsDeclLhs (PatternDecl p t rhs) = do
-  (ds', t') <- dsPat p [] t
+  (ds', t') <- dsPat True p [] t
   dss'      <- mapM dsDeclLhs ds'
   return $ PatternDecl p t' rhs : concat dss'
 dsDeclLhs d                     = return [d]
@@ -301,7 +301,7 @@ dsEquation :: Equation PredType -> DsM (Equation PredType)
 dsEquation (Equation p lhs rhs) = do
   (ds1, cs1, ts1) <- dsFunctionalPatterns p ts
   (     cs2, ts2) <- dsNonLinearity ts1
-  (ds2     , ts3) <- mapAccumM (dsPat p) [] ts2 --TODO: Remove position arguments in transformation phases
+  (ds2     , ts3) <- mapAccumM (dsPat True p) [] ts2 --TODO: Remove position arguments in transformation phases
   rhs' <- dsRhs (constrain cs1 . constrain cs2) (addDecls (ds1 ++ ds2) rhs)
   return $ Equation p (FunLhs NoSpanInfo f ts3) rhs'
   where (f, ts) = flatLhs lhs
@@ -606,52 +606,57 @@ mkStrictEquality x (pty, y) = mkVar pty x =:= mkVar pty y
 -- left to right, which is not the case in Curry except for rigid case
 -- expressions.
 
-dsLiteralPat :: PredType -> Literal -> Pattern PredType
-dsLiteralPat pty c@(Char _) = LiteralPattern NoSpanInfo pty c
-dsLiteralPat pty (Int i) =
-  LiteralPattern NoSpanInfo pty (fixLiteral (unpredType pty))
+dsLiteralPat :: Bool -> PredType -> Literal -> Either (Pattern PredType) (Pattern PredType)
+dsLiteralPat _ pty c@(Char _) = Right $ LiteralPattern NoSpanInfo pty c
+dsLiteralPat _ pty (Int i) =
+  Right $ LiteralPattern NoSpanInfo pty (fixLiteral (unpredType pty))
   where fixLiteral (TypeConstrained tys _) = fixLiteral (head tys)
         fixLiteral ty
           | ty == floatType = Float $ fromInteger i
           | otherwise = Int i
-dsLiteralPat pty f@(Float _) = LiteralPattern NoSpanInfo pty f
-dsLiteralPat pty s@(String _) = LiteralPattern NoSpanInfo pty s
+dsLiteralPat _ pty f@(Float _) = Right $ LiteralPattern NoSpanInfo pty f
+dsLiteralPat inEq pty s@(String cs)
+  | inEq =
+    Left $ ListPattern NoSpanInfo pty $
+    map (LiteralPattern NoSpanInfo pty' . Char) cs
+  | otherwise = Right $ LiteralPattern NoSpanInfo pty s
+    where pty' = predType $ elemType $ unpredType pty
 
-dsPat :: SpanInfo -> [Decl PredType] -> Pattern PredType
+dsPat :: Bool -> SpanInfo -> [Decl PredType] -> Pattern PredType
       -> DsM ([Decl PredType], Pattern PredType)
-dsPat _ ds v@(VariablePattern       _ _ _) = return (ds, v)
-dsPat _ ds (LiteralPattern      _ pty l) =
-  return (ds, dsLiteralPat pty l)
-dsPat p ds (NegativePattern       _ pty l) =
-  dsPat p ds (LiteralPattern NoSpanInfo pty (negateLiteral l))
-dsPat p ds (ConstructorPattern _ pty c ts) =
-  second (ConstructorPattern NoSpanInfo pty c) <$> mapAccumM (dsPat p) ds ts
-dsPat p ds (InfixPattern   _ pty t1 op t2) =
-  dsPat p ds (ConstructorPattern NoSpanInfo pty op [t1, t2])
-dsPat p ds (ParenPattern              _ t) = dsPat p ds t
-dsPat p ds (RecordPattern      _ pty c fs) = do
+dsPat _ _ ds v@(VariablePattern       _ _ _) = return (ds, v)
+dsPat inEq p ds (LiteralPattern      _ pty l) =
+  either (dsPat inEq p ds) (return . (,) ds) (dsLiteralPat inEq pty l)
+dsPat inEq p ds (NegativePattern       _ pty l) =
+  dsPat inEq p ds (LiteralPattern NoSpanInfo pty (negateLiteral l))
+dsPat inEq p ds (ConstructorPattern _ pty c ts) =
+  second (ConstructorPattern NoSpanInfo pty c) <$> mapAccumM (dsPat inEq p) ds ts
+dsPat inEq p ds (InfixPattern   _ pty t1 op t2) =
+  dsPat inEq p ds (ConstructorPattern NoSpanInfo pty op [t1, t2])
+dsPat inEq p ds (ParenPattern              _ t) = dsPat inEq p ds t
+dsPat inEq p ds (RecordPattern      _ pty c fs) = do
   vEnv <- getValueEnv
   --TODO: Rework
   let (ls, tys) = argumentTypes (unpredType pty) c vEnv
       tsMap = map field2Tuple fs
   anonTs <- mapM ((uncurry (VariablePattern NoSpanInfo) <$>) .
                   freshVar "_#recpat") tys
-  let maybeTs = map (flip lookup tsMap) ls
+  let maybeTs = map (`lookup` tsMap) ls
       ts = zipWith fromMaybe anonTs maybeTs
-  dsPat p ds (ConstructorPattern NoSpanInfo pty c ts)
-dsPat p ds (TuplePattern              _ ts) =
-  dsPat p ds (ConstructorPattern NoSpanInfo pty (qTupleId $ length ts) ts)
+  dsPat inEq p ds (ConstructorPattern NoSpanInfo pty c ts)
+dsPat inEq p ds (TuplePattern              _ ts) =
+  dsPat inEq p ds (ConstructorPattern NoSpanInfo pty (qTupleId $ length ts) ts)
   where pty = predType (tupleType (map typeOf ts))
-dsPat p ds (ListPattern           _ pty ts) =
-  second (dsList cons nil) <$> mapAccumM (dsPat p) ds ts
+dsPat inEq p ds (ListPattern           _ pty ts) =
+  second (dsList cons nil) <$> mapAccumM (dsPat inEq p) ds ts
   where nil = ConstructorPattern NoSpanInfo pty qNilId []
         cons t ts' = ConstructorPattern NoSpanInfo pty qConsId [t, ts']
-dsPat p ds (AsPattern            _ v t) = dsAs p v <$> dsPat p ds t
-dsPat p ds (LazyPattern            _ t) = dsLazy p ds t
-dsPat p ds (FunctionPattern   _   pty f ts) =
-  second (FunctionPattern NoSpanInfo pty f) <$> mapAccumM (dsPat p) ds ts
-dsPat p ds (InfixFuncPattern _ pty t1 f t2) =
-  dsPat p ds (FunctionPattern NoSpanInfo pty f [t1, t2])
+dsPat inEq p ds (AsPattern            _ v t) = dsAs p v <$> dsPat inEq p ds t
+dsPat _ p ds (LazyPattern            _ t) = dsLazy p ds t
+dsPat inEq p ds (FunctionPattern   _   pty f ts) =
+  second (FunctionPattern NoSpanInfo pty f) <$> mapAccumM (dsPat inEq p) ds ts
+dsPat inEq p ds (InfixFuncPattern _ pty t1 f t2) =
+  dsPat inEq p ds (FunctionPattern NoSpanInfo pty f [t1, t2])
 
 dsAs :: SpanInfo -> Ident -> ([Decl PredType], Pattern PredType)
      -> ([Decl PredType], Pattern PredType)
@@ -834,7 +839,7 @@ dsCase p ct e alts
 
 dsAltLhs :: Alt PredType -> DsM (Alt PredType)
 dsAltLhs (Alt p t rhs) = do
-  (ds', t') <- dsPat p [] t
+  (ds', t') <- dsPat False p [] t
   return $ Alt p t' (addDecls ds' rhs)
 
 dsAltRhs :: Alt PredType -> DsM (Alt PredType)
