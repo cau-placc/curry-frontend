@@ -36,7 +36,7 @@ module Transformations.CaseCompletion (completeCase) where
 
 
 import qualified Control.Monad.State as S   (State, evalState, gets, modify)
-import           Data.List                  (find, partition)
+import           Data.List                  (find)
 import           Data.Maybe                 (fromMaybe, listToMaybe)
 
 import           Curry.Base.Ident
