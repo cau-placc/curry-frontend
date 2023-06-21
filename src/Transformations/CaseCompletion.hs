@@ -132,7 +132,7 @@ ccBinding (Binding v e) = Binding v <$> ccExpr e
 -- ---------------------------------------------------------------------------
 ccCase :: Eval -> Expression -> [Alt] -> CCM Expression
 -- flexible cases are not completed, but literal string pats are transformed.
-ccCase Flex  e alts     = ccFlexLit e alts
+ccCase Flex  e alts     = return $ Case Flex e alts
 ccCase Rigid _ []       = internalError $ "CaseCompletion.ccCase: "
                                        ++ "empty alternative list"
 ccCase Rigid e as@(Alt p _:_) = case p of
@@ -142,39 +142,6 @@ ccCase Rigid e as@(Alt p _:_) = case p of
   where
     isLitPat (Alt (LiteralPattern _ _) _) = True
     isLitPat _                            = False
-
--- Leaves a flex case as-is, except for string literals.
--- String literal alternatives are transformed into a case expression with (===)
--- and combined using Or/Choice.
--- The original case scrutinee is let-bound to a fresh variable.
--- If one alternative is a literal pattern, NOT all alternatives will be literals.
--- Any remaining ones are left as-is and added with an Or/Choice.
-ccFlexLit :: Expression -> [Alt] -> CCM Expression
-ccFlexLit e [] = return $ Case Flex e []
-ccFlexLit e as@(Alt p _:_) = do
-  i <- freshIdent
-  let (lits, others) = partition isStringLitAlt as
-      ty = patType p
-      othersE = Case Flex (Variable ty i) others
-  litsE <- foldr1 Or <$> mapM (ccStringPat i) lits
-  return $ if null lits
-    then Case Flex e others
-    else Let (Binding i e) $ if null others
-      then litsE
-      else Or litsE othersE
-  where
-    patType (ConstructorPattern ty _ _) = ty
-    patType (LiteralPattern     ty _)   = ty
-    patType (VariablePattern    ty _)   = ty
-
-    isStringLitAlt (Alt (LiteralPattern _ (String _)) _) = True
-    isStringLitAlt _ = False
-
-    ccStringPat i (Alt (LiteralPattern ty l) e') = do
-      return $ Case Flex (eqExpr (litType l) ty (Variable ty i)
-          (completeLit l ty))
-          [ Alt truePatt e' ]
-    ccStringPat _ _ = internalError "CaseCompletion.ccStringPat: no string pattern"
 
 -- Completes a case alternative list which branches via constructor patterns
 -- by adding alternatives. Thus, case expressions of the form
