@@ -45,8 +45,8 @@ import qualified Curry.Syntax        as CS
 import Base.CurryTypes                      (toType)
 import Base.Expr
 import Base.Messages                        (internalError)
-import Base.Types                           ( boolType, charType, floatType
-                                            , intType, listType, stringType
+import Base.Types                           ( charType, floatType
+                                            , intType, stringType
                                             )
 import qualified Base.Types as CS
 import Base.Subst
@@ -403,7 +403,7 @@ getComplConstrs (Module mid _ ds) menv tcEnv cs@(c:_)
   -- built-in lists
   | c `elem` [qNilId, qConsId] = complementary cs
     [ (qNilId, [])
-    , (qConsId, [TypeVariable 0, transType tcEnv (listType boolType)])
+    , (qConsId, [TypeVariable 0, TypeConstructor qListId [TypeVariable 0]])
     ]
   -- current module
   | mid' == mid                = getCCFromDecls cs ds
