@@ -432,7 +432,7 @@ getCCFromDecls cs ds = complementary cs cinfos
   constrInfo (ConstrDecl cid tys) = (cid, tys)
 
 -- Find complementary constructors within the module environment
-getCCFromIDecls :: ModuleIdent -> [QualIdent] -> TCEnv-> CS.Interface
+getCCFromIDecls :: ModuleIdent -> [QualIdent] -> TCEnv -> CS.Interface
                 -> [(QualIdent, [Type])]
 getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds) = complementary cs cinfos
   where
@@ -463,7 +463,12 @@ getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds) = complementary cs cinfos
     , [transType' vs ty | CS.FieldDecl _ ls ty <- fs, _ <- ls]
     )
 
-  transType' vs = transType tcEnv . toType vs
+  transType' vs = qualType . transType tcEnv . toType vs
+
+  qualType (TypeConstructor qid vs) = TypeConstructor (qualQualify mid qid) (map qualType vs)
+  qualType (TypeArrow ty1 ty2)   = TypeArrow (qualType ty1) (qualType ty2)
+  qualType (TypeVariable tv)     = TypeVariable tv
+  qualType (TypeForall tvs ty)   = TypeForall tvs (qualType ty)
 
 -- Compute complementary constructors
 complementary :: [QualIdent] -> [(QualIdent, [Type])] -> [(QualIdent, [Type])]
