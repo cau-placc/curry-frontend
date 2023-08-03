@@ -61,6 +61,7 @@ module Curry.Base.Ident
   , andOpId, eqOpId, leqOpId, ltOpId, orOpId, appendOpId, dotOpId
   , aValueId, dataEqId
   , anonId, isAnonId
+  , qBindId
 
     -- * Predefined qualified identifiers
     -- ** Identifiers for types
@@ -910,6 +911,10 @@ qDataEqId = qPreludeIdent dataEqId
 -- | 'QualIdent' for the '++' operator
 qAppendOpId :: QualIdent
 qAppendOpId = qPreludeIdent appendOpId
+
+-- | 'QualIdent' for the '>>=' operator
+qBindId :: QualIdent
+qBindId = qPreludeIdent $ mkIdent ">>="
 
 -- ---------------------------------------------------------------------------
 -- Micellaneous functions for generating and testing extended identifiers

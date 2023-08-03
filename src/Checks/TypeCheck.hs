@@ -443,7 +443,7 @@ tcDecls = fmap (fmap fromPDecls) . tcPDecls . toPDecls
 tcPDecls :: [PDecl a] -> TCM (PredSet, [PDecl PredType])
 tcPDecls pds = withLocalSigEnv $ do
   let (vpds, opds) = partition (isValueDecl . snd) pds
-  setSigEnv $ foldr (bindTypeSigs . snd) emptySigEnv $ opds
+  setSigEnv $ foldr (bindTypeSigs . snd) emptySigEnv opds
   m <- getModuleIdent
   (ps, vpdss') <-
     mapAccumM tcPDeclGroup emptyPredSet $ scc (bv . snd) (qfv m . snd) vpds
