@@ -1,6 +1,39 @@
 Change log for curry-frontend
 =============================
 
+Version 2.1.0
+=============
+
+  Breaking changes
+  ----------------
+  * Enabled 'AnonFreeVars' and 'FunctionalPatterns' extensions by default
+  * Added 'NoFunctionalPatterns' and 'NoAnonFreeVars' Language extensions to disable the respective extensions
+  * Added 'NoDataDeriving' language extension to disable automatic deriving of 'Data' instances (implied by 'NoImplicitPrelude')
+  * Deprecated the '--extended' options to enable 'AnonFreeVars' and 'FunctionalPatterns' (now on by default)
+
+  Improvements
+  ------------
+  * Improved handling of implied language extensions
+  * Improved handling of tool options via pragmas
+  * Improved desugaring of (non-linear) functional pattern
+  * Improved desugaring of string literal pattern in case-expressions
+
+  Bug fixes
+  ---------
+  * Fixed bug with tuple constructor not being recognized in some cases
+  * Fixed bug where a cyclic module import leads to a compiler crash in rare cases
+  * Fixed multiple bugs where type annotations in the generated flat curry code were incorrect
+
+  CI, library and build improvements
+  ----------------------------------
+  * Now using GHC 9.2.7 (stack LTS 20.22)
+  * Added the option ('-tbfc') to export typed flat curry in a binary format
+  * Passes 'allow-different-user' to stack to fix CI and multi-user problems
+  * Stack is now using a locally installed GHC to avoid build problems
+  * Added *.hie file to improve IDE support for development of the complier frontend
+  * Added gitlab CI pipeline configuration
+  * Exported and generalizeed various files and functions for consuption in different tools (backends, language server)
+
 Version 2.0.0
 =============
 
@@ -324,4 +357,3 @@ Version 0.3.0
   * All compiler warnings removed.
 
   * Fixed various implementation bugs (#9, #16, #19, #29, #289).
-
