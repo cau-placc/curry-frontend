@@ -30,14 +30,18 @@ import Prelude hiding ((<>))
 import           Control.Monad            (filterM, liftM, liftM2, when)
 import qualified Control.Monad.State as S
 import           Data.List                (nub, partition)
+import qualified Data.Map as Map          (Map, empty, insert, lookup)
+import qualified Data.Set as Set          ( Set, fromList, isSubsetOf, size
+                                          , toAscList, union)
 
 import Base.Expr
 import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.TopEnv
 import Base.Utils    (findMultiples)
 
-import Env.TypeConstructor
-import Env.Type
+import           Env.TypeConstructor
+import           Env.Type
+import qualified Env.Class as CE
 
 import Curry.Base.Ident
 import Curry.Base.SpanInfo
@@ -45,14 +49,20 @@ import Curry.Base.Pretty
 import Curry.Syntax
 
 data ISCState = ISCState
-  { typeEnv :: TypeEnv
-  , errors  :: [Message]
+  { typeEnv    :: TypeEnv
+  , simpClsEnv :: SimpleClassEnv
+  , errors     :: [Message]
   }
 
 type ISC = S.State ISCState
 
+type SimpleClassEnv = Map.Map QualIdent [CE.FunDep]
+
 getTypeEnv :: ISC TypeEnv
 getTypeEnv = S.gets typeEnv
+
+getSimpleClassEnv :: ISC SimpleClassEnv
+getSimpleClassEnv = S.gets simpClsEnv
 
 -- |Report a syntax error
 report :: Message -> ISC ()
@@ -60,8 +70,9 @@ report msg = S.modify $ \ s -> s { errors = msg : errors s }
 
 intfSyntaxCheck :: Interface -> (Interface, [Message])
 intfSyntaxCheck (Interface n is ds) = (Interface n is ds', reverse $ errors s')
-  where (ds', s') = S.runState (mapM checkIDecl ds) (ISCState env [])
+  where (ds', s') = S.runState (mapM checkIDecl ds) (ISCState env simpleClsEnv [])
         env = foldr bindType (fmap toTypeKind initTCEnv) ds
+        simpleClsEnv = foldr bindClass Map.empty ds
 
 -- The compiler requires information about the arity of each defined type
 -- constructor as well as information whether the type constructor
@@ -81,6 +92,13 @@ bindType (HidingClassDecl  _ _ cls _ _ _) = qualBindTopEnv cls $ Class cls []
 bindType (IClassDecl _ _ cls _ _ _ ms hs) = qualBindTopEnv cls $
   Class cls (filter (`notElem` hs) (map imethod ms))
 bindType (IInstanceDecl      _ _ _ _ _ _) = id
+
+-- Adds all information regarding functional dependencies to the simple
+-- class env
+bindClass :: IDecl -> SimpleClassEnv -> SimpleClassEnv
+bindClass (IClassDecl _ _ cls _ tvs fds _ _) = let fds' = map (CE.toFunDep tvs) fds
+                                               in  Map.insert cls fds'
+bindClass _                                  = id
 
 -- The checks applied to the interface are similar to those performed
 -- during syntax checking of type expressions.
@@ -189,7 +207,8 @@ checkQualType (QualTypeExpr spi cx ty) = do
 checkQualTypes :: Context -> [TypeExpr] -> ISC (Context, [TypeExpr])
 checkQualTypes cx tys = do
   tys' <- mapM checkType tys
-  cx'  <- checkClosedContext (fv tys') cx
+  fvs <- Set.toAscList <$> funDepCoverage cx (Set.fromList $ fv tys)
+  cx'  <- checkClosedContext fvs cx
   return (cx', tys')
 
 checkClosedContext :: [Ident] -> Context -> ISC Context
@@ -270,6 +289,60 @@ checkTypeConstructor spi tc = do
                   return $ ConstructorType spi tc
     _          ->
       internalError "Checks.InterfaceSyntaxCheck.checkTypeConstructor"
+
+------------------------------------------------------------------------------
+-- Functional dependency coverage
+------------------------------------------------------------------------------
+
+qualClassIdent :: QualIdent -> TypeEnv -> Maybe QualIdent
+qualClassIdent qcls tEnv = case qualLookupTypeKind qcls tEnv of
+  []              -> Nothing
+  [Class qcls' _] -> Just qcls'
+  [_]             -> Nothing
+  _               -> Nothing
+
+
+funDepCoverage :: Context -> Set.Set Ident -> ISC (Set.Set Ident)
+funDepCoverage cx tvs = do
+  simpleClsEnv <- getSimpleClassEnv
+  tyEnv      <- getTypeEnv
+  let tvs' = funDepCoverage' simpleClsEnv tyEnv tvs
+  if Set.size tvs' == Set.size tvs
+  then return tvs
+  else funDepCoverage cx tvs'
+  where
+   funDepCoverage' clsEnv tyEnv covVars =  
+    foldr (funDepCoverage'' clsEnv tyEnv) covVars cx
+  
+   funDepCoverage'' clsEnv tyEnv c@(Constraint _ cls _) covVars =
+    case qualClassIdent cls tyEnv of
+      Nothing   -> covVars
+      Just qcls -> 
+           let fds = lookupFunDeps qcls clsEnv  
+           in foldr (funDepCoverage''' c) covVars fds
+
+   funDepCoverage''' (Constraint _ _ tys) (lixs,rixs) covVars =
+    let lixs' = Set.toAscList lixs
+        rixs' = Set.toAscList rixs
+    in if Set.fromList (fv (filterIndices tys lixs')) `Set.isSubsetOf` tvs 
+       then covVars `Set.union` Set.fromList (fv (filterIndices tys rixs'))
+       else covVars
+       
+
+lookupFunDeps :: QualIdent -> SimpleClassEnv -> [CE.FunDep]
+lookupFunDeps qcls simpleClsEnv = case Map.lookup qcls simpleClsEnv of
+  Nothing  -> []
+  Just fds -> fds
+
+filterIndices :: [a] -> [Int] -> [a]
+filterIndices xs is = filterIndices' xs is 0
+  where
+    filterIndices' []     _      _             = []
+    filterIndices' _      []     _             = []
+    filterIndices' (y:ys) (j:js) k | j == k    = y : filterIndices' ys js (k+1)
+                                   | otherwise = filterIndices' ys (j:js) (k+1)
+
+
 
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions
