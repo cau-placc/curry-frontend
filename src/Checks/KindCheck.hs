@@ -47,6 +47,7 @@ import Base.SCC
 import Base.TopEnv
 import Base.Types
 import Base.TypeExpansion
+import Base.Utils (foldr2)
 
 import Env.Class
 import Env.TypeConstructor
@@ -601,7 +602,9 @@ kcTypeSig tcEnv clsEnv qty@(QualTypeExpr p cx ty) mc = do
                    Constraint p' (getOrigName m cls tcEnv) tys)
                 (maybeToList mc ++ cx)
       cxVs = nub $ fv cx'
-      pty = toPredType cxVs OPred (QualTypeExpr NoSpanInfo cx' ty)
+      cx'' = desugarContext cx'
+      ty'  = desugarTypeExpr ty
+      pty = toPredType cxVs OPred (QualTypeExpr NoSpanInfo cx'' ty')
       ambIds = filter (< length cxVs) $ ambiguousTypeVars clsEnv pty Set.empty
       clsVs = maybe [] fv mc
       (ambClsVs, ambOVs) = partition (`elem` clsVs) $ map (cxVs !!) ambIds
@@ -761,6 +764,37 @@ isTypeOrNewtypeDecl :: Decl a -> Bool
 isTypeOrNewtypeDecl (NewtypeDecl _ _ _ _ _) = True
 isTypeOrNewtypeDecl (TypeDecl      _ _ _ _) = True
 isTypeOrNewtypeDecl _                       = False
+
+desugarQualTypeExpr :: QualTypeExpr -> QualTypeExpr
+desugarQualTypeExpr (QualTypeExpr spi cx ty) =
+   QualTypeExpr spi (desugarContext cx) (desugarTypeExpr ty)
+
+desugarContext :: Context -> Context
+desugarContext = map desugarConstraint
+
+desugarConstraint :: Constraint -> Constraint
+desugarConstraint (Constraint spi qcls tys) =
+   Constraint spi qcls (map desugarTypeExpr tys) 
+
+desugarTypeExpr :: TypeExpr -> TypeExpr
+desugarTypeExpr (ConstructorType spi tc) = ConstructorType spi tc
+desugarTypeExpr (VariableType spi tv)    = VariableType spi tv
+desugarTypeExpr (ApplyType spi ty1 ty2) = ApplyType spi (desugarTypeExpr ty1) 
+                                                        (desugarTypeExpr ty2)
+desugarTypeExpr (TupleType       spi []) = ConstructorType spi qUnitId
+desugarTypeExpr (TupleType       spi [ty]) 
+  = ApplyType spi (ConstructorType spi qUnitId) (desugarTypeExpr ty)
+desugarTypeExpr (TupleType       spi tys')
+  = let tupCons = qTupleId (length tys')
+    in ApplyType spi (ConstructorType spi tupCons) 
+                     (foldr1 (ApplyType spi) (map desugarTypeExpr tys')) 
+desugarTypeExpr (ArrowType spi ty1 ty2) = 
+  ApplyType spi (ConstructorType spi qArrowId) 
+                  (ApplyType spi (desugarTypeExpr ty1) (desugarTypeExpr ty2))
+desugarTypeExpr (ListType spi ty) = ApplyType spi (ConstructorType spi qListId)
+                                                  (desugarTypeExpr ty)
+desugarTypeExpr (ParenType spi ty)      = ParenType spi (desugarTypeExpr ty)
+desugarTypeExpr (ForallType spi vs ty)  = ForallType spi vs (desugarTypeExpr ty)
 
 -- ---------------------------------------------------------------------------
 -- Error messages
