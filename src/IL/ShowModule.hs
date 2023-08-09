@@ -127,7 +127,7 @@ showsConstrTerm (ConstructorPattern ty qident idents)
   = showsString "(ConstructorPattern "
   . showsType ty
   . showsQualIdent qident . space
-  . showsList (showsIdent . snd) idents
+  . showsList (showsPair showsType showsIdent) idents
   . showsString ")"
 showsConstrTerm (VariablePattern ty ident)
   = showsString "(VariablePattern "
