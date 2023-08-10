@@ -631,21 +631,21 @@ kcType tcEnv what doc k ty = do
 
 kcClassApl :: TCEnv -> String -> Doc -> QualIdent -> Kind -> [TypeExpr]
            -> KCM ()
-kcClassApl tcEnv what doc qcls k = kcClassApl' k
+kcClassApl tcEnv what doc qcls k' tys' = kcClassApl' k' tys'
  where
-  clsAr = kindArity k
+  clsAr = kindArity k'
 
   kcClassApl' :: Kind -> [TypeExpr] -> KCM ()
   kcClassApl' (KindArrow k1 k2)  (ty : tys) =
     kcType tcEnv what doc k1 ty >> kcClassApl' k2 tys
   kcClassApl' KindConstraint     []         = ok
-  kcClassApl' k'@(KindArrow _ _) []         = report $
-    errClassKindMismatch what doc qcls (clsAr - kindArity k') clsAr
+  kcClassApl' k@(KindArrow _ _) []         = report $
+    errClassKindMismatch what doc qcls (clsAr - kindArity k) clsAr
   kcClassApl' KindConstraint     (_  : tys) = report $
     errClassKindMismatch what doc qcls (clsAr + length tys + 1) clsAr
   kcClassApl' _                  _          =
-    internalError $ "KindCheck.kcClassApl: Class " ++ show qcls ++
-                      " has invalid kind " ++ show k
+    internalError $ "KindCheck.kcClassApl: " ++ what ++ " " ++ show qcls ++
+                      " has invalid kind " ++ show k' ++ " applied to " ++ show tys'
 
 kcQualTypeExpr :: TCEnv -> QualTypeExpr -> KCM ()
 kcQualTypeExpr tcEnv qty@(QualTypeExpr _ cx ty) = do

@@ -23,6 +23,7 @@ module Base.Messages
 import Control.Monad              (unless, when)
 import Control.Monad.IO.Class     (MonadIO(..))
 import Data.List                  (sort)
+import GHC.Stack                  (HasCallStack)
 import System.IO                  (hFlush, hPutStrLn, stderr, stdout)
 import System.Exit                (exitFailure)
 
@@ -30,9 +31,6 @@ import Curry.Base.Message         ( Message, message, posMessage, spanInfoMessag
                                   , ppWarning, ppMessagesWithPreviews, ppError)
 import Curry.Base.Pretty          (Doc, text)
 import CompilerOpts               (Options (..), WarnOpts (..), Verbosity (..))
-import GHC.Stack (HasCallStack)
-
-import GHC.Stack (HasCallStack)
 
 -- |Print a status message, depending on the current verbosity
 status :: MonadIO m => Options -> String -> m ()
