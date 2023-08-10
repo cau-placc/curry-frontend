@@ -53,17 +53,17 @@
   all names must be properly qualified before calling this module.
 -}
 {-# LANGUAGE CPP           #-}
-{-# LANGUAGE TupleSections #-}
 module Transformations.Desugar (desugar) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative        ((<$>), (<*>))
-#endif
+
+
+
 import           Control.Arrow              (first, second)
-import           Control.Monad              (liftM2)
+import           Control.Monad              (liftM2, mapAndUnzipM)
 import           Control.Monad.Extra        (concatMapM)
 import qualified Control.Monad.State as S   (State, runState, gets, modify)
 import           Data.Foldable              (foldrM)
+import           Data.Functor               ((<&>))
 import           Data.List                  ( elemIndex, nub, partition
                                             , tails )
 import           Data.Maybe                 (fromMaybe)
@@ -148,7 +148,7 @@ getNextId = do
 -- Create a fresh variable ident for a given prefix with a monomorphic type
 freshVar :: Typeable t => String -> t -> DsM (PredType, Ident)
 freshVar prefix t = do
-  v <- (mkIdent . (prefix ++) . show) <$> getNextId
+  v <- mkIdent . (prefix ++) . show <$> getNextId
   return (predType $ typeOf t, v)
 
 -- ---------------------------------------------------------------------------
@@ -174,7 +174,7 @@ dsTypeDecl (DataDecl si tc tvs cs clss) = do
 dsTypeDecl (NewtypeDecl si tc tvs nc clss) = do
   nc' <- dsNewConstrDecl nc
   return [NewtypeDecl si tc tvs nc' clss]
-dsTypeDecl (TypeDecl _ _ _ _) = return []
+dsTypeDecl TypeDecl {} = return []
 dsTypeDecl d = return [d]
 
 dsConstrDecl :: ConstrDecl -> DsM ConstrDecl
@@ -302,12 +302,12 @@ dsDeclRhs _                          =
 -- At last, we desugar the rhs of the equation.
 -- More details and an example can be found below.
 dsEquation :: Equation PredType -> DsM (Equation PredType)
-dsEquation (Equation p lhs rhs) = do
+dsEquation (Equation p ty lhs rhs) = do
   (ds1, cs1, ts1) <- dsFunctionalPatterns p ts
   (     cs2, ts2) <- dsNonLinearity ts1
   (ds2     , ts3) <- mapAccumM (dsPat True p) [] ts2 --TODO: Remove position arguments in transformation phases
   rhs' <- dsRhs (constrain cs1 . constrain cs2) (addDecls (ds1 ++ ds2) rhs)
-  return $ Equation p (FunLhs NoSpanInfo f ts3) rhs'
+  return $ Equation p ty (FunLhs NoSpanInfo f ts3) rhs'
   where (f, ts) = flatLhs lhs
 
 -- Constrain an expression by a list of constraints.
@@ -330,9 +330,8 @@ constrain cs e = if null cs then e else foldr1 (&) cs &> e
 
 dsRhs :: (Expression PredType -> Expression PredType)
       -> Rhs PredType -> DsM (Rhs PredType)
-dsRhs f rhs =   expandRhs (prelFailed (typeOf rhs)) f rhs
-            >>= dsExpr (getSpanInfo rhs)
-            >>= return . simpleRhs (getSpanInfo rhs)
+dsRhs f rhs =   (expandRhs (prelFailed (typeOf rhs)) f rhs
+            >>= dsExpr (getSpanInfo rhs)) <&> simpleRhs (getSpanInfo rhs)
 
 expandRhs :: Expression PredType -> (Expression PredType -> Expression PredType)
           -> Rhs PredType -> DsM (Expression PredType)
@@ -394,11 +393,11 @@ dsFunctionalPatterns
   -> DsM ([Decl PredType], [Expression PredType], [Pattern PredType])
 dsFunctionalPatterns p ts = do
   -- Gather all functional patterns (also nested ones)
-  (bss1, ts1) <- unzip <$> mapM funPats ts
+  (bss1, ts1) <- mapAndUnzipM funPats ts
   -- Get all pattern variables in functional patterns
   let funPatVars = nub $ concatMap (patternVars . snd) (concat bss1)
   -- Replace all pattern variables in ts' that are in funPatVars with fresh variables to account for the non-linearity
-  (bss2, ts2) <- unzip <$> mapM (dsFunctionalPatternsNonLinear (map fst3 funPatVars)) ts1
+  (bss2, ts2) <- mapAndUnzipM (dsFunctionalPatternsNonLinear (map fst3 funPatVars)) ts1
   -- Convert patterns of lazy binds to expressions
   let (vs, ts') = unzip $ concat $ bss1 ++ bss2
       (es, css) = unzip $ map fp2Expr ts'
@@ -406,7 +405,7 @@ dsFunctionalPatterns p ts = do
   let cs = [mkTuple es =:<= mkTuple (map (uncurry mkVar) vs) | not $ null vs]
   -- Create free variable declarations for non-anonymous funPatVars
   let ds = map (\ (v, _, pty) -> FreeDecl p [Var pty v]) $
-             filter (not . isAnonId . fst3) $ funPatVars
+             filter (not . isAnonId . fst3) funPatVars
   -- Return (declarations, constraints, desugared patterns)
   return (ds, concat (cs : css), ts2)
   where
@@ -415,15 +414,15 @@ dsFunctionalPatterns p ts = do
 
 dsFunctionalPatternsNonLinear :: [Ident] -> Pattern PredType
                               -> DsM ([((PredType, Ident), Pattern PredType)], Pattern PredType)
-dsFunctionalPatternsNonLinear _ p@(LiteralPattern _ _ _) = return ([], p)
-dsFunctionalPatternsNonLinear _ p@(NegativePattern         _ _ _) = return ([], p)
+dsFunctionalPatternsNonLinear _ p@LiteralPattern {} = return ([], p)
+dsFunctionalPatternsNonLinear _ p@NegativePattern {} = return ([], p)
 dsFunctionalPatternsNonLinear fvs p@(VariablePattern         _ _ v)
   | v `elem` fvs = do
     v' <- freshVar "#nonlinear" p
     return ([(v', p)], uncurry (VariablePattern NoSpanInfo) v')
   | otherwise = return ([], p)
 dsFunctionalPatternsNonLinear fvs (ConstructorPattern spi pty qid ts) = do
-  (bss, ts') <- unzip <$> mapM (dsFunctionalPatternsNonLinear fvs) ts
+  (bss, ts') <- mapAndUnzipM (dsFunctionalPatternsNonLinear fvs) ts
   return (concat bss, ConstructorPattern spi pty qid ts')
 dsFunctionalPatternsNonLinear fvs (InfixPattern      spi pty t1 qid t2) = do
   (bs1, t1') <- dsFunctionalPatternsNonLinear fvs t1
@@ -431,14 +430,14 @@ dsFunctionalPatternsNonLinear fvs (InfixPattern      spi pty t1 qid t2) = do
   return (bs1 ++ bs2, InfixPattern spi pty t1' qid t2')
 dsFunctionalPatternsNonLinear fvs (ParenPattern              _ t) = dsFunctionalPatternsNonLinear fvs t
 dsFunctionalPatternsNonLinear fvs (RecordPattern  spi pty qid fs) = do
-  (bss, fs') <- unzip <$> mapM (\(Field spi' pty' a) -> second (Field spi' pty')
+  (bss, fs') <- mapAndUnzipM (\(Field spi' pty' a) -> second (Field spi' pty')
                                   <$> dsFunctionalPatternsNonLinear fvs a) fs
   return (concat bss, RecordPattern spi pty qid fs')
 dsFunctionalPatternsNonLinear fvs (TuplePattern spi ts) = do
-  (bss, ts') <- unzip <$> mapM (dsFunctionalPatternsNonLinear fvs) ts
+  (bss, ts') <- mapAndUnzipM (dsFunctionalPatternsNonLinear fvs) ts
   return (concat bss, TuplePattern spi ts')
 dsFunctionalPatternsNonLinear fvs (ListPattern spi pty ts) = do
-  (bss, ts') <- unzip <$> mapM (dsFunctionalPatternsNonLinear fvs) ts
+  (bss, ts') <- mapAndUnzipM (dsFunctionalPatternsNonLinear fvs) ts
   return (concat bss, ListPattern spi pty ts')
 dsFunctionalPatternsNonLinear fvs p@(AsPattern               spi v t)
   | v `elem` fvs = do
@@ -448,15 +447,15 @@ dsFunctionalPatternsNonLinear fvs p@(AsPattern               spi v t)
     (bs, t') <- dsFunctionalPatternsNonLinear fvs t
     return (bs, AsPattern spi v t')
 dsFunctionalPatternsNonLinear fvs (LazyPattern               _ t) = dsFunctionalPatternsNonLinear fvs t
-dsFunctionalPatternsNonLinear _ p@(FunctionPattern    _ _ _ _) = internalError $ "Desugar.dsFunctionalPatternsNonLinear: functional pattern " ++ show p
-dsFunctionalPatternsNonLinear _ p@(InfixFuncPattern _ _ _ _ _) = internalError $ "Desugar.dsFunctionalPatternsNonLinear: functional pattern " ++ show p
+dsFunctionalPatternsNonLinear _ p@FunctionPattern {}  = internalError $ "Desugar.dsFunctionalPatternsNonLinear: functional pattern " ++ show p
+dsFunctionalPatternsNonLinear _ p@InfixFuncPattern {} = internalError $ "Desugar.dsFunctionalPatternsNonLinear: functional pattern " ++ show p
 
 funPats :: Pattern PredType -> DsM ([((PredType, Ident), Pattern PredType)], Pattern PredType)
-funPats p@(LiteralPattern          _ _ _) = return ([], p)
-funPats p@(NegativePattern         _ _ _) = return ([], p)
-funPats p@(VariablePattern         _ _ _) = return ([], p)
+funPats p@LiteralPattern {}  = return ([], p)
+funPats p@NegativePattern {} = return ([], p)
+funPats p@VariablePattern {} = return ([], p)
 funPats (ConstructorPattern   spi pty qid ts) = do
-  (bss, ts') <- unzip <$> mapM funPats ts
+  (bss, ts') <- mapAndUnzipM funPats ts
   return (concat bss, ConstructorPattern spi pty qid ts')
 funPats (InfixPattern      spi pty t1 qid t2) = do
   (bs1, t1') <- funPats t1
@@ -464,23 +463,23 @@ funPats (InfixPattern      spi pty t1 qid t2) = do
   return (bs1 ++ bs2, InfixPattern spi pty t1' qid t2')
 funPats (ParenPattern              _ t) = funPats t
 funPats (RecordPattern  spi pty qid fs) = do
-  (bss, fs') <- unzip <$> mapM (\(Field spi' pty' a) -> second (Field spi' pty')
+  (bss, fs') <- mapAndUnzipM (\(Field spi' pty' a) -> second (Field spi' pty')
                                     <$> funPats a) fs
   return (concat bss, RecordPattern spi pty qid fs')
 funPats (TuplePattern spi ts) = do
-  (bss, ts') <- unzip <$> mapM funPats ts
+  (bss, ts') <- mapAndUnzipM funPats ts
   return (concat bss, TuplePattern spi ts')
 funPats (ListPattern spi pty ts) = do
-  (bss, ts') <- unzip <$> mapM funPats ts
+  (bss, ts') <- mapAndUnzipM funPats ts
   return (concat bss, ListPattern spi pty ts')
 funPats (AsPattern             spi v t) = do
   (bs, t') <- funPats t
   return (bs, AsPattern spi v t')
 funPats (LazyPattern               _ t) = funPats t
-funPats fp@(FunctionPattern    _ _ _ _) = do
+funPats fp@FunctionPattern {}  = do
   v <- freshVar "#funpat" fp
   return ([(v, fp)], uncurry (VariablePattern NoSpanInfo) v)
-funPats fp@(InfixFuncPattern _ _ _ _ _) = do
+funPats fp@InfixFuncPattern {} = do
   v <- freshVar "#funpat" fp
   return ([(v, fp)], uncurry (VariablePattern NoSpanInfo) v)
 
@@ -491,7 +490,7 @@ fp2Expr (NegativePattern         _ pty l) =
 fp2Expr (VariablePattern         _ pty v) = (mkVar pty v, [])
 fp2Expr (ConstructorPattern  _  pty c ts) =
   let (ts', ess) = unzip $ map fp2Expr ts
-      pty' = predType $ foldr TypeArrow (unpredType pty) $ map typeOf ts
+      pty' = predType $ foldr (TypeArrow . typeOf) (unpredType pty) ts
   in  (apply (Constructor NoSpanInfo pty' c) ts', concat ess)
 fp2Expr (InfixPattern   _ pty t1 op t2) =
   let (t1', es1) = fp2Expr t1
@@ -507,12 +506,12 @@ fp2Expr (ListPattern            _ pty ts) =
   in  (List NoSpanInfo pty ts', concat ess)
 fp2Expr (FunctionPattern      _ pty f ts) =
   let (ts', ess) = unzip $ map fp2Expr ts
-      pty' = predType $ foldr TypeArrow (unpredType pty) $ map typeOf ts
+      pty' = predType $ foldr (TypeArrow . typeOf) (unpredType pty) ts
   in  (apply (Variable NoSpanInfo pty' f) ts', concat ess)
 fp2Expr (InfixFuncPattern _ pty t1 op t2) =
   let (t1', es1) = fp2Expr t1
       (t2', es2) = fp2Expr t2
-      pty' = predType $ foldr TypeArrow (unpredType pty) $ map typeOf [t1, t2]
+      pty' = predType $ foldr (TypeArrow . typeOf) (unpredType pty) [t1, t2]
   in  (InfixApply NoSpanInfo t1' (InfixOp pty' op) t2', es1 ++ es2)
 fp2Expr (AsPattern                 _ v t) =
   let (t', es) = fp2Expr t
@@ -545,8 +544,8 @@ type NonLinearEnv = (Set.Set Ident, [Expression PredType])
 
 dsNonLinear :: NonLinearEnv -> Pattern PredType
             -> DsM (NonLinearEnv, Pattern PredType)
-dsNonLinear env l@(LiteralPattern        _ _ _) = return (env, l)
-dsNonLinear env n@(NegativePattern       _ _ _) = return (env, n)
+dsNonLinear env l@LiteralPattern {}  = return (env, l)
+dsNonLinear env n@NegativePattern {} = return (env, n)
 dsNonLinear env t@(VariablePattern       _ _ v)
   | isAnonId v         = return (env, t)
   | v `Set.member` vis = do
@@ -580,8 +579,8 @@ dsNonLinear env (AsPattern               _ v t) = do
     _ -> internalError "Desugar.dsNonLinear: Not a variable pattern"
 dsNonLinear env (LazyPattern               _ t) =
   second (LazyPattern NoSpanInfo) <$> dsNonLinear env t
-dsNonLinear _   (FunctionPattern    _ _ _ _) = internalError "Desugar.dsNonLinear: function pattern"
-dsNonLinear _   (InfixFuncPattern _ _ _ _ _) = internalError "Desugar.dsNonLinear: infix function pattern"
+dsNonLinear _   FunctionPattern {}  = internalError "Desugar.dsNonLinear: function pattern"
+dsNonLinear _   InfixFuncPattern {} = internalError "Desugar.dsNonLinear: infix function pattern"
 
 mkStrictEquality :: Ident -> (PredType, Ident) -> Expression PredType
 mkStrictEquality x (pty, y) = mkVar pty x =:= mkVar pty y
@@ -628,7 +627,7 @@ dsLiteralPat inEq pty s@(String cs)
 
 dsPat :: Bool -> SpanInfo -> [Decl PredType] -> Pattern PredType
       -> DsM ([Decl PredType], Pattern PredType)
-dsPat _ _ ds v@(VariablePattern       _ _ _) = return (ds, v)
+dsPat _ _ ds v@VariablePattern {} = return (ds, v)
 dsPat inEq p ds (LiteralPattern      _ pty l) =
   either (dsPat inEq p ds) (return . (,) ds) (dsLiteralPat inEq pty l)
 dsPat inEq p ds (NegativePattern       _ pty l) =
@@ -673,10 +672,10 @@ dsAs p v (ds, t) = case t of
 dsLazy :: SpanInfo -> [Decl PredType] -> Pattern PredType
        -> DsM ([Decl PredType], Pattern PredType)
 dsLazy p ds t = case t of
-  VariablePattern _ _ _ -> return (ds, t)
-  ParenPattern     _ t' -> dsLazy p ds t'
-  AsPattern      _ v t' -> dsAs p v <$> dsLazy p ds t'
-  LazyPattern      _ t' -> dsLazy p ds t'
+  VariablePattern {} -> return (ds, t)
+  ParenPattern  _ t' -> dsLazy p ds t'
+  AsPattern   _ v t' -> dsAs p v <$> dsLazy p ds t'
+  LazyPattern   _ t' -> dsLazy p ds t'
   _                 -> do
     (pty, v') <- freshVar "_#lazy" t
     return (patDecl NoSpanInfo t (mkVar pty v') : ds,
@@ -703,9 +702,9 @@ dsExpr :: SpanInfo -> Expression PredType -> DsM (Expression PredType)
 dsExpr p (Literal     _ pty l) =
   either (dsExpr p) return (dsLiteral pty l)
 dsExpr _ var@(Variable _ pty v)
-  | isAnonId (unqualify v)   = return $ prelUnknown $ unpredType pty
-  | otherwise                = return var
-dsExpr _ c@(Constructor _ _ _) = return c
+  | isAnonId (unqualify v)     = return $ prelUnknown $ unpredType pty
+  | otherwise                  = return var
+dsExpr _ c@Constructor {}      = return c
 dsExpr p (Paren           _ e) = dsExpr p e
 dsExpr p (Typed       _ e qty) = Typed NoSpanInfo
   <$> dsExpr p e <*> dsQualTypeExpr qty
@@ -715,7 +714,7 @@ dsExpr p (Record   _ pty c fs) = do
   let (ls, tys) = argumentTypes (unpredType pty) c vEnv
       esMap = map field2Tuple fs
       unknownEs = map prelUnknown tys
-      maybeEs = map (flip lookup esMap) ls
+      maybeEs = map (`lookup` esMap) ls
       es = zipWith fromMaybe unknownEs maybeEs
   dsExpr p (applyConstr pty c tys es)
 dsExpr p (RecordUpdate _ e fs) = do
@@ -725,7 +724,7 @@ dsExpr p (RecordUpdate _ e fs) = do
         pty = predType ty
         tc = rootOfType (arrowBase ty)
         updateAlt (RecordConstr c ls _)
-          | all (`elem` qls2) (map fieldLabel fs)= do
+          | all ((`elem` qls2) . fieldLabel) fs= do
             let qc = qualifyLike tc c
             vEnv <- getValueEnv
             let (qls, tys) = argumentTypes ty qc vEnv
@@ -733,7 +732,7 @@ dsExpr p (RecordUpdate _ e fs) = do
             let pat = constrPattern pty qc vs
                 esMap = map field2Tuple fs
                 originalEs = map (uncurry mkVar) vs
-                maybeEs = map (flip lookup esMap) qls
+                maybeEs = map (`lookup` esMap) qls
                 es = zipWith fromMaybe originalEs maybeEs
             return [(pat, applyConstr pty qc tys es)]
           where qls2 = map (qualifyLike tc) ls
@@ -745,7 +744,7 @@ dsExpr p (Tuple      _ es) =
         tys = map typeOf es
 dsExpr p (List   _ pty es) = dsList cons nil <$> mapM (dsExpr p) es
   where nil = Constructor NoSpanInfo pty qNilId
-        cons = (Apply NoSpanInfo) . (Apply NoSpanInfo)
+        cons = Apply NoSpanInfo . Apply NoSpanInfo
           (Constructor NoSpanInfo
             (predType $ consType $ elemType $ unpredType pty) qConsId)
 dsExpr p (ListCompr          _ e qs) = dsListComp p e qs
@@ -865,8 +864,8 @@ expandAlt v ct (Alt p t rhs : alts) = caseAlt p t <$> expandRhs e0 id rhs
   altPattern (Alt _ t1 _) = t1
 
 isCompatible :: Pattern a -> Pattern a -> Bool
-isCompatible (VariablePattern _ _ _) _ = True
-isCompatible _ (VariablePattern _ _ _) = True
+isCompatible VariablePattern {}  _ = True
+isCompatible _ VariablePattern {}  = True
 isCompatible (AsPattern _ _ t1) t2 = isCompatible t1 t2
 isCompatible t1 (AsPattern _ _ t2) = isCompatible t1 t2
 isCompatible (ConstructorPattern _ _ c1 ts1) (ConstructorPattern _ _ c2 ts2)
@@ -898,11 +897,10 @@ dsStmt (StmtBind _ t e1) e' = do
   let func = mkLambda [uncurry (VariablePattern NoSpanInfo) v] $
                mkCase Rigid (uncurry mkVar v) $
                  caseAlt NoSpanInfo t e' :
-                   if failable
-                     then [caseAlt NoSpanInfo
-                                   (uncurry (VariablePattern NoSpanInfo) v)
-                                   (failedPatternMatch $ typeOf e')]
-                     else []
+                    [ caseAlt NoSpanInfo
+                        (uncurry (VariablePattern NoSpanInfo) v)
+                        (failedPatternMatch $ typeOf e')
+                    | failable ]
   return $ apply (prelBind (typeOf e1) (typeOf t) (typeOf e')) [e1, func]
   where failedPatternMatch ty =
           apply (prelFail ty)
@@ -913,7 +911,7 @@ checkFailableBind :: Pattern a -> DsM Bool
 checkFailableBind (ConstructorPattern _ _ idt ps   ) = do
   tcEnv <- getTyConsEnv
   case qualLookupTypeInfo idt tcEnv of
-    [RenamingType _ _ _ ] -> or <$> mapM checkFailableBind ps -- or [] == False
+    [RenamingType {}    ] -> or <$> mapM checkFailableBind ps -- or [] == False
     [DataType     _ _ cs]
       | length cs == 1    -> or <$> mapM checkFailableBind ps
       | otherwise         -> return True
@@ -921,7 +919,7 @@ checkFailableBind (ConstructorPattern _ _ idt ps   ) = do
 checkFailableBind (InfixPattern       _ _ p1 idt p2) = do
   tcEnv <- getTyConsEnv
   case qualLookupTypeInfo idt tcEnv of
-    [RenamingType _ _ _ ] -> (||) <$> checkFailableBind p1
+    [RenamingType {}    ] -> (||) <$> checkFailableBind p1
                                   <*> checkFailableBind p2
     [DataType     _ _ cs]
       | length cs == 1    -> (||) <$> checkFailableBind p1
@@ -931,7 +929,7 @@ checkFailableBind (InfixPattern       _ _ p1 idt p2) = do
 checkFailableBind (RecordPattern      _ _ idt fs   ) = do
   tcEnv <- getTyConsEnv
   case qualLookupTypeInfo idt tcEnv of
-    [RenamingType _ _ _ ] -> or <$> mapM (checkFailableBind . fieldContent) fs
+    [RenamingType {}    ] -> or <$> mapM (checkFailableBind . fieldContent) fs
     [DataType     _ _ cs]
       | length cs == 1    -> or <$> mapM (checkFailableBind . fieldContent) fs
       | otherwise         -> return True
@@ -942,7 +940,7 @@ checkFailableBind (TuplePattern       _       ps   ) =
 checkFailableBind (AsPattern          _   _   p    ) = checkFailableBind p
 checkFailableBind (ParenPattern       _       p    ) = checkFailableBind p
 checkFailableBind (LazyPattern        _       _    ) = return False
-checkFailableBind (VariablePattern    _ _ _        ) = return False
+checkFailableBind VariablePattern {}                 = return False
 checkFailableBind _                                  = return True
 -- -----------------------------------------------------------------------------
 -- Desugaring of List Comprehensions
@@ -1009,7 +1007,7 @@ dsQual p (StmtBind _ t l) e
   append e1                  l1 =
     apply (prelAppend (elemType $ typeOf e1)) [e1, l1]
   prelCons ty                   =
-      Constructor NoSpanInfo (predType $ consType ty) $ qConsId
+      Constructor NoSpanInfo (predType $ consType ty) qConsId
 
 -- -----------------------------------------------------------------------------
 -- Desugaring of Lists, labels, fields, and literals

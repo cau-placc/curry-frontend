@@ -24,9 +24,9 @@
 {-# LANGUAGE CPP #-}
 module Transformations.Qual (qual) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative       ((<$>), (<*>), pure)
-#endif
+
+
+
 import qualified Control.Monad.Reader as R (Reader, asks, runReader)
 import           Data.Traversable
 import           Prelude hiding            (mapM)
@@ -58,7 +58,7 @@ qModule (Module spi li ps m es is ds) = do
 
 qExportSpec :: Qual (Maybe ExportSpec)
 qExportSpec Nothing                 = return Nothing
-qExportSpec (Just (Exporting p es)) = (Just . Exporting p) <$> mapM qExport es
+qExportSpec (Just (Exporting p es)) = Just . Exporting p <$> mapM qExport es
 
 qExport :: Qual Export
 qExport (Export            spi x) = Export spi <$> qIdent x

@@ -11,7 +11,8 @@
   TODO
 -}
 
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP           #-}
+{-# LANGUAGE TupleSections #-}
 module Transformations.Dictionary
   ( insertDicts
   , dictTypeId, qDictTypeId, dictConstrId, qDictConstrId
@@ -19,15 +20,15 @@ module Transformations.Dictionary
   , instFunId, qInstFunId, implMethodId, qImplMethodId
   ) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative      ((<$>), (<*>))
-import           Data.Traversable         (traverse)
-#endif
-import           Control.Monad.Extra      (concatMapM, liftM, maybeM, when)
+
+
+
+
+import           Control.Monad.Extra      (concatMapM, maybeM, when)
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 
 import           Data.List         (inits, nub, partition, tails)
-import qualified Data.Map   as Map (Map, empty, insert, lookup, toList)
+import qualified Data.Map   as Map (Map, empty, insert, lookup)
 import           Data.Maybe        (fromMaybe, isJust)
 
 import Curry.Base.Ident
@@ -203,8 +204,9 @@ createClassDictDecl cls tvs ds = do
 createClassDictConstrDecl :: QualIdent -> [Ident] -> [Decl a] -> DTM ConstrDecl
 createClassDictConstrDecl cls tvs ds = do
   let tvs' = tvs ++ filter (`notElem` map unRenameIdent tvs) identSupply
-      mtys = map (fromType tvs' . generalizeMethodType . transformMethodPredType)
-                 [toMethodType cls tvs qty | TypeSig _ fs qty <- ds, _ <- fs]
+      mtys = [(fromType tvs' . generalizeMethodType . transformMethodPredType)
+                (toMethodType cls tvs qty) |
+                TypeSig _ fs qty <- ds, _ <- fs]
   return $ ConstrDecl NoSpanInfo (dictConstrId cls) mtys
 
 -- TODO: Decide whether storing the arity of type classes in the class
@@ -297,7 +299,7 @@ instMethodType vEnv pls cls tys f = PredType (plUnion pls pls'') ty'
 createMethodDecl :: (Ident -> Ident) -> (Ident -> DTM (Decl PredType))
                  -> MethodMap -> Ident -> DTM (Decl PredType)
 createMethodDecl methodId defaultDecl ms f =
-  liftM (renameDecl $ methodId f) $ maybe (defaultDecl f) return (lookup f ms)
+  renameDecl (methodId f) <$> maybe (defaultDecl f) return (lookup f ms)
 
 -- We have to rename the left hand side of lifted function declarations
 -- accordingly which is done by the function 'renameDecl'.
@@ -338,10 +340,10 @@ createStubs (ClassDecl _ _ _ cls _ _ _) = do
   superDictVs <- mapM (freshVar "_#super" . instType) superDictTys
   methodVs <- mapM (freshVar "_#meth" . instType) methodTys
   let patternVs   = superDictVs ++ methodVs
-      pattern     = createDictPattern (instType dictTy) ocls patternVs
-      superStubs  = zipWith3 (createSuperDictStubDecl pattern ocls)
+      pats        = createDictPattern (instType dictTy) ocls patternVs
+      superStubs  = zipWith3 (createSuperDictStubDecl pats ocls)
                       superStubTys sclsInfos superDictVs
-      methodStubs = zipWith3 (createMethodStubDecl pattern)
+      methodStubs = zipWith3 (createMethodStubDecl pats)
                       methodStubTys fs methodVs
   return $ superStubs ++ methodStubs
 createStubs _ = return []
@@ -352,8 +354,7 @@ createDictPattern a cls = constrPattern a (qDictConstrId cls)
 -- taken from Leif-Erik Krueger
 createSuperDictStubDecl :: Pattern Type -> QualIdent -> Type -> Pred
                         -> (Type, Ident) -> Decl Type
-createSuperDictStubDecl t cls a sclsPred v =
-  createStubDecl t a (superDictStubId cls sclsPred) v
+createSuperDictStubDecl t cls a sclsPred = createStubDecl t a (superDictStubId cls sclsPred)
 
 createMethodStubDecl :: Pattern Type -> Type -> Ident -> (Type, Ident) -> Decl Type
 createMethodStubDecl = createStubDecl
@@ -501,7 +502,7 @@ dictTransTypeInfo (DataType tc k cs) =
   DataType tc k $ map dictTransDataConstr cs
 dictTransTypeInfo (RenamingType tc k nc) =
   RenamingType tc k $ dictTransDataConstr nc
-dictTransTypeInfo ti@(AliasType _ _ _ _) = ti
+dictTransTypeInfo ti@AliasType {} = ti
 dictTransTypeInfo (TypeClass cls k ms) =
   TypeClass cls k $ map dictTransClassMethod ms
 dictTransTypeInfo (TypeVar _) =
@@ -593,8 +594,8 @@ instance DictTrans Module where
     modifyValueEnv $ bindInstDecls m clsEnv inEnv
     modifyTyConsEnv $ bindDictTypes m clsEnv
     transDs <- mapM dictTrans liftedDs
-    modifyValueEnv $ dictTransValues
-    modifyTyConsEnv $ dictTransTypes
+    modifyValueEnv dictTransValues
+    modifyTyConsEnv dictTransTypes
     dictEs <- addExports es <$> concatMapM dictExports ds
     return $ Module spi li ps m dictEs is $ transDs ++ stubDs
 
@@ -842,8 +843,8 @@ qualMatch' :: [Pred] -> Type -> [Pred] -> PredList -> Type -> Maybe [Pred]
 qualMatch' pls1 ty1 pls2 ps ty2 = case predListMatch pls2 ty2 of
   Just ty2' ->
     let pls2' = ps
-        resPls = subst (matchPredType' pls1 ty1 pls2' ty2' idSubst) $ pls1 
-    in Just resPls 
+        resPls = subst (matchPredType' pls1 ty1 pls2' ty2' idSubst) pls1
+    in Just resPls
   Nothing -> Nothing
 
 predListMatch :: [Pred] -> Type -> Maybe Type
@@ -905,7 +906,7 @@ instance Specialize Expression where
   specialize e = specialize' e []
 
 specialize' :: Expression Type -> [Expression Type] -> DTM (Expression Type)
-specialize' l@(Literal     _ _ _) es = return $ apply l es
+specialize' l@Literal {}          es = return $ apply l es
 specialize' v@(Variable   _ _ v') es
   | (d:es') <- es, (Variable _ _ f, es'') <- unapply d [] = do
     let ty' = foldr (TypeArrow . typeOf) (typeOf $ Apply NoSpanInfo v d) es''
@@ -914,7 +915,7 @@ specialize' v@(Variable   _ _ v') es
       Just f' -> apply (Variable NoSpanInfo ty' f') $ es'' ++ es'
       Nothing -> apply v es
   | otherwise = return $ apply v es
-specialize' c@(Constructor _ _ _) es = return $ apply c es
+specialize' c@Constructor {}      es = return $ apply c es
 specialize' (Typed       _ e qty) es = do
   e' <- specialize e
   return $ apply (Typed NoSpanInfo e' qty) es
@@ -965,8 +966,8 @@ cleanupExport e@(Export             _ _) = return [e]
 cleanupExport e@(ExportTypeWith spi tc cs) = do
   tcEnv <- getTyConsEnv
   case qualLookupTypeInfo tc tcEnv of
-    [TypeClass _ _ _] -> return $ map (Export spi . qualifyLike tc) cs
-    _                 -> return [e]
+    [TypeClass {}] -> return $ map (Export spi . qualifyLike tc) cs
+    _              -> return [e]
 cleanupExport e                        =
   internalError $ "Dictionary.cleanupExport: " ++ show e
 
@@ -986,8 +987,8 @@ cleanupTyCons :: QualIdent -> DTM ()
 cleanupTyCons tc = do
   tcEnv <- getTyConsEnv
   case qualLookupTypeInfo tc tcEnv of
-    [TypeClass _ _ _] -> modifyTyConsEnv $ qualUnbindTopEnv tc
-    _                 -> return ()
+    [TypeClass {}] -> modifyTyConsEnv $ qualUnbindTopEnv tc
+    _              -> return ()
 
 cleanupPrecEnv :: DTM ()
 cleanupPrecEnv = getPrecEnv >>= mapM_ (cleanupOp . fst) . allBindings
@@ -1015,12 +1016,12 @@ dictTransInterface vEnv clsEnv (Interface m is ds) =
 dictTransIDecl :: ModuleIdent -> ValueEnv -> ClassEnv -> IDecl -> [IDecl]
 dictTransIDecl m vEnv _      d@(IInfixDecl           _ _ _ op)
   | arrowArity (rawType $ opType (qualQualify m op) vEnv) /= 2 = []
-  | otherwise = [d]
-dictTransIDecl _ _    _      d@(HidingDataDecl        _ _ _ _) = [d]
+  | otherwise                                                  = [d]
+dictTransIDecl _ _    _      d@HidingDataDecl {}               = [d]
 dictTransIDecl m _    _      (IDataDecl      p tc k tvs cs hs) =
   [IDataDecl p tc k tvs (map (dictTransIConstrDecl m tvs) cs) hs]
-dictTransIDecl _ _    _      d@(INewtypeDecl      _ _ _ _ _ _) = [d]
-dictTransIDecl _ _    _      d@(ITypeDecl           _ _ _ _ _) = [d]
+dictTransIDecl _ _    _      d@INewtypeDecl {}                 = [d]
+dictTransIDecl _ _    _      d@ITypeDecl {}                    = [d]
 dictTransIDecl m vEnv _      (IFunctionDecl         _ f _ _ _) =
   [iFunctionDeclFromValue m vEnv (qualQualify m f)]
 dictTransIDecl _ _    _      (HidingClassDecl p _ cls k tvs _) =
@@ -1167,7 +1168,7 @@ typeId ty = '(' : typeId' ty ++ ")"
 -- -----------------------------------------------------------------------------
 
 freshVar :: String -> Type -> DTM (Type, Ident)
-freshVar name ty = ((,) ty) . mkIdent . (name ++) . show <$> getNextId
+freshVar name ty = (ty,) . mkIdent . (name ++) . show <$> getNextId
 
 -- -----------------------------------------------------------------------------
 -- Auxiliary functions
@@ -1252,7 +1253,7 @@ stringExpr = foldr (consExpr . Literal NoSpanInfo (predType charType) . Char)
                nilExpr
   where
   nilExpr = Constructor NoSpanInfo (predType stringType) qNilId
-  consExpr = (Apply NoSpanInfo) . (Apply NoSpanInfo)
+  consExpr = Apply NoSpanInfo . Apply NoSpanInfo
     (Constructor NoSpanInfo (predType $ consType charType) qConsId)
 
 -- The function 'varType' is able to lookup both local and global identifiers.
@@ -1269,7 +1270,7 @@ stringExpr = foldr (consExpr . Literal NoSpanInfo (predType charType) . Char)
 -- transformed into a regular predicate. This functionality should be used when
 -- using this type information to check the types of expressions that could
 -- contain class methods (here, this is the case for the module transformation).
--- It should only be disabled if the implicit class constraint of a requested 
+-- It should only be disabled if the implicit class constraint of a requested
 -- class method has to be treated differently than other predicates.
 
 varType :: ModuleIdent -> Ident -> ValueEnv -> TypeScheme
@@ -1306,3 +1307,5 @@ opType op vEnv = case qualLookupValue op vEnv of
   [Value _ _ _                      tySc] -> tySc
   [Label _ _                        tySc] -> tySc
   _ -> internalError $ "Dictionary.opType " ++ show op
+
+{- HLINT ignore "Reduce duplication" -}

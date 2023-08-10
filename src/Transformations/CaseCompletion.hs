@@ -29,7 +29,8 @@
 
     To summarize, this module expands all rigid case expressions.
 -}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP           #-}
+{-# LANGUAGE TupleSections #-}
 module Transformations.CaseCompletion (completeCase) where
 
 
@@ -99,17 +100,17 @@ freshIdent = do
 -- -----------------------------------------------------------------------------
 
 ccDecl :: Decl -> CCM Decl
-ccDecl dd@(DataDecl        _ _ _) = return dd
+ccDecl dd@DataDecl {}             = return dd
 ccDecl edd@(ExternalDataDecl _ _) = return edd
 ccDecl (FunctionDecl qid vs ty e) = FunctionDecl qid vs ty <$> ccExpr e
-ccDecl ed@(ExternalDecl    _ _ _) = return ed
-ccDecl nd@(NewtypeDecl     _ _ _) = return nd
+ccDecl ed@ExternalDecl {}         = return ed
+ccDecl nd@NewtypeDecl {}          = return nd
 
 ccExpr :: Expression -> CCM Expression
 ccExpr l@(Literal       _ _) = return l
 ccExpr v@(Variable      _ _) = return v
-ccExpr f@(Function    _ _ _) = return f
-ccExpr c@(Constructor _ _ _) = return c
+ccExpr f@Function {}         = return f
+ccExpr c@Constructor {}      = return c
 ccExpr (Apply         e1 e2) = Apply <$> ccExpr e1 <*> ccExpr e2
 ccExpr (Case        ea e bs) = do
   e'  <- ccExpr e
@@ -186,7 +187,7 @@ completeConsAlts ea ce alts = do
             _              -> Case ea ce consAlts
   where
   -- existing contructor pattern alternatives
-  consAlts = [ a | a@(Alt (ConstructorPattern _ _ _) _) <- alts ]
+  consAlts = [ a | a@(Alt ConstructorPattern {} _) <- alts ]
 
   -- unifier for data type and concrete pattern type
   dataTy  = case patTy of
@@ -361,14 +362,14 @@ eqExpr :: CS.Type -> IL.Type -> Expression -> Expression -> Expression
 eqExpr ty ty' e1 | IL.TypeConstructor _ [_] <- ty'
   = Apply (Apply (Apply (Function eqListTy eqList 0)
                     (Function dataCharDictType dataCharDict 0)) e1)
-  where eqList = qImplMethodId preludeMIdent qDataId ty $ mkIdent "==="
+  where eqList = qImplMethodId preludeMIdent qDataId [ty] $ mkIdent "==="
         eqListTy = TypeArrow (IL.TypeConstructor (qDictTypeId qDataId) [ty'])
                      (TypeArrow ty' (TypeArrow ty' boolType'))
-        dataCharDict = qInstFunId preludeMIdent qDataId charType
+        dataCharDict = qInstFunId preludeMIdent qDataId [charType]
         dataCharDictType = TypeArrow unitType' (IL.TypeConstructor (qDictTypeId qDataId) [charType'])
 eqExpr ty ty' e1 =
     Apply (Apply (Function eqTy eq 0) e1)
-  where eq   = qImplMethodId preludeMIdent qDataId ty $ mkIdent "==="
+  where eq   = qImplMethodId preludeMIdent qDataId [ty] $ mkIdent "==="
         eqTy = TypeArrow ty' (TypeArrow ty' boolType')
 
 truePatt :: ConstrTerm
@@ -451,7 +452,7 @@ getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds) = complementary cs cinfos
   isNewConstrDecl qid (CS.NewConstrDecl _ cid _) = unqualify qid == cid
   isNewConstrDecl qid (CS.NewRecordDecl _ cid _) = unqualify qid == cid
 
-  extractConstrDecls (CS.IDataDecl _ _ _ vs cs' _) = zip (repeat vs) cs'
+  extractConstrDecls (CS.IDataDecl _ _ _ vs cs' _) = map (vs,) cs'
   extractConstrDecls _                             = []
 
   constrInfo vs (CS.ConstrDecl _ cid tys)     =
@@ -505,7 +506,7 @@ matchType' (TypeVariable tv) ty
   | ty == TypeVariable tv = Just id
   | otherwise = Just (bindSubst tv ty)
 matchType' (TypeConstructor tc1 tys1) (TypeConstructor tc2 tys2)
-  | tc1 == tc2 = Just $ foldr (\(ty1, ty2) -> (matchType ty1 ty2 .)) id $ tys
+  | tc1 == tc2 = Just $ foldr (\(ty1, ty2) -> (matchType ty1 ty2 .)) id tys
   where tys = zip tys1 tys2
 matchType' (TypeArrow ty11 ty12) (TypeArrow ty21 ty22) =
   Just (matchType ty11 ty21 . matchType ty12 ty22)

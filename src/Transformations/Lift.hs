@@ -21,9 +21,9 @@
 {-# LANGUAGE CPP #-}
 module Transformations.Lift (lift) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative        ((<$>), (<*>))
-#endif
+
+
+
 import           Control.Arrow              (first)
 import qualified Control.Monad.State as S   (State, runState, gets, modify)
 import           Data.List
@@ -188,7 +188,7 @@ absFunDecls pre lvs (fds:fdss) vds e = do
       -- function types
       ftys    = map extractFty fds
       extractFty (FunctionDecl _ _ f (Equation _ _ (FunLhs _ _ ts) rhs : _)) =
-        (f, foldr TypeArrow (typeOf rhs) $ map typeOf ts)
+        (f, foldr (TypeArrow . typeOf) (typeOf rhs) ts)
       extractFty _                                                         =
         internalError "Lift.absFunDecls.extractFty"
       -- typed free variables on the right-hand sides
@@ -255,8 +255,8 @@ absFunDecl pre fvs lvs (FunctionDecl p ty f eqs) = do
     _ -> internalError "Lift.absFunDecl: not a function declaration"
   where f' = liftIdent pre f
         ty' = case eqs' of
-                Equation _ (FunLhs _ _ ts') rhs' : _
-                  -> foldr TypeArrow (typeOf rhs') (map typeOf ts')
+                Equation _ _ (FunLhs _ _ ts') rhs' : _
+                  -> foldr (TypeArrow . typeOf) (typeOf rhs') ts'
                 _ -> internalError "Lift.absFunDecl: Malformed equation"
         ty'' = genType ty'
         eqs' = map addVars eqs

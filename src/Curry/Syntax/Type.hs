@@ -230,7 +230,7 @@ data Constraint = Constraint SpanInfo QualIdent [TypeExpr]
 type InstanceType = TypeExpr
 
 data FunDep = FunDep SpanInfo [Ident] [Ident]
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- ---------------------------------------------------------------------------
 -- Functions
@@ -369,7 +369,7 @@ instance Functor Decl where
   fmap _ (NewtypeDecl sp tc tvs nc clss) = NewtypeDecl sp tc tvs nc clss
   fmap _ (TypeDecl sp tc tvs ty) = TypeDecl sp tc tvs ty
   fmap _ (TypeSig sp fs qty) = TypeSig sp fs qty
-  fmap f (FunctionDecl sp a f' eqs) = 
+  fmap f (FunctionDecl sp a f' eqs) =
     FunctionDecl sp (f a) f' (map (fmap f) eqs)
   fmap f (ExternalDecl sp vs) = ExternalDecl sp (map (fmap f) vs)
   fmap f (PatternDecl sp t rhs) = PatternDecl sp (fmap f t) (fmap f rhs)
@@ -381,7 +381,7 @@ instance Functor Decl where
     InstanceDecl sp li cx qcls inst (map (fmap f) ds)
 
 instance Functor Equation where
-  fmap f (Equation p a lhs rhs) = 
+  fmap f (Equation p a lhs rhs) =
     Equation p (fmap f a) (fmap f lhs) (fmap f rhs)
 
 instance Functor Lhs where

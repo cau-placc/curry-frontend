@@ -19,7 +19,7 @@
 -}
 module Checks.InstanceCheck (instanceCheck) where
 
-import           Control.Monad.Extra        ( concatMapM, unless, unlessM,
+import           Control.Monad.Extra        ( concatMapM, unless, unlessM
                                             , when, void, whileM )
 import qualified Control.Monad.State as S   (State, execState, gets, modify)
 import           Data.Either                (isRight, lefts)
@@ -44,7 +44,7 @@ import Base.SCC (scc)
 import Base.TypeExpansion
 import Base.Types
 import Base.TypeSubst
-import Base.Utils (fst3, findMultiples)
+import Base.Utils (findMultiples)
 
 import Env.Class
 import Env.Instance
@@ -52,18 +52,18 @@ import Env.TypeConstructor
 
 instanceCheck :: [KnownExtension] -> ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Decl a]
               -> (InstEnv, [Message])
-instanceCheck m tcEnv clsEnv inEnv ds =
+instanceCheck exts m tcEnv clsEnv inEnv ds =
   case multipleErrs ++ funDepConflictErrs of
     []   -> execINCM (checkDecls tcEnv clsEnv ds) state
     errs -> (inEnv, errs)
   where
-    localInsts = concatMap (genInstIdents m tcEnv) ds
-    importedISs = map (uncurry InstSource . fmap fst3) $ instEnvList inEnv
-    multipleErrs = map (errMultipleInstances tcEnv) $ findMultiples $
-                     map (flip InstSource m) localInsts ++ importedISs
+    localInsts = concatMap (genInstSources m tcEnv) ds
+    localInstIdents = concatMap (genInstIdents m tcEnv) ds
+    importedISs = concatMap (\(qi, mp) -> map (\(tys, _) -> InstSource NoSpanInfo (qi, tys) m) $ Map.toList mp) $ Map.toList inEnv
+    multipleErrs = map (errMultipleInstances tcEnv) $ findMultiples $ localInsts ++ importedISs
     funDepConflictErrs = map (errFunDepConflict tcEnv) $
-                           findFunDepConflicts m clsEnv inEnv localInsts
-    state = INCState m inEnv []
+                           findFunDepConflicts m clsEnv inEnv localInstIdents
+    state = INCState m inEnv exts []
 
 -- In order to provide better error messages, we use the following data type
 -- to keep track of an instance's source, i.e., the span and module where it was defined.
@@ -84,8 +84,8 @@ instance Eq InstSource where
 findFunDepConflicts :: ModuleIdent -> ClassEnv -> InstEnv -> [InstIdent]
                     -> [(InstSource, InstSource)]
 findFunDepConflicts m clsEnv inEnv localInsts =
-  [ (InstSource (cls, itys1) m1, InstSource (cls, itys2) m2)
-  | let inEnv' = foldr (flip bindInstInfo (m, [], [])) inEnv localInsts
+  [ (InstSource NoSpanInfo (cls, itys1) m1, InstSource NoSpanInfo (cls, itys2) m2)
+  | let inEnv' = foldr (`bindInstInfo` (m, [], [])) inEnv localInsts
   , (cls, instMap) <- Map.toList inEnv'
   , funDep <- classFunDeps cls clsEnv
   , (itys1, (m1, _, _)) : remInsts <- tails (Map.toList instMap)
@@ -175,9 +175,9 @@ checkDecls tcEnv clsEnv ds = do
   where (tds, ods) = partition isTypeDecl ds
         ids = filter isInstanceDecl ods
         dds = filter isDefaultDecl ods
-        isDataDecl (DataDecl    _ _ _ _ _) = True
-        isDataDecl (NewtypeDecl _ _ _ _ _) = True
-        isDataDecl _                       = False
+        isDataDecl DataDecl {}    = True
+        isDataDecl NewtypeDecl {} = True
+        isDataDecl _              = False
 
 -- First, the compiler adds all explicit instance declarations to the
 -- instance environment.
@@ -205,7 +205,7 @@ bindInstance tcEnv clsEnv (InstanceDecl p _ cx qcls inst ds) = do
   term <- checkInstanceTermination m False (nub $ fv (inst, cx)) p opls qcls otys
   fdCov <- checkFunDepCoverage clsEnv p qcls (getOrigName m qcls tcEnv) inst
   when fdCov $ modifyInstEnv $
-    bindInstInfo (getOrigName m qcls tcEnv, itys) 
+    bindInstInfo (getOrigName m qcls tcEnv, itys)
                     (m, if term then ipls else [], impls [] ds)
   where impls is [] = is
         impls is (FunctionDecl _ _ f eqs:ds')
@@ -236,10 +236,6 @@ declDeriveInfo :: TCEnv -> ClassEnv -> Decl a -> INCM DeriveInfo
 declDeriveInfo tcEnv clsEnv (DataDecl p tc tvs cs clss) =
   mkDeriveInfo tcEnv clsEnv p tc tvs (concat tyss) clss
   where tyss = map constrDeclTypes cs
-        constrDeclTypes (ConstrDecl     _ _ tys) = tys
-        constrDeclTypes (ConOpDecl  _ ty1 _ ty2) = [ty1, ty2]
-        constrDeclTypes (RecordDecl      _ _ fs) = tys
-          where tys = [ty | FieldDecl _ ls ty <- fs, _ <- ls]
 declDeriveInfo tcEnv clsEnv (NewtypeDecl p tc tvs nc clss) =
   mkDeriveInfo tcEnv clsEnv p tc tvs [nconstrType nc] clss
 declDeriveInfo _ _ _ =
@@ -249,14 +245,16 @@ declDeriveDataInfo :: TCEnv -> ClassEnv -> Decl a -> INCM DeriveInfo
 declDeriveDataInfo tcEnv clsEnv (DataDecl p tc tvs cs _) =
   mkDeriveDataInfo tcEnv clsEnv p tc tvs (concat tyss)
   where tyss = map constrDeclTypes cs
-        constrDeclTypes (ConstrDecl     _ _ tys) = tys
-        constrDeclTypes (ConOpDecl  _ ty1 _ ty2) = [ty1, ty2]
-        constrDeclTypes (RecordDecl      _ _ fs) = tys
-          where tys = [ty | FieldDecl _ ls ty <- fs, _ <- ls]
 declDeriveDataInfo tcEnv clsEnv (NewtypeDecl p tc tvs nc _) =
   mkDeriveDataInfo tcEnv clsEnv p tc tvs [nconstrType nc]
 declDeriveDataInfo _ _ _ = internalError
   "InstanceCheck.declDeriveDataInfo: no data or newtype declaration"
+
+constrDeclTypes :: ConstrDecl -> [TypeExpr]
+constrDeclTypes (ConstrDecl     _ _ tys) = tys
+constrDeclTypes (ConOpDecl  _ ty1 _ ty2) = [ty1, ty2]
+constrDeclTypes (RecordDecl      _ _ fs) = tys
+  where tys = [ty | FieldDecl _ ls ty <- fs, _ <- ls]
 
 mkDeriveInfo :: TCEnv -> ClassEnv -> SpanInfo -> Ident -> [Ident]
              -> [TypeExpr] -> [QualIdent] -> INCM DeriveInfo
@@ -348,7 +346,7 @@ inferPredList clsEnv p (PredType pls inst) tys cls = do
     else do term <- checkInstanceTermination m True [] p pls4 cls [inst]
             return (((cls, [inst]), if term then pls4 else []), True)
   where
-    noPolyPred (Pred _ _ tys') = any (not . isTypeVariable) tys'
+    noPolyPred (Pred _ _ tys') = not (all isTypeVariable tys')
 
 updatePredLists :: [((InstIdent, PredList), Bool)] -> INCM Bool
 updatePredLists = fmap or . mapM (uncurry updatePredList)
@@ -582,12 +580,12 @@ reducePredList rm p doc clsEnv pls = do
   mapM_ report (Map.elems (Map.restrictKeys pm (Set.fromList plsReport)))
   return (pls1, pls2)
   where
-    noPolyPred (Pred _ _ tys') = any (not . isTypeVariable) tys'
+    noPolyPred (Pred _ _ tys') = not (all isTypeVariable tys')
     isNotDataPred (Pred _ qid _) = qid /= qDataId
     -- taken from Leif-Erik Krueger
     reducePreds :: ModuleIdent -> InstEnv -> [Pred] -> Map.Map Pred Message
     reducePreds m inEnv = Map.unions . map (reducePred m inEnv)
-    
+
     -- taken from Leif-Erik Krueger
     reducePred :: ModuleIdent -> InstEnv -> Pred -> Map.Map Pred Message
     reducePred m inEnv predicate =
@@ -659,7 +657,7 @@ unqualType tcEnv (TypeForall      tvs ty) = TypeForall tvs (unqualType tcEnv ty)
 --         returned as a default option?
 -- taken from Leif-Erik Krueger
 unqualTC :: TCEnv -> QualIdent -> QualIdent
-unqualTC tcEnv otc = case flip reverseLookupByOrigName tcEnv otc of
+unqualTC tcEnv otc = case reverseLookupByOrigName otc tcEnv of
    []   -> otc
    tc:_ -> tc
 
@@ -694,7 +692,7 @@ isDeriveMode _          = False
 errMultipleInstances :: TCEnv -> [InstSource] -> Message
 errMultipleInstances _     []                       = internalError
   "InstanceCheck.errMultipleInstances: Empty instance list"
-errMultipleInstances tcEnv iss@(InstSource i _ : _) = message $
+errMultipleInstances tcEnv iss@(InstSource spi i _ : _) = spanInfoMessage spi $
   text "Multiple instances for the same class" <+> text typeText $+$
     nest 2 (vcat (map (ppInstSource tcEnv) iss))
   where typeText = case length (snd i) of 0 -> ""
@@ -707,7 +705,7 @@ errFunDepConflict tcEnv (is1, is2) = message $
     nest 2 (vcat (map (ppInstSource tcEnv) [is1, is2]))
 
 ppInstSource :: TCEnv -> InstSource -> Doc
-ppInstSource tcEnv (InstSource i m) = ppInstIdent (unqualInstIdent tcEnv i) <+>
+ppInstSource tcEnv (InstSource _ i m) = ppInstIdent (unqualInstIdent tcEnv i) <+>
   parens (text "defined in" <+> ppMIdent m)
 
 -- taken from Leif-Erik Krueger
@@ -720,9 +718,9 @@ errMissingInstance rm m p doc predicate = spanInfoMessage (getSpanInfo p) $ vcat
   ]
 
 -- taken from Leif-Erik Krueger
-errInstanceOverlap :: HasSpanInfo p => ReductionMode -> Bool -> ModuleIdent -> p 
+errInstanceOverlap :: HasSpanInfo p => ReductionMode -> Bool -> ModuleIdent -> p
                    -> Doc -> Pred -> [InstMatchInfo] -> Message
-errInstanceOverlap rm tvChoice m p doc pr@(Pred _ qcls _) insts = 
+errInstanceOverlap rm tvChoice m p doc pr@(Pred _ qcls _) insts =
   spanInfoMessage p $ vcat $
        [ text "Instance overlap for" <+> ppPred m pr
        , text "arising in" <+> redModeWhatDoc rm

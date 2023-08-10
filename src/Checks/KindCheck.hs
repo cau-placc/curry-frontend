@@ -13,16 +13,14 @@
    type constructors and type classes defined in the current module and
    performs kind checking on all type definitions and type signatures.
 -}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP           #-}
+{-# LANGUAGE TupleSections #-}
 module Checks.KindCheck (kindCheck) where
 
 #if __GLASGOW_HASKELL__ >= 804
 import Prelude hiding ((<>))
 #endif
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative        ((<$>), (<*>))
-#endif
 import           Control.Monad              (when, foldM, replicateM)
 import           Control.Monad.Fix          (mfix)
 import qualified Control.Monad.State as S   (State, runState, gets, modify)
@@ -281,8 +279,8 @@ fc m = foldr fc' []
 checkAcyclicSuperClasses :: [Decl a] -> KCM ()
 checkAcyclicSuperClasses ds = do
   m <- getModuleIdent
-  let go (ClassDecl _ _ cx _ _ _) = fc m cx
-      go _                        = internalError "KindCheck.checkAcyclicSuperClasses: Not a class"
+  let go (ClassDecl _ _ cx _ _ _ _) = fc m cx
+      go _                          = internalError "KindCheck.checkAcyclicSuperClasses: Not a class"
   mapM_ checkClassDecl $ scc bt go ds
 
 checkClassDecl :: [Decl a] -> KCM ()
@@ -387,7 +385,7 @@ bindTypeVars :: Ident -> [Ident] -> (ModuleIdent -> QualIdent -> TCEnv -> Kind)
              -> TCEnv -> KCM (Kind, TCEnv)
 bindTypeVars tcOrCls tvs getKind tcEnv = do
   m <- getModuleIdent
-  return $ foldl go (tcKind m (qualifyWith m tc) tcEnv, tcEnv) tvs
+  return $ foldl go (getKind m (qualifyWith m tcOrCls) tcEnv, tcEnv) tvs
   where
     go (KindArrow k1 k2, tcEnv') tv =
       (k2, bindTypeVar tv k1 tcEnv')
@@ -430,7 +428,7 @@ kcDeclGroup :: TCEnv -> ClassEnv -> [Decl a] -> KCM (TCEnv, ClassEnv)
 kcDeclGroup tcEnv clsEnv ds = do
   m <- getModuleIdent
   (tcEnv', clsEnv') <- mfix (\ ~(tcEnv', clsEnv') ->
-    flip (,) (foldl (bindClass m tcEnv') clsEnv ds) <$>
+    (, foldl (bindClass m tcEnv') clsEnv ds) <$>
       foldM (bindKind m tcEnv' clsEnv') tcEnv ds)
   mapM_ (kcDecl tcEnv' clsEnv') ds
   theta <- getKindSubst
@@ -663,9 +661,9 @@ kcTypeExpr :: TCEnv -> String -> Doc -> Int -> TypeExpr -> KCM Kind
 kcTypeExpr tcEnv _ _ n (ConstructorType p tc) = do
   m <- getModuleIdent
   case qualLookupTypeInfo tc tcEnv of
-    [AliasType _ _ n' _] -> case n >= n' of
-      True -> return $ tcKind m tc tcEnv
-      False -> do
+    [AliasType _ _ n' _] -> if n >= n'
+      then return $ tcKind m tc tcEnv
+      else do
         report $ errPartialAlias p tc n' n
         freshKindVar
     _ -> return $ tcKind m tc tcEnv
@@ -773,22 +771,22 @@ desugarContext = map desugarConstraint
 
 desugarConstraint :: Constraint -> Constraint
 desugarConstraint (Constraint spi qcls tys) =
-   Constraint spi qcls (map desugarTypeExpr tys) 
+   Constraint spi qcls (map desugarTypeExpr tys)
 
 desugarTypeExpr :: TypeExpr -> TypeExpr
 desugarTypeExpr (ConstructorType spi tc) = ConstructorType spi tc
 desugarTypeExpr (VariableType spi tv)    = VariableType spi tv
-desugarTypeExpr (ApplyType spi ty1 ty2) = ApplyType spi (desugarTypeExpr ty1) 
+desugarTypeExpr (ApplyType spi ty1 ty2) = ApplyType spi (desugarTypeExpr ty1)
                                                         (desugarTypeExpr ty2)
 desugarTypeExpr (TupleType       spi []) = ConstructorType spi qUnitId
-desugarTypeExpr (TupleType       spi [ty]) 
+desugarTypeExpr (TupleType       spi [ty])
   = ApplyType spi (ConstructorType spi qUnitId) (desugarTypeExpr ty)
 desugarTypeExpr (TupleType       spi tys')
   = let tupCons = qTupleId (length tys')
-    in ApplyType spi (ConstructorType spi tupCons) 
-                     (foldr1 (ApplyType spi) (map desugarTypeExpr tys')) 
-desugarTypeExpr (ArrowType spi ty1 ty2) = 
-  ApplyType spi (ConstructorType spi qArrowId) 
+    in ApplyType spi (ConstructorType spi tupCons)
+                     (foldr1 (ApplyType spi) (map desugarTypeExpr tys'))
+desugarTypeExpr (ArrowType spi ty1 ty2) =
+  ApplyType spi (ConstructorType spi qArrowId)
                   (ApplyType spi (desugarTypeExpr ty1) (desugarTypeExpr ty2))
 desugarTypeExpr (ListType spi ty) = ApplyType spi (ConstructorType spi qListId)
                                                   (desugarTypeExpr ty)
@@ -858,7 +856,7 @@ errClassKindMismatch what doc qcls wrongAr clsAr =
   let aplTyText  = text $ "type"           ++ if wrongAr == 1 then "" else "s"
       clsParText = text $ "type parameter" ++ if clsAr   == 1 then "" else "s"
   in spanInfoMessage qcls $ vcat
-     [ text "Kind error in" <+> text what, doc 
+     [ text "Kind error in" <+> text what, doc
      , text "The type class" <+> text (escQualName qcls)
        <+> text "has been applied to" <+> pPrint wrongAr <+> aplTyText <> comma
      , text "but it has" <+> pPrint clsAr <+> clsParText <> dot

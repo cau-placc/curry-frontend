@@ -125,7 +125,6 @@ unifyPredSafe' (Pred _ qcls1 tys1) (Pred _ qcls2 tys2)
   | qcls1 == qcls2 = unifyTypesSafe tys1 tys2
   | otherwise      = Nothing
 
-
 unifyTypesSafe :: [Type] -> [Type] -> Maybe TypeSubst
 unifyTypesSafe []         []         = Just idSubst
 unifyTypesSafe (ty1:tys1) (ty2:tys2) = do
@@ -165,7 +164,7 @@ unifyTypeSafe (TypeArrow ty11 ty12) ty2@(TypeApply _ _) =
   unifyTypeSafe (TypeApply (TypeApply (TypeConstructor qArrowId) ty11) ty12) ty2
 unifyTypeSafe ty1@(TypeApply _ _) (TypeArrow ty21 ty22) =
   unifyTypeSafe ty1 (TypeApply (TypeApply (TypeConstructor qArrowId) ty21) ty22)
-unifyTypeSafe _ _ = Nothing 
+unifyTypeSafe _ _ = Nothing
 
 withType :: (Functor f, Typeable (f Type)) => Type -> f Type -> f Type
 withType ty e = fmap (subst (matchType (typeOf e) ty idSubst)) e
@@ -178,8 +177,7 @@ matchPredsSafe :: [Pred] -> [Pred] -> TypeSubst -> Maybe TypeSubst
 matchPredsSafe []       []       theta = Just theta
 matchPredsSafe (p1:ps1) (p2:ps2) theta = do
   theta'  <- matchPredSafe p1 p2 theta
-  theta'' <- matchPredsSafe ps1 ps2 theta'
-  return theta''
+  matchPredsSafe ps1 ps2 theta'
 matchPredsSafe _         _       _     = Nothing
 
 matchPredSafe :: Pred -> Pred -> TypeSubst -> Maybe TypeSubst
@@ -187,19 +185,17 @@ matchPredSafe (Pred _ qcls1 tys1) (Pred _ qcls2 tys2) theta
   | qcls1 == qcls2 = matchTypesSafe tys1 tys2 theta
   | otherwise      = Nothing
 
-matchPredTypeSafe' :: [Pred] -> Type -> [Pred] -> Type -> TypeSubst 
+matchPredTypeSafe' :: [Pred] -> Type -> [Pred] -> Type -> TypeSubst
                    -> Maybe TypeSubst
 matchPredTypeSafe' ps1 ty1 ps2 ty2 theta = do
   theta'  <- matchPredsSafe ps1 ps2 theta
-  theta'' <- matchTypeSafe ty1 ty2 theta'
-  return theta''
+  matchTypeSafe ty1 ty2 theta'
 
 matchTypesSafe :: [Type] -> [Type] -> TypeSubst -> Maybe TypeSubst
 matchTypesSafe []         []         theta = Just theta
 matchTypesSafe (ty1:tys1) (ty2:tys2) theta = do
   theta'  <- matchTypeSafe ty1 ty2 theta
-  theta'' <- matchTypesSafe tys1 tys2 theta'
-  return theta''
+  matchTypesSafe tys1 tys2 theta'
 matchTypesSafe _          _          _     = Nothing
 
 matchTypeSafe :: Type -> Type -> TypeSubst -> Maybe TypeSubst
@@ -214,28 +210,23 @@ matchTypeSafe (TypeConstrained _ tv1) (TypeConstrained _ tv2) theta
   | tv1 == tv2 = Just theta
 matchTypeSafe (TypeApply ty11 ty12) (TypeApply ty21 ty22) theta = do
   theta' <- matchTypeSafe ty11 ty21 theta
-  theta'' <- matchTypeSafe ty12 ty22 theta'
-  return theta''
+  matchTypeSafe ty12 ty22 theta'
 matchTypeSafe (TypeArrow ty11 ty12) (TypeArrow ty21 ty22) theta = do
   theta' <- matchTypeSafe ty11 ty21 theta
-  theta'' <- matchTypeSafe ty12 ty22 theta'
-  return theta''
+  matchTypeSafe ty12 ty22 theta'
 matchTypeSafe (TypeApply ty11 ty12) (TypeArrow ty21 ty22) theta = do
   theta' <- matchTypeSafe ty11 (TypeApply (TypeConstructor qArrowId) ty21) theta
-  theta'' <- matchTypeSafe ty12 ty22 theta'
-  return theta''
+  matchTypeSafe ty12 ty22 theta'
 matchTypeSafe (TypeArrow ty11 ty12) (TypeApply ty21 ty22) theta = do
   theta' <- matchTypeSafe (TypeApply (TypeConstructor qArrowId) ty11) ty21 theta
-  theta'' <- matchTypeSafe ty12 ty22 theta'
-  return theta''
-matchTypeSafe (TypeForall _ ty1) (TypeForall _ ty2) theta 
+  matchTypeSafe ty12 ty22 theta'
+matchTypeSafe (TypeForall _ ty1) (TypeForall _ ty2) theta
   = matchTypeSafe ty1 ty2 theta
 matchTypeSafe (TypeForall _ ty1) ty2                theta
   = matchTypeSafe ty1 ty2 theta
-matchTypeSafe ty1                (TypeForall _ ty2) theta 
+matchTypeSafe ty1                (TypeForall _ ty2) theta
   = matchTypeSafe ty1 ty2 theta
 matchTypeSafe _                  _                  _     = Nothing
- 
 
 matchPredType :: HasCallStack => PredType -> PredType -> TypeSubst -> TypeSubst
 matchPredType (PredType ps1 ty1) (PredType ps2 ty2) =
@@ -249,22 +240,22 @@ matchPreds :: HasCallStack => [Pred] -> [Pred] -> TypeSubst -> TypeSubst
 matchPreds []       []       = id
 matchPreds (p1:ps1) (p2:ps2) =
   matchPreds ps1 ps2 . matchPred p1 p2
-matchPreds ps1      ps2      = 
+matchPreds ps1      ps2      =
   internalError $ "Base.Typing,matchPreds: " ++ show (map pPrint ps1) ++ " " ++ show (map pPrint ps2)
 
 -- TODO : check if it is OK to ignore the ICC flag
 matchPred :: HasCallStack => Pred -> Pred -> TypeSubst -> TypeSubst
-matchPred pt1@(Pred _ qcls1 tys1) pt2@(Pred _ qcls2 tys2) 
+matchPred pt1@(Pred _ qcls1 tys1) pt2@(Pred _ qcls2 tys2)
   | qcls1 == qcls2 = matchTypes tys1 tys2
-  | otherwise      
-  = internalError $ "Base.Typing.matchPred: " ++ show (pPrintPrec 11 pt1) ++ " " ++ show (pPrintPrec 11 pt2) 
+  | otherwise
+  = internalError $ "Base.Typing.matchPred: " ++ show (pPrintPrec 11 pt1) ++ " " ++ show (pPrintPrec 11 pt2)
 
 matchTypes :: HasCallStack => [Type] -> [Type] -> TypeSubst -> TypeSubst
 matchTypes []         []         = id
 matchTypes (ty1:tys1) (ty2:tys2) =
   matchTypes tys1 tys2 . matchType ty1 ty2
 matchTypes tys1       tys2       = internalError $
-  "Base.Typing.matchTypes: " ++ show tys1 ++ " " ++ show tys2 
+  "Base.Typing.matchTypes: " ++ show tys1 ++ " " ++ show tys2
 
 matchType :: HasCallStack => Type -> Type -> TypeSubst -> TypeSubst
 matchType ty1 ty2 = fromMaybe noMatch (matchType' ty1 ty2)
@@ -318,16 +309,16 @@ bindPattern t vEnv = bindLocalVars (filter unbound $ patternVars t) vEnv
 
 -- TODO : correct this if necessary for the new label of function decls
 declVars :: (Eq t, Typeable t, ValueType t) => Decl t -> [(Ident, Int, t)]
-declVars (InfixDecl        _ _ _ _) = []
-declVars (TypeSig            _ _ _) = []
+declVars InfixDecl {}               = []
+declVars TypeSig {}                 = []
 declVars (FunctionDecl  _ ty f eqs) = [(f, eqnArity $ head eqs, ty)]
 declVars (PatternDecl        _ t _) = patternVars t
 declVars (FreeDecl            _ vs) = [(v, 0, ty) | Var ty v <- vs]
 declVars _                          = internalError "Base.Typing.declVars"
 
 patternVars :: (Eq t, Typeable t, ValueType t) => Pattern t -> [(Ident, Int, t)]
-patternVars (LiteralPattern         _ _ _) = []
-patternVars (NegativePattern        _ _ _) = []
+patternVars LiteralPattern {}              = []
+patternVars NegativePattern {}             = []
 patternVars (VariablePattern       _ ty v) = [(v, 0, ty)]
 patternVars (ConstructorPattern  _ _ _ ts) = concatMap patternVars ts
 patternVars (InfixPattern     _ _ t1 _ t2) = patternVars t1 ++ patternVars t2

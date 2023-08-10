@@ -10,12 +10,13 @@
 
   TODO
 -}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP           #-}
+{-# LANGUAGE TupleSections #-}
 module Transformations.Derive (derive) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative      ((<$>))
-#endif
+
+
+
 import qualified Control.Monad.State as S (State, evalState, gets, modify)
 import           Data.List         (intercalate, intersperse)
 import           Data.Maybe        (fromJust, isJust)
@@ -351,7 +352,7 @@ deriveMaxOrMinBound :: QualIdent -> Type -> ConstrInfo -> PredList
                     -> DVM (Decl PredType)
 deriveMaxOrMinBound f ty (_, c, _, tys) pls = do
   pty <- getInstMethodType pls qBoundedId ty $ unqualify f
-  return $ 
+  return $
     funDecl NoSpanInfo pty (unqualify f) [] $ maxOrMinBoundExpr f c ty tys
 
 maxOrMinBoundExpr :: QualIdent -> QualIdent -> Type -> [Type]
@@ -484,7 +485,7 @@ deriveReadsPrecReadsPrecStmt  :: Precedence -> (PredType, Ident) -> Type
       -> DVM ((PredType, Ident), (Statement PredType, (PredType, Ident)))
 deriveReadsPrecReadsPrecStmt p r ty = do
   v <- freshArgument $ instType ty
-  s <- freshArgument $ stringType
+  s <- freshArgument stringType
   let pat  = TuplePattern NoSpanInfo $
                map (uncurry (VariablePattern NoSpanInfo)) [v, s]
       stmt = StmtBind NoSpanInfo pat $ preludeReadsPrec (instType ty) p $
@@ -563,7 +564,7 @@ freshArgument = freshVar "_#arg"
 
 freshVar :: String -> Type -> DVM (PredType, Ident)
 freshVar name ty =
-  ((,) (predType ty)) . mkIdent . (name ++) .  show <$> getNextId
+  (predType ty,) . mkIdent . (name ++) .  show <$> getNextId
 
 -- -----------------------------------------------------------------------------
 -- Auxiliary functions
