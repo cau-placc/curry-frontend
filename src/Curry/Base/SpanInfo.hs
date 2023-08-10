@@ -13,6 +13,8 @@
     span of the entity and a list of sub-spans whith additional information
     about location of keywords, e.g.
 -}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric  #-}
 module Curry.Base.SpanInfo
   ( SpanInfo(..), spanInfo, LayoutInfo(..), HasSpanInfo(..)
   , fromSrcSpan, fromSrcSpanBoth, getSrcSpan, setSrcSpan, spanInfoLike
@@ -22,7 +24,7 @@ module Curry.Base.SpanInfo
   ) where
 
 import Data.Binary
-import Control.Monad
+import GHC.Generics
 
 import Curry.Base.Position
 import Curry.Base.Span
@@ -32,14 +34,14 @@ data SpanInfo = SpanInfo
     , srcInfoPoints  :: [Span]
     }
     | NoSpanInfo
-  deriving (Eq, Ord, Read, Show)
+  deriving (Eq, Ord, Read, Show, Generic, Binary)
 
 spanInfo :: Span -> [Span] -> SpanInfo
-spanInfo sp sps = SpanInfo sp sps
+spanInfo = SpanInfo
 
 data LayoutInfo = ExplicitLayout [Span]
                 | WhitespaceLayout
-  deriving (Eq, Read, Show)
+  deriving (Eq, Read, Show, Generic, Binary)
 
 class HasPosition a => HasSpanInfo a where
 
@@ -60,28 +62,6 @@ instance HasSpanInfo SpanInfo where
 instance HasPosition SpanInfo where
   getPosition = getStartPosition
   setPosition = setStartPosition
-
-instance Binary SpanInfo where
-  put (SpanInfo sp ss) = putWord8 0 >> put sp >> put ss
-  put NoSpanInfo       = putWord8 1
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> liftM2 SpanInfo get get
-      1 -> return NoSpanInfo
-      _ -> fail "Not a valid encoding for a SpanInfo"
-
-instance Binary LayoutInfo where
-  put (ExplicitLayout ss) = putWord8 0 >> put ss
-  put WhitespaceLayout = putWord8 1
-
-  get = do
-    x <- getWord8
-    case x of
-      0 -> fmap ExplicitLayout get
-      1 -> return WhitespaceLayout
-      _ -> fail "Not a valid encoding for a LayoutInfo"
 
 fromSrcSpan :: Span -> SpanInfo
 fromSrcSpan sp = SpanInfo sp []

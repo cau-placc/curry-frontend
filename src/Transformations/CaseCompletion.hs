@@ -32,9 +32,9 @@
 {-# LANGUAGE CPP #-}
 module Transformations.CaseCompletion (completeCase) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative        ((<$>), (<*>))
-#endif
+
+
+
 import qualified Control.Monad.State as S   (State, evalState, gets, modify)
 import           Data.List                  (find)
 import           Data.Maybe                 (fromMaybe, listToMaybe)
@@ -45,16 +45,17 @@ import qualified Curry.Syntax        as CS
 import Base.CurryTypes                      (toType)
 import Base.Expr
 import Base.Messages                        (internalError)
-import Base.Types                           ( boolType, charType, floatType
-                                            , intType, listType
+import Base.Types                           ( charType, floatType
+                                            , intType, stringType
                                             )
+import qualified Base.Types as CS
 import Base.Subst
 
 import Env.TypeConstructor
 import Env.Interface                        (InterfaceEnv, lookupInterface)
 
 import Transformations.CurryToIL            (transType)
-import Transformations.Dictionary           (qImplMethodId)
+import Transformations.Dictionary           (qImplMethodId, qDictTypeId, qInstFunId)
 
 import IL
 
@@ -130,14 +131,17 @@ ccBinding (Binding v e) = Binding v <$> ccExpr e
 -- Functions for completing case alternatives
 -- ---------------------------------------------------------------------------
 ccCase :: Eval -> Expression -> [Alt] -> CCM Expression
--- flexible cases are not completed
+-- flexible cases are not completed, but literal string pats are transformed.
 ccCase Flex  e alts     = return $ Case Flex e alts
 ccCase Rigid _ []       = internalError $ "CaseCompletion.ccCase: "
                                        ++ "empty alternative list"
 ccCase Rigid e as@(Alt p _:_) = case p of
-  ConstructorPattern _ _ _ -> completeConsAlts Rigid e as
-  LiteralPattern     _ _   -> completeLitAlts  Rigid e as
   VariablePattern    _ _   -> completeVarAlts        e as
+  _ | any isLitPat as -> completeLitAlts Rigid e as
+    | otherwise       -> completeConsAlts Rigid e as
+  where
+    isLitPat (Alt (LiteralPattern _ _) _) = True
+    isLitPat _                            = False
 
 -- Completes a case alternative list which branches via constructor patterns
 -- by adding alternatives. Thus, case expressions of the form
@@ -185,8 +189,10 @@ completeConsAlts ea ce alts = do
   consAlts = [ a | a@(Alt (ConstructorPattern _ _ _) _) <- alts ]
 
   -- unifier for data type and concrete pattern type
-  dataTy  = let TypeConstructor qid tys = patTy
-            in TypeConstructor qid $ map TypeVariable [0 .. length tys - 1]
+  dataTy  = case patTy of
+              TypeConstructor qid tys
+                -> TypeConstructor qid $ map TypeVariable [0 .. length tys - 1]
+              _ -> internalError "CaseCompletion.completeConsAlt: not a type constructor"
   patTy   = let Alt pat _ = head consAlts in typeOf pat
   tySubst = matchType dataTy patTy idSubst
 
@@ -234,16 +240,44 @@ completeConsAlts ea ce alts = do
 completeLitAlts :: Eval -> Expression -> [Alt] -> CCM Expression
 completeLitAlts ea ce alts = do
   x <- freshIdent
-  return $ mkBinding x ce $ nestedCases x alts
+  mkBinding x ce <$> nestedCases x alts
   where
-  nestedCases _ []              = failedExpr (typeOf $ head alts)
+  nestedCases _ []              = return $ failedExpr (typeOf $ head alts)
   nestedCases x (Alt p ae : as) = case p of
-    LiteralPattern ty l  -> Case ea (Variable ty x `eqExpr` Literal ty l)
-                          [ Alt truePatt  ae
-                          , Alt falsePatt (nestedCases x as)
-                          ]
-    VariablePattern ty v -> replaceVar v (Variable ty x) ae
+    LiteralPattern ty l  -> do
+      as' <- nestedCases x as
+      return $ Case ea (eqExpr (litType l) ty (Variable ty x) (completeLit l ty))
+                  [ Alt truePatt  ae
+                  , Alt falsePatt as'
+                  ]
+    VariablePattern ty v -> return $ replaceVar v (Variable ty x) ae
+    ConstructorPattern ty@(TypeConstructor _ [ty']) c vs
+      | c == qNilId  -> do
+        i <- freshIdent
+        j <- freshIdent
+        as' <- nestedCases x as
+        return $ Case ea ce [ Alt (ConstructorPattern ty c vs) ae
+                            , Alt (ConstructorPattern ty qConsId [(ty', i), (ty, j)]) as']
+      | c == qConsId -> do
+        as' <- nestedCases x as
+        return $ Case ea ce [ Alt (ConstructorPattern ty c vs) ae
+                            , Alt (ConstructorPattern ty qNilId []) as']
     _ -> internalError "CaseCompletion.completeLitAlts: illegal alternative"
+
+litType :: Literal -> CS.Type
+litType (String _) = stringType
+litType (Char _) = charType
+litType (Int _) = intType
+litType (Float _) = floatType
+
+-- translate literal string in case to a list of characters
+completeLit :: Literal -> Type -> Expression
+completeLit (String s) ty = foldr mkCons mkNil s
+    where
+      consTy = TypeArrow charType' (TypeArrow ty ty)
+      mkNil = IL.Constructor ty qNilId 0
+      mkCons c = IL.Apply (IL.Apply (Constructor consTy qConsId 2) (IL.Literal charType' (Char c)))
+completeLit x ty = Literal ty x
 
 -- For the unusual case of only one alternative containing a variable pattern,
 -- it is necessary to tranform it to a 'let' term because FlatCurry does not
@@ -253,11 +287,11 @@ completeLitAlts ea ce alts = do
 -- is transformed to
 --      let x = <ce> in <ae>
 completeVarAlts :: Expression -> [Alt] -> CCM Expression
-completeVarAlts _  []             = internalError $
+completeVarAlts _  []             = internalError
   "CaseCompletion.completeVarAlts: empty alternative list"
 completeVarAlts ce (Alt p ae : _) = case p of
   VariablePattern _ x -> return $ mkBinding x ce ae
-  _                   -> internalError $
+  _                   -> internalError
     "CaseCompletion.completeVarAlts: variable pattern expected"
 
 -- Smart constructor for non-recursive let-binding. @mkBinding v e e'@
@@ -323,21 +357,18 @@ failedExpr :: Type -> Expression
 failedExpr ty = Function ty (qualifyWith preludeMIdent (mkIdent "failed")) 0
 
 --TODO: Add note about arity of 0 because of the predefined functions in the Prelude
-eqExpr :: Expression -> Expression -> Expression
-eqExpr e1 e2 = Apply (Apply (Function eqTy eq 0) e1) e2
-  where eq   = qImplMethodId preludeMIdent qDataId [ty] $ mkIdent "==="
-        ty   = case e2 of
-                 Literal _ l -> case l of
-                                  Char  _ -> charType
-                                  Int   _ -> intType
-                                  Float _ -> floatType
-                 _ -> internalError "CaseCompletion.eqExpr: no literal"
-        ty'  = case e2 of
-                 Literal _ l -> case l of
-                                  Char  _ -> charType'
-                                  Int   _ -> intType'
-                                  Float _ -> floatType'
-                 _ -> internalError "CaseCompletion.eqExpr: no literal"
+eqExpr :: CS.Type -> IL.Type -> Expression -> Expression -> Expression
+eqExpr ty ty' e1 | IL.TypeConstructor _ [_] <- ty'
+  = Apply (Apply (Apply (Function eqListTy eqList 0)
+                    (Function dataCharDictType dataCharDict 0)) e1)
+  where eqList = qImplMethodId preludeMIdent qDataId ty $ mkIdent "==="
+        eqListTy = TypeArrow (IL.TypeConstructor (qDictTypeId qDataId) [ty'])
+                     (TypeArrow ty' (TypeArrow ty' boolType'))
+        dataCharDict = qInstFunId preludeMIdent qDataId charType
+        dataCharDictType = TypeArrow unitType' (IL.TypeConstructor (qDictTypeId qDataId) [charType'])
+eqExpr ty ty' e1 =
+    Apply (Apply (Function eqTy eq 0) e1)
+  where eq   = qImplMethodId preludeMIdent qDataId ty $ mkIdent "==="
         eqTy = TypeArrow ty' (TypeArrow ty' boolType')
 
 truePatt :: ConstrTerm
@@ -352,11 +383,8 @@ boolType' = IL.TypeConstructor qBoolId []
 charType' :: Type
 charType' = IL.TypeConstructor qCharId []
 
-intType' :: Type
-intType' = IL.TypeConstructor qIntId []
-
-floatType' :: Type
-floatType' = IL.TypeConstructor qFloatId []
+unitType' :: Type
+unitType' = IL.TypeConstructor qUnitId []
 
 -- ---------------------------------------------------------------------------
 -- The following functions compute the missing constructors for generating
@@ -375,7 +403,7 @@ getComplConstrs (Module mid _ ds) menv tcEnv cs@(c:_)
   -- built-in lists
   | c `elem` [qNilId, qConsId] = complementary cs
     [ (qNilId, [])
-    , (qConsId, [TypeVariable 0, transType tcEnv (listType boolType)])
+    , (qConsId, [TypeVariable 0, TypeConstructor qListId [TypeVariable 0]])
     ]
   -- current module
   | mid' == mid                = getCCFromDecls cs ds
@@ -404,7 +432,7 @@ getCCFromDecls cs ds = complementary cs cinfos
   constrInfo (ConstrDecl cid tys) = (cid, tys)
 
 -- Find complementary constructors within the module environment
-getCCFromIDecls :: ModuleIdent -> [QualIdent] -> TCEnv-> CS.Interface
+getCCFromIDecls :: ModuleIdent -> [QualIdent] -> TCEnv -> CS.Interface
                 -> [(QualIdent, [Type])]
 getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds) = complementary cs cinfos
   where
@@ -435,11 +463,16 @@ getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds) = complementary cs cinfos
     , [transType' vs ty | CS.FieldDecl _ ls ty <- fs, _ <- ls]
     )
 
-  transType' vs = transType tcEnv . toType vs
+  transType' vs = qualType . transType tcEnv . toType vs
+
+  qualType (TypeConstructor qid vs) = TypeConstructor (qualQualify mid qid) (map qualType vs)
+  qualType (TypeArrow ty1 ty2)   = TypeArrow (qualType ty1) (qualType ty2)
+  qualType (TypeVariable tv)     = TypeVariable tv
+  qualType (TypeForall tvs ty)   = TypeForall tvs (qualType ty)
 
 -- Compute complementary constructors
 complementary :: [QualIdent] -> [(QualIdent, [Type])] -> [(QualIdent, [Type])]
-complementary known others = filter ((`notElem` known) . fst) others
+complementary known = filter ((`notElem` known) . fst)
 
 -- ---------------------------------------------------------------------------
 -- The following section contains defintions to compute a type substitution

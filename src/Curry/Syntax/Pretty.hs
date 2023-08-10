@@ -56,7 +56,7 @@ instance Pretty Extension where
 
 instance Pretty Tool where
   pPrint (UnknownTool t) = text t
-  pPrint t               = text (show t)
+  pPrint (KnownTool t)   = text (show t)
 
 instance Pretty ExportSpec where
   pPrint (Exporting _ es) = parenList (map pPrint es)

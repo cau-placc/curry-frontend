@@ -18,6 +18,7 @@ cabal.sandbox.config
 *.aux
 *.hp
 *.eventlog
+.stack/
 .stack-work/
 cabal.project.local
 cabal.project.local~
@@ -31,3 +32,6 @@ Curry_Main_Goal.curry
 
 # Visual Studio Code related files and folders
 .vscode/
+
+# OS related metadata
+.DS_Store

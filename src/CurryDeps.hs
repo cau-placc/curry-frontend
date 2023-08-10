@@ -161,12 +161,18 @@ flattenDeps = fdeps . sortDeps
   imported (_, Source _ _ ms) = ms
   imported (_,             _) = []
 
+  isRecursiveImport :: (ModuleIdent, Source) -> Bool
+  isRecursiveImport (m, Source _ _ imps) = m `elem` imps
+  isRecursiveImport (_, _              ) = False
+
   fdeps :: [[(ModuleIdent, Source)]] -> ([(ModuleIdent, Source)], [Message])
   fdeps = foldr checkdep ([], [])
 
-  checkdep []    (srcs, errs) = (srcs      , errs      )
-  checkdep [src] (srcs, errs) = (src : srcs, errs      )
-  checkdep dep   (srcs, errs) = (srcs      , err : errs)
+  checkdep []    (srcs, errs)                         = (srcs      , errs      )
+  checkdep [src] (srcs, errs) | isRecursiveImport src = (srcs      , err : errs)
+                              | otherwise             = (src : srcs, errs      )
+    where err = errCyclicImport (idents src)
+  checkdep dep   (srcs, errs)                         = (srcs      , err : errs)
     where err = errCyclicImport $ map fst dep
 
 errMissingFile :: FilePath -> Message
@@ -178,10 +184,10 @@ errWrongModule m m' = message $ sep $
   , text "but found", text (moduleName m') ]
 
 errCyclicImport :: [ModuleIdent] -> Message
-errCyclicImport []  = internalError "CurryDeps.errCyclicImport: empty list"
-errCyclicImport [m] = message $ sep $ map text
+errCyclicImport []       = internalError "CurryDeps.errCyclicImport: empty list"
+errCyclicImport [m]      = spanInfoMessage m $ sep $ map text
   [ "Recursive import for module", moduleName m ]
-errCyclicImport ms  = message $ sep $
+errCyclicImport ms@(m:_) = spanInfoMessage m $ sep $
   text "Cyclic import dependency between modules" : punctuate comma inits
   ++ [text "and", lastm]
   where

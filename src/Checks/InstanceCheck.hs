@@ -19,8 +19,8 @@
 -}
 module Checks.InstanceCheck (instanceCheck) where
 
-import           Control.Monad.Extra        ( concatMapM, unless, void
-                                            , when, whileM )
+import           Control.Monad.Extra        ( concatMapM, unless, unlessM,
+                                            , when, void, whileM )
 import qualified Control.Monad.State as S   (State, execState, gets, modify)
 import           Data.Either                (isRight, lefts)
 import           Data.List                  ( (\\), nub, partition, sortBy
@@ -32,6 +32,7 @@ import           Data.Maybe                 (isJust)
 
 import Curry.Base.Ident
 import Curry.Base.Pretty
+import Curry.Base.Position (HasPosition (..))
 import Curry.Base.SpanInfo
 import Curry.Syntax hiding (impls)
 import Curry.Syntax.Pretty
@@ -49,7 +50,7 @@ import Env.Class
 import Env.Instance
 import Env.TypeConstructor
 
-instanceCheck :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Decl a]
+instanceCheck :: [KnownExtension] -> ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Decl a]
               -> (InstEnv, [Message])
 instanceCheck m tcEnv clsEnv inEnv ds =
   case multipleErrs ++ funDepConflictErrs of
@@ -65,12 +66,20 @@ instanceCheck m tcEnv clsEnv inEnv ds =
     state = INCState m inEnv []
 
 -- In order to provide better error messages, we use the following data type
--- to keep track of an instance's source, i.e., the module it was defined in.
+-- to keep track of an instance's source, i.e., the span and module where it was defined.
 
-data InstSource = InstSource InstIdent ModuleIdent
+data InstSource = InstSource SpanInfo InstIdent ModuleIdent
+
+instance HasPosition InstSource where
+  getPosition = getStartPosition
+  setPosition = setStartPosition
+
+instance HasSpanInfo InstSource where
+  getSpanInfo (InstSource spi _ _) = spi
+  setSpanInfo spi (InstSource _ i m) = InstSource spi i m
 
 instance Eq InstSource where
-  InstSource i1 _ == InstSource i2 _ = i1 == i2
+  InstSource _ i1 _ == InstSource _ i2 _ = i1 == i2
 
 findFunDepConflicts :: ModuleIdent -> ClassEnv -> InstEnv -> [InstIdent]
                     -> [(InstSource, InstSource)]
@@ -127,6 +136,7 @@ type INCM = S.State INCState
 data INCState = INCState
   { moduleIdent :: ModuleIdent
   , instEnv     :: InstEnv
+  , extensions  :: [KnownExtension]
   , errors      :: [Message]
   }
 
@@ -143,6 +153,9 @@ getInstEnv = S.gets instEnv
 modifyInstEnv :: (InstEnv -> InstEnv) -> INCM ()
 modifyInstEnv f = S.modify $ \s -> s { instEnv = f $ instEnv s }
 
+hasExtension :: KnownExtension -> INCM Bool
+hasExtension ext = S.gets $ elem ext . extensions
+
 report :: Message -> INCM ()
 report err = S.modify (\s -> s { errors = err : errors s })
 
@@ -152,8 +165,9 @@ ok = return ()
 checkDecls :: TCEnv -> ClassEnv -> [Decl a] -> INCM ()
 checkDecls tcEnv clsEnv ds = do
   mapM_ (bindInstance tcEnv clsEnv) ids
-  mapM (declDeriveDataInfo tcEnv clsEnv) (filter isDataDecl tds) >>=
-    mapM_ (bindDerivedInstances clsEnv) . groupDeriveInfos
+  unlessM (hasExtension NoDataDeriving) $
+    mapM (declDeriveDataInfo tcEnv clsEnv) (filter isDataDecl tds) >>=
+      mapM_ (bindDerivedInstances clsEnv) . groupDeriveInfos
   mapM (declDeriveInfo tcEnv clsEnv) (filter hasDerivedInstances tds) >>=
     mapM_ (bindDerivedInstances clsEnv) . groupDeriveInfos
   mapM_ (checkInstance tcEnv clsEnv) ids
@@ -597,6 +611,11 @@ instPredList rm m p doc pr@(Pred _ qcls tys) inEnv =
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions
 -- ---------------------------------------------------------------------------
+
+genInstSources :: ModuleIdent -> TCEnv -> Decl a -> [InstSource]
+genInstSources m tcEnv decl = flip (InstSource spi) m <$> iis
+  where iis = genInstIdents m tcEnv decl
+        spi = getSpanInfo decl
 
 genInstIdents :: ModuleIdent -> TCEnv -> Decl a -> [InstIdent]
 genInstIdents m tcEnv (DataDecl    _ tc _ _ qclss) =

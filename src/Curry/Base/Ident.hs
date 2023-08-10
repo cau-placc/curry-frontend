@@ -21,7 +21,9 @@
 
     Qualified identifiers may optionally be prefixed by a module name.
 -}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP            #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric  #-}
 module Curry.Base.Ident
   ( -- * Module identifiers
     ModuleIdent (..), mkMIdent, moduleName, escModuleName
@@ -92,13 +94,14 @@ module Curry.Base.Ident
   , renameLabel, mkLabelIdent
   ) where
 
-import Prelude hiding ((<>))
+import Control.Monad
+import Data.Binary
 import Data.Char           (isAlpha, isAlphaNum)
 import Data.Function       (on)
 import Data.List           (intercalate, isInfixOf, isPrefixOf)
 import Data.Maybe          (isJust, fromMaybe)
-import Data.Binary
-import Control.Monad
+import GHC.Generics        (Generic)
+import Prelude hiding ((<>))
 
 import Curry.Base.Position
 import Curry.Base.Span hiding (file)
@@ -113,7 +116,7 @@ import Curry.Base.Pretty
 data ModuleIdent = ModuleIdent
   { midSpanInfo   :: SpanInfo -- ^ source code 'SpanInfo'
   , midQualifiers :: [String] -- ^ hierarchical idenfiers
-  } deriving (Read, Show)
+  } deriving (Read, Show, Generic, Binary)
 
 instance Eq ModuleIdent where
   (==) = (==) `on` midQualifiers
@@ -133,10 +136,6 @@ instance HasPosition ModuleIdent where
 
 instance Pretty ModuleIdent where
   pPrint = hcat . punctuate dot . map text . midQualifiers
-
-instance Binary ModuleIdent where
-  put (ModuleIdent sp qs) = put sp >> put qs
-  get = liftM2 ModuleIdent get get
 
 mIdentLength :: ModuleIdent -> Int
 mIdentLength a = length (concat (midQualifiers a))
@@ -203,7 +202,7 @@ data Ident = Ident
   { idSpanInfo :: SpanInfo -- ^ Source code 'SpanInfo'
   , idName     :: String   -- ^ Name of the identifier
   , idUnique   :: Integer  -- ^ Unique number of the identifier
-  } deriving (Read, Show)
+  } deriving (Read, Show, Generic, Binary)
 
 instance Eq Ident where
   Ident _ m i == Ident _ n j = (m, i) == (n, j)
@@ -226,10 +225,6 @@ instance HasPosition Ident where
 instance Pretty Ident where
   pPrint (Ident _ x n) | n == globalScope = text x
                        | otherwise        = text x <> dot <> integer n
-
-instance Binary Ident where
-  put (Ident sp qs i) = put sp >> put qs >> put i
-  get = liftM3 Ident get get get
 
 identLength :: Ident -> Int
 identLength a = length (idName a)

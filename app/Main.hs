@@ -17,18 +17,18 @@ module Main (main) where
 import Curry.Base.Monad (runCYIO)
 
 import Base.Messages
-import Files.CymakePath (cymakeGreeting, cymakeVersion)
+import Files.FrontendPath (frontendGreeting, frontendVersion)
 
 import CurryBuilder     (buildCurry)
-import CompilerOpts     (Options (..), CymakeMode (..), getCompilerOpts, usage)
+import CompilerOpts     (Options (..), FrontendMode (..), getCompilerOpts, usage)
 
--- |The command line tool cymake
+-- |The command line tool frontend
 main :: IO ()
-main = getCompilerOpts >>= cymake
+main = getCompilerOpts >>= runFrontend
 
--- |Invoke the curry builder w.r.t the command line arguments
-cymake :: (String, Options, [String], [String]) -> IO ()
-cymake (prog, opts, files, errs) = case optMode opts of
+-- |Invoke the curry frontend w.r.t the command line arguments
+runFrontend :: (String, Options, [String], [String]) -> IO ()
+runFrontend (prog, opts, files, errs) = case optMode opts of
   ModeHelp             -> printUsage prog
   ModeVersion          -> printVersion
   ModeNumericVersion   -> printNumericVersion
@@ -44,11 +44,11 @@ printUsage prog = putStrLn $ usage prog
 
 -- |Print the program version
 printVersion :: IO ()
-printVersion = putStrLn cymakeGreeting
+printVersion = putStrLn frontendGreeting
 
 -- |Print the numeric program version
 printNumericVersion :: IO ()
-printNumericVersion = putStrLn cymakeVersion
+printNumericVersion = putStrLn frontendVersion
 
 -- |Print errors and abort execution on bad parameters
 badUsage :: String -> [String] -> IO ()

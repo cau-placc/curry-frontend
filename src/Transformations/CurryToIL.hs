@@ -472,7 +472,8 @@ trExpr vs env (Typed _ e _) = do
 trExpr _ _ _ = internalError "CurryToIL.trExpr"
 
 trAlt :: [Ident] -> RenameEnv -> Alt Type -> TransM Match
-trAlt ~(v:vs) env (Alt _ t rhs) = do
+trAlt []      _   _            = internalError "CurryToIL: empty identifier list"
+trAlt (v:vs) env (Alt _ t rhs) = do
   tcEnv <- getTCEnv
   rhs' <- trRhs vs (bindRenameEnv v t env) rhs
   return ([trPattern tcEnv v t], rhs')
@@ -481,7 +482,7 @@ trLiteral :: Literal -> IL.Literal
 trLiteral (Char  c) = IL.Char c
 trLiteral (Int   i) = IL.Int i
 trLiteral (Float f) = IL.Float f
-trLiteral _         = internalError "CurryToIL.trLiteral"
+trLiteral (String s) = IL.String s
 
 -- -----------------------------------------------------------------------------
 -- Translation of Patterns

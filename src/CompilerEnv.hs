@@ -116,4 +116,3 @@ ppALPretty xs = vcat
   where showXs   = map (\(a,b) -> (render (pPrint a), render (pPrint b))) xs
         keyWidth = maximum (0 : map (length .fst) showXs)
         pad s n  = take n (s ++ repeat ' ')
-

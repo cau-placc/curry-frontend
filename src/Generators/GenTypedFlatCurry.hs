@@ -13,7 +13,7 @@
     for a given module in the intermediate language.
 -}
 {-# LANGUAGE CPP #-}
-module Generators.GenTypedFlatCurry (genTypedFlatCurry) where
+module Generators.GenTypedFlatCurry (genTypedFlatCurry, genTypedExpr) where
 
 import Curry.FlatCurry.Annotated.Type
 import Curry.FlatCurry.Annotated.Goodies
@@ -50,4 +50,3 @@ genTypedPattern :: APattern TypeExpr -> TPattern
 genTypedPattern = trAPattern
   (\ty (name, _) args -> TPattern ty name args)
   TLPattern
-

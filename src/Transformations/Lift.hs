@@ -243,17 +243,21 @@ absFunDecls pre lvs (fds:fdss) vds e = do
 
 absFunDecl :: String -> [(Type, Ident)] -> [Ident] -> Decl Type
            -> LiftM (Decl Type)
-absFunDecl pre fvs lvs (FunctionDecl p _ f eqs) = do
+absFunDecl pre fvs lvs (FunctionDecl p ty f eqs) = do
   m <- getModuleIdent
-  d <- absDecl pre lvs $ FunctionDecl p undefined f' eqs'
-  let FunctionDecl _ _ _ eqs'' = d
-  modifyValueEnv $ bindGlobalInfo
-    (\qf tySc -> Value qf Nothing (eqnArity $ head eqs') tySc) m f' $
-                 polyType ty''
-  return $ FunctionDecl p ty'' f' eqs''
+  d <- absDecl pre lvs $ FunctionDecl p ty f' eqs'
+  case d of
+    FunctionDecl _ _ _ eqs'' -> do
+      modifyValueEnv $ bindGlobalInfo
+        (\qf tySc -> Value qf Nothing (eqnArity $ head eqs') tySc) m f' $
+                    polyType ty''
+      return $ FunctionDecl p ty'' f' eqs''
+    _ -> internalError "Lift.absFunDecl: not a function declaration"
   where f' = liftIdent pre f
-        ty' = foldr TypeArrow (typeOf rhs') (map typeOf ts')
-          where Equation _ _ (FunLhs _ _ ts') rhs' = head eqs'
+        ty' = case eqs' of
+                Equation _ (FunLhs _ _ ts') rhs' : _
+                  -> foldr TypeArrow (typeOf rhs') (map typeOf ts')
+                _ -> internalError "Lift.absFunDecl: Malformed equation"
         ty'' = genType ty'
         eqs' = map addVars eqs
         genType ty''' = subst (foldr2 bindSubst idSubst tvs tvs') ty'''

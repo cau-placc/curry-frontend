@@ -11,22 +11,22 @@
     This module contains functions to obtain the version number and path
     of the front end binary.
 -}
-module Files.CymakePath (getCymake, cymakeGreeting, cymakeVersion) where
+module Files.FrontendPath (getFrontend, frontendGreeting, frontendVersion) where
 
 import Data.Version (showVersion)
 import System.FilePath ((</>))
 import Paths_curry_frontend
 
 -- | Show a greeting of the current front end
-cymakeGreeting :: String
-cymakeGreeting = "This is the Curry front end, version " ++ cymakeVersion
+frontendGreeting :: String
+frontendGreeting = "This is the Curry front end, version " ++ frontendVersion
 
--- | Retrieve the version number of cymake
-cymakeVersion :: String
-cymakeVersion = showVersion version
+-- | Retrieve the version number of frontend
+frontendVersion :: String
+frontendVersion = showVersion version
 
 -- | Retrieve the location of the front end executable
-getCymake :: IO String
-getCymake = do
-  cymakeDir <- getBinDir
-  return $ cymakeDir </> "curry-frontend"
+getFrontend :: IO String
+getFrontend = do
+  frontendDir <- getBinDir
+  return $ frontendDir </> "curry-frontend"

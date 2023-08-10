@@ -30,6 +30,7 @@ import Curry.Base.Message         ( Message, message, posMessage, spanInfoMessag
                                   , ppWarning, ppMessagesWithPreviews, ppError)
 import Curry.Base.Pretty          (Doc, text)
 import CompilerOpts               (Options (..), WarnOpts (..), Verbosity (..))
+import GHC.Stack (HasCallStack)
 
 import GHC.Stack (HasCallStack)
 
@@ -73,7 +74,7 @@ warnOrAbort opts msgs = when (wnWarn opts && not (null msgs)) $ do
 -- |Print a list of messages on 'stderr'
 printMessages :: (Message -> Doc) -> [Message] -> IO ()
 printMessages msgType msgs
-  = unless (null msgs) $ putErrLn =<< (fmap show $ ppMessagesWithPreviews msgType $ sort msgs)
+  = unless (null msgs) (putErrLn . show =<< ppMessagesWithPreviews msgType (sort msgs))
 
 -- |Raise an internal error
 internalError :: HasCallStack => String -> a

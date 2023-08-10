@@ -30,7 +30,7 @@ import qualified Data.IntSet         as IntSet
   (IntSet, empty, insert, notMember, singleton, union, unions)
 import qualified Data.Map            as Map    (empty, insert, lookup, (!))
 import           Data.Maybe
-  (catMaybes, fromMaybe, listToMaybe)
+  (catMaybes, fromMaybe, listToMaybe, isJust)
 import           Data.List
   ((\\), intersect, intersectBy, nub, sort, unionBy)
 import           Data.Char
@@ -43,14 +43,13 @@ import Curry.Base.Position
 import Curry.Base.Pretty
 import Curry.Base.SpanInfo
 import Curry.Syntax
-import Curry.Syntax.Utils  ()
-import Curry.Syntax.Pretty ()
 
 import Base.CurryTypes (ppTypeScheme, fromPred, toPredList)
 import Base.Messages   (Message, spanInfoMessage, internalError)
 import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                        , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv
                        , qualModifyNestEnv)
+import Base.TopEnv     (allBoundQualIdents)
 
 import Base.Types
 import Base.Utils (findMultiples)
@@ -115,9 +114,12 @@ getModuleIdent = gets moduleId
 modifyScope :: (ScopeEnv -> ScopeEnv) -> WCM ()
 modifyScope f = modify $ \s -> s { scope = f $ scope s }
 
+warnsFor :: WarnFlag -> WCM Bool
+warnsFor f = gets $ \s -> f `elem` warnFlags s
+
 warnFor :: WarnFlag -> WCM () -> WCM ()
 warnFor f act = do
-  warn <- gets $ \s -> f `elem` warnFlags s
+  warn <- warnsFor f
   when warn act
 
 report :: Message -> WCM ()
@@ -694,7 +696,7 @@ processEqs eqs@((n, ps, gs):eqs')
           _ -> False
         qidAlwaysTrue :: QualIdent -> Bool
         qidAlwaysTrue q = elem (idName $ qidIdent q) ["True", "success", "otherwise"]
-        
+
 
 -- |Literal patterns are checked by extracting the matched literals
 --  and constructing a pattern for any missing case.
@@ -784,7 +786,7 @@ processUsedCons cons qs = do
 
   makeCon c a ps = let (args, rest) = splitAt a ps
                    in ConstructorPattern NoSpanInfo () c args : rest
-  
+
   removeFirstCon c a (n, p:ps, gs)
     | isVarPat p = (n, replicate a wildPat ++ ps, gs)
     | isCon c  p = (n, patArgs p           ++ ps, gs)
@@ -976,8 +978,11 @@ warnNondetOverlapping spi loc = spanInfoMessage spi $
 -- -----------------------------------------------------------------------------
 
 checkShadowing :: Ident -> WCM ()
-checkShadowing x = warnFor WarnNameShadowing $
-  shadowsVar x >>= maybe ok (report . warnShadowing x)
+checkShadowing x = do
+  warnFor WarnNameShadowing $
+    shadowsVar x >>= maybe ok (report . warnShadowing x)
+  warnFor WarnImportNameShadowing $
+    shadowsImport x >>= maybe ok (report . warnShadowing x)
 
 reportUnusedVars :: WCM ()
 reportUnusedVars = reportAllUnusedVars WarnUnusedBindings
@@ -1137,8 +1142,21 @@ shadows qid s = do
   getVariable info
   where sc = scope s
 
+importShadows :: QualIdent -> WcState -> Maybe Ident
+importShadows qid s = do
+  guard $ not (qualInLocalNestEnv qid sc)
+  let qids = allBoundQualIdents $ valueEnv s
+  listToMaybe $ map unqualify $ filter isMatchingImport qids
+  where sc = scope s
+        isMatchingImport qid' = unqualify qid' == unqualify qid
+                             && isJust (qidModule qid')
+                             && qidModule qid' /= Just (moduleId s)
+
 shadowsVar :: Ident -> WCM (Maybe Ident)
 shadowsVar v = gets (shadows $ commonId v)
+
+shadowsImport :: Ident -> WCM (Maybe Ident)
+shadowsImport v = gets (importShadows $ commonId v)
 
 visitId :: Ident -> WCM ()
 visitId v = modifyScope (qualModifyNestEnv visitVariable (commonId v))

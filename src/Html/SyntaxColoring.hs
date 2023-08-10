@@ -128,9 +128,11 @@ encodeToks cur ids toks@((pos, tok) : ts)
   | column cur < column pos = let d = column pos - column cur
                               in  Space d : encodeToks (incr cur d) ids toks
   -- pragma token
-  | isPragmaToken tok       = let (ps, (end:rest)) = break (isPragmaEnd . snd) toks
-                                  s = unwords $ map (showToken . snd) (ps ++ [end])
-                              in  Pragma s : encodeToks (incr cur (length s)) ids rest
+  | isPragmaToken tok       = case break (isPragmaEnd . snd) toks of
+                                (_, [])          -> internalError "SyntaxColoring: Malformed Pragma tokens"
+                                (ps, (end:rest)) -> Pragma s : encodeToks (incr cur (length s)) ids rest
+                                  where
+                                    s = unwords $ map (showToken . snd) (ps ++ [end])
   -- identifier token
   | isIdentTok tok          = case ids of
     []     -> encodeTok tok : encodeToks newPos [] ts

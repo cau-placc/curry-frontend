@@ -32,7 +32,7 @@ import qualified Data.Map as Map        (insert)
 import           Distribution.TestSuite ( Test (..), TestInstance (..)
                                         , Progress (..), Result (..)
                                         , OptionDescr)
-import           System.FilePath        (FilePath, (</>), (<.>))
+import           System.FilePath        ((</>), (<.>))
 
 import           Curry.Base.Message     (Message, message, ppMessages, ppError)
 import           Curry.Base.Monad       (CYIO, runCYIO)
@@ -50,7 +50,7 @@ runSecure :: CYIO a -> IO (Either [Message] (a, [Message]))
 runSecure act = runCYIO act `E.catch` handler
   where handler e = return (Left [message $ text $ show (e :: E.SomeException)])
 
--- Execute a test by calling cymake
+-- Execute a test by calling the frontend
 runTest :: CO.Options -> String -> [String] -> IO Progress
 runTest opts test errorMsgs =
   if null errorMsgs
@@ -62,6 +62,7 @@ runTest opts test errorMsgs =
     wOpts         = CO.optWarnOpts opts
     wFlags        =   CO.WarnUnusedBindings
                     : CO.WarnUnusedGlobalBindings
+                    : CO.WarnImportNameShadowing
                     : CO.wnWarnFlags wOpts
     opts'         = opts { CO.optForce    = True
                          , CO.optWarnOpts = wOpts
@@ -69,13 +70,13 @@ runTest opts test errorMsgs =
                          , CO.optCppOpts  = cppOpts
                             { CO.cppDefinitions = cppDefs }
                          }
-    passOrFail    = Finished . either fail (const Pass)
-    catchE        = Finished . either pass (pass . snd)
-    fail msgs
+    passOrFail    = Finished . either failAct (const Pass)
+    catchE        = Finished . either passAct (passAct . snd)
+    failAct msgs
       | null msgs = Pass
       | otherwise = Fail $ "An unexpected failure occurred: " ++
                            showMessages msgs
-    pass msgs
+    passAct msgs
       | null otherMsgs = Pass
       | otherwise      = Fail $ "Expected warnings/failures did not occur: " ++
                                 unwords otherMsgs
@@ -145,7 +146,9 @@ mkFailTest name errorMsgs = (name, [], [], Nothing, errorMsgs)
 -- test code and the expected error message(s) to the following list
 failInfos :: [TestInfo]
 failInfos = map (uncurry mkFailTest)
-  [ ("DataFail",
+  [ ("CyclicImports/A", ["Cyclic import dependency"])
+  , ("CyclicImports/B", ["Cyclic import dependency"])
+  , ("DataFail",
       [ "Missing instance for Prelude.Data Test1"
       , "Missing instance for Prelude.Data (Test2"
       , "Missing instance for Prelude.Data (Test2"
@@ -343,6 +346,7 @@ failInfos = map (uncurry mkFailTest)
       ]
     )
   , ("MultipleArities", ["Equations for `test' have different arities"])
+  , ("MultipleInstances", ["Multiple instances for the same class and type"])
   , ("MultipleDefinitions",
       ["Multiple definitions for data/record constructor `Rec'"]
     )
@@ -355,6 +359,7 @@ failInfos = map (uncurry mkFailTest)
   , ("PragmaError", ["Unknown language extension"])
   , ("PrecedenceRange", ["Precedence out of range"])
   , ("RecordLabelIDs", ["Multiple declarations of `RecordLabelIDs.id'"])
+  , ("RecursiveImport", ["Recursive import for module Recursive"])
   , ("RecursiveTypeSyn", ["Mutually recursive synonym and/or renaming types A and B (line 12.6)"])
   , ("SyntaxError", ["Type error in application"])
   , ("TypedFreeVariables",
@@ -532,6 +537,8 @@ warnInfos = map (uncurry mkFailTest)
     )
   , ("ShadowingSymbols",
       [ "Unused declaration of variable `x'", "Shadowing symbol `x'"])
+  , ("ShadowingImports",
+      [ "Shadowing symbol `failed'", "Shadowing symbol `isAlpha'" ])
   , ("TabCharacter",
       [ "Tab character"])
   , ("UnexportedFunction",

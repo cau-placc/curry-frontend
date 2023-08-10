@@ -112,6 +112,10 @@ showsLiteral (Float x)
   = showsString "(Float "
   . shows x
   . showsString ")"
+showsLiteral (String x)
+  = showsString "(String "
+  . shows x
+  . showsString ")"
 
 showsConstrTerm :: ConstrTerm -> ShowS
 showsConstrTerm (LiteralPattern ty lit)
@@ -123,7 +127,7 @@ showsConstrTerm (ConstructorPattern ty qident idents)
   = showsString "(ConstructorPattern "
   . showsType ty
   . showsQualIdent qident . space
-  . showsList (showsIdent . snd) idents
+  . showsList (showsPair showsType showsIdent) idents
   . showsString ")"
 showsConstrTerm (VariablePattern ty ident)
   = showsString "(VariablePattern "

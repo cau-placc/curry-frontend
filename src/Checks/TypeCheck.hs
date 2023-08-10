@@ -1669,6 +1669,7 @@ tcMissingField p ty l = do
       pls'' = [(LPred (dataPred ty2) recSpi what ldoc)]
   unify p what empty pls' ty' pls'' (TypeArrow ty ty2)
 
+
 -- | Checks that it's argument can be used as an arrow type @a -> b@ and returns
 -- the pair @(a, b)@.
 tcArrow :: HasSpanInfo p => p -> String -> Doc -> Type -> TCM (Type, Type)

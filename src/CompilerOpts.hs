@@ -18,11 +18,11 @@
 -}
 module CompilerOpts
   ( Options (..), CppOpts (..), PrepOpts (..), WarnOpts (..), DebugOpts (..)
-  , OptimizationOpts(..), CaseMode (..), CymakeMode (..), Verbosity (..)
+  , OptimizationOpts(..), CaseMode (..), FrontendMode (..), Verbosity (..)
   , TargetType (..), WarnFlag (..), KnownExtension (..), DumpLevel (..)
   , dumpLevel
-  , defaultOptions, defaultPrepOpts, defaultWarnOpts, defaultDebugOpts
-  , getCompilerOpts, updateOpts, usage
+  , defaultOptions, defaultPrepOpts, defaultWarnOpts, defaultDebugOpts, defaultCppOpts
+  , getCompilerOpts, updateOpts, usage, parseOpts
   ) where
 
 import           Data.List             (intercalate, nub)
@@ -44,7 +44,7 @@ import Curry.Syntax.Extension
 -- |Compiler options
 data Options = Options
   -- general
-  { optMode          :: CymakeMode          -- ^ modus operandi
+  { optMode          :: FrontendMode          -- ^ modus operandi
   , optVerbosity     :: Verbosity           -- ^ verbosity level
   -- compilation
   , optForce         :: Bool                -- ^ force (re-)compilation of target
@@ -124,7 +124,7 @@ defaultOptions = Options
   , optPrepOpts      = defaultPrepOpts
   , optWarnOpts      = defaultWarnOpts
   , optTargetTypes   = []
-  , optExtensions    = []
+  , optExtensions    = kielExtensions
   , optDebugOpts     = defaultDebugOpts
   , optCaseMode      = CaseModeFree
   , optCppOpts       = defaultCppOpts
@@ -172,7 +172,7 @@ defaultOptimizationOpts = OptimizationOpts
   }
 
 -- |Modus operandi of the program
-data CymakeMode
+data FrontendMode
   = ModeHelp           -- ^ Show help information and exit
   | ModeVersion        -- ^ Show version and exit
   | ModeNumericVersion -- ^ Show numeric version, suitable for later processing
@@ -199,6 +199,7 @@ data TargetType
   | FlatCurry            -- ^ FlatCurry
   | AnnotatedFlatCurry   -- ^ Annotated FlatCurry
   | TypedFlatCurry       -- ^ Typed FlatCurry
+  | TypedBinaryFlatCurry -- ^ Typed FlatCurry
   | AbstractCurry        -- ^ AbstractCurry
   | UntypedAbstractCurry -- ^ Untyped AbstractCurry
   | Html                 -- ^ HTML documentation
@@ -213,6 +214,7 @@ data WarnFlag
   | WarnUnusedGlobalBindings -- ^ Warn for unused global bindings
   | WarnUnusedBindings       -- ^ Warn for unused local bindings
   | WarnNameShadowing        -- ^ Warn for name shadowing
+  | WarnImportNameShadowing  -- ^ Warn for shadowing of imported names
   | WarnOverlapping          -- ^ Warn for overlapping rules/alternatives
   | WarnIncompletePatterns   -- ^ Warn for incomplete pattern matching
   | WarnMissingSignatures    -- ^ Warn for missing type signatures
@@ -244,6 +246,8 @@ warnFlags =
     , "unused bindings"                )
   , ( WarnNameShadowing       , "name-shadowing"
     , "name shadowing"                 )
+  , ( WarnImportNameShadowing , "import-name-shadowing"
+    , "import name shadowing"          )
   , ( WarnOverlapping         , "overlapping"
     , "overlapping function rules"     )
   , ( WarnIncompletePatterns  , "incomplete-patterns"
@@ -330,9 +334,15 @@ extensions =
   , ( MultiParamTypeClasses    , "MultiParamTypeClasses"
     , "enable type classes with none or multiple parameters" )
   , ( NegativeLiterals         , "NegativeLiterals"
-    , "desugar negated literals as negative literal"         )
+    , "desugar negated literals as negative literal" )
+  , ( NoAnonFreeVars           , "NoAnonFreeVars"
+    , "disable anonymous free variables"             )
+  , ( NoFunctionalPatterns     , "NoFunctionalPatterns"
+    , "disable functional patterns"                  )
   , ( NoImplicitPrelude        , "NoImplicitPrelude"
-    , "do not implicitly import the Prelude"                 )
+    , "do not implicitly import the Prelude"         )
+  , ( NoDataDeriving           , "NoDataDeriving"
+    , "do not implicitly derive the Data class"      )
   ]
 
 -- -----------------------------------------------------------------------------
@@ -495,9 +505,8 @@ options =
       "execute preprocessor with option <option>"
   -- extensions
   , Option "e"  ["extended"]
-      (NoArg (onOpts $ \ opts -> opts { optExtensions =
-        nub $ kielExtensions ++ optExtensions opts }))
-      "enable extended Curry functionalities"
+      (NoArg (onOpts id))
+      "enable extended Curry functionalities (deprecated, enabled by default and kept for backwards compatibility)"
   , mkOptDescr onOpts      "c" ["case-mode"] "mode" "case mode"           caseModeDescriptions
   , mkOptDescr onOpts      "X" []            "ext"  "language extension"  extDescriptions
   , mkOptDescr onWarnOpts  "W" []            "opt"  "warning option"      warnDescriptions

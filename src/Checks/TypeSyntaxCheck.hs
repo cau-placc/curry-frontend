@@ -17,7 +17,8 @@
    hand side of a type declaration are actually defined and no identifier
    is defined more than once.
 -}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP        #-}
+{-# LANGUAGE LambdaCase #-}
 module Checks.TypeSyntaxCheck (typeSyntaxCheck) where
 
 #if __GLASGOW_HASKELL__ >= 804
@@ -25,13 +26,13 @@ import Prelude hiding ((<>))
 #endif
 
 #if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative      ((<$>), (<*>), pure)
+import           Control.Applicative        ( (<$>), (<*>), pure )
 #endif
-import           Control.Monad            (filterM, unless, when)
-import qualified Control.Monad.State as S (State, runState, gets, modify)
-import           Data.List                (nub)
-import qualified Data.Map            as Map (Map, insert, lookup)
-import           Data.Maybe               (isNothing)
+import           Control.Monad              ( filterM, unless, when )
+import qualified Control.Monad.State as S   ( State, runState, gets, modify )
+import           Data.List                  ( nub )
+import qualified Data.Map            as Map ( Map, insert, lookup )
+import           Data.Maybe                 ( isNothing, mapMaybe )
 import qualified Data.Set            as Set ( Set, fromList, isSubsetOf, size
                                             , toAscList, union )
 
@@ -72,15 +73,14 @@ typeSyntaxCheck
   :: [KnownExtension] -> TCEnv -> ClassEnv -> Module a -> (Module a, [Message])
 typeSyntaxCheck exts tcEnv clsEnv mdl@(Module _ _ _ m _ _ ds) =
   case findMultiples $ map getIdent tcds of
-    [] -> if length dfds <= 1
+    [] -> if length dfps <= 1
             then runTSCM (checkModule mdl) state
             else (mdl, [errMultipleDefaultDeclarations dfps])
     tss -> (mdl, map errMultipleDeclarations tss)
   where
     tcds = filter isTypeOrClassDecl ds
     cds  = filter isClassDecl tcds
-    dfds = filter isDefaultDecl ds
-    dfps = map (\(DefaultDecl p _) -> p) dfds
+    dfps = mapMaybe (\case { DefaultDecl p _ -> Just p; _ -> Nothing }) ds
     tEnv = foldr (bindType m) (fmap toTypeKind tcEnv) tcds
     fdmap = foldr (bindClass m) (CE.toFunDepMap clsEnv) cds
     state = TSCState exts m tEnv fdmap 1 []
@@ -209,8 +209,8 @@ checkConstrDecl tvs (ConstrDecl p c tys) = do
   tys' <- mapM (checkClosedType tvs) tys
   return $ ConstrDecl p c tys'
 checkConstrDecl tvs (ConOpDecl p ty1 op ty2) = do
-  tys' <- mapM (checkClosedType tvs) [ty1, ty2]
-  let [ty1', ty2'] = tys'
+  ty1' <- checkClosedType tvs ty1
+  ty2' <- checkClosedType tvs ty2
   return $ ConOpDecl p ty1' op ty2'
 checkConstrDecl tvs (RecordDecl p c fs) = do
   fs' <- mapM (checkFieldDecl tvs) fs
