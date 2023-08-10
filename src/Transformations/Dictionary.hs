@@ -806,7 +806,6 @@ matchPredList tySc ty2 = do
 matchPredList' :: (ValueEnv -> TypeScheme)  -> PredType -> DTM [Pred]
 matchPredList' tySc (PredType ps2 ty2) = do
   ForAll _ (PredType ps ty1) <- tySc <$> getValueEnv
-  dictEnvPreds <- map fst <$> getDictEnv
   let argPreds = foldr (\(pls1, pls2) pls' -> fromMaybe pls' $
                           qualMatch' pls1 ty1 pls2 ps2 ty2)
                        (internalError $ "Dictionary.matchPredList': " ++ show ps)

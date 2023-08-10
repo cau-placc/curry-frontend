@@ -47,7 +47,6 @@ import Base.SCC
 import Base.TopEnv
 import Base.Types
 import Base.TypeExpansion
-import Base.Utils (foldr2)
 
 import Env.Class
 import Env.TypeConstructor
@@ -764,10 +763,6 @@ isTypeOrNewtypeDecl :: Decl a -> Bool
 isTypeOrNewtypeDecl (NewtypeDecl _ _ _ _ _) = True
 isTypeOrNewtypeDecl (TypeDecl      _ _ _ _) = True
 isTypeOrNewtypeDecl _                       = False
-
-desugarQualTypeExpr :: QualTypeExpr -> QualTypeExpr
-desugarQualTypeExpr (QualTypeExpr spi cx ty) =
-   QualTypeExpr spi (desugarContext cx) (desugarTypeExpr ty)
 
 desugarContext :: Context -> Context
 desugarContext = map desugarConstraint

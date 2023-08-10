@@ -849,7 +849,7 @@ makeContextEquivalent pls pls2 ty2 (i, FunctionDecl p pty@(PredType pls1 ty1) f 
                         (matchTypeSafe ty2 ty1 idSubst)
       impPlss = map (impliedPredicatesList clsEnv) pls1
       sigPls = zip pls1 impPlss
-      (pls2',theta') = makeEquivalent sigPls pls2 theta
+      (pls2', _) = makeEquivalent sigPls pls2 theta
   let eqs' = map (setPredType $ PredType pls2' ty2) eqs
   return (pls, (i,FunctionDecl p pty f eqs'))
   where
