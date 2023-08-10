@@ -1,16 +1,22 @@
 --- Polymorphically typed free variables
 --- Redmine - curry-frontend - bug #480
 
-test :: a
+test :: Data a => a
 test = x
   where
     x :: b
     x = unknown
 
-test1 :: a
+test0 :: Data a => a
+test0 = x
+  where
+    x free
+
+test1 :: Data a => a
 test1 = x
-  where x :: a
-        x free
+  where
+    x :: a
+    x free
 
 test2 :: a -> b
 test2 = let x = unknown :: a -> b in x
@@ -27,3 +33,6 @@ test5 = (x, x)
   where
     x :: a
     x = unknown
+
+test6 :: a
+test6 = let x = x :: a in x
