@@ -356,11 +356,12 @@ occursInBinding v (Binding w _) = v == w
 failedExpr :: Type -> Expression
 failedExpr ty = Function ty (qualifyWith preludeMIdent (mkIdent "failed")) 0
 
---TODO: Add note about arity of 0 because of the predefined functions in the Prelude
+-- Arity 0 is used for the char/int/float (===) implementations,
+-- because they are defined as (===) = (==)
 eqExpr :: CS.Type -> IL.Type -> Expression -> Expression -> Expression
 eqExpr ty ty' e1 | IL.TypeConstructor _ [_] <- ty'
-  = Apply (Apply (Apply (Function eqListTy eqList 0)
-                    (Function dataCharDictType dataCharDict 0)) e1)
+  = Apply (Apply (Apply (Function eqListTy eqList 3)
+                    (Function dataCharDictType dataCharDict 1)) e1)
   where eqList = qImplMethodId preludeMIdent qDataId ty $ mkIdent "==="
         eqListTy = TypeArrow (IL.TypeConstructor (qDictTypeId qDataId) [ty'])
                      (TypeArrow ty' (TypeArrow ty' boolType'))
