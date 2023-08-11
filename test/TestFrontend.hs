@@ -168,13 +168,13 @@ failInfos = map (uncurry mkFailTest)
   , ("ExportCheck/UndefinedElement", ["`foo' is not a constructor or label of type `Bool'"])
   , ("ExportCheck/UndefinedName", ["Undefined name `foo' in export list"])
   , ("ExportCheck/UndefinedType", ["Undefined type or class `Foo' in export list"])
-  , ("FD_TestSpec", 
+  , ("FD_TestSpec",
       [ "Missing instance for Test Prelude.Bool Prelude.Int"
       , "arising from variable"
       , "use"
       ]
     )
-  , ("FD_TypeError2", 
+  , ("FD_TypeError2",
       ["Missing instance for Collects Prelude.Bool"
       , "arising from variable"
       , "insert"
@@ -363,7 +363,7 @@ failInfos = map (uncurry mkFailTest)
   , ("RecursiveTypeSyn", ["Mutually recursive synonym and/or renaming types A and B (line 12.6)"])
   , ("SyntaxError", ["Type error in application"])
   , ("TypedFreeVariables",
-      ["Variable x has a polymorphic type", "Type error in equation"]
+      ["Variable x has a polymorphic type", "Type error in function definition"]
     )
   , ("TypeError1", ["Type error in explicitly typed expression"])
   , ("TypeError2", ["Missing instance for Prelude.Num Prelude.Bool"])
