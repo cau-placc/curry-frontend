@@ -29,12 +29,8 @@
 
     To summarize, this module expands all rigid case expressions.
 -}
-{-# LANGUAGE CPP           #-}
 {-# LANGUAGE TupleSections #-}
 module Transformations.CaseCompletion (completeCase) where
-
-
-
 
 import qualified Control.Monad.State as S   (State, evalState, gets, modify)
 import           Data.List                  (find)

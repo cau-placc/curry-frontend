@@ -52,12 +52,7 @@
   As we are going to insert references to real prelude entities,
   all names must be properly qualified before calling this module.
 -}
-{-# LANGUAGE CPP           #-}
 module Transformations.Desugar (desugar) where
-
-
-
-
 import           Control.Arrow              (first, second)
 import           Control.Monad              (liftM2, mapAndUnzipM)
 import           Control.Monad.Extra        (concatMapM)
@@ -330,8 +325,9 @@ constrain cs e = if null cs then e else foldr1 (&) cs &> e
 
 dsRhs :: (Expression PredType -> Expression PredType)
       -> Rhs PredType -> DsM (Rhs PredType)
-dsRhs f rhs =   (expandRhs (prelFailed (typeOf rhs)) f rhs
-            >>= dsExpr (getSpanInfo rhs)) <&> simpleRhs (getSpanInfo rhs)
+dsRhs f rhs = simpleRhs (getSpanInfo rhs) <$>
+  (expandRhs (prelFailed (typeOf rhs)) f rhs
+    >>= dsExpr (getSpanInfo rhs))
 
 expandRhs :: Expression PredType -> (Expression PredType -> Expression PredType)
           -> Rhs PredType -> DsM (Expression PredType)

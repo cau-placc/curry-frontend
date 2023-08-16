@@ -286,7 +286,7 @@ absExpr pre lvs var@(Variable _ ty v)
     getAbstractEnv >>= \env -> case Map.lookup (unqualify v) env of
       Nothing       -> return var
       Just (e, fty) -> let unifier = matchType fty ty idSubst
-                       in  absExpr pre lvs $ fmap (subst unifier) $ absType ty e
+                       in  absExpr pre lvs (subst unifier <$> absType ty e)
   where -- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         -- !!! HACK: When inserting the replacement expression for an     !!!
         -- !!! abstracted function, we have to unify the original         !!!
