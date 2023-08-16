@@ -652,22 +652,59 @@ rigidMatchDemanded :: FunList (IL.Type, Ident)  -- skipped variables
                    -> [(IL.Type, Ident)]        -- next variables
                    -> [(IL.ConstrTerm, Match')] -- alternatives
                    -> IL.Expression
-rigidMatchDemanded prefix v vs alts = IL.Case IL.Rigid (uncurry IL.Variable v)
-  $ map caseAlt (consPats ++ varPats)
+rigidMatchDemanded prefix v vs alts' =
+  IL.Case IL.Rigid (uncurry IL.Variable v) $ map caseAlt (consPats ++ varPats)
   where
-  -- N.B.: @varPats@ is either empty or a singleton list due to nub
-  (varPats, consPats) = partition isVarPattern $ nub $ map fst alts
-  caseAlt t           = IL.Alt t expr
-    where
-    expr = rigidMatch (prefix $ vars t ++ vs) (matchingCases alts)
-    -- matchingCases selects the matching alternatives
-    --  and recursively matches the remaining patterns
-    matchingCases a = map (expandVars (vars t)) $ filter (matches . fst) a
-    matches t' = t == t' || isVarPattern t'
-    expandVars vs' (p, (pref, ts1, e)) = (pref ts2, e)
-      where ts2 | isVarPattern p = map var2Pattern vs' ++ ts1
-                | otherwise      = ts1
-            var2Pattern v' = NestedTerm (uncurry IL.VariablePattern v') []
+    alts = handleMixedLiteralPatterns (snd v) alts'
+    -- N.B.: @varPats@ is either empty or a singleton list due to nub
+    -- This relies on the uniform naming scheme for variables
+    (varPats, consPats) = partition isVarPattern $ nub $ map fst alts
+    caseAlt t           = IL.Alt t expr
+      where
+      expr = rigidMatch (prefix $ vars t ++ vs) (matchingCases alts)
+      -- matchingCases selects the matching alternatives
+      --  and recursively matches the remaining patterns
+      matchingCases a = map (expandVars (vars t)) $ filter (matches . fst) a
+      matches t' = t == t' || isVarPattern t'
+      expandVars vs' (p, (pref, ts1, e)) = (pref ts2, e)
+        where ts2 | isVarPattern p = map var2Pattern vs' ++ ts1
+                  | otherwise      = ts1
+              var2Pattern v' = NestedTerm (uncurry IL.VariablePattern v') []
+
+-- It might still happen that there are string and list constructor pattern mixed in the same pattern position
+-- Consider the following example:
+-- case _1 of
+--   'v':_ -> 1
+--   "-f"  -> 2
+--   "-g"  -> 3
+--   s     -> 4
+-- The function @handleMixedLiteralPatterns@ detects these cases
+-- and processes them with @desugarOuterLit@ if required.
+-- The latter just transforms the first character of each string literal into a `(:)` match
+-- with the character and remaining string literal pattern added as a nested to-be-matched term.
+-- It is imperative that the variables created as the arguments to the `(:)` match
+-- are correctly named for the current level.
+-- Thus, we pass in the previous identified name and add a "_1"/"_2" suffix.
+-- Also note that this only works because cases are flat.
+-- The following characters of a string literal might thus be desugared later.
+handleMixedLiteralPatterns :: Ident -> [(IL.ConstrTerm, Match')] -> [(IL.ConstrTerm, Match')]
+handleMixedLiteralPatterns idt alts =
+  if any (isLiteralPattern . fst) alts && any (isConstructorPattern . fst) alts
+    -- can only be a string, because other primitives do not have constructors
+    then map (desugarOuterLit idt) alts
+    else alts
+
+desugarOuterLit :: Ident -> (IL.ConstrTerm, Match') -> (IL.ConstrTerm, Match')
+desugarOuterLit _ (IL.LiteralPattern listTy (IL.String ""), (pref, ts, e)) =
+  (IL.ConstructorPattern listTy qNilId [], (pref, ts, e))
+desugarOuterLit idt (IL.LiteralPattern listTy (IL.String (c:s)), (pref, ts, e)) =
+  let charTy = IL.TypeConstructor qCharId []
+      p1 = (charTy, idt { idName = idName idt ++ "_1" })
+      p2 = (listTy, idt { idName = idName idt ++ "_2" })
+      n1 = NestedTerm (IL.LiteralPattern charTy (IL.Char c)) []
+      n2 = NestedTerm (IL.LiteralPattern listTy (IL.String s)) []
+  in (IL.ConstructorPattern listTy qConsId [p1, p2], (pref, [n1, n2] ++ ts, e))
+desugarOuterLit _ m = m
 
 -- -----------------------------------------------------------------------------
 -- Pattern Matching Auxiliaries
@@ -676,6 +713,14 @@ rigidMatchDemanded prefix v vs alts = IL.Case IL.Rigid (uncurry IL.Variable v)
 isVarPattern :: IL.ConstrTerm -> Bool
 isVarPattern (IL.VariablePattern _ _) = True
 isVarPattern _                        = False
+
+isLiteralPattern :: IL.ConstrTerm -> Bool
+isLiteralPattern (IL.LiteralPattern _ _) = True
+isLiteralPattern _                       = False
+
+isConstructorPattern :: IL.ConstrTerm -> Bool
+isConstructorPattern (IL.ConstructorPattern _ _ _) = True
+isConstructorPattern _                             = False
 
 isVarMatch :: (IL.ConstrTerm, a) -> Bool
 isVarMatch = isVarPattern . fst
