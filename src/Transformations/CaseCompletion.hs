@@ -29,11 +29,8 @@
 
     To summarize, this module expands all rigid case expressions.
 -}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE TupleSections #-}
 module Transformations.CaseCompletion (completeCase) where
-
-
-
 
 import qualified Control.Monad.State as S   (State, evalState, gets, modify)
 import           Data.List                  (find)
@@ -452,7 +449,7 @@ getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds) = complementary cs cinfos
   isNewConstrDecl qid (CS.NewConstrDecl _ cid _) = unqualify qid == cid
   isNewConstrDecl qid (CS.NewRecordDecl _ cid _) = unqualify qid == cid
 
-  extractConstrDecls (CS.IDataDecl _ _ _ vs cs' _) = zip (repeat vs) cs'
+  extractConstrDecls (CS.IDataDecl _ _ _ vs cs' _) = map (vs,) cs'
   extractConstrDecls _                             = []
 
   constrInfo vs (CS.ConstrDecl _ cid tys)     =
@@ -506,7 +503,7 @@ matchType' (TypeVariable tv) ty
   | ty == TypeVariable tv = Just id
   | otherwise = Just (bindSubst tv ty)
 matchType' (TypeConstructor tc1 tys1) (TypeConstructor tc2 tys2)
-  | tc1 == tc2 = Just $ foldr (\(ty1, ty2) -> (matchType ty1 ty2 .)) id $ tys
+  | tc1 == tc2 = Just $ foldr (\(ty1, ty2) -> (matchType ty1 ty2 .)) id tys
   where tys = zip tys1 tys2
 matchType' (TypeArrow ty11 ty12) (TypeArrow ty21 ty22) =
   Just (matchType ty11 ty21 . matchType ty12 ty22)

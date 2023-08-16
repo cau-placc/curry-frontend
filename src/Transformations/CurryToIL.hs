@@ -21,16 +21,10 @@
    Because of name conflicts between the source and intermediate language
    data structures, we can use only a qualified import for the 'IL' module.
 -}
-{-# LANGUAGE CPP #-}
 module Transformations.CurryToIL (ilTrans, transType) where
-
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative        ((<$>), (<*>))
-#endif
-
 import           Control.Monad.Extra         (concatMapM)
-import qualified Control.Monad.Reader as R
-import qualified Control.Monad.State  as S
+import           Control.Monad.Reader        (Reader, asks, runReader)
+import Control.Monad.State                   (State, put, get, execState)
 import           Data.List                   (nub, partition)
 import           Data.Maybe                  (fromJust)
 import qualified Data.Map             as Map
@@ -49,11 +43,11 @@ import Base.Utils (foldr2)
 import Env.TypeConstructor
 import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 
-import qualified IL as IL
+import qualified IL
 
 ilTrans :: Bool -> ValueEnv -> TCEnv -> Module Type -> IL.Module
 ilTrans remIm vEnv tcEnv (Module _ _ _ m _ im ds) = IL.Module m im' ds'
-  where ds' = R.runReader (concatMapM trDecl ds) (TransEnv m vEnv tcEnv)
+  where ds' = runReader (concatMapM trDecl ds) (TransEnv m vEnv tcEnv)
         im' = preludeMIdent : if remIm then imports m ds' else map moduleImport im
         moduleImport (ImportDecl _ mdl _ _ _) = mdl
 
@@ -114,16 +108,16 @@ data TransEnv = TransEnv
   , tyconEnv    :: TCEnv
   }
 
-type TransM a = R.Reader TransEnv a
+type TransM a = Reader TransEnv a
 
 getValueEnv :: TransM ValueEnv
-getValueEnv = R.asks valueEnv
+getValueEnv = asks valueEnv
 
 getTCEnv :: TransM TCEnv
-getTCEnv = R.asks tyconEnv
+getTCEnv = asks tyconEnv
 
 trQualify :: Ident -> TransM QualIdent
-trQualify i = flip qualifyWith i <$> R.asks moduleIdent
+trQualify i = asks ((`qualifyWith` i) . moduleIdent)
 
 getArity :: QualIdent -> TransM Int
 getArity qid = do
@@ -260,21 +254,21 @@ polyType ty                =
 -- as all variables have already been renamed.
 
 data KIS = KIS
-  { _nextId :: Int
+  { _nextKindId :: Int
   , kinds  :: Map.Map Int IL.Kind
   }
 
-freshId :: S.State KIS Int
-freshId = do
-  KIS i ks <- S.get
-  S.put (KIS (i+1) ks)
+freshKindId :: State KIS Int
+freshKindId = do
+  KIS i ks <- get
+  put (KIS (i+1) ks)
   return i
 
 transTVars :: TCEnv -> Type -> [(Int, IL.Kind)]
 transTVars tcEnv ty' =
-  Map.toList $ kinds $ S.execState (build ty' IL.KindStar) (KIS 0 Map.empty)
+  Map.toList $ kinds $ execState (build ty' IL.KindStar) (KIS 0 Map.empty)
   where
-    build :: Type -> IL.Kind -> S.State KIS ()
+    build :: Type -> IL.Kind -> State KIS ()
     build (TypeArrow     ty1 ty2) _ =
       build ty1 IL.KindStar >> build ty2 IL.KindStar
     build (TypeConstrained tys _) k =
@@ -282,14 +276,14 @@ transTVars tcEnv ty' =
     build (TypeForall       _ ty) k =
       build ty k
     build (TypeVariable       tv) k = do
-      KIS i ks <- S.get
+      KIS i ks <- get
       -- get current kind
       let k' = Map.findWithDefault k tv ks
       -- unify it
       let s = unifyKind k k'
       -- apply substitution
-      let ks' = fmap (applyKindSubst s) $ Map.insert tv k' ks
-      S.put (KIS i ks')
+      let ks' = applyKindSubst s <$> Map.insert tv k' ks
+      put (KIS i ks')
     build (TypeConstructor     _) _ = return ()
     build ta@(TypeApply       _ _) k =
       let (ty, tys) = unapplyType True ta
@@ -299,7 +293,7 @@ transTVars tcEnv ty' =
           mapM_ (uncurry build) (zip tys $ unarrowKind $ transKind k')
         _ -> do -- var of forall
           -- construct new kind vars
-          ks <- mapM (const (freshId >>= return . IL.KindVariable)) tys
+          ks <- mapM (const (IL.KindVariable <$> freshKindId)) tys
           -- infer kind for v
           build ty (foldr IL.KindArrow k ks)
           -- infer kinds for args
@@ -454,7 +448,7 @@ trExpr (v:vs) env (Case _ _ ct e alts) = do
   tcEnv <- getTCEnv
   let matcher = if ct == Flex then flexMatch else rigidMatch
       ty'     = transType tcEnv $ typeOf e
-  expr <- matcher [(ty', v)] <$> mapM (trAlt (v:vs) env) alts
+  expr <-  matcher [(ty', v)] <$> mapM (trAlt v vs env) alts
   return $ case expr of
     IL.Case mode (IL.Variable _ v') alts'
         -- subject is not referenced -> forget v and insert subject
@@ -469,9 +463,8 @@ trExpr vs env (Typed _ e _) = do
   return $ IL.Typed e' (transType tcEnv $ typeOf e)
 trExpr _ _ _ = internalError "CurryToIL.trExpr"
 
-trAlt :: [Ident] -> RenameEnv -> Alt Type -> TransM Match
-trAlt []      _   _            = internalError "CurryToIL: empty identifier list"
-trAlt (v:vs) env (Alt _ t rhs) = do
+trAlt :: Ident -> [Ident] -> RenameEnv -> Alt Type -> TransM Match
+trAlt v vs env (Alt _ t rhs) = do
   tcEnv <- getTCEnv
   rhs' <- trRhs vs (bindRenameEnv v t env) rhs
   return ([trPattern tcEnv v t], rhs')
@@ -488,8 +481,8 @@ trLiteral (String s) = IL.String s
 
 data NestedTerm = NestedTerm IL.ConstrTerm [NestedTerm] deriving Show
 
-pattern :: NestedTerm -> IL.ConstrTerm
-pattern (NestedTerm t _) = t
+getPattern :: NestedTerm -> IL.ConstrTerm
+getPattern (NestedTerm t _) = t
 
 arguments :: NestedTerm -> [NestedTerm]
 arguments (NestedTerm _ ts) = ts
@@ -731,7 +724,7 @@ vars _                              = []
 
 -- tagAlt extracts the structure of the first pattern
 tagAlt :: Match -> (IL.ConstrTerm, Match)
-tagAlt (t:ts, e) = (pattern t, (arguments t ++ ts, e))
+tagAlt (t:ts, e) = (getPattern t, (arguments t ++ ts, e))
 tagAlt ([]  , _) = error "CurryToIL.tagAlt: empty pattern list"
 
 -- skipPat skips the current pattern position for later matching
@@ -741,7 +734,7 @@ skipPat ([]  , _) = error "CurryToIL.skipPat: empty pattern list"
 
 -- tagAlt' extracts the next pattern
 tagAlt' :: Match' -> (IL.ConstrTerm, Match')
-tagAlt' (pref, t:ts, e') = (pattern t, (pref, arguments t ++ ts, e'))
+tagAlt' (pref, t:ts, e') = (getPattern t, (pref, arguments t ++ ts, e'))
 tagAlt' (_   , []  , _ ) = error "CurryToIL.tagAlt': empty pattern list"
 
 -- skipPat' skips the current argument for later matching
