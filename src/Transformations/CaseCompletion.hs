@@ -357,15 +357,17 @@ occursInBinding v (Binding w _) = v == w
 failedExpr :: Type -> Expression
 failedExpr ty = Function ty (qualifyWith preludeMIdent (mkIdent "failed")) 0
 
+-- Arity 0 is used for the char/int/float (===) implementations,
+-- because they are defined as (===) = (==)
 eqExpr :: CS.Type -> IL.Type -> Expression -> Expression -> Expression
-eqExpr ty ty' e1 | CS.TypeApply listConTy _ <- ty
-  = let eqList = qImplMethodId preludeMIdent qDataId [CS.TypeApply listConTy (CS.TypeVariable 0)] $ mkIdent "==="
-        eqListTy = TypeArrow (IL.TypeConstructor (qDictTypeId qDataId) [ty'])
-                     (TypeArrow ty' (TypeArrow ty' boolType'))
-        dataCharDict = qInstFunId preludeMIdent qDataId [charType]
-        dataCharDictType = TypeArrow unitType' (IL.TypeConstructor (qDictTypeId qDataId) [charType'])
-    in Apply (Apply (Apply (Function eqListTy eqList 0)
-                    (Function dataCharDictType dataCharDict 0)) e1)
+eqExpr ty ty' e1 | CS.TypeApply listConTy _ <- ty =
+  let eqList = qImplMethodId preludeMIdent qDataId [CS.TypeApply listConTy (CS.TypeVariable 0)] $ mkIdent "==="
+      eqListTy = TypeArrow (IL.TypeConstructor (qDictTypeId qDataId) [ty'])
+                    (TypeArrow ty' (TypeArrow ty' boolType'))
+      dataCharDict = qInstFunId preludeMIdent qDataId [charType]
+      dataCharDictType = TypeArrow unitType' (IL.TypeConstructor (qDictTypeId qDataId) [charType'])
+  in Apply (Apply (Apply (Function eqListTy eqList 3)
+                    (Function dataCharDictType dataCharDict 1)) e1)
 eqExpr ty ty' e1 =
     Apply (Apply (Function eqTy eq 0) e1)
   where eq   = qImplMethodId preludeMIdent qDataId [ty] $ mkIdent "==="
