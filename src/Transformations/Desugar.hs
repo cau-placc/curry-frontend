@@ -58,7 +58,6 @@ import           Control.Monad              (liftM2, mapAndUnzipM)
 import           Control.Monad.Extra        (concatMapM)
 import qualified Control.Monad.State as S   (State, runState, gets, modify)
 import           Data.Foldable              (foldrM)
-import           Data.Functor               ((<&>))
 import           Data.List                  ( elemIndex, nub, partition
                                             , tails )
 import           Data.Maybe                 (fromMaybe)

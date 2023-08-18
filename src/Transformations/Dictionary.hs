@@ -1154,7 +1154,7 @@ qImplMethodId :: ModuleIdent -> QualIdent -> [Type] -> Ident -> QualIdent
 qImplMethodId m cls tys = qualifyWith m . implMethodId cls tys
 
 typeId :: Type -> String
-typeId ty = '(' : typeId' ty ++ ")"
+typeId ty = '#' : typeId' ty ++ "#"
  where
   typeId' (TypeConstructor  tc) = qualName tc
   typeId' (TypeVariable      v) = show v
