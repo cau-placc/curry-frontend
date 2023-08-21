@@ -1169,15 +1169,15 @@ tcLiteral _    (String _) = return ([], stringType)
 
 tcLhs :: HasSpanInfo p => p -> Lhs a -> PTCM (LPredList, [Type], Lhs PredType)
 tcLhs p (FunLhs spi f ts) = do
-  (plss, tys, ts') <- unzip3 <$> mapM (tcPatternHelper p) ts
+  (plss, tys, ts') <- unzip3 <$> mapM (tcPatternHelper p False) ts
   return (plUnions plss, tys, FunLhs spi f ts')
 tcLhs p (OpLhs spi t1 op t2) = do
-  (pls1, ty1, t1') <- tcPatternHelper p t1
-  (pls2, ty2, t2') <- tcPatternHelper p t2
+  (pls1, ty1, t1') <- tcPatternHelper p False t1
+  (pls2, ty2, t2') <- tcPatternHelper p False t2
   return (plUnion pls1 pls2, [ty1, ty2], OpLhs spi t1' op t2')
 tcLhs p (ApLhs spi lhs ts) = do
   (pls, tys1, lhs') <- tcLhs p lhs
-  (plss, tys2, ts') <- unzip3 <$> mapM (tcPatternHelper p) ts
+  (plss, tys2, ts') <- unzip3 <$> mapM (tcPatternHelper p False) ts
   return (plUnions (pls:plss), tys1 ++ tys2, ApLhs spi lhs' ts')
 
 -- When computing the type of a variable in a pattern, we ignore the
@@ -1190,27 +1190,32 @@ tcLhs p (ApLhs spi lhs ts) = do
 -- We also keep track of already used variables,
 -- in order to add a Data constraint for non-linear patterns
 
+
+
 tcPattern :: HasSpanInfo p => p -> Pattern a
           -> TCM (LPredList, Type, Pattern PredType)
-tcPattern = tcPatternWith Set.empty
+tcPattern p = tcPatternWith Set.empty p False
 
-tcPatternWith :: HasSpanInfo p => Set.Set Ident -> p -> Pattern a
+-- Inside a functional pattern, a literal pattern can get a Num-constrained type,
+-- Whereas a literal pattern everywhere else gets a TypeConstrained concretely to Int/Float.
+-- Bool = inside FunPat
+tcPatternWith :: HasSpanInfo p => Set.Set Ident -> p -> Bool -> Pattern a
               -> TCM (LPredList, Type, Pattern PredType)
-tcPatternWith s p pt = S.evalStateT (tcPatternHelper p pt) s
+tcPatternWith s p inFP pt = S.evalStateT (tcPatternHelper p inFP pt) s
 
 type PTCM a = S.StateT (Set.Set Ident) TCM a
 
-tcPatternHelper :: HasSpanInfo p => p -> Pattern a
+tcPatternHelper :: HasSpanInfo p => p -> Bool -> Pattern a
                 -> PTCM (LPredList, Type, Pattern PredType)
-tcPatternHelper _ t@(LiteralPattern spi _ l) = do
-  (pls, ty) <- lift $ tcLiteral False l
+tcPatternHelper _ inFP t@(LiteralPattern spi _ l) = do
+  (pls, ty) <- lift $ tcLiteral inFP l
   let pls' = map (\pr -> LPred pr spi "literal pattern" (pPrint t)) pls
   return (pls', ty, LiteralPattern spi (predType ty) l)
-tcPatternHelper _ t@(NegativePattern spi _ l) = do
-  (pls, ty) <- lift $ tcLiteral False l
+tcPatternHelper _ inFP t@(NegativePattern spi _ l) = do
+  (pls, ty) <- lift $ tcLiteral inFP l
   let pls' = map (\pr -> LPred pr spi "literal pattern" (pPrint t)) pls
   return (pls', ty, NegativePattern spi (predType ty) l)
-tcPatternHelper _ t@(VariablePattern spi _ v) = do
+tcPatternHelper _ _ t@(VariablePattern spi _ v) = do
   vEnv <- lift getValueEnv
   (pls, ty) <- lift $ inst (varType v vEnv)
   used <- S.get
@@ -1221,18 +1226,18 @@ tcPatternHelper _ t@(VariablePattern spi _ v) = do
   let pls'' = plUnion pls' (map (\pr -> LPred pr spi what (pPrint t)) pls)
   pls3 <- lift $ improvePreds pls''
   return (pls3, ty, VariablePattern spi (PredType (map getPred pls'') ty) v)
-tcPatternHelper p t@(ConstructorPattern spi _ c ts) = do
+tcPatternHelper p inFP t@(ConstructorPattern spi _ c ts) = do
   m <- lift getModuleIdent
   vEnv <- lift getValueEnv
   (pls, (tys, ty')) <- fmap arrowUnapply <$> lift (skol (constrType m c vEnv))
   let doc = pPrintPrec 0 t
       pls' = map (\pr -> LPred pr spi "constructor pattern" doc) pls
-  (pls'', ts') <- mapAccumM (uncurry . ptcPatternArg p "pattern" doc) pls'
+  (pls'', ts') <- mapAccumM (uncurry . ptcPatternArg p inFP "pattern" doc) pls'
                            (zip tys ts)
   pls3 <- lift $ improvePreds pls''
   return (pls3, ty', ConstructorPattern spi (predType ty') c ts')
-tcPatternHelper p t@(InfixPattern spi a t1 op t2) = do
-  (pls, ty, t') <- tcPatternHelper p (ConstructorPattern NoSpanInfo a op [t1,t2])
+tcPatternHelper p inFP t@(InfixPattern spi a t1 op t2) = do
+  (pls, ty, t') <- tcPatternHelper p inFP (ConstructorPattern NoSpanInfo a op [t1,t2])
   case t' of
     ConstructorPattern _ a' op' [t1', t2'] ->
       let doc = pPrint t
@@ -1240,10 +1245,10 @@ tcPatternHelper p t@(InfixPattern spi a t1 op t2) = do
                       if spi == spi' then LPred pr spi what doc else lpr) pls
       in return (pls', ty, InfixPattern spi a' t1' op' t2')
     _ -> internalError "TypeCheck.tcPatternHelper: Not a constructor after desugaring"
-tcPatternHelper p (ParenPattern spi t) = do
-  (pls, ty, t') <- tcPatternHelper p t
+tcPatternHelper p inFP (ParenPattern spi t) = do
+  (pls, ty, t') <- tcPatternHelper p inFP t
   return (pls, ty, ParenPattern spi t')
-tcPatternHelper _ t@(RecordPattern spi _ c fs) = do
+tcPatternHelper _ inFP t@(RecordPattern spi _ c fs) = do
   m <- lift getModuleIdent
   vEnv <- lift getValueEnv
   (pls, ty) <- fmap arrowBase <$> lift (skol (constrType m c vEnv))
@@ -1251,22 +1256,22 @@ tcPatternHelper _ t@(RecordPattern spi _ c fs) = do
       pls' = map (\pr -> LPred pr cspi "constructor pattern" cdoc) pls
   -- tcField does not support passing "used" variables, thus we do it by hand
   used <- S.get
-  (pls'', fs') <- lift $ mapAccumM (tcField (tcPatternWith used) "pattern"
+  (pls'', fs') <- lift $ mapAccumM (tcField (\p -> tcPatternWith used p inFP) "pattern"
     (\t' -> pPrintPrec 0 t $-$ text "Term:" <+> pPrintPrec 0 t') ty) pls' fs
   S.put $ foldr Set.insert used $ concatMap bv fs
   pls3 <- lift $ improvePreds pls''
   return (pls3, ty, RecordPattern spi (predType ty) c fs')
-tcPatternHelper p (TuplePattern spi ts) = do
-  (plss, tys, ts') <- unzip3 <$> mapM (tcPatternHelper p) ts
+tcPatternHelper p inFP (TuplePattern spi ts) = do
+  (plss, tys, ts') <- unzip3 <$> mapM (tcPatternHelper p inFP) ts
   pls <- lift $ improvePreds $ plUnions plss
   return (pls, tupleType tys, TuplePattern spi ts')
-tcPatternHelper p t@(ListPattern spi _ ts) = do
+tcPatternHelper p inFP t@(ListPattern spi _ ts) = do
   ty <- lift freshTypeVar
-  (pls, ts') <- mapAccumM (flip (ptcPatternArg p "pattern" (pPrintPrec 0 t)) ty)
+  (pls, ts') <- mapAccumM (flip (ptcPatternArg p inFP "pattern" (pPrintPrec 0 t)) ty)
                          [] ts
   pls' <- lift $ improvePreds pls
   return (pls', listType ty, ListPattern spi (predType $ listType ty) ts')
-tcPatternHelper p t@(AsPattern spi v t') = do
+tcPatternHelper p inFP t@(AsPattern spi v t') = do
   vEnv <- lift getValueEnv
   (_, ty) <- lift $ inst (varType v vEnv)
   used <- S.get
@@ -1274,15 +1279,15 @@ tcPatternHelper p t@(AsPattern spi v t') = do
   pls <- if Set.member v used
           then return [LPred (dataPred ty) vspi what vdoc]
           else S.put (Set.insert v used) >> return []
-  (pls'', t'') <- tcPatternHelper p t' >>-
+  (pls'', t'') <- tcPatternHelper p inFP t' >>-
     (\pls' ty' -> lift $ unify p "pattern" (pPrintPrec 0 t) pls ty pls' ty')
   pls3 <- lift $ improvePreds pls''
   return (pls3, ty, AsPattern spi v t'')
-tcPatternHelper p (LazyPattern spi t) = do
-  (pls, ty, t') <- tcPatternHelper p t
+tcPatternHelper p inFP (LazyPattern spi t) = do
+  (pls, ty, t') <- tcPatternHelper p inFP t
   pls' <- lift $ improvePreds pls
   return (pls', ty, LazyPattern spi t')
-tcPatternHelper p t@(FunctionPattern spi _ f ts) = do
+tcPatternHelper p _ t@(FunctionPattern spi _ f ts) = do
   m <- lift getModuleIdent
   vEnv <- lift getValueEnv
   (pls, ty) <- lift $ inst (funType True m f vEnv)
@@ -1291,8 +1296,8 @@ tcPatternHelper p t@(FunctionPattern spi _ f ts) = do
   S.modify (flip (foldr Set.insert) (bv t))
   pls'' <- lift $ improvePreds pls'
   tcFuncPattern p spi (pPrintPrec 0 t) f id pls'' ty ts
-tcPatternHelper p t@(InfixFuncPattern spi a t1 op t2) = do
-  (pls, ty, t') <- tcPatternHelper p (FunctionPattern spi a op [t1, t2])
+tcPatternHelper p _ t@(InfixFuncPattern spi a t1 op t2) = do
+  (pls, ty, t') <- tcPatternHelper p True (FunctionPattern spi a op [t1, t2])
   case t' of
     FunctionPattern _ a' op' [t1', t2'] -> do
       let doc = pPrint t
@@ -1313,14 +1318,14 @@ tcFuncPattern _ spi doc f ts pls ty [] =
 tcFuncPattern p spi doc f ts pls ty (t':ts') = do
   (alpha, beta) <- lift $
     tcArrow p "functional pattern" (doc $-$ text "Term:" <+> pPrintPrec 0 t) ty
-  (pls', t'') <- ptcPatternArg p "functional pattern" doc pls alpha t'
+  (pls', t'') <- ptcPatternArg p True "functional pattern" doc pls alpha t'
   tcFuncPattern p spi doc f (ts . (t'' :)) pls' beta ts'
   where t = FunctionPattern spi (predType ty) f (ts [])
 
-ptcPatternArg :: HasSpanInfo p => p -> String -> Doc -> LPredList -> Type
+ptcPatternArg :: HasSpanInfo p => p -> Bool -> String -> Doc -> LPredList -> Type
               -> Pattern a -> PTCM (LPredList, Pattern PredType)
-ptcPatternArg p what doc pls ty t =
-  tcPatternHelper p t >>-
+ptcPatternArg p inFP what doc pls ty t =
+  tcPatternHelper p inFP t >>-
     (\pls' ty' -> lift $
       unify p what (doc $-$ text "Term:" <+> pPrintPrec 0 t) pls ty pls' ty')
 
