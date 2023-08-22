@@ -516,7 +516,8 @@ tcPDeclGroup pls pds = do
   let (impPds, expPds) = partitionPDecls sigs pds
   (pls', impPds') <- mapAccumM tcPDecl pls impPds
   plsImp <- improvePreds pls'
-  let substs = map (defaultTypeConstrainedDecl . snd) impPds'
+  substBeforeDefault <- getTypeSubst
+  let substs = map (defaultTypeConstrainedDecl substBeforeDefault . snd) impPds'
   modifyTypeSubst $ \s -> foldr compose s substs
   theta <- getTypeSubst
   tvs <- concatMap (typeVars . subst theta . fst) <$>
@@ -2095,13 +2096,13 @@ defaultTypeConstrainedPred m inEnv theta (LPred (Pred _ qcls tys) p what doc) =
         report $ errMissingInstance m (LPred (Pred OPred qcls tys') p what doc)
         return theta
 
-defaultTypeConstrainedDecl :: PDecl PredType -> TypeSubst
-defaultTypeConstrainedDecl (_, FunctionDecl _ _ _ eqn) =
+defaultTypeConstrainedDecl :: TypeSubst -> PDecl PredType -> TypeSubst
+defaultTypeConstrainedDecl s (_, FunctionDecl _ _ _ eqn) =
   foldr defaultEq idSubst eqn
   where
-    defaultEq (Equation _ (Just (PredType _ ty)) _ _) = defaultTypeConstrained ty
+    defaultEq (Equation _ (Just (PredType _ ty)) _ _) = defaultTypeConstrained (subst s ty)
     defaultEq _ = id
-defaultTypeConstrainedDecl _ = idSubst
+defaultTypeConstrainedDecl _ _ = idSubst
 
 defaultTypeConstrained :: Type -> TypeSubst -> TypeSubst
 defaultTypeConstrained (TypeConstrained tyOpts tv) =

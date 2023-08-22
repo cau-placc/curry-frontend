@@ -13,3 +13,16 @@ test2 2 = True
 use1 (test1 n) = n
 -- use2 :: Int -> Bool
 use2 (test2 n) = n
+
+-- Check that the type substitution is applied before defaulting.
+-- Argument of replace is some `a` first,
+-- which is then substituted to be `[b]` with b TypeConstrained.
+-- Then, `b` is defaulted to Int.
+-- listify :: [Int] -> Bool
+listify (2:p)  = True
+
+useListify1 :: Bool -> Ordering
+useListify1 (listify p) = EQ
+
+-- useListify2 :: Bool -> Ordering
+useListify2 (listify p) = EQ
