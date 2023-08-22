@@ -486,6 +486,8 @@ tcPDecls pds = withLocalSigEnv $ do
     mapAccumM tcPDeclGroup [] $ scc (bv . snd) (qfv m . snd) vpds
   return (pls, map untyped opds ++ concat (vpdss' :: [[PDecl PredType]]))
 
+-- TODO: This badly needs to be cleaned up due to a master thesis gone slightly wrong.
+-- Especially this filterEqnType is unclear and everything is uncommented.
 tcPDeclGroup :: LPredList -> [PDecl a] -> TCM (LPredList, [PDecl PredType])
 tcPDeclGroup pls [(i, ExternalDecl p fs)] = do
   tys <- mapM (tcExternal . varIdent) fs
@@ -514,12 +516,14 @@ tcPDeclGroup pls pds = do
   let (impPds, expPds) = partitionPDecls sigs pds
   (pls', impPds') <- mapAccumM tcPDecl pls impPds
   plsImp <- improvePreds pls'
+  let substs = map (defaultTypeConstrainedDecl . snd) impPds'
+  modifyTypeSubst $ \s -> foldr compose s substs
   theta <- getTypeSubst
   tvs <- concatMap (typeVars . subst theta . fst) <$>
            filterM (notM . isNonExpansive . snd . snd) impPds'
   clsEnv <- getClassEnv
-  let fvs = foldr Set.insert (fvEnv (subst theta vEnv)) tvs
-      fvs' = funDepCoveragePredList clsEnv (subst theta plsImp) fvs
+  let fvs = funDepCoveragePredList clsEnv (subst theta plsImp)
+              $ foldr Set.insert (fvEnv (subst theta vEnv)) tvs
       -- The predicates from the declarations that are not explicitly typed are
       -- partitioned into three groups: Local predicates, that do not contain
       -- any free type variables, are reduced and added to the types of the
@@ -528,17 +532,17 @@ tcPDeclGroup pls pds = do
       -- reduced. The remaining predicates are passed on together with the
       -- predicates containing free type variables from the explicitly typed
       -- declarations.
-      (gpls, (mpls, lpls)) = fmap (splitPredListAny fvs') $
-                                splitPredListAll fvs' $ subst theta plsImp
+      (gpls, (mpls, lpls)) = fmap (splitPredListAny fvs) $
+                                splitPredListAll fvs $ subst theta plsImp
   lpls' <- plUnion mpls <$> reducePredSet False lpls
   lpls'' <- improvePreds lpls'
-  lpls3 <- foldM (uncurry . defaultPDecl fvs') lpls'' impPds'
+  lpls3 <- foldM (uncurry . defaultPDecl fvs) lpls'' impPds'
   theta' <- getTypeSubst
-  let impPds'' = map (uncurry (fixType . gen fvs' lpls3 . subst theta')) impPds'
-      impPds3  = map (filterEqnType (map getPred lpls3)) impPds''
+  let impPds3 = map ( filterEqnType (map getPred lpls3)
+                    . uncurry (fixType . gen fvs lpls3 . subst theta')) impPds'
   unlessM (elem FlexibleContexts <$> getExtensions) $
-    mapM_ (reportFlexibleContextDecl m) impPds''
-  modifyValueEnv $ flip (rebindVars m) (concatMap (declVars . snd) impPds'')
+    mapM_ (reportFlexibleContextDecl m) impPds3
+  modifyValueEnv $ flip (rebindVars m) (concatMap (declVars . snd) impPds3)
   impPds4 <- fixVarAnnots impPds3
   (pls'', expPds') <- mapAccumM (uncurry . tcCheckPDecl) gpls expPds
   pls3 <- improvePreds pls''
@@ -731,8 +735,6 @@ filterEqnType' :: [Pred] -> Equation PredType -> Equation PredType
 filterEqnType' lpls (Equation p (Just (PredType _ ty)) lhs rhs) =
   Equation p (Just $ PredType lpls ty) lhs rhs
 filterEqnType' _ eqn@(Equation _ Nothing _ _) = eqn
-
-
 
 declVars :: Decl PredType -> [(Ident, Int, TypeScheme)]
 declVars (FunctionDecl _ pty f eqs) =
@@ -1809,7 +1811,7 @@ reducePredSet reportPreds pls = do
       expPls = Set.toList $ Map.keysSet pm1
       (plsDefaultable, (plsReportable, pls'')) = fmap (partition isReportable) $
         partition isDefaultable $ minPredList clsEnv (Set.toList (Map.keysSet pm2))
-  theta' <- foldM (defaultTypeConstrained m inEnv) idSubst plsDefaultable
+  theta' <- foldM (defaultTypeConstrainedPred m inEnv) idSubst plsDefaultable
   modifyTypeSubst $ compose theta'
   mapM_ report $ Map.elems $ Map.restrictKeys pm2 (Set.fromList plsReportable)
   pls3 <- improvePreds pls''
@@ -1834,14 +1836,6 @@ reducePredSet reportPreds pls = do
     isReportable :: LPred -> Bool
     isReportable (LPred (Pred _ _ tys) _ _ _) = null (typeVars tys) ||
       reportPreds && not (all isAppliedTypeVariable tys) ||
-      -- We additionally report predicates containing 'TypeConstrained's that have
-      -- not already been filtered out by 'isDefaultable', as they do not satisfy
-      -- the defaulting restrictions described in a comment below.
-
-      -- We additionally report predicates containing 'TypeConstrained's that have
-      -- not already been filtered out by 'isDefaultable', as they do not satisfy
-      -- the defaulting restrictions described in a comment below.
-
       -- We additionally report predicates containing 'TypeConstrained's that have
       -- not already been filtered out by 'isDefaultable', as they do not satisfy
       -- the defaulting restrictions described in a comment below.
@@ -2061,9 +2055,12 @@ solveTypeEqns ((ty,ty',lpr):tEqns) =
 --   'TypeConstrained', which is a special type variable annotated with a list
 --   of possible types. If multiple of these types remain after the type
 --   inference, they are further restricted to those that satisfy the predicates
---   on them in 'defaultTypeConstrained'. An error is reported if no such type
---   belongs to the possible types. Otherwise, the type variable is later
---   defaulted to the first of the remaining types.
+--   on them in 'defaultTypeConstrainedPred' for those ocurring in predicates.
+--   An error is reported if no such type belongs to the possible types.
+--   Otherwise, or if a TypeConstrained is exclusively mentioned in the functions unconstrained type,
+--   these type variables are defaulted to the first of the remaining types.
+--   This happens in 'defaultTypeConstrained' used after reducing and defaulting
+--   PredSets of all declarations in a declaration group.
 
 -- * Regular type variables are defaulted in 'applyDefaults', if they are
 --   ambiguous. This is explained in detail in the comment for that function.
@@ -2077,9 +2074,9 @@ solveTypeEqns ((ty,ty',lpr):tEqns) =
 -- simple defaulting mechanism and prevents unexpected defaulting behaviour.
 
 -- taken from Leif-Erik Krueger
-defaultTypeConstrained :: ModuleIdent -> InstEnv' -> TypeSubst -> LPred
+defaultTypeConstrainedPred :: ModuleIdent -> InstEnv' -> TypeSubst -> LPred
                        -> TCM TypeSubst
-defaultTypeConstrained m inEnv theta (LPred (Pred _ qcls tys) p what doc) =
+defaultTypeConstrainedPred m inEnv theta (LPred (Pred _ qcls tys) p what doc) =
   case subst theta tys of
     tys'@[TypeConstrained tyOpts tv] ->
       case concat (filter (hasInstance m inEnv qcls) (map (: []) tyOpts)) of
@@ -2098,8 +2095,25 @@ defaultTypeConstrained m inEnv theta (LPred (Pred _ qcls tys) p what doc) =
         report $ errMissingInstance m (LPred (Pred OPred qcls tys') p what doc)
         return theta
 
+defaultTypeConstrainedDecl :: PDecl PredType -> TypeSubst
+defaultTypeConstrainedDecl (_, FunctionDecl _ _ _ eqn) =
+  foldr defaultEq idSubst eqn
+  where
+    defaultEq (Equation _ (Just (PredType _ ty)) _ _) = defaultTypeConstrained ty
+    defaultEq _ = id
+defaultTypeConstrainedDecl _ = idSubst
 
-
+defaultTypeConstrained :: Type -> TypeSubst -> TypeSubst
+defaultTypeConstrained (TypeConstrained tyOpts tv) =
+  bindSubst tv (head tyOpts)
+defaultTypeConstrained (TypeApply ty1 ty2) =
+  defaultTypeConstrained ty1 . defaultTypeConstrained ty2
+defaultTypeConstrained (TypeArrow ty1 ty2) =
+  defaultTypeConstrained ty1 . defaultTypeConstrained ty2
+defaultTypeConstrained (TypeConstructor _) = id
+defaultTypeConstrained (TypeVariable _) = id
+defaultTypeConstrained (TypeForall _ ty) =
+  defaultTypeConstrained ty
 
 -- When a constrained type variable that is not free in the type environment
 -- disappears from the current type, the type becomes ambiguous. For instance,
