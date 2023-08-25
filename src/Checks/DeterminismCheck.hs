@@ -3,7 +3,6 @@
 {-# LANGUAGE TupleSections     #-}
 module Checks.DeterminismCheck (determinismCheck, DetEnv) where
 
-import Prelude hiding ( (<>) )
 import Control.Arrow ( second )
 import Control.Monad.State
 import Data.List ( nub, intercalate )
@@ -20,80 +19,22 @@ import Base.TypeSubst ( idSubst, SubstType(subst) )
 import Base.Typing ( patternVars, Typeable(typeOf), matchType )
 import Base.Utils ( fst3 )
 import Curry.Base.Ident
-import Curry.Base.Pretty ( pPrint, dot, (<+>), (<>), parens, render, text )
+import Curry.Base.Pretty ( pPrint, render )
 import Curry.Base.SpanInfo ( SpanInfo(NoSpanInfo) )
 import Curry.Syntax.Type
 import Curry.Syntax.Utils ( field2Tuple )
 import Env.Class ( ClassEnv, lookupClassInfo, classMethods )
+import Env.Determinism
 import Env.Instance ( InstEnv )
 import Env.TypeConstructor ( TCEnv )
 import Env.Value ( qualLookupValue, qualLookupValueUnique, ValueInfo(..), ValueEnv )
 
 import Debug.Trace
 
-type DetEnv = Map IdentInfo DetScheme
-type TopDetEnv = DetEnv
-data NestDetEnv = Top TopDetEnv
-                | LocalEnv NestDetEnv DetEnv
-
-data IdentInfo = QI QualIdent
-               | II QualIdent QualIdent QualIdent -- class, tycon, method (only for known instances with the given type constructor)
-               | LII QualIdent Type QualIdent -- class, inst type, method (only for locally bound instances from a constraint)
-               | CI QualIdent QualIdent -- class, default method
-  deriving (Eq, Ord, Show)
-
-bindNestEnv :: IdentInfo -> DetScheme -> NestDetEnv -> NestDetEnv
-bindNestEnv ii ty (Top env) = Top (Map.insert ii ty env)
-bindNestEnv ii ty (LocalEnv inner lcl) = LocalEnv inner (Map.insert ii ty lcl)
-
-nestEnv :: NestDetEnv -> NestDetEnv
-nestEnv env = LocalEnv env Map.empty
-
-unnestEnv :: NestDetEnv -> NestDetEnv
-unnestEnv (Top env) = Top env
-unnestEnv (LocalEnv env _) = env
-
-extractTopEnv :: NestDetEnv -> TopDetEnv
-extractTopEnv (Top env) = env
-extractTopEnv (LocalEnv env _) = extractTopEnv env
-
-lookupNestEnv :: IdentInfo -> NestDetEnv -> Maybe DetScheme
-lookupNestEnv ii (Top env) = Map.lookup ii env
-lookupNestEnv ii (LocalEnv env lcl) = case Map.lookup ii lcl of
-  Just ty -> Just ty
-  Nothing -> lookupNestEnv ii env
-
-mapNestEnv :: (DetScheme -> DetScheme) -> NestDetEnv -> NestDetEnv
-mapNestEnv f (Top env) = Top (Map.map f env)
-mapNestEnv f (LocalEnv env lcl) = LocalEnv (mapNestEnv f env) (Map.map f lcl)
-
-flattenNestEnv :: NestDetEnv -> DetEnv
-flattenNestEnv (Top env) = env
-flattenNestEnv (LocalEnv env lcl) = Map.union lcl (flattenNestEnv env)
-
-type VarIndex = Int
-
-data DetType = VarTy VarIndex
-             | Det
-             | DetArrow DetType DetType
-             | Nondet
-  deriving (Eq, Ord, Show)
-
-data DetConstraint = EqualType VarIndex DetType -- v ~ alpha
-                   | AppliedType VarIndex VarIndex [DetType] -- v ~ y @ alpha1 ... alphan
-  deriving (Eq, Ord, Show)
-
-data DetScheme = Forall [VarIndex] DetType
-  deriving (Eq, Ord, Show)
-
-toSchema :: DetType -> DetScheme
-toSchema = Forall []
-
 data DS = DS { detEnv :: TopDetEnv
              , localDetEnv :: NestDetEnv
              , valueEnv :: ValueEnv
              , classEnv :: ClassEnv
-             , instanceEnv :: InstEnv
              , moduleIdent :: ModuleIdent
              , freshIdent :: VarIndex
              }
@@ -124,9 +65,9 @@ scoped act = do
   exitScope
   return res
 
-determinismCheck :: ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv -> InstEnv
+determinismCheck :: ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv -> InstEnv -> DetEnv
                  -> Module PredType -> IO (DetEnv, [Message])
-determinismCheck mid _tce ve ce ie (Module _ _ _ _ _ _ ds) = flip evalStateT initState $ do
+determinismCheck mid _tce ve ce _ie de (Module _ _ _ _ _ _ ds) = flip evalStateT initState $ do
   liftIO $ putStrLn "Determinism check"
   dsvs <- Map.fromList <$> mapM (\d -> (oneDeclIdent d,) <$> freeIdents d) definingDS
   liftIO $ putStrLn $ prettyList (\(i, is) -> prettyII i ++ " uses " ++ prettyList prettyII (Set.toList is))
@@ -143,7 +84,7 @@ determinismCheck mid _tce ve ce ie (Module _ _ _ _ _ _ ds) = flip evalStateT ini
     oneDeclIdent d = case declIdents mid d of
       (ii:_) -> ii
       _ -> internalError $ "DeterminismCheck.oneDeclIdent: " ++ show d
-    initState = DS Map.empty (Top Map.empty) ve ce ie mid 0
+    initState = DS de (Top Map.empty) ve ce mid 0
     definingDS = filter isDefiningDecl ds
     isDefiningDecl FunctionDecl {} = True
     isDefiningDecl PatternDecl {} = True
@@ -761,25 +702,13 @@ prettyDetEnv = unlines . map prettyDetEnvEntry . Map.toList
     prettyDetEnvEntry (ii, ty) = prettyII ii ++ " :: " ++ prettyScheme ty
 
 prettyII :: IdentInfo -> String
-prettyII (QI qid) = render $ pPrint qid
-prettyII (II cls tc meth) = render $ parens (pPrint cls <+> pPrint tc) <> dot <> pPrint meth
-prettyII (LII cls ty meth) = render $ parens (pPrint cls <+> text "@" <> pPrint ty) <> dot <> pPrint meth
-prettyII (CI cls meth) = render $ pPrint cls <> dot <> pPrint meth
+prettyII = render . pPrint
 
 prettyList :: (a -> String) -> [a] -> String
 prettyList f xs = "[" ++ intercalate ", " (map f xs) ++ "]"
 
 prettyScheme :: DetScheme -> String
-prettyScheme (Forall [] ty) = prettyTy ty
-prettyScheme (Forall vs ty) = "forall " ++ unwords (map (prettyTy . VarTy) vs) ++ ". " ++ prettyTy ty
-
-prettyTy :: DetType -> String
-prettyTy (VarTy v) = "a" ++ show v
-prettyTy Det = "Det"
-prettyTy Nondet = "Nondet"
-prettyTy (DetArrow ty1 ty2) = case ty1 of
-  DetArrow _ _ -> "(" ++ prettyTy ty1 ++ ") -> " ++ prettyTy ty2
-  _            -> prettyTy ty1 ++ " -> " ++ prettyTy ty2
+prettyScheme = render . pPrint
 
 checkOverlap :: [[Pattern ()]] -> DM Bool
 checkOverlap pats = do

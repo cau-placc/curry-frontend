@@ -19,10 +19,10 @@ module Transformations.Dictionary
   , instFunId, qInstFunId, implMethodId, qImplMethodId
   ) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative      ((<$>), (<*>))
-import           Data.Traversable         (traverse)
-#endif
+
+
+
+
 import           Control.Monad.Extra      ( concatMapM, liftM, maybeM, when )
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 
@@ -939,17 +939,17 @@ dictTransIDecl m _    _      (IDataDecl    p tc k tvs cs hs) =
   [IDataDecl p tc k tvs (map (dictTransIConstrDecl m tvs) cs) hs]
 dictTransIDecl _ _    _      d@(INewtypeDecl    _ _ _ _ _ _) = [d]
 dictTransIDecl _ _    _      d@(ITypeDecl         _ _ _ _ _) = [d]
-dictTransIDecl m vEnv _      (IFunctionDecl       _ f _ _ _) =
-  [iFunctionDeclFromValue m vEnv (qualQualify m f)]
+dictTransIDecl m vEnv _      (IFunctionDecl   _ f _ _ _ dty) =
+  [iFunctionDeclFromValue m vEnv (qualQualify m f) dty]
 dictTransIDecl _ _    _      (HidingClassDecl  p _ cls k tv) =
-  [HidingDataDecl p (qDictTypeId cls) (fmap (flip ArrowKind Star) k) [tv]]
+  [HidingDataDecl p (qDictTypeId cls) (fmap (`ArrowKind` Star) k) [tv]]
 dictTransIDecl m vEnv clsEnv (IClassDecl   p _ cls k _ _ hs) =
   dictDecl : defaults ++ methodStubs ++ superDictStubs
   where qcls  = qualQualify m cls
         sclss = superClasses qcls clsEnv
         ms    = classMethods qcls clsEnv
         dictDecl    = IDataDecl p (qDictTypeId cls)
-                        (fmap (flip ArrowKind Star) k)
+                        (fmap (`ArrowKind` Star) k)
                         [head identSupply] [constrDecl] []
         constrDecl  = iConstrDeclFromDataConstructor m vEnv $ qDictConstrId qcls
         defaults    = map (iFunctionDeclFromValue m vEnv .
@@ -970,11 +970,12 @@ dictTransIConstrDecl :: ModuleIdent -> [Ident] -> ConstrDecl -> ConstrDecl
 dictTransIConstrDecl _ _ (ConOpDecl p ty1 op ty2) = ConstrDecl p op [ty1, ty2]
 dictTransIConstrDecl _ _ cd                       = cd
 
-iFunctionDeclFromValue :: ModuleIdent -> ValueEnv -> QualIdent -> IDecl
-iFunctionDeclFromValue m vEnv f = case qualLookupValue f vEnv of
+iFunctionDeclFromValue :: ModuleIdent -> ValueEnv -> QualIdent -> DetExpr -> IDecl
+iFunctionDeclFromValue m vEnv f dty = case qualLookupValue f vEnv of
   [Value _ _ a (ForAll _ pty)] ->
-    IFunctionDecl NoPos (qualUnqualify m f) Nothing a $
-      fromQualPredType m identSupply pty
+    IFunctionDecl NoPos (qualUnqualify m f) Nothing a
+      (fromQualPredType m identSupply pty)
+      dty
   _ -> internalError $ "Dictionary.iFunctionDeclFromValue: " ++ show f
 
 iConstrDeclFromDataConstructor :: ModuleIdent -> ValueEnv -> QualIdent

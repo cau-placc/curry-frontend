@@ -134,6 +134,7 @@ library
     , CurryBuilder
     , CurryDeps
     , Env.Class
+    , Env.Determinism
     , Env.Instance
     , Env.Interface
     , Env.ModuleAlias

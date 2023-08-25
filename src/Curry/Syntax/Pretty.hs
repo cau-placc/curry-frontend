@@ -118,6 +118,8 @@ instance Pretty (Decl a) where
     ppClassInstHead "instance" cx (ppQIdent qcls) (ppInstanceType inst) <+>
       ppIf (not $ null ds) (text "where") $$
       ppIf (not $ null ds) (indent $ ppBlock ds)
+  pPrint (DetSig _ vs dty) =
+    list (map ppIdent vs) <+> text "::" <+> pPrintPrec 0 dty
 
 ppClassInstHead :: String -> Context -> Doc -> Doc -> Doc
 ppClassInstHead kw cx cls ty = text kw <+> ppContext cx <+> cls <+> ty
@@ -219,9 +221,11 @@ instance Pretty IDecl where
         ]
   pPrint (ITypeDecl _ tc k tvs ty) =
     sep [ppITypeDeclLhs "type" tc k tvs <+> equals,indent (pPrintPrec 0 ty)]
-  pPrint (IFunctionDecl _ f cm a ty) =
+  pPrint (IFunctionDecl _ f cm a ty dty) =
     sep [ ppQIdent f, maybePP (ppPragma "METHOD" . ppIdent) cm
-        , int a, text "::", pPrintPrec 0 ty ]
+        , int a
+        , text "::", pPrintPrec 0 ty
+        , text "::", pPrintPrec 0 dty ]
   pPrint (HidingClassDecl _ cx qcls k clsvar) = text "hiding" <+>
     ppClassInstHead "class" cx (ppQIdentWithKind qcls k) (ppIdent clsvar)
   pPrint (IClassDecl _ cx qcls k clsvar ms hs) =
@@ -240,8 +244,9 @@ ppITypeDeclLhs kw tc k tvs =
   text kw <+> ppQIdentWithKind tc k <+> hsep (map ppIdent tvs)
 
 instance Pretty IMethodDecl where
-  pPrint (IMethodDecl _ f a qty) =
+  pPrint (IMethodDecl _ f a qty dty) =
     ppIdent f <+> maybePP int a <+> text "::" <+> pPrintPrec 0 qty
+                                <+> text "::" <+> pPrintPrec 0 dty
 
 ppIMethodImpl :: IMethodImpl -> Doc
 ppIMethodImpl (f, a) = ppIdent f <+> int a
@@ -299,6 +304,18 @@ instance Pretty TypeExpr where
   pPrintPrec p (ForallType   _ vs ty)
     | null vs   = pPrintPrec p ty
     | otherwise = parenIf (p > 0) $ ppQuantifiedVars vs <+> pPrintPrec 0 ty
+
+-- ---------------------------------------------------------------------------
+-- Determinism types
+-- ---------------------------------------------------------------------------
+
+instance Pretty DetExpr where
+  pPrintPrec _ (DDetExpr _) = text "D"
+  pPrintPrec _ (NDDetExpr _) = text "ND"
+  pPrintPrec _ (ParenDetExpr _ e) = parens (pPrintPrec 0 e)
+  pPrintPrec p (ArrowDetExpr _ dty1 dty2) = parenIf (p > 0) $
+    pPrintPrec 1 dty1 <+> rarrow <+> pPrintPrec 0 dty2
+  pPrintPrec _ (VarDetExpr _ v) = ppIdent v
 
 -- ---------------------------------------------------------------------------
 -- Literals

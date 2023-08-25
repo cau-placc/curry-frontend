@@ -17,6 +17,7 @@
 -}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric  #-}
+{-# LANGUAGE DeriveFunctor  #-}
 module Curry.Syntax.Type
   ( -- * Module header
     Module (..)
@@ -32,7 +33,7 @@ module Curry.Syntax.Type
     -- * Declarations
   , Decl (..), Precedence, Infix (..), ConstrDecl (..), NewConstrDecl (..)
   , FieldDecl (..)
-  , TypeExpr (..), QualTypeExpr (..)
+  , TypeExpr (..), QualTypeExpr (..), DetExpr (..)
   , Equation (..), Lhs (..), Rhs (..), CondExpr (..)
   , Literal (..), Pattern (..), Expression (..), InfixOp (..)
   , Statement (..), CaseType (..), Alt (..), Field (..), Var (..)
@@ -62,7 +63,7 @@ import Text.PrettyPrint
 -- |Curry module
 data Module a = Module SpanInfo LayoutInfo [ModulePragma] ModuleIdent
                        (Maybe ExportSpec) [ImportDecl] [Decl a]
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, Functor)
 
 -- |Module pragma
 data ModulePragma
@@ -130,14 +131,14 @@ data IDecl
   | IDataDecl       Position QualIdent (Maybe KindExpr) [Ident] [ConstrDecl]  [Ident]
   | INewtypeDecl    Position QualIdent (Maybe KindExpr) [Ident] NewConstrDecl [Ident]
   | ITypeDecl       Position QualIdent (Maybe KindExpr) [Ident] TypeExpr
-  | IFunctionDecl   Position QualIdent (Maybe Ident) Arity QualTypeExpr
+  | IFunctionDecl   Position QualIdent (Maybe Ident) Arity QualTypeExpr DetExpr
   | HidingClassDecl Position Context QualIdent (Maybe KindExpr) Ident
   | IClassDecl      Position Context QualIdent (Maybe KindExpr) Ident [IMethodDecl] [Ident]
   | IInstanceDecl   Position Context QualIdent InstanceType [IMethodImpl] (Maybe ModuleIdent)
     deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Class methods
-data IMethodDecl = IMethodDecl Position Ident (Maybe Arity) QualTypeExpr
+data IMethodDecl = IMethodDecl Position Ident (Maybe Arity) QualTypeExpr DetExpr
   deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Class method implementations
@@ -168,7 +169,8 @@ data Decl a
   | DefaultDecl      SpanInfo [TypeExpr]                                         -- default (Int, Float)
   | ClassDecl        SpanInfo LayoutInfo Context Ident Ident [Decl a]            -- class C a => D a where {TypeSig|InfixDecl|FunctionDecl}
   | InstanceDecl     SpanInfo LayoutInfo Context QualIdent InstanceType [Decl a] -- instance C a => M.D (N.T a b c) where {FunctionDecl}
-    deriving (Eq, Read, Show, Generic, Binary)
+  | DetSig           SpanInfo [Ident] DetExpr                                    -- det f, g :: D -> D
+    deriving (Eq, Read, Show, Generic, Binary, Functor)
 
 -- ---------------------------------------------------------------------------
 -- Infix declaration
@@ -218,6 +220,18 @@ data QualTypeExpr = QualTypeExpr SpanInfo Context TypeExpr
     deriving (Eq, Read, Show, Generic, Binary)
 
 -- ---------------------------------------------------------------------------
+-- Type expressions for determinism
+-- ---------------------------------------------------------------------------
+
+-- |Determinism expressions
+data DetExpr = DDetExpr SpanInfo
+             | NDDetExpr SpanInfo
+             | ArrowDetExpr SpanInfo DetExpr DetExpr
+             | ParenDetExpr SpanInfo DetExpr
+             | VarDetExpr SpanInfo Ident
+  deriving (Eq, Read, Show, Generic, Binary)
+
+-- ---------------------------------------------------------------------------
 -- Type classes
 -- ---------------------------------------------------------------------------
 
@@ -234,24 +248,24 @@ type InstanceType = TypeExpr
 
 -- |Function defining equation
 data Equation a = Equation SpanInfo (Lhs a) (Rhs a)
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, Functor)
 
 -- |Left-hand-side of an 'Equation' (function identifier and patterns)
 data Lhs a
   = FunLhs SpanInfo Ident [Pattern a]             -- f x y
   | OpLhs  SpanInfo (Pattern a) Ident (Pattern a) -- x $ y
   | ApLhs  SpanInfo (Lhs a) [Pattern a]           -- ($) x y
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, Functor)
 
 -- |Right-hand-side of an 'Equation'
 data Rhs a
   = SimpleRhs  SpanInfo LayoutInfo (Expression a) [Decl a] -- @expr where decls@
   | GuardedRhs SpanInfo LayoutInfo [CondExpr a]   [Decl a] -- @| cond = expr where decls@
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, Functor)
 
 -- |Conditional expression (expression conditioned by a guard)
 data CondExpr a = CondExpr SpanInfo (Expression a) (Expression a)
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, Functor)
 
 -- |Literal
 data Literal
@@ -276,7 +290,7 @@ data Pattern a
   | LazyPattern        SpanInfo (Pattern a)
   | FunctionPattern    SpanInfo a QualIdent [Pattern a]
   | InfixFuncPattern   SpanInfo a (Pattern a) QualIdent (Pattern a)
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, Functor)
 
 -- |Expression
 data Expression a
@@ -304,20 +318,20 @@ data Expression a
   | Do                SpanInfo LayoutInfo [Statement a] (Expression a)
   | IfThenElse        SpanInfo (Expression a) (Expression a) (Expression a)
   | Case              SpanInfo LayoutInfo CaseType (Expression a) [Alt a]
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, Functor)
 
 -- |Infix operation
 data InfixOp a
   = InfixOp     a QualIdent
   | InfixConstr a QualIdent
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, Functor)
 
 -- |Statement (used for do-sequence and list comprehensions)
 data Statement a
   = StmtExpr SpanInfo (Expression a)
   | StmtDecl SpanInfo LayoutInfo [Decl a]
   | StmtBind SpanInfo (Pattern a) (Expression a)
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, Functor)
 
 -- |Type of case expressions
 data CaseType
@@ -327,15 +341,15 @@ data CaseType
 
 -- |Single case alternative
 data Alt a = Alt SpanInfo (Pattern a) (Rhs a)
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, Functor)
 
 -- |Record field
 data Field a = Field SpanInfo QualIdent a
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, Functor)
 
 -- |Annotated identifier
 data Var a = Var a Ident
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, Functor)
 
 -- ---------------------------------------------------------------------------
 -- Goals
@@ -343,116 +357,11 @@ data Var a = Var a Ident
 
 -- |Goal in REPL (expression to evaluate)
 data Goal a = Goal SpanInfo LayoutInfo (Expression a) [Decl a]
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, Functor)
 
 -- ---------------------------------------------------------------------------
 -- instances
 -- ---------------------------------------------------------------------------
-
-instance Functor Module where
-  fmap f (Module sp li ps m es is ds) = Module sp li ps m es is (map (fmap f) ds)
-
-instance Functor Decl where
-  fmap _ (InfixDecl sp fix prec ops) = InfixDecl sp fix prec ops
-  fmap _ (DataDecl sp tc tvs cs clss) = DataDecl sp tc tvs cs clss
-  fmap _ (ExternalDataDecl sp tc tvs) = ExternalDataDecl sp tc tvs
-  fmap _ (NewtypeDecl sp tc tvs nc clss) = NewtypeDecl sp tc tvs nc clss
-  fmap _ (TypeDecl sp tc tvs ty) = TypeDecl sp tc tvs ty
-  fmap _ (TypeSig sp fs qty) = TypeSig sp fs qty
-  fmap f (FunctionDecl sp a f' eqs) = FunctionDecl sp (f a) f' (map (fmap f) eqs)
-  fmap f (ExternalDecl sp vs) = ExternalDecl sp (map (fmap f) vs)
-  fmap f (PatternDecl sp t rhs) = PatternDecl sp (fmap f t) (fmap f rhs)
-  fmap f (FreeDecl sp vs) = FreeDecl sp (map (fmap f) vs)
-  fmap _ (DefaultDecl sp tys) = DefaultDecl sp tys
-  fmap f (ClassDecl sp li cx cls clsvar ds) =
-    ClassDecl sp li cx cls clsvar (map (fmap f) ds)
-  fmap f (InstanceDecl sp li cx qcls inst ds) =
-    InstanceDecl sp li cx qcls inst (map (fmap f) ds)
-
-instance Functor Equation where
-  fmap f (Equation p lhs rhs) = Equation p (fmap f lhs) (fmap f rhs)
-
-instance Functor Lhs where
-  fmap f (FunLhs p f' ts) = FunLhs p f' (map (fmap f) ts)
-  fmap f (OpLhs p t1 op t2) = OpLhs p (fmap f t1) op (fmap f t2)
-  fmap f (ApLhs p lhs ts) = ApLhs p (fmap f lhs) (map (fmap f) ts)
-
-instance Functor Rhs where
-  fmap f (SimpleRhs p li e ds) = SimpleRhs p li (fmap f e) (map (fmap f) ds)
-  fmap f (GuardedRhs p li cs ds) = GuardedRhs p li (map (fmap f) cs) (map (fmap f) ds)
-
-instance Functor CondExpr where
-  fmap f (CondExpr p g e) = CondExpr p (fmap f g) (fmap f e)
-
-instance Functor Pattern where
-  fmap f (LiteralPattern p a l) = LiteralPattern p (f a) l
-  fmap f (NegativePattern p a l) = NegativePattern p (f a) l
-  fmap f (VariablePattern p a v) = VariablePattern p (f a) v
-  fmap f (ConstructorPattern p a c ts) =
-    ConstructorPattern p (f a) c (map (fmap f) ts)
-  fmap f (InfixPattern p a t1 op t2) =
-    InfixPattern p (f a) (fmap f t1) op (fmap f t2)
-  fmap f (ParenPattern p t) = ParenPattern p (fmap f t)
-  fmap f (RecordPattern p a c fs) =
-    RecordPattern p (f a) c (map (fmap (fmap f)) fs)
-  fmap f (TuplePattern p ts) = TuplePattern p (map (fmap f) ts)
-  fmap f (ListPattern p a ts) = ListPattern p (f a) (map (fmap f) ts)
-  fmap f (AsPattern p v t) = AsPattern p v (fmap f t)
-  fmap f (LazyPattern p t) = LazyPattern p (fmap f t)
-  fmap f (FunctionPattern p a f' ts) =
-    FunctionPattern p (f a) f' (map (fmap f) ts)
-  fmap f (InfixFuncPattern p a t1 op t2) =
-    InfixFuncPattern p (f a) (fmap f t1) op (fmap f t2)
-
-instance Functor Expression where
-  fmap f (Literal p a l) = Literal p (f a) l
-  fmap f (Variable p a v) = Variable p (f a) v
-  fmap f (Constructor p a c) = Constructor p (f a) c
-  fmap f (Paren p e) = Paren p (fmap f e)
-  fmap f (Typed p e qty) = Typed p (fmap f e) qty
-  fmap f (Record p a c fs) = Record p (f a) c (map (fmap (fmap f)) fs)
-  fmap f (RecordUpdate p e fs) = RecordUpdate p (fmap f e) (map (fmap (fmap f)) fs)
-  fmap f (Tuple p es) = Tuple p (map (fmap f) es)
-  fmap f (List p a es) = List p (f a) (map (fmap f) es)
-  fmap f (ListCompr p e stms) = ListCompr p (fmap f e) (map (fmap f) stms)
-  fmap f (EnumFrom p e) = EnumFrom p (fmap f e)
-  fmap f (EnumFromThen p e1 e2) = EnumFromThen p (fmap f e1) (fmap f e2)
-  fmap f (EnumFromTo p e1 e2) = EnumFromTo p (fmap f e1) (fmap f e2)
-  fmap f (EnumFromThenTo p e1 e2 e3) =
-    EnumFromThenTo p (fmap f e1) (fmap f e2) (fmap f e3)
-  fmap f (UnaryMinus p e) = UnaryMinus p (fmap f e)
-  fmap f (Apply p e1 e2) = Apply p (fmap f e1) (fmap f e2)
-  fmap f (InfixApply p e1 op e2) =
-    InfixApply p (fmap f e1) (fmap f op) (fmap f e2)
-  fmap f (LeftSection p e op) = LeftSection p (fmap f e) (fmap f op)
-  fmap f (RightSection p op e) = RightSection p (fmap f op) (fmap f e)
-  fmap f (Lambda p ts e) = Lambda p (map (fmap f) ts) (fmap f e)
-  fmap f (Let p li ds e) = Let p li (map (fmap f) ds) (fmap f e)
-  fmap f (Do p li stms e) = Do p li (map (fmap f) stms) (fmap f e)
-  fmap f (IfThenElse p e1 e2 e3) =
-    IfThenElse p (fmap f e1) (fmap f e2) (fmap f e3)
-  fmap f (Case p li ct e as) = Case p li ct (fmap f e) (map (fmap f) as)
-
-instance Functor InfixOp where
-  fmap f (InfixOp a op) = InfixOp (f a) op
-  fmap f (InfixConstr a op) = InfixConstr (f a) op
-
-instance Functor Statement where
-  fmap f (StmtExpr p e) = StmtExpr p (fmap f e)
-  fmap f (StmtDecl p li ds) = StmtDecl p li (map (fmap f) ds)
-  fmap f (StmtBind p t e) = StmtBind p (fmap f t) (fmap f e)
-
-instance Functor Alt where
-  fmap f (Alt p t rhs) = Alt p (fmap f t) (fmap f rhs)
-
-instance Functor Field where
-  fmap f (Field p l x) = Field p l (f x)
-
-instance Functor Var where
-  fmap f (Var a v) = Var (f a) v
-
-instance Functor Goal where
-  fmap f (Goal p li e ds) = Goal p li (fmap f e) (map (fmap f) ds)
 
 instance Pretty Infix where
   pPrint InfixL = text "infixl"
@@ -490,6 +399,7 @@ instance HasSpanInfo (Decl a) where
   getSpanInfo (DefaultDecl      sp _)       = sp
   getSpanInfo (ClassDecl        sp _ _ _ _ _) = sp
   getSpanInfo (InstanceDecl     sp _ _ _ _ _) = sp
+  getSpanInfo (DetSig           sp _ _)     = sp
 
   setSpanInfo sp (InfixDecl _ fix prec ops) = InfixDecl sp fix prec ops
   setSpanInfo sp (DataDecl _ tc tvs cs clss) = DataDecl sp tc tvs cs clss
@@ -504,6 +414,7 @@ instance HasSpanInfo (Decl a) where
   setSpanInfo sp (DefaultDecl _ tys) = DefaultDecl sp tys
   setSpanInfo sp (ClassDecl _ li cx cls clsvar ds) = ClassDecl sp li cx cls clsvar ds
   setSpanInfo sp (InstanceDecl _ li cx qcls inst ds) = InstanceDecl sp li cx qcls inst ds
+  setSpanInfo sp (DetSig _ fs det) = DetSig sp fs det
 
   updateEndPos d@(InfixDecl _ _ _ ops) =
     let i' = last ops
@@ -555,6 +466,8 @@ instance HasSpanInfo (Decl a) where
   updateEndPos d@(InstanceDecl (SpanInfo _ ss) _ _ _ _ _) =
     setEndPosition (end (last ss)) d
   updateEndPos d@(InstanceDecl _ _ _ _ _ _) = d
+  updateEndPos d@(DetSig _ _ det) =
+    setEndPosition (getSrcSpanEnd det) d
 
   getLayoutInfo (ClassDecl _ li _ _ _ _) = li
   getLayoutInfo (InstanceDecl _ li _ _ _ _) = li
@@ -733,6 +646,29 @@ instance HasSpanInfo QualTypeExpr where
   setSpanInfo sp (QualTypeExpr _ cx ty) = QualTypeExpr sp cx ty
   updateEndPos t@(QualTypeExpr _ _ ty) =
     setEndPosition (getSrcSpanEnd ty) t
+
+instance HasSpanInfo DetExpr where
+  getSpanInfo (DDetExpr sp) = sp
+  getSpanInfo (NDDetExpr sp) = sp
+  getSpanInfo (ArrowDetExpr sp _ _) = sp
+  getSpanInfo (ParenDetExpr sp _) = sp
+  getSpanInfo (VarDetExpr sp _) = sp
+
+  setSpanInfo sp (DDetExpr _) = DDetExpr sp
+  setSpanInfo sp (NDDetExpr _) = NDDetExpr sp
+  setSpanInfo sp (ArrowDetExpr _ det1 det2) = ArrowDetExpr sp det1 det2
+  setSpanInfo sp (ParenDetExpr _ det) = ParenDetExpr sp det
+  setSpanInfo sp (VarDetExpr _ idt) = VarDetExpr sp idt
+
+  updateEndPos d@(DDetExpr _) = d
+  updateEndPos d@(NDDetExpr _) = d
+  updateEndPos d@(ArrowDetExpr _ _ det2) =
+    setEndPosition (getSrcSpanEnd det2) d
+  updateEndPos d@(ParenDetExpr (SpanInfo _ (s:ss)) _) =
+    setEndPosition (end (last (s:ss))) d
+  updateEndPos d@(ParenDetExpr _ _) = d
+  updateEndPos d@(VarDetExpr _ idt) =
+    setEndPosition (incr (getPosition idt) (identLength idt - 1)) d
 
 instance HasSpanInfo Constraint where
   getSpanInfo (Constraint sp _ _) = sp
@@ -1062,6 +998,10 @@ instance HasPosition TypeExpr where
   setPosition = setStartPosition
 
 instance HasPosition QualTypeExpr where
+  getPosition = getStartPosition
+  setPosition = setStartPosition
+
+instance HasPosition DetExpr where
   getPosition = getStartPosition
   setPosition = setStartPosition
 

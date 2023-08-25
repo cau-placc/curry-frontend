@@ -26,7 +26,7 @@ import qualified Checks.SyntaxCheck       as SC  (syntaxCheck)
 import qualified Checks.TypeCheck         as TC  (typeCheck)
 import qualified Checks.TypeSyntaxCheck   as TSC (typeSyntaxCheck)
 import qualified Checks.WarnCheck         as WC  (warnCheck)
-import qualified Checks.DeterminismCheck as DC (determinismCheck, DetEnv)
+import qualified Checks.DeterminismCheck  as DC  (determinismCheck)
 
 import Curry.Base.Monad
 import Curry.Syntax (Module (..), Interface (..), ImportSpec)
@@ -142,13 +142,13 @@ typeCheck _ (env, Module spi li ps m es is ds)
                                           (valueEnv env) (classEnv env)
                                           (instEnv env) ds
 
-determinismCheck :: CompEnv (Module PredType) -> CYT IO DC.DetEnv
-determinismCheck (env, mdl) = do
-  (detEnv, msgs) <- liftIO $ DC.determinismCheck (moduleIdent env) (tyConsEnv env)
-                                                 (valueEnv env) (classEnv env)
-                                                 (instEnv env) mdl
+determinismCheck :: Options -> CompEnv (Module PredType) -> CYT IO (CompEnv (Module PredType))
+determinismCheck _opts (env, mdl) = do
+  (d, msgs) <- liftIO $ DC.determinismCheck (moduleIdent env) (tyConsEnv env)
+                                              (valueEnv env) (classEnv env)
+                                              (instEnv env) (detEnv env) mdl
   if null msgs
-    then ok detEnv
+    then ok (env {detEnv = d}, mdl)
     else failMessages msgs
 
 -- |Check the export specification

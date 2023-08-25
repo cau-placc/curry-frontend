@@ -277,6 +277,7 @@ data DumpLevel
   | DumpInstanceChecked   -- ^ dump source code after instance checking
   | DumpTypeChecked       -- ^ dump source code after type checking
   | DumpExportChecked     -- ^ dump source code after export checking
+  | DumpDeterminismChecked-- ^ dump source code after export checking
   | DumpQualified         -- ^ dump source code after qualification
   | DumpDerived           -- ^ dump source code after deriving
   | DumpDesugared         -- ^ dump source code after desugaring
@@ -303,6 +304,7 @@ dumpLevel = [ (DumpCondCompiled     , "dump-cond" , "conditional compiling"     
             , (DumpInstanceChecked  , "dump-inc"  , "instance checking"               )
             , (DumpTypeChecked      , "dump-tc"   , "type checking"                   )
             , (DumpExportChecked    , "dump-ec"   , "export checking"                 )
+            , (DumpDeterminismChecked, "dump-dc"  , "determinism checking"            )
             , (DumpQualified        , "dump-qual" , "qualification"                   )
             , (DumpDerived          , "dump-deriv", "deriving"                        )
             , (DumpDesugared        , "dump-ds"   , "desugaring"                      )

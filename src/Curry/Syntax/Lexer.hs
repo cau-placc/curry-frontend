@@ -91,6 +91,9 @@ instance Symbol Token where
   dist _ (Token Id_interface       _) = (0,  8)
   dist _ (Token Id_primitive       _) = (0,  8)
   dist _ (Token Id_qualified       _) = (0,  8)
+  dist _ (Token Id_det             _) = (0,  2)
+  dist _ (Token Id_D               _) = (0,  0)
+  dist _ (Token Id_ND              _) = (0,  1)
   dist _ (Token PragmaHiding       _) = (0,  9)
   dist _ (Token PragmaLanguage     _) = (0, 11)
   dist _ (Token Id                 a) = distAttr False a
@@ -209,6 +212,9 @@ data Category
   | Id_interface
   | Id_primitive
   | Id_qualified
+  | Id_det
+  | Id_D
+  | Id_ND
 
   -- special operators
   | SymDot      -- .
@@ -354,6 +360,9 @@ instance Show Token where
   showsPrec _ (Token Id_interface       _) = showsSpecialIdent "interface"
   showsPrec _ (Token Id_primitive       _) = showsSpecialIdent "primitive"
   showsPrec _ (Token Id_qualified       _) = showsSpecialIdent "qualified"
+  showsPrec _ (Token Id_det             _) = showsSpecialIdent "det"
+  showsPrec _ (Token Id_D               _) = showsSpecialIdent "D"
+  showsPrec _ (Token Id_ND              _) = showsSpecialIdent "ND"
   showsPrec _ (Token PragmaLanguage     _) = showString "{-# LANGUAGE"
   showsPrec _ (Token PragmaOptions      a) = showString "{-# OPTIONS"
                                            . shows a

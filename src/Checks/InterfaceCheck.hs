@@ -148,14 +148,14 @@ checkImport (ITypeDecl _ tc k tvs ty) = do
         = Just ok
       check _ = Nothing
   checkTypeInfo "synonym type" check tc tc
-checkImport (IFunctionDecl _ f (Just tv) n ty) = do
+checkImport (IFunctionDecl _ f (Just tv) n ty dty) = do
   m <- getModuleIdent
   let check (Value f' cm' n' (ForAll _ ty')) =
         f == f' && isJust cm' && n' == n &&
         toQualPredType m [tv] ty == ty'
       check _ = False
   checkValueInfo "method" check f f
-checkImport (IFunctionDecl _ f Nothing n ty) = do
+checkImport (IFunctionDecl _ f Nothing n ty dty) = do
   m <- getModuleIdent
   let check (Value f' cm' n' (ForAll _ ty')) =
         f == f' && isNothing cm' && n' == n &&
@@ -230,7 +230,7 @@ checkNewConstrImport tc tvs (NewRecordDecl _ c (l, ty)) = do
   checkValueInfo "newtype constructor" check c qc
 
 checkMethodImport :: QualIdent -> Ident -> IMethodDecl -> IC ()
-checkMethodImport qcls clsvar (IMethodDecl _ f _ qty) =
+checkMethodImport qcls clsvar (IMethodDecl _ f _ qty dty) =
   checkValueInfo "method" check f qf
   where qf = qualifyLike qcls f
         check (Value f' cm' _ (ForAll _ pty)) =
