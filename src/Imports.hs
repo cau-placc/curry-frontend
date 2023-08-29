@@ -42,6 +42,8 @@ import Env.TypeConstructor
 import Env.Value
 
 import CompilerEnv
+import Checks.DeterminismCheck
+import Env.Determinism (IdentInfo(..))
 
 importModules :: Monad m => Module a -> InterfaceEnv -> [ImportDecl]
               -> CYT m CompilerEnv
@@ -105,6 +107,7 @@ importInterface m q is (Interface mid _ ds) env = env'
     , valueEnv  = importEntities (values mid) m q vs id              ds $ valueEnv  env
     , classEnv  = importClasses   mid                                ds $ classEnv  env
     , instEnv   = importInstances mid                                ds $ instEnv   env
+    , detEnv    = importDetEnv    mid                                ds $ detEnv    env
     }
   ts = isVisible addType  is
   vs = isVisible addValue is
@@ -164,7 +167,7 @@ bindClass m (IClassDecl _ cx cls _ _ ds ids) =
   bindClassInfo (qualQualify m cls) (sclss, ms)
   where sclss = map (\(Constraint _ scls _) -> qualQualify m scls) cx
         ms = map (\d -> (imethod d, isJust $ imethodArity d)) $ filter isVis ds
-        isVis (IMethodDecl _ idt _ _ _) = idt `notElem` ids
+        isVis (IMethodDecl _ idt _ _ _ _) = idt `notElem` ids
 bindClass _ _ = id
 
 importInstances :: ModuleIdent -> [IDecl] -> InstEnv -> InstEnv
@@ -172,9 +175,29 @@ importInstances m = flip $ foldr (bindInstance m)
 
 bindInstance :: ModuleIdent -> IDecl -> InstEnv -> InstEnv
 bindInstance m (IInstanceDecl _ cx qcls ty is mm) = bindInstInfo
-  (qualQualify m qcls, qualifyTC m $ typeConstr ty) (fromMaybe m mm, ps, is)
+  (qualQualify m qcls, qualifyTC m $ typeConstr ty) (fromMaybe m mm, ps, map (\(f, a, _) -> (f, a)) is)
   where PredType ps _ = toQualPredType m [] $ QualTypeExpr NoSpanInfo cx ty
 bindInstance _ _ = id
+
+importDetEnv :: ModuleIdent -> [IDecl] -> DetEnv -> DetEnv
+importDetEnv m = flip $ foldr (bindDetEnv m)
+
+bindDetEnv :: ModuleIdent -> IDecl -> DetEnv -> DetEnv
+bindDetEnv m (IClassDecl _ _ cls _ _ ds _) dEnv =
+  foldr (bindDetEnvClass m cls) dEnv ds
+bindDetEnv m (IInstanceDecl _ _ cls ty ds _) dEnv =
+  foldr (bindDetEnvInstance m cls ty) dEnv ds
+bindDetEnv m (IFunctionDecl _ f _ _ _ dty) dEnv =
+  Map.insert (QI (qualQualify m f)) (toDetType dty) dEnv
+bindDetEnv _ _ dEnv = dEnv
+
+bindDetEnvClass :: ModuleIdent -> QualIdent -> IMethodDecl -> DetEnv -> DetEnv
+bindDetEnvClass m cls (IMethodDecl _ f _ _ ddty _) =
+  Map.insert (CI (qualQualify m cls) (qualifyWith m f)) (toDetType ddty)
+
+bindDetEnvInstance :: ModuleIdent -> QualIdent -> TypeExpr -> IMethodImpl -> DetEnv -> DetEnv
+bindDetEnvInstance m cls ty (f, _, ddty) =
+  Map.insert (II (qualQualify m cls) (qualQualify m (typeConstr ty)) (qualifyWith m f)) (toDetType ddty)
 
 -- ---------------------------------------------------------------------------
 -- Building the initial environment
@@ -219,10 +242,10 @@ types m (ITypeDecl _ tc k tvs ty) =
 types m (IClassDecl _ _ qcls k tv ds ids) =
   [typeCls m qcls k (map mkMethod $ filter isVis ds)]
   where
-    isVis (IMethodDecl _ f _ _ _) = f `notElem` ids
-    mkMethod (IMethodDecl _ f a qty _) = ClassMethod f a
+    isVis (IMethodDecl _ f _ _ _ _) = f `notElem` ids
+    mkMethod (IMethodDecl _ f a qty ddty mdty) = ClassMethod f a
       (qualifyPredType m $ normalize 1 $ toMethodType qcls tv qty)
-      undefined undefined
+      (Just $ toDetType ddty) (fmap toDetType mdty)
 types _ _ = []
 
 -- type constructors
@@ -233,7 +256,7 @@ typeCon f m tc k tvs = f (qualQualify m tc) (toKind' k (length tvs))
 -- type classes
 typeCls :: ModuleIdent -> QualIdent -> Maybe KindExpr -> [ClassMethod]
         -> TypeInfo
-typeCls m qcls k ms = TypeClass (qualQualify m qcls) (toKind' k 0) ms
+typeCls m qcls k = TypeClass (qualQualify m qcls) (toKind' k 0)
 
 -- data constructors, record labels, functions and class methods
 values :: ModuleIdent -> IDecl -> [ValueInfo]
@@ -320,7 +343,7 @@ constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)
 
 classMethod :: ModuleIdent -> QualIdent -> Ident -> [Ident] -> IMethodDecl
             -> ValueInfo
-classMethod m qcls tv hs (IMethodDecl _ f _ qty _) =
+classMethod m qcls tv hs (IMethodDecl _ f _ qty _ _) =
   Value (qualifyLike qcls f) mcls 0 $
     typeScheme $ qualifyPredType m $ toMethodType qcls tv qty
   where

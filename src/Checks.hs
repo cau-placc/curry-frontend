@@ -144,11 +144,11 @@ typeCheck _ (env, Module spi li ps m es is ds)
 
 determinismCheck :: Options -> CompEnv (Module PredType) -> CYT IO (CompEnv (Module PredType))
 determinismCheck _opts (env, mdl) = do
-  (d, msgs) <- liftIO $ DC.determinismCheck (moduleIdent env) (tyConsEnv env)
-                                              (valueEnv env) (classEnv env)
-                                              (instEnv env) (detEnv env) mdl
+  (dE, tE, msgs) <- liftIO $ DC.determinismCheck (moduleIdent env) (tyConsEnv env)
+                                                 (valueEnv env) (classEnv env)
+                                                 (instEnv env) (detEnv env) mdl
   if null msgs
-    then ok (env {detEnv = d}, mdl)
+    then ok (env {detEnv = dE, tyConsEnv = tE}, mdl)
     else failMessages msgs
 
 -- |Check the export specification

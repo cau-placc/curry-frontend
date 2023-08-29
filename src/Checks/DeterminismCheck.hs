@@ -5,7 +5,8 @@ module Checks.DeterminismCheck (determinismCheck, DetEnv) where
 
 import Control.Arrow ( second )
 import Control.Monad.State
-import Data.List ( nub, intercalate )
+import Control.Monad.Extra (concatMapM)
+import Data.List ( nub, intercalate, (\\) )
 import Data.Map ( Map )
 import qualified Data.Map as Map
 import Data.Maybe ( fromMaybe )
@@ -26,7 +27,7 @@ import Curry.Syntax.Utils ( field2Tuple )
 import Env.Class ( ClassEnv, lookupClassInfo, classMethods )
 import Env.Determinism
 import Env.Instance ( InstEnv )
-import Env.TypeConstructor ( TCEnv )
+import Env.TypeConstructor ( TCEnv, lookupTypeInfo, TypeInfo (..), rebindTypeInfo )
 import Env.Value ( qualLookupValue, qualLookupValueUnique, ValueInfo(..), ValueEnv )
 
 import Debug.Trace
@@ -35,6 +36,7 @@ data DS = DS { detEnv :: TopDetEnv
              , localDetEnv :: NestDetEnv
              , valueEnv :: ValueEnv
              , classEnv :: ClassEnv
+             , tcEnv :: TCEnv
              , moduleIdent :: ModuleIdent
              , freshIdent :: VarIndex
              }
@@ -66,8 +68,8 @@ scoped act = do
   return res
 
 determinismCheck :: ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv -> InstEnv -> DetEnv
-                 -> Module PredType -> IO (DetEnv, [Message])
-determinismCheck mid _tce ve ce _ie de (Module _ _ _ _ _ _ ds) = flip evalStateT initState $ do
+                 -> Module PredType -> IO (DetEnv, TCEnv, [Message])
+determinismCheck mid tce ve ce _ie de (Module _ _ _ _ _ _ ds) = flip evalStateT initState $ do
   liftIO $ putStrLn "Determinism check"
   dsvs <- Map.fromList <$> mapM (\d -> (oneDeclIdent d,) <$> freeIdents d) definingDS
   liftIO $ putStrLn $ prettyList (\(i, is) -> prettyII i ++ " uses " ++ prettyList prettyII (Set.toList is))
@@ -78,13 +80,15 @@ determinismCheck mid _tce ve ce _ie de (Module _ _ _ _ _ _ ds) = flip evalStateT
   liftIO $ putStrLn $ prettyList (prettyList prettyII) (map (concatMap (declIdents mid)) groups)
   mapM_ checkGroup groups
   env <- gets detEnv
+  correctTCEnv ds
+  tce' <- gets tcEnv
   liftIO $ putStrLn $ prettyDetEnv env
-  return (env, [])
+  return (env, tce', [])
   where
     oneDeclIdent d = case declIdents mid d of
       (ii:_) -> ii
       _ -> internalError $ "DeterminismCheck.oneDeclIdent: " ++ show d
-    initState = DS de (Top Map.empty) ve ce mid 0
+    initState = DS de (Top Map.empty) ve ce tce mid 0
     definingDS = filter isDefiningDecl ds
     isDefiningDecl FunctionDecl {} = True
     isDefiningDecl PatternDecl {} = True
@@ -392,21 +396,22 @@ checkPred (Pred cls ty) = do
   clsEnv <- gets classEnv
   lcl <- gets localDetEnv
   ext <- gets detEnv
-  case lookupClassInfo (qualQualify mid cls) clsEnv of
+  let qcls = qualQualify mid cls
+  case lookupClassInfo qcls clsEnv of
     Nothing -> internalError $ "checkPred: " ++ render (pPrint cls) ++ " not found"
     Just (_, meths) -> flip andM meths $ \(m, _) ->
       case unapplyType True ty of
         (TypeConstructor tc, _) ->
           let qtc | isQualified tc = tc
                   | otherwise      = qualifyWith mid (unqualify tc)
-              ii = II (qualQualify mid cls) qtc (zeroUniqueQual (qualifyWith mid m))
+              ii = II qcls qtc (zeroUniqueQual (qualifyLike qcls m))
           in case lookupNestEnv ii lcl of
             Just sc -> return (notNondet sc)
             Nothing -> case Map.lookup ii ext of
               Just sc -> return (notNondet sc)
-              Nothing -> internalError $ "checkPred: " ++ show ii ++ " not found in " ++ prettyDetEnv (Map.union ext (flattenNestEnv lcl))
+              Nothing -> internalError $ "checkPred: " ++ prettyII ii ++ " not found in " ++ prettyDetEnv (Map.union ext (flattenNestEnv lcl))
         _ ->
-          let lii = LII (qualQualify mid cls) ty (zeroUniqueQual (qualifyWith mid m))
+          let lii = LII qcls ty (zeroUniqueQual (qualifyWith mid m))
           in case lookupNestEnv lii lcl of
             Just sc -> return (notNondet sc)
             Nothing -> internalError $ "checkPred: " ++ prettyII lii ++ " not found in " ++ prettyDetEnv (flattenNestEnv lcl)
@@ -582,6 +587,43 @@ overlaps = checkOverlap . map (getPats . void)
 mkArrowLike :: Type -> DetScheme
 mkArrowLike ty = case unapplyType True ty of
   (_, xs) -> Forall [0] $ foldr DetArrow (VarTy 0) $ replicate (length xs) (VarTy 0)
+
+-- The TC environment must be updated to add determinism information
+-- to the (user-supplied or generated) default implementation of a class method
+correctTCEnv :: [Decl PredType] -> DM ()
+correctTCEnv ds' = do
+  res <- concatMapM collect ds'
+  mapM_ enter res
+  where
+    collect (ClassDecl _ _ _ cls _ ds) = do
+      let allIds = concatMap sigIdents ds
+          funIds = concatMap funIdents ds
+      res <- (++) <$> mapM (correctClassDecl cls) funIds
+                  <*> mapM (correctClassSig cls) (allIds \\ funIds)
+      return [(cls, res)]
+    collect _ = return []
+    sigIdents (TypeSig _ is _) = is
+    sigIdents _ = []
+    funIdents (FunctionDecl _ _ i _) = [i]
+    funIdents _ = []
+    correctClassDecl cls i = do
+      mid <- gets moduleIdent
+      dEnv <- gets detEnv
+      case Map.lookup (CI (qualifyWith mid cls) (qualifyWith mid i)) dEnv of
+        Nothing  -> internalError $ "correctTCEnv: " ++ show (cls, i) ++ " not found"
+        Just dty -> return (i { idUnique = 0 }, dty)
+    correctClassSig _ i = return (i { idUnique = 0 }, Forall [] Det)
+    enter (cls, newInfo) = do
+      m <- gets moduleIdent
+      tce <- gets tcEnv
+      case lookupTypeInfo cls tce of
+        [TypeClass cls' k ms] ->
+          let ms' = map update ms
+              update (ClassMethod i a ty _ mdty) = case lookup i newInfo of
+                Nothing -> internalError $ "correctTCEnv.enter.update: " ++ show (cls, i) ++ " not found in" ++ show newInfo
+                Just dty -> ClassMethod i a ty (Just dty) mdty
+          in modify $ \s -> s { tcEnv = rebindTypeInfo m cls (TypeClass cls' k ms') tce }
+        _ -> internalError $ "correctTCEnv.enter: " ++ show cls ++ " not found"
 
 class DetCheck a where
   freeIdents :: a -> DM (Set IdentInfo)

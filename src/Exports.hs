@@ -20,7 +20,7 @@
 module Exports (exportInterface) where
 
 import           Data.List         (nub)
-import qualified Data.Map   as Map (foldrWithKey, toList)
+import qualified Data.Map   as Map (foldrWithKey, toList, lookup)
 import           Data.Maybe        (mapMaybe)
 import qualified Data.Set   as Set ( Set, empty, insert, deleteMin, fromList
                                    , member, toList )
@@ -34,7 +34,7 @@ import Base.Messages
 import Base.Types
 
 import Env.Class
-import Env.Determinism     (DetEnv, lookupDetEnv)
+import Env.Determinism     (DetEnv, lookupDetEnv, IdentInfo (..))
 import Env.OpPrec          (OpPrecEnv, PrecInfo (..), OpPrec (..), qualLookupP)
 import Env.Instance
 import Env.TypeConstructor ( TCEnv, TypeInfo (..), tcKind, clsKind
@@ -78,9 +78,9 @@ exportInterface' m es pEnv tcEnv vEnv dEnv clsEnv inEnv = Interface m imports de
   precs   = foldr (infixDecl m pEnv) [] es
   types   = foldr (typeDecl m tcEnv clsEnv tvs) [] es
   values  = foldr (valueDecl m vEnv dEnv tvs) [] es
-  insts   = Map.foldrWithKey (instDecl m tcEnv tvs) [] inEnv
+  insts   = Map.foldrWithKey (instDecl m tcEnv dEnv tvs) [] inEnv
   decls   = precs ++ types ++ values ++ insts
-  decls'  = closeInterface m tcEnv clsEnv inEnv tvs Set.empty decls
+  decls'  = closeInterface m tcEnv clsEnv inEnv dEnv tvs Set.empty decls
 
 infixDecl :: ModuleIdent -> OpPrecEnv -> Export -> [IDecl] -> [IDecl]
 infixDecl m pEnv (Export             _ f) ds = iInfixDecl m pEnv f ds
@@ -171,8 +171,9 @@ newConstrDecl m tvs (RecordConstr c ls tys)
 -- is assigned the index 0 and no other constraints on it are allowed.
 
 methodDecl :: ModuleIdent -> [Ident] -> ClassMethod -> IMethodDecl
-methodDecl m tvs (ClassMethod f a (PredType ps ty) ddty mdty) = IMethodDecl NoPos f a
-  (fromQualPredType m tvs $ PredType (Set.deleteMin ps) ty) undefined
+methodDecl m tvs (ClassMethod f a (PredType ps ty) (Just ddty) mdty) = IMethodDecl NoPos f a
+  (fromQualPredType m tvs $ PredType (Set.deleteMin ps) ty) (toDetExpr ddty) (fmap toDetExpr mdty)
+methodDecl _ _ _ = internalError "Exports.methodDecl: unknown determinism expression of method"
 
 valueDecl :: ModuleIdent -> ValueEnv -> DetEnv -> [Ident] -> Export -> [IDecl] -> [IDecl]
 valueDecl m vEnv dEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
@@ -185,21 +186,24 @@ valueDecl m vEnv dEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
 valueDecl _ _ _ _ (ExportTypeWith _ _ _) ds = ds
 valueDecl _ _ _ _ _ _ = internalError "Exports.valueDecl: no pattern match"
 
-instDecl :: ModuleIdent -> TCEnv -> [Ident] -> InstIdent -> InstInfo -> [IDecl]
+instDecl :: ModuleIdent -> TCEnv -> DetEnv -> [Ident] -> InstIdent -> InstInfo -> [IDecl]
          -> [IDecl]
-instDecl m tcEnv tvs ident@(cls, tc) info@(m', _, _) ds
+instDecl m tcEnv dEnv tvs ident@(cls, tc) info@(m', _, _) ds
   | qidModule cls /= Just m' && qidModule tc /= Just m' =
-    iInstDecl m tcEnv tvs ident info : ds
+    iInstDecl m tcEnv dEnv tvs ident info : ds
   | otherwise = ds
 
-iInstDecl :: ModuleIdent -> TCEnv -> [Ident] -> InstIdent -> InstInfo -> IDecl
-iInstDecl m tcEnv tvs (cls, tc) (m', ps, is) =
-  IInstanceDecl NoPos cx (qualUnqualify m cls) ty is mm
+iInstDecl :: ModuleIdent -> TCEnv -> DetEnv -> [Ident] -> InstIdent -> InstInfo -> IDecl
+iInstDecl m tcEnv dEnv tvs (cls, tc) (m', ps, is) =
+  IInstanceDecl NoPos cx (qualUnqualify m cls) ty (map getDetInfo is) mm
   where pty = PredType ps $ applyType (TypeConstructor tc) $
                 map TypeVariable [0 .. n-1]
         QualTypeExpr _ cx ty = fromQualPredType m tvs pty
         n = kindArity (tcKind m tc tcEnv) - kindArity (clsKind m cls tcEnv)
         mm = if m == m' then Nothing else Just m'
+        getDetInfo (f, a) = case Map.lookup (II cls tc (qualifyLike cls f)) dEnv of
+          Just dty -> (f, a, toDetExpr dty)
+          Nothing -> internalError $ "Exports.iInstDecl: " ++ show (cls, tc, f)
 
 -- The compiler determines the list of imported modules from the set of
 -- module qualifiers that are used in the interface. Careful readers
@@ -258,7 +262,7 @@ instance HasModule NewConstrDecl where
   modules (NewRecordDecl _ _ (_, ty)) = modules ty
 
 instance HasModule IMethodDecl where
-  modules (IMethodDecl _ _ _ qty _) = modules qty
+  modules (IMethodDecl _ _ _ qty _ _) = modules qty
 
 instance HasModule Constraint where
   modules (Constraint _ cls ty) = modules cls . modules ty
@@ -307,18 +311,18 @@ iInfo (IClassDecl   _ _ cls _ _ _ _) = IClass cls
 iInfo (IInstanceDecl _ _ cls ty _ _) = IInst (cls, typeConstr ty)
 iInfo (IFunctionDecl    _ _ _ _ _ _) = IOther
 
-closeInterface :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Ident]
+closeInterface :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> DetEnv -> [Ident]
                -> Set.Set IInfo -> [IDecl] -> [IDecl]
-closeInterface _ _ _ _ _ _ [] = []
-closeInterface m tcEnv clsEnv inEnv tvs is (d:ds)
+closeInterface _ _ _ _ _ _ _ [] = []
+closeInterface m tcEnv clsEnv inEnv dEnv tvs is (d:ds)
   | i == IOther       =
-    d : closeInterface m tcEnv clsEnv inEnv tvs is (ds ++ ds')
-  | i `Set.member` is = closeInterface m tcEnv clsEnv inEnv tvs is ds
+    d : closeInterface m tcEnv clsEnv inEnv dEnv tvs is (ds ++ ds')
+  | i `Set.member` is = closeInterface m tcEnv clsEnv inEnv dEnv tvs is ds
   | otherwise         =
-    d : closeInterface m tcEnv clsEnv inEnv tvs (Set.insert i is) (ds ++ ds')
+    d : closeInterface m tcEnv clsEnv inEnv dEnv tvs (Set.insert i is) (ds ++ ds')
   where i   = iInfo d
         ds' = hiddenTypes m tcEnv clsEnv tvs d ++
-                instances m tcEnv inEnv tvs is i
+                instances m tcEnv inEnv dEnv tvs is i
 
 hiddenTypes :: ModuleIdent -> TCEnv -> ClassEnv -> [Ident] -> IDecl -> [IDecl]
 hiddenTypes m tcEnv clsEnv tvs d =
@@ -341,24 +345,24 @@ hiddenTypes m tcEnv clsEnv tvs d =
                       k' = fromKind' k 0
                   in  HidingClassDecl NoPos cx tc k' tv
 
-instances :: ModuleIdent -> TCEnv -> InstEnv -> [Ident] -> Set.Set IInfo
+instances :: ModuleIdent -> TCEnv -> InstEnv -> DetEnv -> [Ident] -> Set.Set IInfo
           -> IInfo -> [IDecl]
-instances _ _ _ _ _ IOther = []
-instances m tcEnv inEnv tvs is (IType tc) =
-  [ iInstDecl m tcEnv tvs ident info
+instances _ _ _ _ _ _ IOther = []
+instances m tcEnv inEnv dEnv tvs is (IType tc) =
+  [ iInstDecl m tcEnv dEnv tvs ident info
   | (ident@(cls, tc'), info@(m', _, _)) <- Map.toList inEnv,
     qualQualify m tc == tc',
     if qidModule cls == Just m' then Set.member (IClass (qualUnqualify m cls)) is
                                 else qidModule tc' == Just m' ]
-instances m tcEnv inEnv tvs is (IClass cls) =
-  [ iInstDecl m tcEnv tvs ident info
+instances m tcEnv inEnv dEnv tvs is (IClass cls) =
+  [ iInstDecl m tcEnv dEnv tvs ident info
   | (ident@(cls', tc), info@(m', _, _)) <- Map.toList inEnv,
     qualQualify m cls == cls',
     qidModule cls' == Just m',
     m /= m' || isPrimTypeId tc
             || qidModule tc /= Just m
             || Set.member (IType (qualUnqualify m tc)) is ]
-instances _ _ _ _ _ (IInst _) = []
+instances _ _ _ _ _ _ (IInst _) = []
 
 definedTypes :: [IDecl] -> [QualIdent]
 definedTypes ds = foldr definedType [] ds
@@ -407,7 +411,7 @@ instance HasType NewConstrDecl where
   usedTypes (NewRecordDecl _ _ (_, ty)) = usedTypes ty
 
 instance HasType IMethodDecl where
-  usedTypes (IMethodDecl _ _ _ qty _) = usedTypes qty
+  usedTypes (IMethodDecl _ _ _ qty _ _) = usedTypes qty
 
 instance HasType Constraint where
   usedTypes (Constraint _ cls ty) = (cls :) . usedTypes ty

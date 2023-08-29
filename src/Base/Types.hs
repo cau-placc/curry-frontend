@@ -386,12 +386,12 @@ tupleData = [DataConstr (tupleId n) (take n tvs) | n <- [2 ..]]
 
 -- The type 'ClassMethod' is used to represent class methods introduced
 -- by class declarations. The 'Maybe Int' denotes the arity of the provided
--- default implementation whereas the 'Maybe DetScheme' denotes the determinism
+-- default implementation and the first 'Maybe Int' denotes the determinism annotation of the method's default implementation.
+-- It is Nothing before all determinism info has been checked.
+-- The second 'Maybe DetScheme' denotes the determinism
 -- annotation of the method if it exists.
--- The plain 'DetScheme' denotes the determinism
--- annotation of the method's default implementation.
 
-data ClassMethod = ClassMethod Ident (Maybe Int) PredType DetScheme (Maybe DetScheme)
+data ClassMethod = ClassMethod Ident (Maybe Int) PredType (Maybe DetScheme) (Maybe DetScheme)
   deriving (Eq, Show)
 
 methodName :: ClassMethod -> Ident
@@ -403,7 +403,7 @@ methodArity (ClassMethod _ a _ _ _) = a
 methodType :: ClassMethod -> PredType
 methodType (ClassMethod _ _ pty _ _) = pty
 
-methodDefaultDet :: ClassMethod -> DetScheme
+methodDefaultDet :: ClassMethod -> Maybe DetScheme
 methodDefaultDet (ClassMethod _ _ _ det _) = det
 
 methodDetSchemeAnn :: ClassMethod -> Maybe DetScheme

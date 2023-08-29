@@ -138,11 +138,11 @@ data IDecl
     deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Class methods
-data IMethodDecl = IMethodDecl Position Ident (Maybe Arity) QualTypeExpr DetExpr
+data IMethodDecl = IMethodDecl Position Ident (Maybe Arity) QualTypeExpr DetExpr (Maybe DetExpr)
   deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Class method implementations
-type IMethodImpl = (Ident, Arity)
+type IMethodImpl = (Ident, Arity, DetExpr)
 
 -- |Kind expressions
 data KindExpr
@@ -229,7 +229,7 @@ data DetExpr = DDetExpr SpanInfo
              | ArrowDetExpr SpanInfo DetExpr DetExpr
              | ParenDetExpr SpanInfo DetExpr
              | VarDetExpr SpanInfo Ident
-  deriving (Eq, Read, Show, Generic, Binary)
+  deriving (Eq, Ord, Read, Show, Generic, Binary)
 
 -- ---------------------------------------------------------------------------
 -- Type classes

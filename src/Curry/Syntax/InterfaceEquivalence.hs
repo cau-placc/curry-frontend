@@ -87,7 +87,7 @@ instance Equiv IDecl where
   ITypeDecl _ tc1 k1 tvs1 ty1 =~= ITypeDecl _ tc2 k2 tvs2 ty2
     = tc1 == tc2 && k1 `eqvKindExpr` k2 && tvs1 == tvs2 && ty1 == ty2
   IFunctionDecl _ f1 cm1 n1 qty1 dty1 =~= IFunctionDecl _ f2 cm2 n2 qty2 dty2
-    = f1 == f2 && cm1 == cm2 && n1 == n2 && qty1 == qty2 && dty1 =~= dty2
+    = f1 == f2 && cm1 == cm2 && n1 == n2 && qty1 == qty2 && dty1 == dty2
   HidingClassDecl _ cx1 cls1 k1 _ =~= HidingClassDecl _ cx2 cls2 k2 _
     = cx1 == cx2 && cls1 == cls2 && k1 `eqvKindExpr` k2
   IClassDecl _ cx1 cls1 k1 _ ms1 hs1 =~= IClassDecl _ cx2 cls2 k2 _ ms2 hs2
@@ -116,11 +116,8 @@ instance Equiv NewConstrDecl where
   _ =~= _ = False
 
 instance Equiv IMethodDecl where
-  IMethodDecl _ f1 a1 qty1 dty1 =~= IMethodDecl _ f2 a2 qty2 dty2
-    = f1 == f2 && a1 == a2 && qty1 == qty2 && dty1 =~= dty2
-
-instance Equiv DetExpr where
-  (=~=) = (==)
+  IMethodDecl _ f1 a1 qty1 ddty1 mdty1  =~= IMethodDecl _ f2 a2 qty2 ddty2 mdty2
+    = f1 == f2 && a1 == a2 && qty1 == qty2 && ddty1 == ddty2 && mdty1 == mdty2
 
 instance Equiv Ident where
   (=~=) = (==)
@@ -175,7 +172,7 @@ instance FixInterface NewConstrDecl where
   fix tcs (NewRecordDecl p c (i,ty)) = NewRecordDecl p c (i, fix tcs ty)
 
 instance FixInterface IMethodDecl where
-  fix tcs (IMethodDecl p f a qty dty) = IMethodDecl p f a (fix tcs qty) dty
+  fix tcs (IMethodDecl p f a qty ddty mdty) = IMethodDecl p f a (fix tcs qty) ddty mdty
 
 instance FixInterface QualTypeExpr where
   fix tcs (QualTypeExpr spi cx ty) = QualTypeExpr spi (fix tcs cx) (fix tcs ty)

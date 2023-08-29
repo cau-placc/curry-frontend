@@ -351,11 +351,16 @@ bindKind m tcEnv' clsEnv tcEnv (ClassDecl _ _ _ cls tv ds) =
     mkMethods _                  = []
     mkMethod qty f = ClassMethod f (findArity f ds)
                         (expandMethodType m tcEnv' clsEnv (qualify cls) tv qty)
-                        undefined undefined
+                        Nothing
+                        (findDetAnn f ds)
     findArity _ []                                    = Nothing
     findArity f (FunctionDecl _ _ f' eqs:_) | f == f' =
       Just $ eqnArity $ head eqs
     findArity f (_:ds')                               = findArity f ds'
+
+    findDetAnn _ [] = Nothing
+    findDetAnn f (DetSig _ fs ann:_) | f `elem` fs = Just (toDetType ann)
+    findDetAnn f (_:ds') = findDetAnn f ds'
 bindKind _ _      _      tcEnv _                          = return tcEnv
 
 bindTypeConstructor :: (QualIdent -> Kind -> a -> TypeInfo) -> Ident

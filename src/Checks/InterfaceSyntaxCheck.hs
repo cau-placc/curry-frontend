@@ -31,7 +31,7 @@ import           Data.Maybe               (isNothing)
 import Base.Expr
 import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.TopEnv
-import Base.Utils    (findMultiples, findDouble)
+import Base.Utils    (findMultiples, findDouble, fst3)
 
 import Env.TypeConstructor
 import Env.Type
@@ -123,7 +123,7 @@ checkIDecl (IInstanceDecl p cx qcls inst is m) = do
   QualTypeExpr _ cx' inst' <- checkQualType $ QualTypeExpr NoSpanInfo cx inst
   checkSimpleContext cx'
   checkInstanceType inst'
-  mapM_ (report . errMultipleImplementation . head) $ findMultiples $ map fst is
+  mapM_ (report . errMultipleImplementation . head) $ findMultiples $ map fst3 is
   return $ IInstanceDecl p cx' qcls inst' is m
 
 checkHiddenType :: QualIdent -> [Ident] -> [Ident] -> ISC ()
@@ -174,19 +174,19 @@ checkSimpleConstraint c@(Constraint _ _ ty) =
   unless (isVariableType ty) $ report $ errIllegalSimpleConstraint c
 
 checkIMethodDecl :: Ident -> IMethodDecl -> ISC IMethodDecl
-checkIMethodDecl tv (IMethodDecl p f a qty dty) = do
+checkIMethodDecl tv (IMethodDecl p f a qty ddty mdty) = do
   qty' <- checkQualType qty
   unless (tv `elem` fv qty') $ report $ errAmbiguousType f tv
   let QualTypeExpr _ cx _ = qty'
   when (tv `elem` fv cx) $ report $ errConstrainedClassVariable f tv
-  return $ IMethodDecl p f a qty' dty
+  return $ IMethodDecl p f a qty' ddty mdty
 
 checkInstanceType :: InstanceType -> ISC ()
 checkInstanceType inst = do
   tEnv <- getTypeEnv
   unless (isSimpleType inst &&
     not (isTypeSyn (typeConstr inst) tEnv) &&
-    null (filter isAnonId $ typeVars inst) &&
+    not (any isAnonId (typeVars inst)) &&
     isNothing (findDouble $ fv inst)) $
       report $ errIllegalInstanceType inst inst
 

@@ -271,6 +271,9 @@ iMethod :: Parser a Token IMethodDecl
 iMethod = IMethodDecl <$> position
                       <*> fun <*> option int <*-> token DoubleColon <*> qualType
                                              <*-> token DoubleColon <*> detExpr
+                                             <*> option iDefaultMethodDetType
+
+  where iDefaultMethodDetType = token DoubleColon <-*> detExpr
 
 -- |Parser for an interface hiding pragma
 iClassHidden :: Parser a Token [Ident]
@@ -289,7 +292,7 @@ iInstanceDecl = (\(sp, _, cx, qcls, inst) ->
 
 -- |Parser for an interface method implementation
 iImpl :: Parser a Token IMethodImpl
-iImpl = (,) <$> fun <*> arity
+iImpl = (,,) <$> fun <*> arity <*-> token DoubleColon <*> detExpr
 
 iModulePragma :: Parser a Token ModuleIdent
 iModulePragma = token PragmaModule <-*> modIdent <*-> token PragmaEnd
@@ -359,17 +362,20 @@ arrowDetExpr = mkArrow <$> tokenSpan RightArrow
           ArrowDetExpr (spanInfo sp1 [sp1]) d1 d2
 
 -- detExpr0 ::= (detExpr) | D | ND | tyvar
+-- note that we actually parse D and ND as tyvars
+-- and then convert them later.
 detExpr0 :: Parser a Token DetExpr
 detExpr0 =  (pExpr <$> spanPosition <*> parensSp detExpr)
-        <|> (dExpr <$> tokenSpan Id_D)
-        <|> (ndExpr <$> tokenSpan Id_ND)
         <|> (vExpr <$> spanPosition <*> tyvar)
   where
     pExpr sp1 (dty, sp2, sp3) = updateEndPos $
       ParenDetExpr (spanInfo sp1 [sp2, sp3]) dty
     dExpr sp = DDetExpr (spanInfo sp [sp])
     ndExpr sp = NDDetExpr (spanInfo sp [sp])
-    vExpr sp tv = updateEndPos $ VarDetExpr (spanInfo sp []) tv
+    vExpr sp tv = case idName tv of
+      "D"  -> dExpr sp
+      "ND" -> ndExpr sp
+      _    -> updateEndPos $ VarDetExpr (spanInfo sp []) tv
 
 constrDecl :: Parser a Token ConstrDecl
 constrDecl = spanPosition <**> constr
@@ -1290,15 +1296,13 @@ anonIdent = (`setSpanInfo` anonId) . fromSrcSpanBoth <$> tokenSpan Underscore
 mIdent :: Parser a Token ModuleIdent
 mIdent = mIdent' <$> spanPosition <*>
      tokens [Id,QId,Id_as,Id_ccall,Id_forall,Id_hiding,
-             Id_interface,Id_primitive,Id_qualified,
-             Id_D, Id_ND]
+             Id_interface,Id_primitive,Id_qualified]
   where mIdent' sp a = ModuleIdent (fromSrcSpanBoth sp) (modulVal a ++ [sval a])
 
 ident :: Parser a Token Ident
 ident = (\ sp t -> setSpanInfo (fromSrcSpanBoth sp) (mkIdent (sval t)))
           <$> spanPosition <*> tokens [Id,Id_as,Id_ccall,Id_forall,Id_hiding,
-                                       Id_interface,Id_primitive,Id_qualified,
-                                       Id_D, Id_ND]
+                                       Id_interface,Id_primitive,Id_qualified]
 
 qIdent :: Parser a Token QualIdent
 qIdent = qualify <$> ident <|> qIdentWith QId

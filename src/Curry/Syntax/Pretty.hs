@@ -244,12 +244,15 @@ ppITypeDeclLhs kw tc k tvs =
   text kw <+> ppQIdentWithKind tc k <+> hsep (map ppIdent tvs)
 
 instance Pretty IMethodDecl where
-  pPrint (IMethodDecl _ f a qty dty) =
+  pPrint (IMethodDecl _ f a qty ddty mdty) =
     ppIdent f <+> maybePP int a <+> text "::" <+> pPrintPrec 0 qty
-                                <+> text "::" <+> pPrintPrec 0 dty
+                                <+> text "::" <+> pPrintPrec 0 ddty
+                                <> case mdty of
+                                      Nothing -> empty
+                                      Just dty -> space <> text "::" <+> pPrintPrec 0 dty
 
 ppIMethodImpl :: IMethodImpl -> Doc
-ppIMethodImpl (f, a) = ppIdent f <+> int a
+ppIMethodImpl (f, a, dty) = ppIdent f <+> int a <+> colon <> colon <+> pPrint dty
 
 ppQIdentWithKind :: QualIdent -> Maybe KindExpr -> Doc
 ppQIdentWithKind tc (Just k) =

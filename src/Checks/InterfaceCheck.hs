@@ -52,6 +52,7 @@ import           Control.Monad            (unless)
 import qualified Control.Monad.State as S
 import           Data.List                (sort)
 import           Data.Maybe               (fromMaybe, isJust, isNothing)
+import qualified Data.Map as Map
 
 import Curry.Base.Ident
 import Curry.Base.SpanInfo
@@ -64,7 +65,7 @@ import Base.Types
 import Base.Kinds
 
 import Env.Class
-import Env.Determinism (lookupDetEnv, DetEnv)
+import Env.Determinism (lookupDetEnv, DetEnv, IdentInfo (..))
 import Env.Instance
 import Env.OpPrec
 import Env.TypeConstructor
@@ -238,14 +239,17 @@ checkNewConstrImport tc tvs (NewRecordDecl _ c (l, ty)) = do
   checkValueInfo "newtype constructor" check c qc
 
 checkMethodImport :: QualIdent -> Ident -> IMethodDecl -> IC ()
-checkMethodImport qcls clsvar (IMethodDecl _ f _ qty dty) =
-  checkValueInfo "method" check f qf >> checkDetInfo "method" checkD f qf
+checkMethodImport qcls clsvar (IMethodDecl _ f _ qty ddty mdty) = do
+  checkValueInfo "method" check f qf
+  checkDetInfo "method" checkD f qf
+  checkMaybeDetInfo "method" checkM qcls f qf
   where qf = qualifyLike qcls f
         check (Value f' cm' _ (ForAll _ pty)) =
           qf == f' && isJust cm' &&
           toMethodType qcls clsvar qty == pty
         check _ = False
-        checkD dty' = toDetType dty == dty'
+        checkD = (toDetType ddty ==)
+        checkM = (fmap toDetType mdty ==)
 
 checkPrecInfo :: HasSpanInfo s => (PrecInfo -> Bool) -> s -> QualIdent -> IC ()
 checkPrecInfo check p op = do
@@ -267,17 +271,24 @@ checkTypeInfo what check p tc = do
         _    -> internalError "checkTypeInfo"
   checkImported checkInfo tc
 
-checkInstInfo :: HasSpanInfo s => (PredSet -> [(Ident, Int)] -> Bool) -> s -> InstIdent
+checkInstInfo :: HasSpanInfo s => (PredSet -> [(Ident, Int, DetExpr)] -> Bool) -> s -> InstIdent
               -> Maybe ModuleIdent -> IC ()
-checkInstInfo check p i mm = do
+checkInstInfo check p i@(qcls, qtc) mm = do
   inEnv <- getInstEnv
   let checkInfo m _ = case lookupInstInfo i inEnv of
         Just (m', ps, is)
           | m /= m'   -> report $ errNoInstance p m i
-          | otherwise ->
-            unless (check ps is) $ report $ errInstanceConflict p m i
+          | otherwise -> do
+            is' <- mapM getDetInfo is
+            unless (check ps is') $ report $ errInstanceConflict p m i
         Nothing -> report $ errNoInstance p m i
   checkImported checkInfo (maybe qualify qualifyWith mm anonId)
+  where
+    getDetInfo (i', d) = do
+      dEnv <- getDetEnv
+      case Map.lookup (II qcls qtc (qualifyLike qcls i')) dEnv of
+        Just d' -> return (i', d, toDetExpr d')
+        Nothing -> internalError "checkInstInfo"
 
 checkValueInfo :: HasSpanInfo a => String -> (ValueInfo -> Bool) -> a
                -> QualIdent -> IC ()
@@ -299,6 +310,16 @@ checkDetInfo what check p x = do
         Nothing -> report $ errNotExported p' what m x'
         Just ty -> unless (check ty)
                     (report $ errImportConflict p' what m x')
+  checkImported checkInfo x
+  where p' = getSpanInfo p
+
+checkMaybeDetInfo :: HasSpanInfo a => String -> (Maybe DetScheme -> Bool)
+                  -> QualIdent -> a -> QualIdent -> IC ()
+checkMaybeDetInfo what check qcls p x = do
+  dEnv <- getDetEnv
+  let checkInfo m x' = case Map.lookup (CI qcls x) dEnv of
+        res -> unless (check res)
+                (report $ errImportConflict p' what m x')
   checkImported checkInfo x
   where p' = getSpanInfo p
 
