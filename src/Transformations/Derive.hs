@@ -25,7 +25,6 @@ import Curry.Base.Ident
 import Curry.Base.SpanInfo
 import Curry.Syntax
 
-import Base.CurryTypes (fromPredType)
 import Base.Messages (internalError)
 import Base.Types
 import Base.TypeSubst (instanceType)

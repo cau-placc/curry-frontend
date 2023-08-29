@@ -304,7 +304,7 @@ topDecls = topDecl `sepBySp` semicolon
 topDecl :: Parser a Token (Decl ())
 topDecl = choice [ dataDecl, externalDataDecl, newtypeDecl, typeDecl
                  , classDecl, instanceDecl, defaultDecl
-                 , infixDecl, functionDecl, detSig ]
+                 , infixDecl, detSig, functionDecl ]
 
 dataDecl :: Parser a Token (Decl ())
 dataDecl = combineWithSpans
@@ -342,11 +342,11 @@ typeDeclLhs :: (Span -> Ident -> [Ident] -> a) -> Category
 typeDeclLhs f kw = f <$> tokenSpan kw <*> tycon <*> many anonOrTyvar
 
 detSig :: Parser a Token (Decl ())
-detSig = sig <$> spanPosition <*> fun `sepBy1Sp` comma <*> tokenSpan DoubleColon <*> detExpr
+detSig = sig <$> tokenSpan KW_det <*> fun `sepBy1Sp` comma <*> tokenSpan DoubleColon <*> detExpr
   where
     sig :: Span -> ([Ident], [Span]) -> Span -> DetExpr -> Decl ()
     sig sp (vs, commas) colons dty = updateEndPos $
-      DetSig (spanInfo sp (commas ++ [colons])) vs dty
+      DetSig (spanInfo sp (sp : commas ++ [colons])) vs dty
 
 -- detExpr ::= detExpr -> ...
 detExpr :: Parser a Token DetExpr
@@ -1291,14 +1291,14 @@ mIdent :: Parser a Token ModuleIdent
 mIdent = mIdent' <$> spanPosition <*>
      tokens [Id,QId,Id_as,Id_ccall,Id_forall,Id_hiding,
              Id_interface,Id_primitive,Id_qualified,
-             Id_det, Id_D, Id_ND]
+             Id_D, Id_ND]
   where mIdent' sp a = ModuleIdent (fromSrcSpanBoth sp) (modulVal a ++ [sval a])
 
 ident :: Parser a Token Ident
 ident = (\ sp t -> setSpanInfo (fromSrcSpanBoth sp) (mkIdent (sval t)))
           <$> spanPosition <*> tokens [Id,Id_as,Id_ccall,Id_forall,Id_hiding,
                                        Id_interface,Id_primitive,Id_qualified,
-                                       Id_det, Id_D, Id_ND]
+                                       Id_D, Id_ND]
 
 qIdent :: Parser a Token QualIdent
 qIdent = qualify <$> ident <|> qIdentWith QId

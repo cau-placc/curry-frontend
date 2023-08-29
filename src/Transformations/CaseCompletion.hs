@@ -42,7 +42,6 @@ import           Data.Maybe                 (fromMaybe, listToMaybe)
 import           Curry.Base.Ident
 import qualified Curry.Syntax        as CS
 
-import Base.CurryTypes                      (toType)
 import Base.Expr
 import Base.Messages                        (internalError)
 import Base.Types                           ( charType, floatType
@@ -463,7 +462,7 @@ getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds) = complementary cs cinfos
     , [transType' vs ty | CS.FieldDecl _ ls ty <- fs, _ <- ls]
     )
 
-  transType' vs = qualType . transType tcEnv . toType vs
+  transType' vs = qualType . transType tcEnv . CS.toType vs
 
   qualType (TypeConstructor qid vs) = TypeConstructor (qualQualify mid qid) (map qualType vs)
   qualType (TypeArrow ty1 ty2)   = TypeArrow (qualType ty1) (qualType ty2)

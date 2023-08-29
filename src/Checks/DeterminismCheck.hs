@@ -123,7 +123,7 @@ toInstanceIdent _ _ ii = ii
 checkGroup :: [Decl PredType] -> DM ()
 checkGroup ds = do
   constraints <- Set.unions <$> (mapM checkDecl ds >>= sequence)
-  res <- Map.map abstract . extractTopEnv <$> solveConstraints constraints
+  res <- Map.map abstractDetScheme . extractTopEnv <$> solveConstraints constraints
   modify (\s -> s { localDetEnv = Top Map.empty, detEnv = Map.union res (detEnv s),  freshIdent = 0 })
   return ()
 
@@ -148,7 +148,7 @@ checkDecl (ExternalDecl _ vs) = do
                        in addLocalType (QI qi) (externalDetMap Map.! qi)) vs
   return $ return Set.empty
 checkDecl (FreeDecl _ vs) = do
-  mapM_ (\(Var _ i) -> addLocalType (QI (qualify i)) (toSchema Nondet)) vs
+  mapM_ (\(Var _ i) -> addLocalType (QI (qualify i)) (toDetSchema Nondet)) vs
   return $ return Set.empty
 checkDecl _ = return $ return Set.empty
 
@@ -162,7 +162,7 @@ checkFun preds fty is eqs@(e:_) = do
   ov <- overlaps eqs
   args <- replicateM arity freshVar
   res <- freshVar
-  mapM_ (`addLocalType` toSchema (foldr (DetArrow . VarTy) (VarTy res) args)) is
+  mapM_ (`addLocalType` toDetSchema (foldr (DetArrow . VarTy) (VarTy res) args)) is
   return $ scoped $ do
     clsEnv <- gets classEnv
     mid <- gets moduleIdent
@@ -201,7 +201,7 @@ genDetType vs (ApLhs _ lhs ps) = do
 
 checkPat :: VarIndex -> Pattern PredType -> DM (Set DetConstraint, Bool)
 checkPat v (VariablePattern _ _ i) = do
-  addLocalType (QI (qualify i)) (toSchema (VarTy v))
+  addLocalType (QI (qualify i)) (toDetSchema (VarTy v))
   return (Set.empty, False)
 checkPat v (ConstructorPattern _ _ _ ps) = (,True) . Set.unions <$> mapM (fmap fst . checkPat v) ps
 checkPat v (InfixPattern _ _ p1 _ p2) = ((,True) .) . Set.union <$> fmap fst (checkPat v p1) <*> fmap fst (checkPat v p2)
@@ -213,7 +213,7 @@ checkPat v (TuplePattern _ ps) =
 checkPat v (ListPattern _ _ ps) =
   (,True) . Set.unions <$> mapM (fmap fst . checkPat v) ps
 checkPat v (AsPattern _ i p) = do
-  addLocalType (QI (qualify i)) (toSchema (VarTy v))
+  addLocalType (QI (qualify i)) (toDetSchema (VarTy v))
   checkPat v p
 checkPat v (LazyPattern _ p) = second (const False) <$> checkPat v p
 checkPat v (FunctionPattern _ ty i ps) = do
@@ -425,9 +425,6 @@ instantiate (Forall vs ty) = do
   vs' <- replicateM (length vs) freshVar
   return (substDetTy ty (Map.fromList (zipWith (\a -> (a,) . VarTy) vs vs')))
 
-abstract :: DetScheme -> DetScheme
-abstract (Forall _ ty) = Forall (nub (vars ty)) ty
-
 checkLocalDeclsTy :: [Decl PredType] -> DM (Set DetConstraint)
 checkLocalDeclsTy ds = Set.unions <$> (mapM checkDecl ds >>= sequence)
 
@@ -480,14 +477,9 @@ solveConstraints constraints = do
   return $ mapNestEnv (`substDetSchema` solved) lcl
   where
     defs (AppliedType v w _) = [v, w]
-    defs (EqualType v ty) = v : vars ty
-    uses (AppliedType v w ty) = v : w : concatMap vars ty
-    uses (EqualType v ty) = v : vars ty
-
-vars :: DetType -> [VarIndex]
-vars (VarTy v) = [v]
-vars (DetArrow ty1 ty2) = vars ty1 ++ vars ty2
-vars _ = []
+    defs (EqualType v ty) = v : detTypeVars ty
+    uses (AppliedType v w ty) = v : w : concatMap detTypeVars ty
+    uses (EqualType v ty) = v : detTypeVars ty
 
 solveGroup :: Map VarIndex DetType -> [DetConstraint] -> Map VarIndex DetType
 solveGroup solutions = go Map.empty . map (`substCon` solutions)
@@ -505,7 +497,7 @@ solveGroup solutions = go Map.empty . map (`substCon` solutions)
               (new, cs') -> go (Map.insert v new current)  cs' -- TODO: Might fail if v has been equated to Det already and application is Nondet
       EqualType v ty
         | ty == VarTy v -> go current cs
-        | v `elem` vars ty -> go (Map.insert v Nondet current) cs
+        | v `elem` detTypeVars ty -> go (Map.insert v Nondet current) cs
         | otherwise ->
           case Map.lookup v current of
             Nothing ->
@@ -668,7 +660,7 @@ enumFreeIdent q ty =
   case unapplyType True ty of
     (TypeConstructor tc, _) ->
       return (Set.singleton (II qEnumId tc q))
-    _ -> internalError (show ty ++ " is not an enum type")
+    _ -> return (Set.singleton (LII qEnumId ty q))
 
 -- TODO MonadFail
 monadFreeIdent :: Type -> DM (Set IdentInfo)
@@ -676,7 +668,7 @@ monadFreeIdent ty =
   case unapplyType True ty of
     (TypeConstructor tc, _) ->
       return (Set.singleton (II qMonadId tc qBindId))
-    _ -> internalError (show ty ++ " is not an enum type")
+    _ -> return (Set.singleton (LII qMonadId ty qBindId))
 
 variableFreeIdent :: QualIdent -> Type -> DM (Maybe IdentInfo)
 variableFreeIdent qid ty = do

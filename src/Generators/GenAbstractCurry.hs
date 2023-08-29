@@ -34,11 +34,10 @@ import Curry.Base.Ident
 import Curry.Base.SpanInfo
 import Curry.Syntax
 
-import Base.CurryTypes (fromPredType, toType, toPredType)
 import Base.Expr       (bv)
 import Base.Messages   (internalError)
 import Base.NestEnv
-import Base.Types      (arrowArity, PredType, unpredType, TypeScheme (..))
+import Base.Types
 import Base.TypeSubst
 
 import Env.Value       (ValueEnv, ValueInfo (..), qualLookupValue)
@@ -512,11 +511,11 @@ getQualType :: Ident -> PredType -> GAC CQualTypeExpr
 getQualType f pty = do
   uacy <- S.gets untypedAcy
   sigs <- S.gets typeSigs
-  trQualTypeExpr $ case uacy of
-    True  -> Maybe.fromMaybe (QualTypeExpr NoSpanInfo [] $
-                               ConstructorType NoSpanInfo prelUntyped)
-                             (Map.lookup f sigs)
-    False -> fromPredType identSupply pty
+  trQualTypeExpr $ if uacy
+    then Maybe.fromMaybe (QualTypeExpr NoSpanInfo [] $
+                            ConstructorType NoSpanInfo prelUntyped)
+                         (Map.lookup f sigs)
+    else fromPredType identSupply pty
 
 getQualType' :: QualIdent -> GAC QualTypeExpr
 getQualType' f = do

@@ -64,7 +64,6 @@ import Curry.Base.SpanInfo
 import Curry.Syntax
 import Curry.Syntax.Pretty
 
-import Base.CurryTypes
 import Base.Expr
 import Base.Kinds
 import Base.Messages (Message, spanInfoMessage, internalError)
@@ -382,7 +381,7 @@ bindClassMethods' m tcEnv vEnv =
 
 bindClassMethod :: ModuleIdent -> QualIdent -> ClassMethod -> ValueEnv
                 -> ValueEnv
-bindClassMethod m cls (ClassMethod f _ ty) =
+bindClassMethod m cls (ClassMethod f _ ty _ _) =
   bindGlobalInfo (\qc tySc -> Value qc (Just cls) 0 tySc) m f (typeScheme ty)
 
 -- -----------------------------------------------------------------------------

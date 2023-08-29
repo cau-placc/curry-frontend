@@ -88,10 +88,10 @@ instance Symbol Token where
   dist _ (Token Id_hiding          _) = (0,  5)
   dist _ (Token KW_newtype         _) = (0,  6)
   dist _ (Token KW_external        _) = (0,  7)
+  dist _ (Token KW_det             _) = (0,  2)
   dist _ (Token Id_interface       _) = (0,  8)
   dist _ (Token Id_primitive       _) = (0,  8)
   dist _ (Token Id_qualified       _) = (0,  8)
-  dist _ (Token Id_det             _) = (0,  2)
   dist _ (Token Id_D               _) = (0,  0)
   dist _ (Token Id_ND              _) = (0,  1)
   dist _ (Token PragmaHiding       _) = (0,  9)
@@ -190,6 +190,7 @@ data Category
   | KW_then
   | KW_type
   | KW_where
+  | KW_det
 
   -- reserved operators
   | At           -- @
@@ -212,7 +213,6 @@ data Category
   | Id_interface
   | Id_primitive
   | Id_qualified
-  | Id_det
   | Id_D
   | Id_ND
 
@@ -353,6 +353,7 @@ instance Show Token where
   showsPrec _ (Token KW_then            _) = showsEscaped "then"
   showsPrec _ (Token KW_type            _) = showsEscaped "type"
   showsPrec _ (Token KW_where           _) = showsEscaped "where"
+  showsPrec _ (Token KW_det             _) = showsEscaped "det"
   showsPrec _ (Token Id_as              _) = showsSpecialIdent "as"
   showsPrec _ (Token Id_ccall           _) = showsSpecialIdent "ccall"
   showsPrec _ (Token Id_forall          _) = showsSpecialIdent "forall"
@@ -360,7 +361,6 @@ instance Show Token where
   showsPrec _ (Token Id_interface       _) = showsSpecialIdent "interface"
   showsPrec _ (Token Id_primitive       _) = showsSpecialIdent "primitive"
   showsPrec _ (Token Id_qualified       _) = showsSpecialIdent "qualified"
-  showsPrec _ (Token Id_det             _) = showsSpecialIdent "det"
   showsPrec _ (Token Id_D               _) = showsSpecialIdent "D"
   showsPrec _ (Token Id_ND              _) = showsSpecialIdent "ND"
   showsPrec _ (Token PragmaLanguage     _) = showString "{-# LANGUAGE"

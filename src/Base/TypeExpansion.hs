@@ -20,7 +20,6 @@ import qualified Data.Set.Extra as Set (map)
 import Curry.Base.Ident
 import Curry.Syntax
 
-import Base.CurryTypes
 import Base.Messages
 import Base.Types
 import Base.TypeSubst

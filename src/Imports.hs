@@ -27,10 +27,6 @@ import Curry.Base.SpanInfo
 import Curry.Base.Monad
 import Curry.Syntax
 
-import Base.CurryKinds (toKind')
-import Base.CurryTypes ( toQualType, toQualTypes, toQualPredType, toConstrType
-                       , toMethodType )
-
 import Base.Kinds
 import Base.Messages
 import Base.TopEnv
@@ -168,7 +164,7 @@ bindClass m (IClassDecl _ cx cls _ _ ds ids) =
   bindClassInfo (qualQualify m cls) (sclss, ms)
   where sclss = map (\(Constraint _ scls _) -> qualQualify m scls) cx
         ms = map (\d -> (imethod d, isJust $ imethodArity d)) $ filter isVis ds
-        isVis (IMethodDecl _ idt _ _ ) = idt `notElem` ids
+        isVis (IMethodDecl _ idt _ _ _) = idt `notElem` ids
 bindClass _ _ = id
 
 importInstances :: ModuleIdent -> [IDecl] -> InstEnv -> InstEnv
@@ -223,9 +219,10 @@ types m (ITypeDecl _ tc k tvs ty) =
 types m (IClassDecl _ _ qcls k tv ds ids) =
   [typeCls m qcls k (map mkMethod $ filter isVis ds)]
   where
-    isVis (IMethodDecl _ f _ _ ) = f `notElem` ids
-    mkMethod (IMethodDecl _ f a qty) = ClassMethod f a $
-      qualifyPredType m $ normalize 1 $ toMethodType qcls tv qty
+    isVis (IMethodDecl _ f _ _ _) = f `notElem` ids
+    mkMethod (IMethodDecl _ f a qty _) = ClassMethod f a
+      (qualifyPredType m $ normalize 1 $ toMethodType qcls tv qty)
+      undefined undefined
 types _ _ = []
 
 -- type constructors
@@ -264,11 +261,11 @@ values m (INewtypeDecl _ tc _ tvs nc hs) =
       [recLabel m tc' tvs ty' (l, [c], lty) | l `notElem` hs]
   where tc' = qualQualify m tc
         ty' = constrType tc' tvs
-values m (IFunctionDecl _ f Nothing a qty) =
+values m (IFunctionDecl _ f Nothing a qty _) =
   [Value (qualQualify m f) Nothing a (typeScheme (toQualPredType m [] qty))]
-values m (IFunctionDecl _ f (Just tv) _ qty) =
+values m (IFunctionDecl _ f (Just tv) _ qty _) =
   let mcls = case qty of
-        QualTypeExpr _ ctx _ -> fmap (\(Constraint _ qcls _) -> qcls) $
+        QualTypeExpr _ ctx _ -> (\(Constraint _ qcls _) -> qcls) <$>
                                 find (\(Constraint _ _ ty) -> isVar ty) ctx
   in [Value (qualQualify m f) mcls 0 (typeScheme (toQualPredType m [tv] qty))]
   where
@@ -323,7 +320,7 @@ constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)
 
 classMethod :: ModuleIdent -> QualIdent -> Ident -> [Ident] -> IMethodDecl
             -> ValueInfo
-classMethod m qcls tv hs (IMethodDecl _ f _ qty) =
+classMethod m qcls tv hs (IMethodDecl _ f _ qty _) =
   Value (qualifyLike qcls f) mcls 0 $
     typeScheme $ qualifyPredType m $ toMethodType qcls tv qty
   where

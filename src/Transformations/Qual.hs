@@ -84,6 +84,7 @@ qDecl (ClassDecl     p li cx cls tv ds) = ClassDecl p li <$>
   qContext cx <*> pure cls <*> pure tv <*> mapM qDecl ds
 qDecl (InstanceDecl p li cx qcls ty ds) = InstanceDecl p li <$>
   qContext cx <*> qClass qcls <*> qTypeExpr ty <*> mapM qDecl ds
+qDecl (DetSig                 p vs dty) = return (DetSig p vs dty)
 
 qConstrDecl :: Qual ConstrDecl
 qConstrDecl (ConstrDecl p      n tys) =

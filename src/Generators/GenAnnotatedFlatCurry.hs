@@ -36,7 +36,7 @@ import qualified Curry.Syntax as CS
 import Base.Messages       (internalError)
 import Base.NestEnv        ( NestEnv, emptyEnv, bindNestEnv, lookupNestEnv
                            , nestEnv, unnestEnv )
-import Base.Types
+import Base.Types hiding   (VarIndex)
 
 import CompilerEnv
 import Env.TypeConstructor (TCEnv)

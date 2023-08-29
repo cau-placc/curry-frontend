@@ -39,7 +39,6 @@ import Curry.Base.Ident
 import Curry.Base.Pretty (Pretty(..))
 
 import Base.Messages (internalError)
-import Base.PrettyTypes ()
 import Base.TopEnv
 import Base.Types
 import Base.Utils ((++!))

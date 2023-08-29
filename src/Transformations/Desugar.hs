@@ -74,7 +74,6 @@ import Curry.Base.SpanInfo
 import Curry.Syntax
 
 import Base.Expr
-import Base.CurryTypes
 import Base.Messages (internalError)
 import Base.TypeExpansion
 import Base.Types

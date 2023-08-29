@@ -44,7 +44,7 @@ interfaceCheck _ (env, intf)
   | null msgs = ok (env, intf)
   | otherwise = failMessages msgs
   where msgs = IC.interfaceCheck (opPrecEnv env) (tyConsEnv env) (classEnv env)
-                                 (instEnv env) (valueEnv env) intf
+                                 (instEnv env) (valueEnv env) (detEnv env) intf
 
 importCheck :: Monad m => Interface -> Maybe ImportSpec
             -> CYT m (Maybe ImportSpec)

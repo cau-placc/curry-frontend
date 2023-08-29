@@ -58,7 +58,7 @@ insertDicts inlDi (env, mdl) = (env { interfaceEnv = intfEnv'
   where (mdl', intfEnv', tcEnv', vEnv', pEnv') =
           DI.insertDicts inlDi (interfaceEnv env) (tyConsEnv env)
                          (valueEnv env) (classEnv env) (instEnv env)
-                         (opPrecEnv env) mdl
+                         (opPrecEnv env) (detEnv env) mdl
 
 -- |Remove newtype constructors.
 removeNewtypes :: Bool -> CompEnv (Module Type) -> CompEnv (Module Type)

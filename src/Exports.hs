@@ -30,12 +30,11 @@ import Curry.Base.SpanInfo
 import Curry.Base.Ident
 import Curry.Syntax
 
-import Base.CurryKinds (fromKind')
-import Base.CurryTypes (fromQualType, fromQualPredType)
 import Base.Messages
 import Base.Types
 
 import Env.Class
+import Env.Determinism     (DetEnv, lookupDetEnv)
 import Env.OpPrec          (OpPrecEnv, PrecInfo (..), OpPrec (..), qualLookupP)
 import Env.Instance
 import Env.TypeConstructor ( TCEnv, TypeInfo (..), tcKind, clsKind
@@ -65,20 +64,20 @@ import Base.Kinds
 exportInterface :: CompilerEnv -> Module a -> Interface
 exportInterface env (Module _ _ _ m (Just (Exporting _ es)) _ _) =
   exportInterface' m es (opPrecEnv env) (tyConsEnv env) (valueEnv env)
-    (classEnv env) (instEnv env)
+    (detEnv env) (classEnv env) (instEnv env)
 exportInterface _   (Module _ _ _ _ Nothing                 _ _) =
   internalError "Exports.exportInterface: no export specification"
 
 exportInterface' :: ModuleIdent -> [Export] -> OpPrecEnv -> TCEnv -> ValueEnv
-                 -> ClassEnv -> InstEnv -> Interface
-exportInterface' m es pEnv tcEnv vEnv clsEnv inEnv = Interface m imports decls'
+                 -> DetEnv -> ClassEnv -> InstEnv -> Interface
+exportInterface' m es pEnv tcEnv vEnv dEnv clsEnv inEnv = Interface m imports decls'
   where
   tvs     = filter (`notElem` tcs) identSupply
   tcs     = mapMaybe (localIdent m) $ definedTypes decls'
   imports = map (IImportDecl NoPos) $ usedModules decls'
   precs   = foldr (infixDecl m pEnv) [] es
   types   = foldr (typeDecl m tcEnv clsEnv tvs) [] es
-  values  = foldr (valueDecl m vEnv tvs) [] es
+  values  = foldr (valueDecl m vEnv dEnv tvs) [] es
   insts   = Map.foldrWithKey (instDecl m tcEnv tvs) [] inEnv
   decls   = precs ++ types ++ values ++ insts
   decls'  = closeInterface m tcEnv clsEnv inEnv tvs Set.empty decls
@@ -172,18 +171,19 @@ newConstrDecl m tvs (RecordConstr c ls tys)
 -- is assigned the index 0 and no other constraints on it are allowed.
 
 methodDecl :: ModuleIdent -> [Ident] -> ClassMethod -> IMethodDecl
-methodDecl m tvs (ClassMethod f a (PredType ps ty)) = IMethodDecl NoPos f a $
-  fromQualPredType m tvs $ PredType (Set.deleteMin ps) ty
+methodDecl m tvs (ClassMethod f a (PredType ps ty) ddty mdty) = IMethodDecl NoPos f a
+  (fromQualPredType m tvs $ PredType (Set.deleteMin ps) ty) undefined
 
-valueDecl :: ModuleIdent -> ValueEnv -> [Ident] -> Export -> [IDecl] -> [IDecl]
-valueDecl m vEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
-  [Value _ cm a (ForAll _ pty)] ->
-    IFunctionDecl NoPos (qualUnqualify m f)
-      (fmap (const (head tvs)) cm) a (fromQualPredType m tvs pty) : ds
+valueDecl :: ModuleIdent -> ValueEnv -> DetEnv -> [Ident] -> Export -> [IDecl] -> [IDecl]
+valueDecl m vEnv dEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
+  [Value _ cm a (ForAll _ pty)] -> case lookupDetEnv f dEnv of
+    Just dty -> IFunctionDecl NoPos (qualUnqualify m f)
+                  (fmap (const (head tvs)) cm) a (fromQualPredType m tvs pty) (toDetExpr dty) : ds
+    Nothing -> internalError $ "Exports.valueDecl: " ++ show f
   [Label _ _ _ ] -> ds -- Record labels are collected somewhere else.
   _ -> internalError $ "Exports.valueDecl: " ++ show f
-valueDecl _ _ _ (ExportTypeWith _ _ _) ds = ds
-valueDecl _ _ _ _ _ = internalError "Exports.valueDecl: no pattern match"
+valueDecl _ _ _ _ (ExportTypeWith _ _ _) ds = ds
+valueDecl _ _ _ _ _ _ = internalError "Exports.valueDecl: no pattern match"
 
 instDecl :: ModuleIdent -> TCEnv -> [Ident] -> InstIdent -> InstInfo -> [IDecl]
          -> [IDecl]
@@ -238,7 +238,7 @@ instance HasModule IDecl where
   modules (IDataDecl        _ tc _ _ cs _) = modules tc . modules cs
   modules (INewtypeDecl     _ tc _ _ nc _) = modules tc . modules nc
   modules (ITypeDecl          _ tc _ _ ty) = modules tc . modules ty
-  modules (IFunctionDecl      _ f _ _ qty) = modules f . modules qty
+  modules (IFunctionDecl    _ f _ _ qty _) = modules f . modules qty
   modules (HidingClassDecl   _ cx cls _ _) = modules cx . modules cls
   modules (IClassDecl   _ cx cls _ _ ms _) =
     modules cx . modules cls . modules ms
@@ -258,7 +258,7 @@ instance HasModule NewConstrDecl where
   modules (NewRecordDecl _ _ (_, ty)) = modules ty
 
 instance HasModule IMethodDecl where
-  modules (IMethodDecl _ _ _ qty) = modules qty
+  modules (IMethodDecl _ _ _ qty _) = modules qty
 
 instance HasModule Constraint where
   modules (Constraint _ cls ty) = modules cls . modules ty
@@ -305,7 +305,7 @@ iInfo (ITypeDecl          _ _ _ _ _) = IOther
 iInfo (HidingClassDecl  _ _ cls _ _) = IClass cls
 iInfo (IClassDecl   _ _ cls _ _ _ _) = IClass cls
 iInfo (IInstanceDecl _ _ cls ty _ _) = IInst (cls, typeConstr ty)
-iInfo (IFunctionDecl      _ _ _ _ _) = IOther
+iInfo (IFunctionDecl    _ _ _ _ _ _) = IOther
 
 closeInterface :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Ident]
                -> Set.Set IInfo -> [IDecl] -> [IDecl]
@@ -387,7 +387,7 @@ instance HasType IDecl where
   usedTypes (IDataDecl        _ _ _ _ cs _) = usedTypes cs
   usedTypes (INewtypeDecl     _ _ _ _ nc _) = usedTypes nc
   usedTypes (ITypeDecl          _ _ _ _ ty) = usedTypes ty
-  usedTypes (IFunctionDecl     _ _ _ _ qty) = usedTypes qty
+  usedTypes (IFunctionDecl   _ _ _ _ qty _) = usedTypes qty
   usedTypes (HidingClassDecl    _ cx _ _ _) = usedTypes cx
   usedTypes (IClassDecl    _ cx _ _ _ ms _) = usedTypes cx . usedTypes ms
   usedTypes (IInstanceDecl _ cx cls ty _ _) =
@@ -407,7 +407,7 @@ instance HasType NewConstrDecl where
   usedTypes (NewRecordDecl _ _ (_, ty)) = usedTypes ty
 
 instance HasType IMethodDecl where
-  usedTypes (IMethodDecl _ _ _ qty) = usedTypes qty
+  usedTypes (IMethodDecl _ _ _ qty _) = usedTypes qty
 
 instance HasType Constraint where
   usedTypes (Constraint _ cls ty) = (cls :) . usedTypes ty

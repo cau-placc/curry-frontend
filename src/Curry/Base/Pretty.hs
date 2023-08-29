@@ -20,6 +20,7 @@ module Curry.Base.Pretty
   ) where
 
 import Prelude hiding ((<>))
+import qualified Data.Set as Set
 
 import Text.PrettyPrint
 
@@ -27,6 +28,7 @@ import Text.PrettyPrint
 -- The precedence level is used in a similar way as in the 'Show' class.
 -- Minimal complete definition is either 'pPrintPrec' or 'pPrint'.
 class Pretty a where
+  {-# MINIMAL pPrintPrec | pPrint #-}
   -- | Pretty-print something in isolation.
   pPrint :: a -> Doc
   pPrint = pPrintPrec 0
@@ -39,9 +41,8 @@ class Pretty a where
   pPrintList :: [a] -> Doc
   pPrintList = brackets . fsep . punctuate comma . map (pPrintPrec 0)
 
-#if __GLASGOW_HASKELL__ >= 707
-  {-# MINIMAL pPrintPrec | pPrint #-}
-#endif
+instance Pretty a => Pretty (Set.Set a) where
+  pPrint = parens . list . map pPrint . Set.toAscList
 
 -- | Pretty print a value to a 'String'.
 prettyShow :: Pretty a => a -> String

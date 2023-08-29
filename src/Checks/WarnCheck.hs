@@ -45,7 +45,6 @@ import Curry.Base.Pretty
 import Curry.Base.SpanInfo
 import Curry.Syntax
 
-import Base.CurryTypes (ppTypeScheme, fromPred, toPredSet)
 import Base.Messages   (Message, spanInfoMessage, internalError)
 import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                        , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv
@@ -54,7 +53,7 @@ import Base.TopEnv     (allBoundQualIdents)
 
 import Base.Types
 import Base.Utils (findMultiples)
-import Env.ModuleAlias
+import Env.ModuleAlias (AliasEnv)
 import Env.Class (ClassEnv, classMethods, hasDefaultImpl)
 import Env.TypeConstructor ( TCEnv, TypeInfo (..), lookupTypeInfo
                            , qualLookupTypeInfo, getOrigName )

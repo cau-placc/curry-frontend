@@ -70,7 +70,7 @@ data CurryProg = CurryProg MName [MName] (Maybe CDefaultDecl) [CClassDecl]
     deriving (Eq, Read, Show)
 
 -- |Default declaration.
-data CDefaultDecl = CDefaultDecl [CTypeExpr]
+newtype CDefaultDecl = CDefaultDecl [CTypeExpr]
     deriving (Eq, Read, Show)
 
 -- |Definitions of type classes.
