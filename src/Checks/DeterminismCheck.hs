@@ -32,6 +32,8 @@ import Env.Value ( qualLookupValue, qualLookupValueUnique, ValueInfo(..), ValueE
 
 import Debug.Trace
 
+-- TODO: LII is useless
+
 data DS = DS { detEnv :: TopDetEnv
              , localDetEnv :: NestDetEnv
              , valueEnv :: ValueEnv
@@ -39,6 +41,7 @@ data DS = DS { detEnv :: TopDetEnv
              , tcEnv :: TCEnv
              , moduleIdent :: ModuleIdent
              , freshIdent :: VarIndex
+             , messages :: [Message]
              }
 
 freshVar :: DM VarIndex
@@ -83,12 +86,13 @@ determinismCheck mid tce ve ce _ie de (Module _ _ _ _ _ _ ds) = flip evalStateT 
   correctTCEnv ds
   tce' <- gets tcEnv
   liftIO $ putStrLn $ prettyDetEnv env
-  return (env, tce', [])
+  msgs <- gets messages
+  return (env, tce', msgs)
   where
     oneDeclIdent d = case declIdents mid d of
       (ii:_) -> ii
       _ -> internalError $ "DeterminismCheck.oneDeclIdent: " ++ show d
-    initState = DS de (Top Map.empty) ve ce tce mid 0
+    initState = DS de (Top Map.empty) ve ce tce mid 0 []
     definingDS = filter isDefiningDecl ds
     isDefiningDecl FunctionDecl {} = True
     isDefiningDecl PatternDecl {} = True
@@ -176,9 +180,10 @@ checkFun preds fty is eqs@(e:_) = do
           let addMeth i = case qualLookupValueUnique mid (qualifyLike cls' i) vEnv of
                 [Value q _ _ (ForAll _ (PredType _ t))] -> addLocalType (LII cls' instty q) (mkArrowLike t)
                 _ -> internalError $ "checkInstanceDecl: " ++ show (cls', i) ++ " not found"
-          in mapM_ addMeth (classMethods cls' clsEnv)
+          in liftIO (putStrLn (render (pPrint (classMethods cls' clsEnv)))) >> mapM_ addMeth (classMethods cls' clsEnv)
         c = if ov then Set.singleton (EqualType res Nondet) else Set.empty
     mapM_ (addPred . subst tySubst) preds
+    liftIO $ putStrLn $ render $ pPrint preds
     Set.union c . Set.unions <$> mapM (checkEquation args res) eqs
 
 checkEquation :: [VarIndex] -> VarIndex -> Equation PredType -> DM (Set DetConstraint)
@@ -717,11 +722,14 @@ variableFreeIdent qid ty = do
   vEnv <- gets valueEnv
   mid <- gets moduleIdent
   case qualLookupValueUnique mid qid vEnv of
-    [Value orig ci _ _] -> case ci of
-      Nothing -> return (Just (QI (qualQualify mid orig)))
-      Just ci' -> case unapplyType True ty of
-        (TypeConstructor tc, _) -> return (Just (II (qualQualify mid ci') tc (zeroUniqueQual (qualQualify mid orig))))
-        _ -> return (Just (LII (qualQualify mid ci') ty (qualQualify mid orig)))
+    [Value orig mci _ _] -> case mci of
+      Nothing -> return (Just (QI orig))
+      Just cls ->
+        let qcls = qualifyLike orig (unqualify cls)
+        in case unapplyType True ty of
+            (TypeConstructor tc, _)
+              -> return (Just (II qcls tc (zeroUniqueQual (qualQualify mid orig))))
+            _ -> return (Just (LII qcls ty (qualQualify mid orig)))
     _ -> return (Just (QI qid))
 
 externalDetMap :: Map QualIdent DetScheme

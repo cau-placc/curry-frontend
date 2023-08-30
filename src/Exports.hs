@@ -177,10 +177,15 @@ methodDecl _ _ _ = internalError "Exports.methodDecl: unknown determinism expres
 
 valueDecl :: ModuleIdent -> ValueEnv -> DetEnv -> [Ident] -> Export -> [IDecl] -> [IDecl]
 valueDecl m vEnv dEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
-  [Value _ cm a (ForAll _ pty)] -> case lookupDetEnv f dEnv of
-    Just dty -> IFunctionDecl NoPos (qualUnqualify m f)
-                  (fmap (const (head tvs)) cm) a (fromQualPredType m tvs pty) (toDetExpr dty) : ds
-    Nothing -> internalError $ "Exports.valueDecl: " ++ show f
+  [Value _ cm a (ForAll _ pty)] ->
+    IFunctionDecl NoPos (qualUnqualify m f)
+        (fmap (const (head tvs)) cm) a (fromQualPredType m tvs pty) dty : ds
+      where
+        dty = case lookupDetEnv f dEnv of
+                Just dty' -> toDetExpr dty'
+                Nothing -> case cm of
+                  Just _  -> VarDetExpr NoSpanInfo (tvs !! 1) -- use a dummy one, not used for class methods
+                  Nothing -> internalError $ "Exports.valueDecl: " ++ show f
   [Label _ _ _ ] -> ds -- Record labels are collected somewhere else.
   _ -> internalError $ "Exports.valueDecl: " ++ show f
 valueDecl _ _ _ _ (ExportTypeWith _ _ _) ds = ds
