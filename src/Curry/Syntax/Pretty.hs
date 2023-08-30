@@ -226,8 +226,11 @@ instance Pretty IDecl where
         , int a
         , text "::", pPrintPrec 0 ty
         , text "::", pPrintPrec 0 dty ]
-  pPrint (HidingClassDecl _ cx qcls k clsvar) = text "hiding" <+>
-    ppClassInstHead "class" cx (ppQIdentWithKind qcls k) (ppIdent clsvar)
+  pPrint (HidingClassDecl _ cx qcls k clsvar ids) = text "hiding" <+>
+    ppClassInstHead "class" cx (ppQIdentWithKind qcls k) (ppIdent clsvar) <+> text "where" <+>
+      lbrace $$
+      vcat (punctuate semi $ map (indent . ppIdent) ids) $$
+      rbrace
   pPrint (IClassDecl _ cx qcls k clsvar ms hs) =
     ppClassInstHead "class" cx (ppQIdentWithKind qcls k) (ppIdent clsvar) <+>
       lbrace $$

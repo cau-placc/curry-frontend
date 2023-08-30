@@ -66,18 +66,18 @@ intfSyntaxCheck (Interface n is ds) = (Interface n is ds', reverse $ errors s')
 -- The latter must not occur in type expressions in interfaces.
 
 bindType :: IDecl -> TypeEnv -> TypeEnv
-bindType (IInfixDecl           _ _ _ _) = id
-bindType (HidingDataDecl      _ tc _ _) = qualBindTopEnv tc (Data tc [])
-bindType (IDataDecl      _ tc _ _ cs _) =
+bindType (IInfixDecl            _ _ _ _) = id
+bindType (HidingDataDecl       _ tc _ _) = qualBindTopEnv tc (Data tc [])
+bindType (IDataDecl       _ tc _ _ cs _) =
   qualBindTopEnv tc (Data tc (map constrId cs))
-bindType (INewtypeDecl   _ tc _ _ nc _) =
+bindType (INewtypeDecl    _ tc _ _ nc _) =
   qualBindTopEnv tc (Data tc [nconstrId nc])
-bindType (ITypeDecl         _ tc _ _ _) = qualBindTopEnv tc (Alias tc)
-bindType (IFunctionDecl    _ _ _ _ _ _) = id
-bindType (HidingClassDecl  _ _ cls _ _) = qualBindTopEnv cls (Class cls [])
-bindType (IClassDecl _ _ cls _ _ ms hs) =
+bindType (ITypeDecl          _ tc _ _ _) = qualBindTopEnv tc (Alias tc)
+bindType (IFunctionDecl     _ _ _ _ _ _) = id
+bindType (HidingClassDecl _ _ cls _ _ _) = qualBindTopEnv cls (Class cls [])
+bindType (IClassDecl  _ _ cls _ _ ms hs) =
   qualBindTopEnv cls (Class cls (filter (`notElem` hs) (map imethod ms)))
-bindType (IInstanceDecl    _ _ _ _ _ _) = id
+bindType (IInstanceDecl     _ _ _ _ _ _) = id
 
 -- The checks applied to the interface are similar to those performed
 -- during syntax checking of type expressions.
@@ -106,11 +106,11 @@ checkIDecl (ITypeDecl p tc k tvs ty) = do
   ITypeDecl p tc k tvs <$> checkClosedType tvs ty
 checkIDecl (IFunctionDecl p f cm n qty dty) =
   IFunctionDecl p f cm n <$> checkQualType qty <*> pure dty
-checkIDecl (HidingClassDecl p cx qcls k clsvar) = do
+checkIDecl (HidingClassDecl p cx qcls k clsvar ids) = do
   checkTypeVars "hiding class declaration" [clsvar]
   cx' <- checkClosedContext [clsvar] cx
   checkSimpleContext cx'
-  return $ HidingClassDecl p cx' qcls k clsvar
+  return $ HidingClassDecl p cx' qcls k clsvar ids
 checkIDecl (IClassDecl p cx qcls k clsvar ms hs) = do
   checkTypeVars "class declaration" [clsvar]
   cx' <- checkClosedContext [clsvar] cx

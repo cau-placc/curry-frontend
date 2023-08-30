@@ -19,7 +19,7 @@
 module Env.Class
   ( ClassEnv, initClassEnv
   , ClassInfo, bindClassInfo, mergeClassInfo, lookupClassInfo
-  , superClasses, allSuperClasses, classMethods, hasDefaultImpl
+  , superClasses, allSuperClasses, visibleClassMethods, allClassMethods, hasDefaultImpl
   ) where
 
 import           Data.List       (nub, sort)
@@ -28,8 +28,12 @@ import qualified Data.Map as Map (Map, empty, insertWith, lookup)
 import Curry.Base.Ident
 
 import Base.Messages (internalError)
+import Base.Utils (fst3)
 
-type ClassInfo = ([QualIdent], [(Ident, Bool)])
+type ClassInfo = ([QualIdent], [(Ident, HasDefaultImpl, IsVisible)])
+
+type HasDefaultImpl = Bool
+type IsVisible      = Bool
 
 type ClassEnv = Map.Map QualIdent ClassInfo
 
@@ -62,14 +66,19 @@ allSuperClasses cls clsEnv = nub $ classes cls
   where
     classes cls' = cls' : concatMap classes (superClasses cls' clsEnv)
 
-classMethods :: QualIdent -> ClassEnv -> [Ident]
-classMethods cls clsEnv = case lookupClassInfo cls clsEnv of
-  Just (_, ms) -> map fst ms
-  _ -> internalError $ "Env.Classes.classMethods: " ++ show cls
+visibleClassMethods :: QualIdent -> ClassEnv -> [Ident]
+visibleClassMethods cls clsEnv = case lookupClassInfo cls clsEnv of
+  Just (_, ms) -> map fst3 $ filter (\(_,_,vis) -> vis) ms
+  _ -> internalError $ "Env.Classes.visibleClassMethods: " ++ show cls
+
+allClassMethods :: QualIdent -> ClassEnv -> [Ident]
+allClassMethods cls clsEnv = case lookupClassInfo cls clsEnv of
+  Just (_, ms) -> map fst3 ms
+  _ -> internalError $ "Env.Classes.allClassMethods: " ++ show cls
 
 hasDefaultImpl :: QualIdent -> Ident -> ClassEnv -> Bool
 hasDefaultImpl cls f clsEnv = case lookupClassInfo cls clsEnv of
-  Just (_, ms) -> case lookup f ms of
+  Just (_, ms) -> case lookup f $ map (\(i, d, _) -> (i, d)) ms of
     Just dflt -> dflt
     Nothing -> internalError $ "Env.Classes.hasDefaultImpl: " ++ show f
   _ -> internalError $ "Env.Classes.hasDefaultImpl: " ++ show cls

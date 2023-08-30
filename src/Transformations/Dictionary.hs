@@ -165,7 +165,7 @@ liftClassDecls :: QualIdent -> Ident -> [Decl PredType] -> DTM [Decl PredType]
 liftClassDecls cls tv ds = do
   dictDecl <- createClassDictDecl cls tv ods
   clsEnv <- getClassEnv
-  let fs = classMethods cls clsEnv
+  let fs = visibleClassMethods cls clsEnv
   methodDecls <- mapM (createClassMethodDecl cls ms) fs
   return $ dictDecl : methodDecls
   where (vds, ods) = partition isValueDecl ds
@@ -176,7 +176,7 @@ liftInstanceDecls :: PredSet -> QualIdent -> Type -> [Decl PredType]
 liftInstanceDecls ps cls ty ds = do
   dictDecl <- createInstDictDecl ps cls ty
   clsEnv <- getClassEnv
-  let fs = classMethods cls clsEnv
+  let fs = visibleClassMethods cls clsEnv
   methodDecls <- mapM (createInstMethodDecl ps cls ty ms) fs
   return $ dictDecl : methodDecls
   where ms = methodMap ds
@@ -209,7 +209,7 @@ classDictConstrPredType :: ValueEnv -> ClassEnv -> QualIdent -> PredType
 classDictConstrPredType vEnv clsEnv cls = PredType ps $ foldr TypeArrow ty mtys
   where sclss = superClasses cls clsEnv
         ps    = Set.fromList [Pred scls (TypeVariable 0) | scls <- sclss]
-        fs    = classMethods cls clsEnv
+        fs    = visibleClassMethods cls clsEnv
         mptys = map (classMethodType vEnv cls) fs
         ty    = dictType $ Pred cls $ TypeVariable 0
         mtys  = map (generalizeMethodType . transformMethodPredType) mptys
@@ -224,7 +224,7 @@ createInstDictExpr cls ty = do
   ty' <- instType <$> getInstDictConstrType cls ty
   m <- getModuleIdent
   clsEnv <- getClassEnv
-  let fs = map (qImplMethodId m cls ty) $ classMethods cls clsEnv
+  let fs = map (qImplMethodId m cls ty) $ visibleClassMethods cls clsEnv
   return $ apply (Constructor NoSpanInfo (predType ty') (qDictConstrId cls))
              (zipWith (Variable NoSpanInfo . predType) (arrowArgs ty') fs)
 
@@ -309,7 +309,7 @@ createStubs (ClassDecl _ _ _ cls _ _) = do
   clsEnv <- getClassEnv
   let ocls  = qualifyWith m cls
       sclss = superClasses ocls clsEnv
-      fs    = classMethods ocls clsEnv
+      fs    = visibleClassMethods ocls clsEnv
       dictConstrPty = classDictConstrPredType vEnv clsEnv ocls
       (superDictAndMethodTys, dictTy) =
         arrowUnapply $ transformPredType dictConstrPty
@@ -438,7 +438,7 @@ bindInstDict m cls ty m' ps =
 bindInstMethods :: ModuleIdent -> ClassEnv -> QualIdent -> Type -> ModuleIdent
                 -> PredSet -> [(Ident, Int)] -> ValueEnv -> ValueEnv
 bindInstMethods m clsEnv cls ty m' ps is =
-  flip (foldr (bindInstMethod m cls ty m' ps is)) (classMethods cls clsEnv)
+  flip (foldr (bindInstMethod m cls ty m' ps is)) (visibleClassMethods cls clsEnv)
 
 bindInstMethod :: ModuleIdent -> QualIdent -> Type -> ModuleIdent
                -> PredSet -> [(Ident, Int)] -> Ident -> ValueEnv -> ValueEnv
@@ -537,13 +537,13 @@ classExports :: ModuleIdent -> ClassEnv -> Ident -> [Export]
 classExports m clsEnv cls =
   ExportTypeWith NoSpanInfo (qDictTypeId qcls) [dictConstrId qcls] :
    map (Export NoSpanInfo . qSuperDictStubId qcls) (superClasses qcls clsEnv) ++
-    map (Export NoSpanInfo . qDefaultMethodId qcls) (classMethods qcls clsEnv)
+    map (Export NoSpanInfo . qDefaultMethodId qcls) (visibleClassMethods qcls clsEnv)
   where qcls = qualifyWith m cls
 
 instExports :: ModuleIdent -> ClassEnv -> QualIdent -> Type -> [Export]
 instExports m clsEnv cls ty =
   Export NoSpanInfo (qInstFunId m cls ty) :
-    map (Export NoSpanInfo . qImplMethodId m cls ty) (classMethods cls clsEnv)
+    map (Export NoSpanInfo . qImplMethodId m cls ty) (visibleClassMethods cls clsEnv)
 
 -- -----------------------------------------------------------------------------
 -- Transforming the module
@@ -789,7 +789,7 @@ emptySpEnv = Map.empty
 initSpEnv :: ClassEnv -> InstEnv -> SpecEnv
 initSpEnv clsEnv = foldr (uncurry bindInstance) emptySpEnv . Map.toList
   where bindInstance (cls, tc) (m, _, _) =
-          flip (foldr $ bindInstanceMethod m cls tc) $ classMethods cls clsEnv
+          flip (foldr $ bindInstanceMethod m cls tc) $ visibleClassMethods cls clsEnv
         bindInstanceMethod m cls tc f = Map.insert (f', d) f''
           where f'  = qualifyLike cls f
                 d   = qInstFunId m cls ty
@@ -932,23 +932,23 @@ dictTransInterface vEnv clsEnv dEnv (Interface m is ds) =
   Interface m is $ concatMap (dictTransIDecl m vEnv clsEnv dEnv) ds
 
 dictTransIDecl :: ModuleIdent -> ValueEnv -> ClassEnv -> DetEnv -> IDecl -> [IDecl]
-dictTransIDecl m vEnv _      _    d@(IInfixDecl         _ _ _ op)
+dictTransIDecl m vEnv _      _    d@(IInfixDecl           _ _ _ op)
   | arrowArity (rawType $ opType (qualQualify m op) vEnv) /= 2 = []
   | otherwise = [d]
-dictTransIDecl _ _    _      _    d@(HidingDataDecl      _ _ _ _) = [d]
-dictTransIDecl m _    _      _    (IDataDecl    p tc k tvs cs hs) =
+dictTransIDecl _ _    _      _    d@(HidingDataDecl        _ _ _ _) = [d]
+dictTransIDecl m _    _      _    (IDataDecl      p tc k tvs cs hs) =
   [IDataDecl p tc k tvs (map (dictTransIConstrDecl m tvs) cs) hs]
-dictTransIDecl _ _    _      _    d@(INewtypeDecl    _ _ _ _ _ _) = [d]
-dictTransIDecl _ _    _      _    d@(ITypeDecl         _ _ _ _ _) = [d]
-dictTransIDecl m vEnv _      dEnv (IFunctionDecl     _ f _ _ _ _) =
+dictTransIDecl _ _    _      _    d@(INewtypeDecl      _ _ _ _ _ _) = [d]
+dictTransIDecl _ _    _      _    d@(ITypeDecl           _ _ _ _ _) = [d]
+dictTransIDecl m vEnv _      dEnv (IFunctionDecl       _ f _ _ _ _) =
   [iFunctionDeclFromValue m vEnv dEnv (qualQualify m f)]
-dictTransIDecl _ _    _      _    (HidingClassDecl  p _ cls k tv) =
+dictTransIDecl _ _    _      _    (HidingClassDecl  p _ cls k tv _) =
   [HidingDataDecl p (qDictTypeId cls) (fmap (`ArrowKind` Star) k) [tv]]
-dictTransIDecl m vEnv clsEnv dEnv (IClassDecl   p _ cls k _ _ hs) =
+dictTransIDecl m vEnv clsEnv dEnv (IClassDecl     p _ cls k _ _ hs) =
   dictDecl : defaults ++ methodStubs ++ superDictStubs
   where qcls  = qualQualify m cls
         sclss = superClasses qcls clsEnv
-        ms    = classMethods qcls clsEnv
+        ms    = visibleClassMethods qcls clsEnv
         dictDecl    = IDataDecl p (qDictTypeId cls)
                         (fmap (`ArrowKind` Star) k)
                         [head identSupply] [constrDecl] []
@@ -959,13 +959,13 @@ dictTransIDecl m vEnv clsEnv dEnv (IClassDecl   p _ cls k _ _ hs) =
                         filter (`notElem` hs) ms
         superDictStubs = map (iFunctionDeclFromValue m vEnv dEnv .
                                qSuperDictStubId qcls) sclss
-dictTransIDecl m vEnv clsEnv dEnv (IInstanceDecl _ _ cls ty _ mm) =
+dictTransIDecl m vEnv clsEnv dEnv (IInstanceDecl   _ _ cls ty _ mm) =
   iFunctionDeclFromValue m vEnv dEnv (qInstFunId m' qcls ty') :
     map (iFunctionDeclFromValue m vEnv dEnv. qImplMethodId m' qcls ty') ms
   where m'   = fromMaybe m mm
         qcls = qualQualify m cls
         ty'  = toQualType m [] ty
-        ms   = classMethods qcls clsEnv
+        ms   = visibleClassMethods qcls clsEnv
 
 dictTransIConstrDecl :: ModuleIdent -> [Ident] -> ConstrDecl -> ConstrDecl
 dictTransIConstrDecl _ _ (ConOpDecl p ty1 op ty2) = ConstrDecl p op [ty1, ty2]

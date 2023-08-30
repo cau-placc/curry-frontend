@@ -4,9 +4,9 @@ import Prelude hiding ( (<>) )
 import Data.Map ( Map )
 import qualified Data.Map as Map
 
-import Base.Types ( DetScheme(..), DetType(..), VarIndex, Type )
+import Base.Types ( DetScheme(..), DetType(..), VarIndex )
 import Curry.Base.Ident ( QualIdent )
-import Curry.Base.Pretty ( Pretty(..), parens, dot, text, (<+>), (<>) )
+import Curry.Base.Pretty ( Pretty(..), parens, dot, (<+>), (<>) )
 
 type DetEnv = Map IdentInfo DetScheme
 type TopDetEnv = DetEnv
@@ -21,14 +21,12 @@ lookupDetEnv = Map.lookup . QI
 
 data IdentInfo = QI QualIdent
                | II QualIdent QualIdent QualIdent -- class, tycon, method (only for known instances with the given type constructor)
-               | LII QualIdent Type QualIdent -- class, inst type, method (only for locally bound instances from a constraint)
                | CI QualIdent QualIdent -- class, default method
   deriving (Eq, Ord, Show)
 
 instance Pretty IdentInfo where
   pPrint (QI qid) = pPrint qid
   pPrint (II cls tc meth) = parens (pPrint cls <+> pPrint tc) <> dot <> pPrint meth
-  pPrint (LII cls ty meth) = parens (pPrint cls <+> text "@" <> pPrint ty) <> dot <> pPrint meth
   pPrint (CI cls meth) = pPrint cls <> dot <> pPrint meth
 
 bindNestEnv :: IdentInfo -> DetScheme -> NestDetEnv -> NestDetEnv

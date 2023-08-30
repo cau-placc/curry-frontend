@@ -214,8 +214,9 @@ iHidingDecl = tokenPos Id_hiding <**> (hDataDecl <|> hClassDecl)
   where
   hDataDecl = hiddenData <$-> token KW_data <*> withKind qtycon <*> many tyvar
   hClassDecl = hiddenClass <$> classInstHead KW_class (withKind qtycls) clsvar
+                           <*-> token KW_where <*> braces (fun `sepBy` semicolon)
   hiddenData (tc, k) tvs p = HidingDataDecl p tc k tvs
-  hiddenClass (_, _, cx, (qcls, k), tv) p = HidingClassDecl p cx qcls k tv
+  hiddenClass (_, _, cx, (qcls, k), tv) ids p = HidingClassDecl p cx qcls k tv ids
 
 -- |Parser for an interface data declaration
 iDataDecl :: Parser a Token IDecl

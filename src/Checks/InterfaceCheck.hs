@@ -171,11 +171,12 @@ checkImport (IFunctionDecl _ f Nothing n ty dty) = do
       checkD dty' = toDetType dty == dty'
   checkValueInfo "function" check f f
   checkDetInfo "function" checkD f f
-checkImport (HidingClassDecl _ cx cls k _) = do
+checkImport (HidingClassDecl _ cx cls k _ ids) = do
   clsEnv <- getClassEnv
-  let check (TypeClass cls' k' _)
+  let check (TypeClass cls' k' mths)
         | cls == cls' && toKind' k 0 == k' &&
-          [cls'' | Constraint _ cls'' _ <- cx] == superClasses cls' clsEnv
+          [cls'' | Constraint _ cls'' _ <- cx] == superClasses cls' clsEnv &&
+          sort (map (\(ClassMethod i _ _ _ _) -> i) mths) == sort ids
         = Just ok
       check _ = Nothing
   checkTypeInfo "hidden type class" check cls cls

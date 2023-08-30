@@ -54,7 +54,7 @@ import Base.TopEnv     (allBoundQualIdents)
 import Base.Types
 import Base.Utils (findMultiples)
 import Env.ModuleAlias (AliasEnv)
-import Env.Class (ClassEnv, classMethods, hasDefaultImpl)
+import Env.Class (ClassEnv, visibleClassMethods, hasDefaultImpl)
 import Env.TypeConstructor ( TCEnv, TypeInfo (..), lookupTypeInfo
                            , qualLookupTypeInfo, getOrigName )
 import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
@@ -481,7 +481,7 @@ checkMissingMethodImplementations p cls ds = warnFor WarnMissingMethods $ do
   tcEnv <- gets tyConsEnv
   clsEnv <- gets classEnv
   let ocls = getOrigName m cls tcEnv
-      ms   = classMethods ocls clsEnv
+      ms   = visibleClassMethods ocls clsEnv
   mapM_ (report . warnMissingMethodImplementation p) $
     filter ((null fs ||) . not . flip (hasDefaultImpl ocls) clsEnv) $ ms \\ fs
   where fs = map unRenameIdent $ concatMap impls ds

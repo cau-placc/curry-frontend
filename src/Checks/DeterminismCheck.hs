@@ -4,9 +4,10 @@
 module Checks.DeterminismCheck (determinismCheck, DetEnv) where
 
 import Control.Arrow ( second )
-import Control.Monad.State
-import Control.Monad.Extra (concatMapM)
-import Data.List ( nub, intercalate, (\\) )
+import Control.Monad ( liftM2, void, zipWithM, replicateM )
+import Control.Monad.Extra ( concatMapM )
+import Control.Monad.State ( evalStateT, modify, gets, MonadIO(liftIO), StateT )
+import Data.List ( nub, (\\) )
 import Data.Map ( Map )
 import qualified Data.Map as Map
 import Data.Maybe ( fromMaybe )
@@ -24,15 +25,11 @@ import Curry.Base.Pretty ( pPrint, render )
 import Curry.Base.SpanInfo ( SpanInfo(NoSpanInfo) )
 import Curry.Syntax.Type
 import Curry.Syntax.Utils ( field2Tuple )
-import Env.Class ( ClassEnv, lookupClassInfo, classMethods )
+import Env.Class ( ClassEnv, lookupClassInfo )
 import Env.Determinism
 import Env.Instance ( InstEnv )
 import Env.TypeConstructor ( TCEnv, lookupTypeInfo, TypeInfo (..), rebindTypeInfo )
 import Env.Value ( qualLookupValue, qualLookupValueUnique, ValueInfo(..), ValueEnv )
-
-import Debug.Trace
-
--- TODO: LII is useless
 
 data DS = DS { detEnv :: TopDetEnv
              , localDetEnv :: NestDetEnv
@@ -73,14 +70,10 @@ scoped act = do
 determinismCheck :: ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv -> InstEnv -> DetEnv
                  -> Module PredType -> IO (DetEnv, TCEnv, [Message])
 determinismCheck mid tce ve ce _ie de (Module _ _ _ _ _ _ ds) = flip evalStateT initState $ do
-  liftIO $ putStrLn "Determinism check"
   dsvs <- Map.fromList <$> mapM (\d -> (oneDeclIdent d,) <$> freeIdents d) definingDS
-  liftIO $ putStrLn $ prettyList (\(i, is) -> prettyII i ++ " uses " ++ prettyList prettyII (Set.toList is))
-                                  (Map.toList dsvs)
   let groups = scc (declIdents mid)
                    (\d -> Set.toList $ Map.findWithDefault Set.empty (oneDeclIdent d) dsvs)
                    definingDS
-  liftIO $ putStrLn $ prettyList (prettyList prettyII) (map (concatMap (declIdents mid)) groups)
   mapM_ checkGroup groups
   env <- gets detEnv
   correctTCEnv ds
@@ -137,9 +130,9 @@ checkGroup ds = do
 
 -- registers the types of defined variables on the outer layer, creates constraints on the inner layer
 checkDecl :: Decl PredType -> DM (DM (Set DetConstraint))
-checkDecl d@(FunctionDecl _ (PredType preds fty) _ eqs) = do
+checkDecl d@(FunctionDecl _ _ _ eqs) = do
   mid <- gets moduleIdent
-  checkFun preds fty (declIdents mid d) eqs
+  checkFun (declIdents mid d) eqs
 checkDecl (PatternDecl _ p rhs) = do
   v <- freshVar
   (cs, _) <- checkPat v p
@@ -160,9 +153,9 @@ checkDecl (FreeDecl _ vs) = do
   return $ return Set.empty
 checkDecl _ = return $ return Set.empty
 
-checkFun :: PredSet -> Type -> [IdentInfo] -> [Equation PredType] -> DM (DM (Set DetConstraint))
-checkFun _ _ _ [] = internalError "DeterminismCheck.checkDecl: empty function"
-checkFun preds fty is eqs@(e:_) = do
+checkFun :: [IdentInfo] -> [Equation PredType] -> DM (DM (Set DetConstraint))
+checkFun _ [] = internalError "DeterminismCheck.checkDecl: empty function"
+checkFun is eqs@(e:_) = do
   let lhsArity OpLhs {} = 2
       lhsArity (FunLhs _ _ ps) = length ps
       lhsArity (ApLhs _ lhs ps) = lhsArity lhs + length ps
@@ -172,18 +165,7 @@ checkFun preds fty is eqs@(e:_) = do
   res <- freshVar
   mapM_ (`addLocalType` toDetSchema (foldr (DetArrow . VarTy) (VarTy res) args)) is
   return $ scoped $ do
-    clsEnv <- gets classEnv
-    mid <- gets moduleIdent
-    vEnv <- gets valueEnv
-    let tySubst = matchType fty (typeOf eqs) idSubst
-        addPred (Pred cls' instty) =
-          let addMeth i = case qualLookupValueUnique mid (qualifyLike cls' i) vEnv of
-                [Value q _ _ (ForAll _ (PredType _ t))] -> addLocalType (LII cls' instty q) (mkArrowLike t)
-                _ -> internalError $ "checkInstanceDecl: " ++ show (cls', i) ++ " not found"
-          in liftIO (putStrLn (render (pPrint (classMethods cls' clsEnv)))) >> mapM_ addMeth (classMethods cls' clsEnv)
-        c = if ov then Set.singleton (EqualType res Nondet) else Set.empty
-    mapM_ (addPred . subst tySubst) preds
-    liftIO $ putStrLn $ render $ pPrint preds
+    let c = if ov then Set.singleton (EqualType res Nondet) else Set.empty
     Set.union c . Set.unions <$> mapM (checkEquation args res) eqs
 
 checkEquation :: [VarIndex] -> VarIndex -> Equation PredType -> DM (Set DetConstraint)
@@ -377,9 +359,12 @@ checkVar v (PredType _ ty) i = do
           subst (matchType ty' ty idSubst) preds'
         _ -> emptyPredSet
   detCtx <- andM checkPred (Set.toList preds)
+  liftIO $ putStrLn $ render $ pPrint preds
+  liftIO $ putStrLn $ render $ pPrint mii
+  liftIO $ putStrLn $ render $ pPrint detCtx
   case mii of
-    Nothing -> return $ Set.singleton $ EqualType v Nondet
-    Just ii -> do -- TODO might have a context
+    Nothing -> Set.singleton . EqualType v <$> instantiate (mkArrowLike ty)
+    Just ii -> do
       lcl <- gets localDetEnv
       ext <- gets detEnv
       case lookupNestEnv ii lcl of
@@ -404,7 +389,7 @@ checkPred (Pred cls ty) = do
   let qcls = qualQualify mid cls
   case lookupClassInfo qcls clsEnv of
     Nothing -> internalError $ "checkPred: " ++ render (pPrint cls) ++ " not found"
-    Just (_, meths) -> flip andM meths $ \(m, _) ->
+    Just (_, meths) -> flip andM meths $ \(m, _, _) ->
       case unapplyType True ty of
         (TypeConstructor tc, _) ->
           let qtc | isQualified tc = tc
@@ -415,11 +400,7 @@ checkPred (Pred cls ty) = do
             Nothing -> case Map.lookup ii ext of
               Just sc -> return (notNondet sc)
               Nothing -> internalError $ "checkPred: " ++ prettyII ii ++ " not found in " ++ prettyDetEnv (Map.union ext (flattenNestEnv lcl))
-        _ ->
-          let lii = LII qcls ty (zeroUniqueQual (qualifyWith mid m))
-          in case lookupNestEnv lii lcl of
-            Just sc -> return (notNondet sc)
-            Nothing -> internalError $ "checkPred: " ++ prettyII lii ++ " not found in " ++ prettyDetEnv (flattenNestEnv lcl)
+        _ -> return True
 
 notNondet :: DetScheme -> Bool
 notNondet (Forall _ ty) = notNondetTy ty
@@ -439,50 +420,30 @@ checkLocalDeclsTy :: [Decl PredType] -> DM (Set DetConstraint)
 checkLocalDeclsTy ds = Set.unions <$> (mapM checkDecl ds >>= sequence)
 
 checkClassDecl :: Ident -> Decl PredType -> DM (DM (Set DetConstraint))
-checkClassDecl cls d@(FunctionDecl _ (PredType ps fty) _ eqs) = do
+checkClassDecl cls d@(FunctionDecl _ _ _ eqs) = do
   mid <- gets moduleIdent
-  vEnv <- gets valueEnv
   clsEnv <- gets classEnv
-  let tySubst = matchType fty (typeOf eqs) idSubst
-      clsTy = case Set.toList ps of
-                [Pred _ ty] -> subst tySubst ty
-                _ -> internalError $ "checkClassDecl: " ++ show ps ++ " is not a single class constraint"
   case lookupClassInfo (qualifyWith mid cls) clsEnv of
     Nothing -> internalError $ "checkClassDecl: " ++ show cls ++ " not found"
-    Just (_, meths) -> do
+    Just (_, _) -> do
         -- Add class method `d` on global scope (happens in outer layer of checkFun)
         let is = map (toClassIdent (qualifyWith mid cls)) (declIdents mid d)
-        act <- checkFun emptyPredSet fty is eqs
-        return $ scoped $ do
-          -- Add an instance (i.e. all methods) of the class `cls` on local scope
-          -- for the type variable used in the instantiated function type.
-          -- Required since a default implementation has an implicit class constraint.
-          mapM_ (add . fst) meths
-          act
-      where
-        add i = do
-          case qualLookupValueUnique mid (qualifyWith mid i) vEnv of
-            [Value _ _ _ (ForAll _ (PredType _ t))]
-              -> addLocalType (LII (qualifyWith mid cls) clsTy (qualifyWith mid i)) (mkArrowLike t)
-            _ -> internalError $ "checkClassDecl: " ++ show (cls, i) ++ " not found"
+        act <- checkFun is eqs
+        return $ scoped act
 checkClassDecl _ _ = return $ return Set.empty
 
 checkInstanceDecl :: QualIdent -> InstanceType -> Decl PredType -> DM (DM (Set DetConstraint))
-checkInstanceDecl cls ty d@(FunctionDecl _ (PredType ps fty) _ eqs) = do
-  -- similar to class default methods, except that the constraints are not the class constraints,
-  -- but the constraints from the instance's context
+checkInstanceDecl cls ty d@(FunctionDecl _ _ _ eqs) = do
   mid <- gets moduleIdent
   let is = map (toInstanceIdent (qualQualify mid cls) ty) (declIdents mid d)
-  act <- checkFun ps fty is eqs
+  act <- checkFun is eqs
   return $ scoped act
 checkInstanceDecl _ _ _ = return $ return Set.empty
 
 solveConstraints :: Set DetConstraint -> DM NestDetEnv
 solveConstraints constraints = do
   let grps = scc defs uses $ Set.toAscList constraints
-  liftIO $ print grps
   let solved = foldl solveGroup Map.empty grps
-  liftIO $ print solved
   lcl <- gets localDetEnv
   return $ mapNestEnv (`substDetSchema` solved) lcl
   where
@@ -495,7 +456,7 @@ solveGroup :: Map VarIndex DetType -> [DetConstraint] -> Map VarIndex DetType
 solveGroup solutions = go Map.empty . map (`substCon` solutions)
   where
     go current [] = Map.union current solutions
-    go current (c:cs) = traceShow (current, c) $ case c of
+    go current (c:cs) = case c of
       AppliedType v w tys ->
         case Map.lookup w current of
           -- applied types are always the last entries in the list,
@@ -503,7 +464,7 @@ solveGroup solutions = go Map.empty . map (`substCon` solutions)
           Nothing -> go current cs
           Just ty -> case Map.lookup v current of
             Nothing -> go (Map.insert v (applyTy ty tys) current) cs
-            Just ty' -> traceShow (ty, ty', applyTy ty tys) $ case unify ty' (applyTy ty tys) current cs of
+            Just ty' -> case unify ty' (applyTy ty tys) current cs of
               (new, cs') -> go (Map.insert v new current)  cs' -- TODO: Might fail if v has been equated to Det already and application is Nondet
       EqualType v ty
         | ty == VarTy v -> go current cs
@@ -707,7 +668,7 @@ enumFreeIdent q ty =
   case unapplyType True ty of
     (TypeConstructor tc, _) ->
       return (Set.singleton (II qEnumId tc q))
-    _ -> return (Set.singleton (LII qEnumId ty q))
+    _ -> return Set.empty
 
 -- TODO MonadFail
 monadFreeIdent :: Type -> DM (Set IdentInfo)
@@ -715,7 +676,7 @@ monadFreeIdent ty =
   case unapplyType True ty of
     (TypeConstructor tc, _) ->
       return (Set.singleton (II qMonadId tc qBindId))
-    _ -> return (Set.singleton (LII qMonadId ty qBindId))
+    _ -> return Set.empty
 
 variableFreeIdent :: QualIdent -> Type -> DM (Maybe IdentInfo)
 variableFreeIdent qid ty = do
@@ -729,7 +690,7 @@ variableFreeIdent qid ty = do
         in case unapplyType True ty of
             (TypeConstructor tc, _)
               -> return (Just (II qcls tc (zeroUniqueQual (qualQualify mid orig))))
-            _ -> return (Just (LII qcls ty (qualQualify mid orig)))
+            _ -> return Nothing
     _ -> return (Just (QI qid))
 
 externalDetMap :: Map QualIdent DetScheme
@@ -745,9 +706,6 @@ prettyDetEnv = unlines . map prettyDetEnvEntry . Map.toList
 
 prettyII :: IdentInfo -> String
 prettyII = render . pPrint
-
-prettyList :: (a -> String) -> [a] -> String
-prettyList f xs = "[" ++ intercalate ", " (map f xs) ++ "]"
 
 prettyScheme :: DetScheme -> String
 prettyScheme = render . pPrint

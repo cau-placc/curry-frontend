@@ -15,6 +15,7 @@
     entities into the module's scope, and the function 'qualifyEnv' to
     qualify the environment prior to computing the export interface.
 -}
+{-# LANGUAGE TupleSections #-}
 module Imports (importInterfaces, importModules, qualifyEnv) where
 
 import           Data.List                  (nubBy, find)
@@ -161,12 +162,14 @@ importClasses :: ModuleIdent -> [IDecl] -> ClassEnv -> ClassEnv
 importClasses m = flip $ foldr (bindClass m)
 
 bindClass :: ModuleIdent -> IDecl -> ClassEnv -> ClassEnv
-bindClass m (HidingClassDecl p cx cls k tv) =
-  bindClass m (IClassDecl p cx cls k tv [] [])
+bindClass m (HidingClassDecl _ cx cls _ _ ids) =
+  bindClassInfo (qualQualify m cls) (sclss, ms)
+  where sclss = map (\(Constraint _ scls _) -> qualQualify m scls) cx
+        ms = map (, False, False) ids
 bindClass m (IClassDecl _ cx cls _ _ ds ids) =
   bindClassInfo (qualQualify m cls) (sclss, ms)
   where sclss = map (\(Constraint _ scls _) -> qualQualify m scls) cx
-        ms = map (\d -> (imethod d, isJust $ imethodArity d)) $ filter isVis ds
+        ms = map (\d -> (imethod d, isJust $ imethodArity d, isVis d)) ds
         isVis (IMethodDecl _ idt _ _ _ _) = idt `notElem` ids
 bindClass _ _ = id
 
@@ -212,9 +215,9 @@ precs m (IInfixDecl _ fix prec op) = [PrecInfo (qualQualify m op) (OpPrec fix pr
 precs _ _                          = []
 
 hiddenTypes :: ModuleIdent -> IDecl -> [TypeInfo]
-hiddenTypes m (HidingDataDecl     _ tc k tvs) = [typeCon DataType m tc k tvs []]
-hiddenTypes m (HidingClassDecl  _ _ qcls k _) = [typeCls m qcls k []]
-hiddenTypes m d                               = types m d
+hiddenTypes m (HidingDataDecl      _ tc k tvs) = [typeCon DataType m tc k tvs []]
+hiddenTypes m (HidingClassDecl _ _ qcls k _ _) = [typeCls m qcls k []]
+hiddenTypes m d                                = types m d
 
 -- type constructors and type classes
 types :: ModuleIdent -> IDecl -> [TypeInfo]
