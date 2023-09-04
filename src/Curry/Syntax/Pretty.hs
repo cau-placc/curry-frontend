@@ -119,7 +119,7 @@ instance Pretty (Decl a) where
       ppIf (not $ null ds) (text "where") $$
       ppIf (not $ null ds) (indent $ ppBlock ds)
   pPrint (DetSig _ vs dty) =
-    list (map ppIdent vs) <+> text "::" <+> pPrintPrec 0 dty
+    text "det" <+> list (map ppIdent vs) <+> text "::" <+> pPrintPrec 0 dty
 
 ppClassInstHead :: String -> Context -> Doc -> Doc -> Doc
 ppClassInstHead kw cx cls ty = text kw <+> ppContext cx <+> cls <+> ty

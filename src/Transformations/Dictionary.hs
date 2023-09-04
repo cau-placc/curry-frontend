@@ -603,6 +603,7 @@ instance DictTrans Decl where
     _ -> withLocalDictEnv $ PatternDecl p <$> dictTrans t <*> dictTrans rhs
   dictTrans d@(FreeDecl                _ _) = return $ fmap unpredType d
   dictTrans d@(ExternalDecl            _ _) = return $ fmap transformPredType d
+  dictTrans (DetSig              p ids dty) = return $ DetSig p ids dty
   dictTrans d                               =
     internalError $ "Dictionary.dictTrans: " ++ show d
 

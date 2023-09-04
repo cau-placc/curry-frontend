@@ -61,7 +61,6 @@ module Curry.Base.Ident
   , andOpId, eqOpId, leqOpId, ltOpId, orOpId, appendOpId, dotOpId
   , aValueId, dataEqId
   , anonId, isAnonId
-  , qBindId
 
     -- * Predefined qualified identifiers
     -- ** Identifiers for types
@@ -82,6 +81,7 @@ module Curry.Base.Ident
   , qShowsPrecId, qShowParenId, qShowStringId
   , qAndOpId, qEqOpId, qLeqOpId, qLtOpId, qOrOpId, qAppendOpId, qDotOpId
   , qAValueId, qDataEqId
+  , qBindId, qFailId
 
     -- * Extended functionality
     -- ** Functional patterns
@@ -915,6 +915,10 @@ qAppendOpId = qPreludeIdent appendOpId
 -- | 'QualIdent' for the '>>=' operator
 qBindId :: QualIdent
 qBindId = qPreludeIdent $ mkIdent ">>="
+
+-- | 'QualIdent' for the 'fail' method from the 'MonadFail' class
+qFailId :: QualIdent
+qFailId = qPreludeIdent $ mkIdent "fail"
 
 -- ---------------------------------------------------------------------------
 -- Micellaneous functions for generating and testing extended identifiers

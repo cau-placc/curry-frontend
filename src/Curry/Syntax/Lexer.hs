@@ -471,6 +471,7 @@ keywords = Map.fromList
   , ("then"    , KW_then    )
   , ("type"    , KW_type    )
   , ("where"   , KW_where   )
+  , ("det"     , KW_det     )
   ]
 
 -- |Map of keywords and special identifiers

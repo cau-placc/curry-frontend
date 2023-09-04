@@ -24,10 +24,15 @@ data IdentInfo = QI QualIdent
                | CI QualIdent QualIdent -- class, default method
   deriving (Eq, Ord, Show)
 
+identInfoFun :: IdentInfo -> QualIdent
+identInfoFun (QI meth) = meth
+identInfoFun (II _ _ meth) = meth
+identInfoFun (CI _ meth) = meth
+
 instance Pretty IdentInfo where
   pPrint (QI qid) = pPrint qid
   pPrint (II cls tc meth) = parens (pPrint cls <+> pPrint tc) <> dot <> pPrint meth
-  pPrint (CI cls meth) = pPrint cls <> dot <> pPrint meth
+  pPrint (CI cls meth) = pPrint cls <+> pPrint meth
 
 bindNestEnv :: IdentInfo -> DetScheme -> NestDetEnv -> NestDetEnv
 bindNestEnv ii ty (Top env) = Top (Map.insert ii ty env)

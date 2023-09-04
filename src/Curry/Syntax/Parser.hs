@@ -584,7 +584,7 @@ classDecl = mkClass
   where
     --TODO: Refactor by left-factorization
     --TODO: Support infixDecl
-    innerDecl = foldr1 (<|?>)
+    innerDecl = detSig <|> foldr1 (<|?>)
       [ spanPosition <**> (fun `sepBy1Sp` comma <**> typeSig)
       , spanPosition <**> funRule
       {-, infixDecl-} ]
