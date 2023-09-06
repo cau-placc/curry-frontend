@@ -56,10 +56,12 @@ freshVar = do
 
 addLocalType :: IdentInfo -> DetScheme -> DM ()
 addLocalType ii ty = do
+  liftIO $ putStrLn $ "addLocalType: " ++ render (pPrint ii) ++ " " ++ render (pPrint ty)
   modify (\s -> s { localDetEnv = bindNestEnv ii ty (localDetEnv s) })
 
 addExternalType :: IdentInfo -> DetScheme -> DM ()
 addExternalType ii ty = do
+  liftIO $ putStrLn $ "addExternalType: " ++ render (pPrint ii) ++ " " ++ render (pPrint ty)
   modify (\s -> s { detEnv = Map.insert ii ty (detEnv s) })
 
 addMessage :: Message -> DM ()
@@ -83,10 +85,13 @@ scoped act = do
 determinismCheck :: ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv -> InstEnv -> DetEnv
                  -> Module PredType -> IO (DetEnv, TCEnv, [Message])
 determinismCheck mid tce ve ce _ie de (Module _ _ _ _ _ _ ds') = flip evalStateT initState $ do
-  dsvs <- Map.fromList <$> mapM (\d -> (oneDeclIdent d,) <$> freeIdents d) definingDS
+  uses <- getUseMap mid tce definingDS
   let groups = scc (declIdents mid tce)
-                   (\d -> Set.toList $ Map.findWithDefault Set.empty (oneDeclIdent d) dsvs)
+                   (Set.toList . Set.unions . map (flip (Map.findWithDefault Set.empty) uses)
+                                            . declIdents mid tce)
                    definingDS
+  -- liftIO $ putStrLn $ render $ pPrint $ Map.toList uses
+  -- liftIO $ putStrLn $ render $ pPrint $ map (map (declIdents mid tce)) groups
   mapM_ checkGroup groups
   env <- gets detEnv
   correctTCEnv ds'
@@ -99,31 +104,39 @@ determinismCheck mid tce ve ce _ie de (Module _ _ _ _ _ _ ds') = flip evalStateT
     sigInf (DetSig _ is dty) = Map.fromList (map (,dty) is)
     sigInf (ClassDecl _ _ _ _ _ ds) = sigs ds
     sigInf _ = Map.empty
-    oneDeclIdent d = case declIdents mid tce d of
-      (ii:_) -> ii
-      _ -> internalError $ "DeterminismCheck.oneDeclIdent: " ++ show d
     initState = DS de (Top Map.empty) ve ce tce mid 0 [] (sigs ds')
     definingDS = filter isDefiningDecl ds'
     isDefiningDecl FunctionDecl {} = True
-    isDefiningDecl PatternDecl {} = True
-    isDefiningDecl ClassDecl {} = True
+    isDefiningDecl PatternDecl {}  = True
+    isDefiningDecl ClassDecl {}    = True
     isDefiningDecl InstanceDecl {} = True
     isDefiningDecl ExternalDecl {} = True
     isDefiningDecl _ = False
 
+getUseMap :: ModuleIdent -> TCEnv -> [Decl PredType] -> DM (Map IdentInfo (Set IdentInfo))
+getUseMap mid tce ds = do
+  let go d = do
+        is <- freeIdents d
+        return (map (,is) (declIdents mid tce d))
+  Map.unionsWith Set.union . map Map.fromList <$> mapM go ds
+
 declIdents :: ModuleIdent -> TCEnv -> Decl PredType -> [IdentInfo]
 declIdents mid _ (FunctionDecl _ _ f _) =
   [QI (qualifyWith mid f)]
+declIdents mid _ (TypeSig _ ids _) =
+  map (QI . qualifyWith mid) ids
+declIdents mid _ (ExternalDecl _ ids) =
+  map (\(Var _ i) -> QI $ qualifyWith mid i) ids
 declIdents _   _   (PatternDecl _ pat _) =
   map (QI . qualify . fst3) (patternVars pat)
 declIdents mid tcE (ClassDecl _ _ _ cls _ ds) =
   concatMap (map (toClassIdent (qualifyWith mid cls)) . declIdents mid tcE) ds
-declIdents mid tcE (InstanceDecl _ _ _ cls ty ds) =
-  concatMap (map (toInstanceIdent cls ty) . declIdents mid' tcE) ds
-  where mid' = case qualLookupTypeInfo cls tcE of
-          [inf] -> fromMaybe mid (qidModule (origName inf))
-          _ -> internalError $ "DeterminismCheck.declIdents: "
-                  ++ show cls ++ " not found"
+declIdents mid tcE (InstanceDecl _ _ _ cls ty _) = case qualLookupTypeInfo cls tcE of
+  [TypeClass qcls _ meths] -> map (toInstanceIdent cls ty . QI
+                                    . qualifyWith (fromMaybe mid (qidModule qcls))
+                                    . methodName) meths
+  _ -> internalError $ "DeterminismCheck.declIdents: "
+          ++ show cls ++ " not found"
 declIdents _ _ _ = []
 
 toClassIdent :: QualIdent -> IdentInfo -> IdentInfo
@@ -144,13 +157,22 @@ toInstanceIdent cls ty (QI qid) = case ty of
            | otherwise       = qualifyLike qid (unqualify cls)
       qtc  | isQualified tc  = tc
            | otherwise       = qualifyLike qid (unqualify tc)
+  ListType sp _ -> toInstanceIdent cls (ConstructorType sp qListId) (QI qid)
+  TupleType sp args -> toInstanceIdent cls (ConstructorType sp (qTupleId (length args))) (QI qid)
+  ArrowType sp _ _ -> toInstanceIdent cls (ConstructorType sp qArrowId) (QI qid)
+  ParenType _ ty' -> toInstanceIdent cls ty' (QI qid)
+  ApplyType _ ty' _ -> toInstanceIdent cls ty' (QI qid)
   _ -> internalError (show ty ++ " is not a constructor type")
 toInstanceIdent _ _ ii = ii
 
 checkGroup :: [Decl PredType] -> DM ()
 checkGroup ds = do
+  mid <- gets moduleIdent
+  tce <- gets tcEnv
+  liftIO $ putStrLn $ render $ pPrint $ map (declIdents mid tce) ds
   constraints <- Set.unions <$> (mapM checkDecl ds >>= sequence)
   res <- Map.map abstractDetScheme . extractTopEnv <$> solveConstraints constraints
+  liftIO $ putStrLn $ render $ pPrint $ Map.toList res
   -- by unioning with the old environment to the right, we make sure that
   -- we retain any signatures that were already present, such as user supplied ones.
   -- This ensures that we do not get follow up errors from incorrect function definitions.
@@ -222,11 +244,29 @@ checkDecl (ClassDecl _ _ _ cls _ ds) = do
   return (Set.unions <$> sequence acts)
 checkDecl (InstanceDecl _ _ _ cls ty ds) = do
   acts <- mapM (checkInstanceDecl cls ty) ds
-  return (Set.unions <$> sequence acts)
+  tcE <- gets tcEnv
+  mid <- gets moduleIdent
+  case qualLookupTypeInfo cls tcE of
+    [TypeClass qcls' _ mthds] -> do
+      let qcls | isQualified qcls' = qcls'
+               | otherwise         = qualifyWith mid (unqualify cls)
+          getI (FunctionDecl _ _ i _) = Just (i { idUnique = 0 })
+          getI _ = Nothing
+          impl = mapMaybe getI ds
+          unimpl = filter (\(ClassMethod i _ _ _ _) -> i `notElem` impl) mthds
+      forM_ unimpl $ \(ClassMethod i _ (PredType _ ty') mbd _) -> case mbd of
+        Just dty -> addLocalType (toInstanceIdent qcls ty (QI (qualifyLike qcls i))) dty
+        Nothing  -> addLocalType (toInstanceIdent qcls ty (QI (qualifyLike qcls i))) (mkArrowLike ty')
+      return (Set.unions <$> sequence acts)
+    _ -> internalError $ "DeterminismCheck.checkDecl: " ++ show cls ++ " not found"
 checkDecl (ExternalDecl _ vs) = do
   mid <- gets moduleIdent
-  mapM_ (\(Var _ i) -> let qi = qualifyWith mid i
-                       in addLocalType (QI qi) (externalDetMap Map.! qi)) vs
+  let go (Var (PredType _ ty) i) =
+        let qi = qualifyWith mid i
+        in case externalDetMap Map.!? qi of
+              Nothing -> addLocalType (QI qi) (mkArrowLike ty)
+              Just dty -> addLocalType (QI qi) dty
+  mapM_ go vs
   return $ return Set.empty
 checkDecl (FreeDecl _ vs) = do
   mapM_ (\(Var _ i) -> addLocalType (QI (qualify i)) (toDetSchema Nondet)) vs
@@ -295,9 +335,11 @@ checkLhs vs (ApLhs _ lhs ps) = do
   return (Set.union cs1 (Set.unions cs2), s1 ++ map fst (filter snd (zip vs2 s2)))
 
 checkPat :: VarIndex -> Pattern PredType -> DM (Set DetConstraint, Bool)
-checkPat v (VariablePattern _ _ i) = do
-  addLocalType (QI (qualify i)) (toDetSchema (VarTy v))
-  return (Set.empty, False)
+checkPat v (VariablePattern _ _ i)
+  | idName i == "_" = return (Set.empty, False)
+  | otherwise = do
+    addLocalType (QI (qualify i)) (toDetSchema (VarTy v))
+    return (Set.empty, False)
 checkPat v (ConstructorPattern _ _ _ ps) = (,True) . Set.unions <$> mapM (fmap fst . checkPat v) ps
 checkPat v (InfixPattern _ _ p1 _ p2) = ((,True) .) . Set.union <$> fmap fst (checkPat v p1) <*> fmap fst (checkPat v p2)
 checkPat v (ParenPattern _ p) = checkPat v p
@@ -381,22 +423,35 @@ checkExprTy v (List _ _ es) =
   Set.unions <$> mapM (checkExprTy v) es
 checkExprTy v (ListCompr _ e qs) =
   checkStmts v e qs
-checkExprTy v ee@(EnumFrom _ e) = Set.union
-  <$> checkVar v (PredType emptyPredSet (typeOf ee)) qEnumFromId
-  <*> checkExprTy v e
-checkExprTy v ee@(EnumFromThen _ e1 e2) =
+checkExprTy v ee@(EnumFrom _ e) = do
+  let ety = typeOf e
+      eety = typeOf ee
+      enumTy = PredType emptyPredSet (TypeArrow ety eety)
+  Set.union
+    <$> checkVar v enumTy qEnumFromId
+    <*> checkExprTy v e
+checkExprTy v ee@(EnumFromThen _ e1 e2) = do
+  let ety = typeOf e1
+      eety = typeOf ee
+      enumTy = PredType emptyPredSet (TypeArrow ety (TypeArrow ety eety))
   Set.unions <$> sequence
-    [ checkVar v (PredType emptyPredSet (typeOf ee)) qEnumFromThenId
+    [ checkVar v enumTy qEnumFromThenId
     , checkExprTy v e1
     , checkExprTy v e2 ]
-checkExprTy v ee@(EnumFromTo _ e1 e2) =
+checkExprTy v ee@(EnumFromTo _ e1 e2) = do
+  let ety = typeOf e1
+      eety = typeOf ee
+      enumTy = PredType emptyPredSet (TypeArrow ety (TypeArrow ety eety))
   Set.unions <$> sequence
-    [ checkVar v (PredType emptyPredSet (typeOf ee)) qEnumFromToId
+    [ checkVar v enumTy qEnumFromToId
     , checkExprTy v e1
     , checkExprTy v e2 ]
-checkExprTy v ee@(EnumFromThenTo _ e1 e2 e3) =
+checkExprTy v ee@(EnumFromThenTo _ e1 e2 e3) = do
+  let ety = typeOf e1
+      eety = typeOf ee
+      enumTy = PredType emptyPredSet (TypeArrow ety (TypeArrow ety (TypeArrow ety eety)))
   Set.unions <$> sequence
-    [ checkVar v  (PredType emptyPredSet (typeOf ee)) qEnumFromThenToId
+    [ checkVar v enumTy qEnumFromThenToId
     , checkExprTy v e1
     , checkExprTy v e2
     , checkExprTy v e3 ]
@@ -419,11 +474,20 @@ checkExprTy v (Let _ _ ds e) = scoped $ do
   Set.union cs <$> checkExprTy v e
 checkExprTy v (Do _ _ ss e) = do
   tcE <- gets tcEnv
+  let (ety, inner) = case typeOf e of
+        ety'@(TypeApply _ inner') -> (ety', inner')
+        _ -> internalError "DeterminismCheck.checkExprTy: do expression not of type constructor"
+      bindTy = PredType emptyPredSet (TypeArrow ety (TypeArrow
+        (TypeArrow inner ety)
+        ety))
+      failTy = PredType emptyPredSet (TypeArrow
+        (TypeApply (TypeConstructor qListId) (TypeConstructor qCharId))
+        ety)
   Set.unions <$> sequence
     ( [ checkStmts v e ss
-      , checkVar v (PredType emptyPredSet (typeOf e)) qBindId ]
+      , checkVar v bindTy qBindId ]
     ++
-      [ checkVar v (PredType emptyPredSet (typeOf e)) qFailId | any (stmtCanFail tcE) ss]
+      [ checkVar v failTy qFailId | any (stmtCanFail tcE) ss]
     )
 checkExprTy v (LeftSection _ e op) = do
   v1 <- freshVar
@@ -505,6 +569,7 @@ checkVar v (PredType _ ty) i = do
             | otherwise -> return $ Set.singleton $ EqualType v Nondet
           Nothing -> internalError $ "checkVar: " ++ prettyII ii ++ " not found in "
                                         ++ prettyDetEnv (Map.union ext (flattenNestEnv lcl))
+                                        ++ ". Original types:" ++ render (pPrint (ty, preds))
 
 andM :: (Foldable t, Monad m) => (a -> m Bool) -> t a -> m Bool
 andM f = foldr (\a b -> f a >>= \a' -> if a' then b else return False) (return True)
@@ -547,7 +612,34 @@ instantiate (Forall vs ty) = do
   return (substDetTy ty (Map.fromList (zipWith (\a -> (a,) . VarTy) vs vs')))
 
 checkLocalDeclsTy :: [Decl PredType] -> DM (Set DetConstraint)
-checkLocalDeclsTy ds = Set.unions <$> (mapM checkDecl ds >>= sequence)
+checkLocalDeclsTy ds = Set.unions <$> (mapM checkLocalDecl ds >>= sequence)
+  where
+    -- Like checkDecl, but does not qualify identifiers with the module identifier.
+    checkLocalDecl :: Decl PredType -> DM (DM (Set DetConstraint))
+    checkLocalDecl (PatternDecl _ p rhs) = do
+      v <- freshVar
+      (cs, _) <- checkPat v p
+      return (Set.union cs <$> scoped (checkRhsTy v rhs))
+    checkLocalDecl d@(FunctionDecl _ _ _ eqs) = do
+      mid <- gets moduleIdent
+      tcE <- gets tcEnv
+      let unqualII (QI i) = QI $ qualify $ unqualify i
+          unqualII (CI cls i) = CI cls $ qualify $ unqualify i
+          unqualII (II cls tc i) = II cls tc $ qualify $ unqualify i
+          is = map unqualII (declIdents mid tcE d)
+      checkFun is eqs
+    checkLocalDecl (ExternalDecl _ vs) = do
+      let go (Var (PredType _ ty) i) =
+            let qi = qualify i
+            in case externalDetMap Map.!? qi of
+                  Nothing -> addLocalType (QI qi) (mkArrowLike ty)
+                  Just dty -> addLocalType (QI qi) dty
+      mapM_ go vs
+      return $ return Set.empty
+    checkLocalDecl (FreeDecl _ vs) = do
+      mapM_ (\(Var _ i) -> addLocalType (QI (qualify i)) (toDetSchema Nondet)) vs
+      return $ return Set.empty
+    checkLocalDecl _ = return $ return Set.empty
 
 checkClassDecl :: Ident -> Decl PredType -> DM (DM (Set DetConstraint))
 checkClassDecl cls d@(FunctionDecl _ _ _ eqs) = do
@@ -638,7 +730,14 @@ solveGroup solutions = go Map.empty . map (`substCon` solutions)
       let (new1, cs1) = unify ty1 ty1' current cs
           (new2, cs2) = unify ty2 ty2' current cs1
       in (DetArrow new1 new2, cs2)
-    unify ty1 ty2 _ _ = internalError $ "unify: " ++ show ty1 ++ " and " ++ show ty2 ++ " are not unifiable"
+    unify (DetArrow ty1 ty2) Det current cs =
+      let (new1, cs1) = unify ty1 Det current cs
+          (new2, cs2) = unify ty2 Det current cs1
+      in (DetArrow new1 new2, cs2)
+    unify Det (DetArrow ty1 ty2) current cs =
+      let (new1, cs1) = unify Det ty1 current cs
+          (new2, cs2) = unify Det ty2 current cs1
+      in (DetArrow new1 new2, cs2)
 
     applyTy :: DetType -> [DetType] -> DetType
     applyTy ty [] = ty
@@ -873,11 +972,14 @@ variableFreeIdent qid ty = do
   vEnv <- gets valueEnv
   mid <- gets moduleIdent
   case qualLookupValueUnique mid qid vEnv of
-    [Value orig mci _ _] -> case mci of
+    [Value orig mci _ (ForAll _ (PredType _ ty'))] -> case mci of
       Nothing -> return (Just (QI (zeroUniqueQual orig)))
       Just cls ->
         let qcls = qualifyLike orig (unqualify cls)
-        in case unapplyType True ty of
+            sub = matchType ty' ty idSubst
+            -- 0 = class type variable
+            clsTy = subst sub (TypeVariable 0)
+        in case unapplyType True clsTy of
             (TypeConstructor tc, _)
               -> return (Just (II qcls tc (zeroUniqueQual (qualQualify mid orig))))
             _ -> return Nothing

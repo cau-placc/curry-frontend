@@ -24,6 +24,8 @@ module Base.Subst
 
 import qualified Data.Map as Map
 
+import Curry.Base.Pretty ( Pretty(..) )
+
 -- |Data type for substitution
 data Subst a b = Subst Bool (Map.Map a b)
   deriving Show
@@ -125,3 +127,6 @@ restrictSubstTo :: Ord v => [v] -> Subst v e -> Subst v e
 restrictSubstTo vs (Subst comp sigma) =
   foldr (uncurry bindSubst) (Subst comp Map.empty)
         (filter ((`elem` vs) . fst) (Map.toList sigma))
+
+instance (Pretty v, Pretty e) => Pretty (Subst v e) where
+  pPrint (Subst _ sigma) = pPrint $ Map.toList sigma
