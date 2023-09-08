@@ -29,11 +29,8 @@
 
     To summarize, this module expands all rigid case expressions.
 -}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE TupleSections #-}
 module Transformations.CaseCompletion (completeCase) where
-
-
-
 
 import qualified Control.Monad.State as S   (State, evalState, gets, modify)
 import           Data.List                  (find)
@@ -355,11 +352,12 @@ occursInBinding v (Binding w _) = v == w
 failedExpr :: Type -> Expression
 failedExpr ty = Function ty (qualifyWith preludeMIdent (mkIdent "failed")) 0
 
---TODO: Add note about arity of 0 because of the predefined functions in the Prelude
+-- Arity 0 is used for the char/int/float (===) implementations,
+-- because they are defined as (===) = (==)
 eqExpr :: CS.Type -> IL.Type -> Expression -> Expression -> Expression
 eqExpr ty ty' e1 | IL.TypeConstructor _ [_] <- ty'
-  = Apply (Apply (Apply (Function eqListTy eqList 0)
-                    (Function dataCharDictType dataCharDict 0)) e1)
+  = Apply (Apply (Apply (Function eqListTy eqList 3)
+                    (Function dataCharDictType dataCharDict 1)) e1)
   where eqList = qImplMethodId preludeMIdent qDataId ty $ mkIdent "==="
         eqListTy = TypeArrow (IL.TypeConstructor (qDictTypeId qDataId) [ty'])
                      (TypeArrow ty' (TypeArrow ty' boolType'))
@@ -450,7 +448,7 @@ getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds) = complementary cs cinfos
   isNewConstrDecl qid (CS.NewConstrDecl _ cid _) = unqualify qid == cid
   isNewConstrDecl qid (CS.NewRecordDecl _ cid _) = unqualify qid == cid
 
-  extractConstrDecls (CS.IDataDecl _ _ _ vs cs' _) = zip (repeat vs) cs'
+  extractConstrDecls (CS.IDataDecl _ _ _ vs cs' _) = map (vs,) cs'
   extractConstrDecls _                             = []
 
   constrInfo vs (CS.ConstrDecl _ cid tys)     =
@@ -504,7 +502,7 @@ matchType' (TypeVariable tv) ty
   | ty == TypeVariable tv = Just id
   | otherwise = Just (bindSubst tv ty)
 matchType' (TypeConstructor tc1 tys1) (TypeConstructor tc2 tys2)
-  | tc1 == tc2 = Just $ foldr (\(ty1, ty2) -> (matchType ty1 ty2 .)) id $ tys
+  | tc1 == tc2 = Just $ foldr (\(ty1, ty2) -> (matchType ty1 ty2 .)) id tys
   where tys = zip tys1 tys2
 matchType' (TypeArrow ty11 ty12) (TypeArrow ty21 ty22) =
   Just (matchType ty11 ty21 . matchType ty12 ty22)

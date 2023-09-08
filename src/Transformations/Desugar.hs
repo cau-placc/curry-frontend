@@ -53,12 +53,8 @@
   all names must be properly qualified before calling this module.
 -}
 {-# LANGUAGE CPP           #-}
-{-# LANGUAGE TupleSections #-}
 module Transformations.Desugar (desugar) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative        ((<$>), (<*>))
-#endif
 import           Control.Arrow              (first, second)
 import           Control.Monad              (liftM2)
 import           Control.Monad.Extra        (concatMapM)
@@ -147,7 +143,7 @@ getNextId = do
 -- Create a fresh variable ident for a given prefix with a monomorphic type
 freshVar :: Typeable t => String -> t -> DsM (PredType, Ident)
 freshVar prefix t = do
-  v <- (mkIdent . (prefix ++) . show) <$> getNextId
+  v <- mkIdent . (prefix ++) . show <$> getNextId
   return (predType $ typeOf t, v)
 
 -- ---------------------------------------------------------------------------
@@ -325,9 +321,9 @@ constrain cs e = if null cs then e else foldr1 (&) cs &> e
 
 dsRhs :: (Expression PredType -> Expression PredType)
       -> Rhs PredType -> DsM (Rhs PredType)
-dsRhs f rhs =   expandRhs (prelFailed (typeOf rhs)) f rhs
-            >>= dsExpr (getSpanInfo rhs)
-            >>= return . simpleRhs (getSpanInfo rhs)
+dsRhs f rhs = simpleRhs (getSpanInfo rhs) <$>
+  (expandRhs (prelFailed (typeOf rhs)) f rhs
+    >>= dsExpr (getSpanInfo rhs))
 
 expandRhs :: Expression PredType -> (Expression PredType -> Expression PredType)
           -> Rhs PredType -> DsM (Expression PredType)
@@ -401,7 +397,7 @@ dsFunctionalPatterns p ts = do
   let cs = [mkTuple es =:<= mkTuple (map (uncurry mkVar) vs) | not $ null vs]
   -- Create free variable declarations for non-anonymous funPatVars
   let ds = map (\ (v, _, pty) -> FreeDecl p [Var pty v]) $
-             filter (not . isAnonId . fst3) $ funPatVars
+             filter (not . isAnonId . fst3) funPatVars
   -- Return (declarations, constraints, desugared patterns)
   return (ds, concat (cs : css), ts2)
   where
@@ -486,7 +482,7 @@ fp2Expr (NegativePattern         _ pty l) =
 fp2Expr (VariablePattern         _ pty v) = (mkVar pty v, [])
 fp2Expr (ConstructorPattern  _  pty c ts) =
   let (ts', ess) = unzip $ map fp2Expr ts
-      pty' = predType $ foldr TypeArrow (unpredType pty) $ map typeOf ts
+      pty' = predType $ foldr (TypeArrow . typeOf) (unpredType pty) ts
   in  (apply (Constructor NoSpanInfo pty' c) ts', concat ess)
 fp2Expr (InfixPattern   _ pty t1 op t2) =
   let (t1', es1) = fp2Expr t1
@@ -502,12 +498,12 @@ fp2Expr (ListPattern            _ pty ts) =
   in  (List NoSpanInfo pty ts', concat ess)
 fp2Expr (FunctionPattern      _ pty f ts) =
   let (ts', ess) = unzip $ map fp2Expr ts
-      pty' = predType $ foldr TypeArrow (unpredType pty) $ map typeOf ts
+      pty' = predType $ foldr (TypeArrow . typeOf) (unpredType pty) ts
   in  (apply (Variable NoSpanInfo pty' f) ts', concat ess)
 fp2Expr (InfixFuncPattern _ pty t1 op t2) =
   let (t1', es1) = fp2Expr t1
       (t2', es2) = fp2Expr t2
-      pty' = predType $ foldr TypeArrow (unpredType pty) $ map typeOf [t1, t2]
+      pty' = predType $ foldr (TypeArrow . typeOf) (unpredType pty) [t1, t2]
   in  (InfixApply NoSpanInfo t1' (InfixOp pty' op) t2', es1 ++ es2)
 fp2Expr (AsPattern                 _ v t) =
   let (t', es) = fp2Expr t
@@ -710,7 +706,7 @@ dsExpr p (Record   _ pty c fs) = do
   let (ls, tys) = argumentTypes (unpredType pty) c vEnv
       esMap = map field2Tuple fs
       unknownEs = map prelUnknown tys
-      maybeEs = map (flip lookup esMap) ls
+      maybeEs = map (`lookup` esMap) ls
       es = zipWith fromMaybe unknownEs maybeEs
   dsExpr p (applyConstr pty c tys es)
 dsExpr p (RecordUpdate _ e fs) = do
@@ -720,7 +716,7 @@ dsExpr p (RecordUpdate _ e fs) = do
         pty = predType ty
         tc = rootOfType (arrowBase ty)
         updateAlt (RecordConstr c ls _)
-          | all (`elem` qls2) (map fieldLabel fs)= do
+          | all ((`elem` qls2) . fieldLabel) fs= do
             let qc = qualifyLike tc c
             vEnv <- getValueEnv
             let (qls, tys) = argumentTypes ty qc vEnv
@@ -728,7 +724,7 @@ dsExpr p (RecordUpdate _ e fs) = do
             let pat = constrPattern pty qc vs
                 esMap = map field2Tuple fs
                 originalEs = map (uncurry mkVar) vs
-                maybeEs = map (flip lookup esMap) qls
+                maybeEs = map (`lookup` esMap) qls
                 es = zipWith fromMaybe originalEs maybeEs
             return [(pat, applyConstr pty qc tys es)]
           where qls2 = map (qualifyLike tc) ls
@@ -740,7 +736,7 @@ dsExpr p (Tuple      _ es) =
         tys = map typeOf es
 dsExpr p (List   _ pty es) = dsList cons nil <$> mapM (dsExpr p) es
   where nil = Constructor NoSpanInfo pty qNilId
-        cons = (Apply NoSpanInfo) . (Apply NoSpanInfo)
+        cons = Apply NoSpanInfo . Apply NoSpanInfo
           (Constructor NoSpanInfo
             (predType $ consType $ elemType $ unpredType pty) qConsId)
 dsExpr p (ListCompr          _ e qs) = dsListComp p e qs
@@ -888,11 +884,9 @@ dsStmt (StmtBind _ t e1) e' = do
   let func = mkLambda [uncurry (VariablePattern NoSpanInfo) v] $
                mkCase Rigid (uncurry mkVar v) $
                  caseAlt NoSpanInfo t e' :
-                   if failable
-                     then [caseAlt NoSpanInfo
-                                   (uncurry (VariablePattern NoSpanInfo) v)
-                                   (failedPatternMatch $ typeOf e')]
-                     else []
+                   [ caseAlt NoSpanInfo
+                        (uncurry (VariablePattern NoSpanInfo) v)
+                        (failedPatternMatch $ typeOf e') | failable ]
   return $ apply (prelBind (typeOf e1) (typeOf t) (typeOf e')) [e1, func]
   where failedPatternMatch ty =
           apply (prelFail ty)
@@ -999,7 +993,7 @@ dsQual p (StmtBind _ t l) e
   append e1                  l1 =
     apply (prelAppend (elemType $ typeOf e1)) [e1, l1]
   prelCons ty                   =
-      Constructor NoSpanInfo (predType $ consType ty) $ qConsId
+      Constructor NoSpanInfo (predType $ consType ty) qConsId
 
 -- -----------------------------------------------------------------------------
 -- Desugaring of Lists, labels, fields, and literals

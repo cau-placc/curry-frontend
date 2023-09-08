@@ -21,16 +21,10 @@
    Because of name conflicts between the source and intermediate language
    data structures, we can use only a qualified import for the 'IL' module.
 -}
-{-# LANGUAGE CPP #-}
 module Transformations.CurryToIL (ilTrans, transType) where
-
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative        ((<$>), (<*>))
-#endif
-
 import           Control.Monad.Extra         (concatMapM)
-import qualified Control.Monad.Reader as R
-import qualified Control.Monad.State  as S
+import           Control.Monad.Reader        (Reader, asks, runReader)
+import Control.Monad.State                   (State, put, get, execState)
 import           Data.List                   (nub, partition)
 import           Data.Maybe                  (fromJust)
 import qualified Data.Map             as Map
@@ -49,11 +43,11 @@ import Base.Utils (foldr2)
 import Env.TypeConstructor
 import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 
-import qualified IL as IL
+import qualified IL
 
 ilTrans :: Bool -> ValueEnv -> TCEnv -> Module Type -> IL.Module
 ilTrans remIm vEnv tcEnv (Module _ _ _ m _ im ds) = IL.Module m im' ds'
-  where ds' = R.runReader (concatMapM trDecl ds) (TransEnv m vEnv tcEnv)
+  where ds' = runReader (concatMapM trDecl ds) (TransEnv m vEnv tcEnv)
         im' = preludeMIdent : if remIm then imports m ds' else map moduleImport im
         moduleImport (ImportDecl _ mdl _ _ _) = mdl
 
@@ -114,16 +108,16 @@ data TransEnv = TransEnv
   , tyconEnv    :: TCEnv
   }
 
-type TransM a = R.Reader TransEnv a
+type TransM a = Reader TransEnv a
 
 getValueEnv :: TransM ValueEnv
-getValueEnv = R.asks valueEnv
+getValueEnv = asks valueEnv
 
 getTCEnv :: TransM TCEnv
-getTCEnv = R.asks tyconEnv
+getTCEnv = asks tyconEnv
 
 trQualify :: Ident -> TransM QualIdent
-trQualify i = flip qualifyWith i <$> R.asks moduleIdent
+trQualify i = asks ((`qualifyWith` i) . moduleIdent)
 
 getArity :: QualIdent -> TransM Int
 getArity qid = do
@@ -260,21 +254,21 @@ polyType ty                =
 -- as all variables have already been renamed.
 
 data KIS = KIS
-  { _nextId :: Int
+  { _nextKindId :: Int
   , kinds  :: Map.Map Int IL.Kind
   }
 
-freshId :: S.State KIS Int
-freshId = do
-  KIS i ks <- S.get
-  S.put (KIS (i+1) ks)
+freshKindId :: State KIS Int
+freshKindId = do
+  KIS i ks <- get
+  put (KIS (i+1) ks)
   return i
 
 transTVars :: TCEnv -> Type -> [(Int, IL.Kind)]
 transTVars tcEnv ty' =
-  Map.toList $ kinds $ S.execState (build ty' IL.KindStar) (KIS 0 Map.empty)
+  Map.toList $ kinds $ execState (build ty' IL.KindStar) (KIS 0 Map.empty)
   where
-    build :: Type -> IL.Kind -> S.State KIS ()
+    build :: Type -> IL.Kind -> State KIS ()
     build (TypeArrow     ty1 ty2) _ =
       build ty1 IL.KindStar >> build ty2 IL.KindStar
     build (TypeConstrained tys _) k =
@@ -282,14 +276,14 @@ transTVars tcEnv ty' =
     build (TypeForall       _ ty) k =
       build ty k
     build (TypeVariable       tv) k = do
-      KIS i ks <- S.get
+      KIS i ks <- get
       -- get current kind
       let k' = Map.findWithDefault k tv ks
       -- unify it
       let s = unifyKind k k'
       -- apply substitution
-      let ks' = fmap (applyKindSubst s) $ Map.insert tv k' ks
-      S.put (KIS i ks')
+      let ks' = applyKindSubst s <$> Map.insert tv k' ks
+      put (KIS i ks')
     build (TypeConstructor     _) _ = return ()
     build ta@(TypeApply       _ _) k =
       let (ty, tys) = unapplyType True ta
@@ -299,7 +293,7 @@ transTVars tcEnv ty' =
           mapM_ (uncurry build) (zip tys $ unarrowKind $ transKind k')
         _ -> do -- var of forall
           -- construct new kind vars
-          ks <- mapM (const (freshId >>= return . IL.KindVariable)) tys
+          ks <- mapM (const (IL.KindVariable <$> freshKindId)) tys
           -- infer kind for v
           build ty (foldr IL.KindArrow k ks)
           -- infer kinds for args
@@ -454,7 +448,7 @@ trExpr (v:vs) env (Case _ _ ct e alts) = do
   tcEnv <- getTCEnv
   let matcher = if ct == Flex then flexMatch else rigidMatch
       ty'     = transType tcEnv $ typeOf e
-  expr <- matcher [(ty', v)] <$> mapM (trAlt (v:vs) env) alts
+  expr <-  matcher [(ty', v)] <$> mapM (trAlt v vs env) alts
   return $ case expr of
     IL.Case mode (IL.Variable _ v') alts'
         -- subject is not referenced -> forget v and insert subject
@@ -469,9 +463,8 @@ trExpr vs env (Typed _ e _) = do
   return $ IL.Typed e' (transType tcEnv $ typeOf e)
 trExpr _ _ _ = internalError "CurryToIL.trExpr"
 
-trAlt :: [Ident] -> RenameEnv -> Alt Type -> TransM Match
-trAlt []      _   _            = internalError "CurryToIL: empty identifier list"
-trAlt (v:vs) env (Alt _ t rhs) = do
+trAlt :: Ident -> [Ident] -> RenameEnv -> Alt Type -> TransM Match
+trAlt v vs env (Alt _ t rhs) = do
   tcEnv <- getTCEnv
   rhs' <- trRhs vs (bindRenameEnv v t env) rhs
   return ([trPattern tcEnv v t], rhs')
@@ -488,8 +481,8 @@ trLiteral (String s) = IL.String s
 
 data NestedTerm = NestedTerm IL.ConstrTerm [NestedTerm] deriving Show
 
-pattern :: NestedTerm -> IL.ConstrTerm
-pattern (NestedTerm t _) = t
+getPattern :: NestedTerm -> IL.ConstrTerm
+getPattern (NestedTerm t _) = t
 
 arguments :: NestedTerm -> [NestedTerm]
 arguments (NestedTerm _ ts) = ts
@@ -652,22 +645,59 @@ rigidMatchDemanded :: FunList (IL.Type, Ident)  -- skipped variables
                    -> [(IL.Type, Ident)]        -- next variables
                    -> [(IL.ConstrTerm, Match')] -- alternatives
                    -> IL.Expression
-rigidMatchDemanded prefix v vs alts = IL.Case IL.Rigid (uncurry IL.Variable v)
-  $ map caseAlt (consPats ++ varPats)
+rigidMatchDemanded prefix v vs alts' =
+  IL.Case IL.Rigid (uncurry IL.Variable v) $ map caseAlt (consPats ++ varPats)
   where
-  -- N.B.: @varPats@ is either empty or a singleton list due to nub
-  (varPats, consPats) = partition isVarPattern $ nub $ map fst alts
-  caseAlt t           = IL.Alt t expr
-    where
-    expr = rigidMatch (prefix $ vars t ++ vs) (matchingCases alts)
-    -- matchingCases selects the matching alternatives
-    --  and recursively matches the remaining patterns
-    matchingCases a = map (expandVars (vars t)) $ filter (matches . fst) a
-    matches t' = t == t' || isVarPattern t'
-    expandVars vs' (p, (pref, ts1, e)) = (pref ts2, e)
-      where ts2 | isVarPattern p = map var2Pattern vs' ++ ts1
-                | otherwise      = ts1
-            var2Pattern v' = NestedTerm (uncurry IL.VariablePattern v') []
+    alts = handleMixedLiteralPatterns (snd v) alts'
+    -- N.B.: @varPats@ is either empty or a singleton list due to nub
+    -- This relies on the uniform naming scheme for variables
+    (varPats, consPats) = partition isVarPattern $ nub $ map fst alts
+    caseAlt t           = IL.Alt t expr
+      where
+      expr = rigidMatch (prefix $ vars t ++ vs) (matchingCases alts)
+      -- matchingCases selects the matching alternatives
+      --  and recursively matches the remaining patterns
+      matchingCases a = map (expandVars (vars t)) $ filter (matches . fst) a
+      matches t' = t == t' || isVarPattern t'
+      expandVars vs' (p, (pref, ts1, e)) = (pref ts2, e)
+        where ts2 | isVarPattern p = map var2Pattern vs' ++ ts1
+                  | otherwise      = ts1
+              var2Pattern v' = NestedTerm (uncurry IL.VariablePattern v') []
+
+-- It might still happen that there are string and list constructor pattern mixed in the same pattern position
+-- Consider the following example:
+-- case _1 of
+--   'v':_ -> 1
+--   "-f"  -> 2
+--   "-g"  -> 3
+--   s     -> 4
+-- The function @handleMixedLiteralPatterns@ detects these cases
+-- and processes them with @desugarOuterLit@ if required.
+-- The latter just transforms the first character of each string literal into a `(:)` match
+-- with the character and remaining string literal pattern added as a nested to-be-matched term.
+-- It is imperative that the variables created as the arguments to the `(:)` match
+-- are correctly named for the current level.
+-- Thus, we pass in the previous identified name and add a "_1"/"_2" suffix.
+-- Also note that this only works because cases are flat.
+-- The following characters of a string literal might thus be desugared later.
+handleMixedLiteralPatterns :: Ident -> [(IL.ConstrTerm, Match')] -> [(IL.ConstrTerm, Match')]
+handleMixedLiteralPatterns idt alts =
+  if any (isLiteralPattern . fst) alts && any (isConstructorPattern . fst) alts
+    -- can only be a string, because other primitives do not have constructors
+    then map (desugarOuterLit idt) alts
+    else alts
+
+desugarOuterLit :: Ident -> (IL.ConstrTerm, Match') -> (IL.ConstrTerm, Match')
+desugarOuterLit _ (IL.LiteralPattern listTy (IL.String ""), (pref, ts, e)) =
+  (IL.ConstructorPattern listTy qNilId [], (pref, ts, e))
+desugarOuterLit idt (IL.LiteralPattern listTy (IL.String (c:s)), (pref, ts, e)) =
+  let charTy = IL.TypeConstructor qCharId []
+      p1 = (charTy, idt { idName = idName idt ++ "_1" })
+      p2 = (listTy, idt { idName = idName idt ++ "_2" })
+      n1 = NestedTerm (IL.LiteralPattern charTy (IL.Char c)) []
+      n2 = NestedTerm (IL.LiteralPattern listTy (IL.String s)) []
+  in (IL.ConstructorPattern listTy qConsId [p1, p2], (pref, [n1, n2] ++ ts, e))
+desugarOuterLit _ m = m
 
 -- -----------------------------------------------------------------------------
 -- Pattern Matching Auxiliaries
@@ -676,6 +706,14 @@ rigidMatchDemanded prefix v vs alts = IL.Case IL.Rigid (uncurry IL.Variable v)
 isVarPattern :: IL.ConstrTerm -> Bool
 isVarPattern (IL.VariablePattern _ _) = True
 isVarPattern _                        = False
+
+isLiteralPattern :: IL.ConstrTerm -> Bool
+isLiteralPattern (IL.LiteralPattern _ _) = True
+isLiteralPattern _                       = False
+
+isConstructorPattern :: IL.ConstrTerm -> Bool
+isConstructorPattern (IL.ConstructorPattern _ _ _) = True
+isConstructorPattern _                             = False
 
 isVarMatch :: (IL.ConstrTerm, a) -> Bool
 isVarMatch = isVarPattern . fst
@@ -686,7 +724,7 @@ vars _                              = []
 
 -- tagAlt extracts the structure of the first pattern
 tagAlt :: Match -> (IL.ConstrTerm, Match)
-tagAlt (t:ts, e) = (pattern t, (arguments t ++ ts, e))
+tagAlt (t:ts, e) = (getPattern t, (arguments t ++ ts, e))
 tagAlt ([]  , _) = error "CurryToIL.tagAlt: empty pattern list"
 
 -- skipPat skips the current pattern position for later matching
@@ -696,7 +734,7 @@ skipPat ([]  , _) = error "CurryToIL.skipPat: empty pattern list"
 
 -- tagAlt' extracts the next pattern
 tagAlt' :: Match' -> (IL.ConstrTerm, Match')
-tagAlt' (pref, t:ts, e') = (pattern t, (pref, arguments t ++ ts, e'))
+tagAlt' (pref, t:ts, e') = (getPattern t, (pref, arguments t ++ ts, e'))
 tagAlt' (_   , []  , _ ) = error "CurryToIL.tagAlt': empty pattern list"
 
 -- skipPat' skips the current argument for later matching
