@@ -25,8 +25,10 @@ module Modules
   , writeTokens, writeComments, writeParsed, writeHtml, writeAST, writeShortAST
   ) where
 
+import           Control.DeepSeq          (force)
 import qualified Control.Exception as C   (catch, IOException)
-import           Control.Monad            (liftM, unless, when)
+import           Control.Monad            (unless, when, void)
+import           Data.Bifunctor           (second, first)
 import           Data.Char                (toUpper)
 import qualified Data.Map          as Map (elems, lookup)
 import qualified Data.ByteString.Lazy as ByteString
@@ -97,8 +99,8 @@ compileModule opts m fn = do
   writeParsed   opts mdl
   let qmdl = qual mdl
   writeHtml     opts qmdl
-  writeAST      opts (fst  mdl, fmap (const ()) (snd  mdl))
-  writeShortAST opts (fst qmdl, fmap (const ()) (snd qmdl))
+  writeAST      opts (second void mdl)
+  writeShortAST opts (second void qmdl)
   mdl' <- expandExports opts mdl
   qmdl' <- dumpWith opts CS.showModule pPrint DumpQualified $ qual mdl'
   writeAbstractCurry opts qmdl'
@@ -175,7 +177,7 @@ preprocess opts fn src
         case ec of
           ExitFailure x -> return $ Left [message $ text $
               "Preprocessor exited with exit code " ++ show x]
-          ExitSuccess   -> Right `liftM` readFile outFn
+          ExitSuccess   -> Right <$> readFile outFn
     either failMessages ok res
 
 withTempFile :: (FilePath -> Handle -> IO a) -> IO a
@@ -234,7 +236,7 @@ importSyntaxCheck :: Monad m => InterfaceEnv -> CS.Module a -> CYT m [CS.ImportD
 importSyntaxCheck iEnv (CS.Module _ _ _ _ _ imps _) = mapM checkImportDecl imps
   where
   checkImportDecl (CS.ImportDecl p m q asM is) = case Map.lookup m iEnv of
-    Just intf -> CS.ImportDecl p m q asM `liftM` importCheck intf is
+    Just intf -> CS.ImportDecl p m q asM  <$> importCheck intf is
     Nothing   -> internalError $ "Modules.importModules: no interface for "
                                     ++ show m
 
@@ -325,7 +327,7 @@ writeParsed opts (env, mdl) = when srcTarget $ liftIO $
 
 writeHtml :: Options -> CompEnv (CS.Module a) -> CYIO ()
 writeHtml opts (env, mdl) = when htmlTarget $
-  source2html opts (moduleIdent env) (map (\(sp, tok) -> (span2Pos sp, tok)) (tokens env)) mdl
+  source2html opts (moduleIdent env) (map (first span2Pos) (tokens env)) mdl
   where htmlTarget = Html `elem` optTargetTypes opts
 
 writeInterface :: Options -> CompilerEnv -> CS.Interface -> CYIO ()
@@ -382,9 +384,8 @@ writeFlatIntf opts env prog
   | not (optInterface opts) = return ()
   | optForce opts           = outputInterface
   | otherwise               = do
-      mfint <- liftIO $ FC.readFlatInterface targetFile
+      mfint <- force <$> liftIO (FC.readFlatInterface targetFile)
       let oldInterface = fromMaybe emptyIntf mfint
-      when (mfint == mfint) $ return () -- necessary to close file -- TODO
       unless (oldInterface `eqInterface` fint) outputInterface
   where
   targetFile      = flatIntName (filePath env)

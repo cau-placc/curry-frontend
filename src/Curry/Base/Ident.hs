@@ -21,7 +21,6 @@
 
     Qualified identifiers may optionally be prefixed by a module name.
 -}
-{-# LANGUAGE CPP            #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric  #-}
 module Curry.Base.Ident
@@ -93,17 +92,17 @@ module Curry.Base.Ident
   , renameLabel, mkLabelIdent
   ) where
 
-import Control.Monad
-import Data.Binary
+import Prelude             hiding ((<>))
+import Control.Monad       (liftM3)
+import Data.Binary         (Binary(..))
 import Data.Char           (isAlpha, isAlphaNum)
 import Data.Function       (on)
 import Data.List           (intercalate, isInfixOf, isPrefixOf)
 import Data.Maybe          (isJust, fromMaybe)
 import GHC.Generics        (Generic)
-import Prelude hiding ((<>))
 
 import Curry.Base.Position
-import Curry.Base.Span hiding (file)
+import Curry.Base.Span     (Span(..))
 import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 

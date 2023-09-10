@@ -28,29 +28,19 @@ module Env.OpPrec
   , OpPrecEnv,  PrecInfo (..), bindP, lookupP, qualLookupP, initOpPrecEnv
   ) where
 
-import Curry.Base.Ident
-import Curry.Base.Pretty (Pretty(..))
-import Curry.Syntax      (Infix (..))
+import Data.Maybe        (fromMaybe)
+import Text.PrettyPrint  ( (<+>), integer )
 
 import Base.TopEnv
-
-import Data.Maybe        (fromMaybe)
-
-import Text.PrettyPrint
+import Curry.Base.Ident
+import Curry.Base.Pretty (Pretty(..))
+import Curry.Syntax.Type (Infix (..))
 
 -- |Operator precedence.
-data OpPrec = OpPrec Infix Precedence deriving Eq
+data OpPrec = OpPrec Infix Precedence
+  deriving (Eq, Show)
 
 type Precedence = Integer
-
--- TODO: Change to real show instance and provide Pretty instance
--- if used anywhere.
-instance Show OpPrec where
-  showsPrec _ (OpPrec fix p) = showString (assoc fix) . shows p
-    where
-    assoc InfixL = "left "
-    assoc InfixR = "right "
-    assoc Infix  = "non-assoc "
 
 instance Pretty OpPrec where
   pPrint (OpPrec fix p) = pPrint fix <+> integer p
@@ -68,10 +58,11 @@ defaultPrecedence :: Precedence
 defaultPrecedence = 9
 
 mkPrec :: Maybe Precedence -> Precedence
-mkPrec mprec = fromMaybe defaultPrecedence mprec
+mkPrec = fromMaybe defaultPrecedence
 
 -- |Precedence information for an identifier.
-data PrecInfo = PrecInfo QualIdent OpPrec deriving (Eq, Show)
+data PrecInfo = PrecInfo QualIdent OpPrec
+  deriving (Eq, Show)
 
 instance Entity PrecInfo where
   origName (PrecInfo op _) = op

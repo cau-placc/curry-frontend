@@ -12,19 +12,15 @@
     Stability   :  experimental
     Portability :  portable
 
-   The parser does not know the relative precedences of infix operators
-   and therefore parses them as if they all associate to the right and
-   have the same precedence. After performing the definition checks,
-   the compiler is going to process the infix applications in the module
-   and rearrange infix applications according to the relative precedences
-   of the operators involved.
+    The parser does not know the relative precedences of infix operators
+    and therefore parses them as if they all associate to the right and
+    have the same precedence. After performing the definition checks,
+    the compiler is going to process the infix applications in the module
+    and rearrange infix applications according to the relative precedences
+    of the operators involved.
 -}
-{-# LANGUAGE CPP #-}
 module Checks.PrecCheck (precCheck) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative      ((<$>), (<*>))
-#endif
 import           Control.Monad            (unless, when)
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 import           Data.List                (partition)
@@ -408,30 +404,6 @@ fixRPrecT infixpatt t1 op1 (InfixFuncPattern spi a t2 op2 t3) = do
         return $ infixpatt t1 op1 (InfixFuncPattern spi a t2 op2 t3)
 fixRPrecT infixpatt t1 op t2 = return $ infixpatt t1 op t2
 
-{-fixPrecT :: Position -> OpPrecEnv -> Pattern -> QualIdent -> Pattern
-         -> Pattern
-fixPrecT p pEnv t1@(NegativePattern uop l) op t2
-  | pr < 6 || pr == 6 && fix == InfixL = fixRPrecT p pEnv t1 op t2
-  | otherwise = errorAt p $ errInvalidParse "unary" uop op
-  where OpPrec fix pr = prec op pEnv
-fixPrecT p pEnv t1 op t2 = fixRPrecT p pEnv t1 op t2-}
-
-{-fixRPrecT :: Position -> OpPrecEnv -> Pattern -> QualIdent -> Pattern
-          -> Pattern
-fixRPrecT p pEnv t1 op t2@(NegativePattern uop l)
-  | pr < 6 = InfixPattern t1 op t2
-  | otherwise = errorAt p $ errInvalidParse "unary" uop op
-  where OpPrec _ pr = prec op pEnv
-fixRPrecT p pEnv t1 op1 (InfixPattern t2 op2 t3)
-  | pr1 < pr2 || pr1 == pr2 && fix1 == InfixR && fix2 == InfixR =
-      InfixPattern t1 op1 (InfixPattern t2 op2 t3)
-  | pr1 > pr2 || pr1 == pr2 && fix1 == InfixL && fix2 == InfixL =
-      InfixPattern (fixPrecT p pEnv t1 op1 t2) op2 t3
-  | otherwise = errorAt p $ errAmbiguousParse "operator" op1 op2
-  where OpPrec fix1 pr1 = prec op1 pEnv
-        OpPrec fix2 pr2 = prec op2 pEnv
-fixRPrecT _ _ t1 op t2 = InfixPattern t1 op t2-}
-
 -- The functions 'checkOpL' and 'checkOpR' check the left and right arguments
 -- of an operator declaration. If they are infix patterns they must bind
 -- more tightly than the operator, otherwise the left-hand side of the
@@ -505,9 +477,6 @@ errInvalidParse :: String -> Ident -> QualIdent -> Message
 errInvalidParse what op1 op2 = spanInfoMessage op1 $ hsep $ map text
   [ "Invalid use of", what, escName op1, "with", escQualName op2, "in"
   , showLine $ getPosition op2]
-
--- FIXME: Messages may have missing positions for minus operators
--- TODO: Is this still true after span update for parser?
 
 errAmbiguousParse :: String -> QualIdent -> QualIdent -> Message
 errAmbiguousParse what op1 op2 = spanInfoMessage op1 $ hsep $ map text

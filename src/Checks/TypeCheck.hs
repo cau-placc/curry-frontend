@@ -33,11 +33,9 @@
    hold the particular instance at which a polymorphic function or
    variable is used.
 -}
-{-# LANGUAGE CPP #-}
 module Checks.TypeCheck (typeCheck, checkFailablePattern) where
 
-import Prelude hiding ((<>))
-
+import           Prelude             hiding ((<>))
 import           Control.Monad.Trans (lift)
 import           Control.Monad.Extra ( allM, filterM, foldM, (&&^), notM
                                      , replicateM, when, unless, unlessM )

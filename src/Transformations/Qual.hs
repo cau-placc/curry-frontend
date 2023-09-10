@@ -21,12 +21,8 @@
     Only functions and variables declared in local declarations groups
     as well as function arguments remain unchanged.
 -}
-{-# LANGUAGE CPP #-}
 module Transformations.Qual (qual) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative       ((<$>), (<*>), pure)
-#endif
 import qualified Control.Monad.Reader as R (Reader, asks, runReader)
 import           Data.Traversable
 import           Prelude hiding            (mapM)

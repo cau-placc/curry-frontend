@@ -1,27 +1,46 @@
 {- |
   Module      :  $Header$
   Description :  Dictionary insertion
-  Copyright   :  (c) 2016 - 2017 Finn Teegen
+  Copyright   :  (c) 2016 - 2019 Finn Teegen
+                     2021 - 2023 Kai-Oliver Prott
   License     :  BSD-3-clause
 
-  Maintainer  :  bjp@informatik.uni-kiel.de
+  Maintainer  :  kpr@informatik.uni-kiel.de
   Stability   :  experimental
   Portability :  portable
 
-  TODO
--}
+  This module defines the dictionary insertion transformation,
+  which inserts special dictionary arguments into each function
+  depending on its required type class constraints.
+  Additionally, type classes are augmented with an additional
+  Unit argument to avoid unintended run-time choice semantics
+  of instance methods, which would otherwise occur
+  in certain edge cases.
 
-{-# LANGUAGE CPP #-}
+  After the transformation:
+    * The dictionaries of nullary type classes are inserted
+      are augmented with a Unit argument.
+
+    * Type class methods are replaced by methods that select the
+      corresponding function from the provided dictionary.
+
+    * All type class constraints of methods are replaced by
+      a dictionary argument.
+
+    * The value and interface environments are updated
+      according to these changes.
+
+    * Applications of type class method selectors
+      to known dictionaries are replaced by the corresponding
+      instance method implementation.
+      This is an optional optimization
+-}
 module Transformations.Dictionary
   ( insertDicts
   , dictTypeId, qDictTypeId, dictConstrId, qDictConstrId
   , defaultMethodId, qDefaultMethodId, superDictStubId, qSuperDictStubId
   , instFunId, qInstFunId, implMethodId, qImplMethodId
   ) where
-
-
-
-
 
 import           Control.Monad.Extra      ( concatMapM, liftM, maybeM, when )
 import qualified Control.Monad.State as S (State, runState, gets, modify)
@@ -677,8 +696,7 @@ instance DictTrans Expression where
 -- Just like before in desugaring, we ignore the context in the type signature
 -- of a typed expression, since there should be no possibility to provide an
 -- non-empty context without scoped type-variables.
--- TODO: Verify
-
+-- TODO: Correct for now, but not with NullaryTypeClasses. Ask Finn.
 dictTransQualTypeExpr :: QualTypeExpr -> DTM QualTypeExpr
 dictTransQualTypeExpr (QualTypeExpr spi _ ty) = return $ QualTypeExpr spi [] ty
 

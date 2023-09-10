@@ -18,11 +18,7 @@
    to take these variables into account. Second, all local function
    declarations are collected and lifted to the top-level.
 -}
-{-# LANGUAGE CPP #-}
 module Transformations.Lift (lift) where
-
-
-
 
 import           Control.Arrow              (first)
 import qualified Control.Monad.State as S   (State, runState, gets, modify)

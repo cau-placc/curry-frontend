@@ -34,7 +34,7 @@ module Transformations.CaseCompletion (completeCase) where
 
 import qualified Control.Monad.State as S   (State, evalState, gets, modify)
 import           Data.List                  (find)
-import           Data.Maybe                 (fromMaybe, listToMaybe)
+import           Data.Maybe                 (fromMaybe, listToMaybe, maybeToList)
 
 import           Curry.Base.Ident
 import qualified Curry.Syntax        as CS
@@ -54,6 +54,7 @@ import Transformations.CurryToIL            (transType)
 import Transformations.Dictionary           (qImplMethodId, qDictTypeId, qInstFunId)
 
 import IL
+import Curry.Base.SpanInfo
 
 -- Completes case expressions by adding branches for missing constructors.
 -- The interface environment 'iEnv' is needed to compute these constructors.
@@ -398,10 +399,15 @@ getComplConstrs _                 _    _     []
   = internalError "CaseCompletion.getComplConstrs: empty constructor list"
 getComplConstrs (Module mid _ ds) menv tcEnv cs@(c:_)
   -- built-in lists
-  | c `elem` [qNilId, qConsId] = complementary cs
-    [ (qNilId, [])
-    , (qConsId, [TypeVariable 0, TypeConstructor qListId [TypeVariable 0]])
-    ]
+  | c `elem` [qNilId, qConsId] =
+    let mid' = (ModuleIdent NoSpanInfo ["Prelude"])
+    in case maybeToList (lookupInterface mid' menv) >>= getCCFromIDecls mid' cs tcEnv of
+      [] -> error "nothing"
+      xs -> error ("just" ++ show (length xs))
+    -- complementary cs --- TODO: resolve todo above
+    -- [ (qNilId, [])
+    -- , (qConsId, [TypeVariable 0, TypeConstructor qListId [TypeVariable 0]])
+    -- ]
   -- current module
   | mid' == mid                = getCCFromDecls cs ds
   -- imported module

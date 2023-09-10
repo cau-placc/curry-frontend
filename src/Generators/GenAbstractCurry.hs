@@ -14,12 +14,8 @@
     This module contains the generation of an 'AbstractCurry' program term
     for a given 'Curry' module.
 -}
-{-# LANGUAGE CPP #-}
 module Generators.GenAbstractCurry (genAbstractCurry) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative          ((<$>), (<*>), pure)
-#endif
 import           Control.Monad.Extra
 import qualified Control.Monad.State as S     (State, evalState, get, gets
                                               , modify, put, when)

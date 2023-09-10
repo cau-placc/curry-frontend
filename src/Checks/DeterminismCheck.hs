@@ -8,7 +8,7 @@ module Checks.DeterminismCheck (determinismCheck, DetEnv) where
 
 import Prelude hiding ( (<>) )
 import Control.Arrow ( second )
-import Control.Monad ( liftM2, void, zipWithM, replicateM, forM_ )
+import Control.Monad ( liftM2, void, zipWithM, replicateM, forM_, foldM )
 import Control.Monad.Extra ( concatMapM )
 import Control.Monad.State ( evalStateT, modify, gets, liftIO, StateT )
 import Data.List ( nub, (\\), find )
@@ -173,7 +173,7 @@ checkGroup ds = do
   constraints <- Set.unions <$> (mapM checkDecl ds >>= sequence)
   res <- Map.map abstractDetScheme . extractTopEnv <$> solveConstraints constraints
   liftIO $ putStrLn $ render $ pPrint $ Map.toList res
-  -- by unioning with the old environment to the right, we make sure that
+  -- By unioning with the old environment to the right, we make sure that
   -- we retain any signatures that were already present, such as user supplied ones.
   -- This ensures that we do not get follow up errors from incorrect function definitions.
   -- We take all user supplied signatures as ground truth.
@@ -675,42 +675,49 @@ checkInstanceDecl _ _ _ = return $ return Set.empty
 
 solveConstraints :: Set DetConstraint -> DM NestDetEnv
 solveConstraints constraints = do
+  liftIO $ putStrLn $ render $ pPrint $ Set.toList constraints
   let grps = scc defs uses $ Set.toAscList constraints
-  let solved = foldl solveGroup Map.empty grps
+  liftIO $ putStrLn $ render $ pPrint $ grps
+  solved <- foldM solveGroup Map.empty grps
   lcl <- gets localDetEnv
   return $ mapNestEnv (`substDetSchema` solved) lcl
   where
+    -- TODO: useless to group this
     defs (AppliedType v w _) = [v, w]
     defs (EqualType v ty) = v : detTypeVars ty
     uses (AppliedType v w ty) = v : w : concatMap detTypeVars ty
     uses (EqualType v ty) = v : detTypeVars ty
 
-solveGroup :: Map VarIndex DetType -> [DetConstraint] -> Map VarIndex DetType
+-- TODO not monadic
+solveGroup :: Map VarIndex DetType -> [DetConstraint] -> DM (Map VarIndex DetType)
 solveGroup solutions = go Map.empty . map (`substCon` solutions)
   where
-    go current [] = Map.union current solutions
-    go current (c:cs) = case c of
-      AppliedType v w tys ->
-        case Map.lookup w current of
-          -- Applied types are always the last entries in the list,
-          -- so w can only be constrained by an applied type.
-          Nothing -> go current cs
-          Just ty -> case Map.lookup v current of
-            Nothing -> go (Map.insert v (applyTy ty tys) current) cs
-            Just ty' -> case unify ty' (applyTy ty tys) current cs of
-              (new, cs') -> go (Map.insert v new current)  cs' -- TODO: Might fail if v has been equated to Det already and application is Nondet
-      EqualType v ty
-        | ty == VarTy v -> go current cs
-        | v `elem` detTypeVars ty -> go (Map.insert v Nondet current) cs
-        | otherwise ->
-          case Map.lookup v current of
-            Nothing ->
-              let new = Map.singleton v ty
-              in go (Map.insert v ty (Map.map (`substDetTy` new) current)) (map (`substCon` new) cs)
-            Just ty' -> case unify ty ty' current cs of
-              (newTy, cs')  ->
-                let new = Map.singleton v newTy
-                in go (Map.insert v newTy (Map.map (`substDetTy` new) current)) (map (`substCon` new) cs')
+    go current [] = return $ Map.union current solutions
+    go current (c:cs) = do
+      liftIO $ putStrLn $ render $ pPrint $ Map.toList current
+      liftIO $ putStrLn $ render $ pPrint c
+      case c of
+        AppliedType v w tys ->
+          case Map.lookup w current of
+            -- Applied types are always the last entries in the list,
+            -- so w can only be constrained by an applied type.
+            Nothing -> go current cs
+            Just ty -> case Map.lookup v current of
+              Nothing -> go (Map.insert v (applyTy ty tys) current) cs
+              Just ty' -> case unify ty' (applyTy ty tys) current cs of
+                (new, cs') -> go (Map.insert v new current)  cs' -- TODO: Might fail if v has been equated to Det already and application is Nondet
+        EqualType v ty
+          | ty == VarTy v -> go current cs
+          | v `elem` detTypeVars ty -> go (Map.insert v Nondet current) cs
+          | otherwise ->
+            case Map.lookup v current of
+              Nothing ->
+                let new = Map.singleton v ty
+                in go (Map.insert v ty (Map.map (`substDetTy` new) current)) (map (`substCon` new) cs)
+              Just ty' -> case unify ty ty' current cs of
+                (newTy, cs')  ->
+                  let new = Map.singleton v newTy
+                  in go (Map.insert v newTy (Map.map (`substDetTy` new) current)) (map (`substCon` new) cs')
 
     -- returns the combined list of old constraints and the new ones that have to hold,
     -- and the new type to be used for the variable in question

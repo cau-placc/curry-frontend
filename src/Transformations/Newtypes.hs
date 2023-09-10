@@ -14,12 +14,8 @@
   declarations are replaced by type synonyms and partial applications of
   newtype constructors are changed into calls to 'Prelude.id'.
 -}
-{-# LANGUAGE CPP #-}
 module Transformations.Newtypes (removeNewtypes) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative        ((<$>), (<*>))
-#endif
 import qualified Control.Monad.Reader as R
 
 import Curry.Base.Ident

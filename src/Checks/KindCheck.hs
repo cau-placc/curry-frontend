@@ -8,21 +8,14 @@
     Stability   :  experimental
     Portability :  portable
 
-   After the type syntax has been checked und nullary type constructors and
-   type variables have been disambiguated, the compiler infers kinds for all
-   type constructors and type classes defined in the current module and
-   performs kind checking on all type definitions and type signatures.
+    After the type syntax has been checked und nullary type constructors and
+    type variables have been disambiguated, the compiler infers kinds for all
+    type constructors and type classes defined in the current module and
+    performs kind checking on all type definitions and type signatures.
 -}
-{-# LANGUAGE CPP #-}
 module Checks.KindCheck (kindCheck) where
 
-
-import Prelude hiding ((<>))
-
-
-
-
-
+import           Prelude                  hiding ((<>))
 import           Control.Monad            (when, foldM)
 import           Control.Monad.Fix        (mfix)
 import qualified Control.Monad.State as S (State, runState, gets, modify)

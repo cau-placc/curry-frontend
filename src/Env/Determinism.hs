@@ -1,3 +1,4 @@
+{- TODO -}
 module Env.Determinism where
 
 import Prelude hiding ( (<>) )
@@ -6,7 +7,7 @@ import qualified Data.Map as Map
 
 import Base.Types ( DetScheme(..), DetType(..), VarIndex )
 import Curry.Base.Ident ( QualIdent )
-import Curry.Base.Pretty ( Pretty(..), parens, dot, (<+>), (<>) )
+import Curry.Base.Pretty ( Pretty(..), parens, dot, (<+>), (<>), text, hsep )
 
 type DetEnv = Map IdentInfo DetScheme
 type TopDetEnv = DetEnv
@@ -66,3 +67,7 @@ flattenNestEnv (LocalEnv env lcl) = Map.union lcl (flattenNestEnv env)
 data DetConstraint = EqualType VarIndex DetType -- v ~ alpha
                    | AppliedType VarIndex VarIndex [DetType] -- v ~ y @ alpha1 ... alphan
   deriving (Eq, Ord, Show)
+
+instance Pretty DetConstraint where
+  pPrint (EqualType v ty) = pPrint v <+> text "~" <+> pPrint ty
+  pPrint (AppliedType v y tys) = pPrint v <+> text "~" <+> pPrint y <+> text "@" <+> hsep (map pPrint tys)

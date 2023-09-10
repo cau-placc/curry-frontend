@@ -25,8 +25,9 @@ module Curry.FlatCurry.Type
   , CombType (..), CaseType (..), BranchExpr (..), Pattern (..)
   ) where
 
-import Data.Binary  (Binary)
-import GHC.Generics (Generic)
+import Control.DeepSeq (NFData)
+import Data.Binary     (Binary)
+import GHC.Generics    (Generic)
 
 -- ---------------------------------------------------------------------------
 -- Qualified names
@@ -54,7 +55,7 @@ type VarIndex = Int
 data Visibility
   = Public    -- ^ public (exported) entity
   | Private   -- ^ private entity
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, NFData)
 
 -- |A FlatCurry module.
 --
@@ -70,7 +71,7 @@ data Visibility
 -- [@funcdecls@] Function declarations
 -- [@ opdecls@]  Operator declarations
 data Prog = Prog String [String] [TypeDecl] [FuncDecl] [OpDecl]
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, NFData)
 
 -- |Declaration of algebraic data type or type synonym.
 --
@@ -93,7 +94,7 @@ data TypeDecl
   = Type    QName Visibility [TVarWithKind] [ConsDecl]
   | TypeSyn QName Visibility [TVarWithKind] TypeExpr
   | TypeNew QName Visibility [TVarWithKind] NewConsDecl
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, NFData)
 
 -- |Type variables are represented by @(TVar i)@ where @i@ is a
 -- type variable index.
@@ -106,13 +107,13 @@ type TVarWithKind = (TVarIndex, Kind)
 -- |A constructor declaration consists of the name and arity of the
 -- constructor and a list of the argument types of the constructor.
 data ConsDecl = Cons QName Int Visibility [TypeExpr]
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, NFData)
 
 -- |A constructor declaration for a newtype consists
 -- of the name of the constructor
 -- and the argument type of the constructor.
 data NewConsDecl = NewCons QName Visibility TypeExpr
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, NFData)
 
 -- |Type expressions.
 --
@@ -127,7 +128,7 @@ data TypeExpr
   | FuncType    TypeExpr TypeExpr       -- ^ function type @t1 -> t2@
   | TCons QName [TypeExpr]              -- ^ type constructor application
   | ForallType  [TVarWithKind] TypeExpr -- ^ forall type
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, NFData)
 
 -- |Kinds.
 --
@@ -135,7 +136,7 @@ data TypeExpr
 data Kind
   = KStar            -- ^ star kind
   | KArrow Kind Kind -- ^ arrow kind
- deriving (Eq, Ord, Read, Show, Generic, Binary)
+ deriving (Eq, Ord, Read, Show, Generic, Binary, NFData)
 
 -- |Operator declarations.
 --
@@ -146,14 +147,14 @@ data Kind
 -- PAKCS definition using Haskell type 'Integer' instead of 'Int'
 -- for representing the precedence.
 data OpDecl = Op QName Fixity Integer
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, NFData)
 
 -- |Fixity of an operator.
 data Fixity
   = InfixOp  -- ^ non-associative infix operator
   | InfixlOp -- ^ left-associative infix operator
   | InfixrOp -- ^ right-associative infix operator
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, NFData)
 
 -- |Data type for representing function declarations.
 --
@@ -181,14 +182,14 @@ data Fixity
 --
 -- Thus, a function declaration consists of the name, arity, type, and rule.
 data FuncDecl = Func QName Int Visibility TypeExpr Rule
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, NFData)
 
 -- |A rule is either a list of formal parameters together with an expression
 -- or an 'External' tag.
 data Rule
   = Rule [VarIndex] Expr
   | External String
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, NFData)
 
 -- |Data type for representing expressions.
 --
@@ -283,7 +284,7 @@ data Expr
   | Case CaseType Expr [BranchExpr]
   -- |typed expression
   | Typed Expr TypeExpr
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, NFData)
 
 -- |Data type for representing literals.
 --
@@ -298,7 +299,7 @@ data Literal
   = Intc   Integer
   | Floatc Double
   | Charc  Char
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, NFData)
 
 -- |Data type for classifying combinations
 -- (i.e., a function/constructor applied to some arguments).
@@ -312,13 +313,13 @@ data CombType
   | FuncPartCall Int
   -- |a partial call to a constructor along with number of missing arguments
   | ConsPartCall Int
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, NFData)
 
 -- |Classification of case expressions, either flexible or rigid.
 data CaseType
   = Rigid
   | Flex
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, NFData)
 
 -- |Branches in a case expression.
 --
@@ -333,10 +334,10 @@ data CaseType
 -- for integers as branch patterns (similarly for other literals
 -- like float or character constants).
 data BranchExpr = Branch Pattern Expr
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, NFData)
 
 -- |Patterns in case expressions.
 data Pattern
   = Pattern QName [VarIndex]
   | LPattern Literal
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, NFData)

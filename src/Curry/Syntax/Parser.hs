@@ -582,7 +582,6 @@ classDecl = mkClass
         <$> classInstHead KW_class tycls clsvar
         <*> whereClause innerDecl
   where
-    --TODO: Refactor by left-factorization
     --TODO: Support infixDecl
     innerDecl = detSig <|> foldr1 (<|?>)
       [ spanPosition <**> (fun `sepBy1Sp` comma <**> typeSig)
@@ -751,7 +750,6 @@ pattern0 = pattern1 `chainr1` (mkInfixPattern <$> gconop)
 -- pattern1 ::= varId
 --           |  QConId { pattern2 }
 --           |  '-'  Integer
---           |  '-.' Float
 --           |  '(' parenPattern'
 --           | pattern2
 pattern1 :: Parser a Token (Pattern ())
@@ -806,7 +804,13 @@ identPattern :: Parser a Token (Pattern ())
 identPattern =  varId <**> optAsRecPattern -- unqualified
             <|> qConId <\> varId <**> optRecPattern               -- qualified
 
--- TODO: document me!
+-- parenPattern ::= '(' '-' minusPattern              -- e.g. (-5), (-4 + x), etc...
+--               |  "TupleConstructor"                -- in prefix notation, e.g. (,,,)
+--               |  '(' funSymbol ')' optAsRecPattern -- e.g. (<<>)@p
+--               |  '(' parenTuplePattern ')'         -- e.g. (x,y,z), (p)
+--
+-- minusPattern ::= ')' optAsRecPattern               -- if you want to shadow "-" locally
+--               |  parenMinusPattern ')'             -- e.g. -x), -x + y), etc...
 parenPattern :: Parser a Token (Pattern ())
 parenPattern = tokenSpan LeftParen <**> parenPattern'
   where
@@ -938,7 +942,7 @@ expr0 = expr1 `chainr1` (mkInfixApply <$> infixOp)
   where mkInfixApply op e1 e2 = InfixApply
           (fromSrcSpan (combineSpans (getSrcSpan e1) (getSrcSpan e2))) e1 op e2
 
--- expr1 ::= - expr2 | -. expr2 | expr2
+-- expr1 ::= - expr2 | expr2
 expr1 :: Parser a Token (Expression ())
 expr1 =  mkUnaryMinus <$> minus <*> expr2
      <|> expr2

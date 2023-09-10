@@ -148,7 +148,6 @@ sourceExts :: [String]
 sourceExts = [curryExt, lcurryExt]
 
 -- |Filename extension for curry module files
--- TODO: Is the order correct?
 moduleExts :: [String]
 moduleExts = sourceExts ++ [icurryExt]
 

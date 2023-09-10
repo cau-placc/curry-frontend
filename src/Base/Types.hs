@@ -13,23 +13,20 @@
     Stability   :  experimental
     Portability :  portable
 
-   This module modules provides the definitions for the internal
-   representation of types in the compiler along with some helper functions.
-   It also exports the functions 'toType', 'toTypes', and 'fromType'
-   which convert Curry type expressions into types and vice versa.
-   The functions 'qualifyType' and 'unqualifyType' add and remove
-   module qualifiers in a type, respectively.
+    This module modules provides the definitions for the internal
+    representation of types in the compiler along with some helper functions.
+    It also exports the functions 'toType', 'toTypes', and 'fromType'
+    which convert Curry type expressions into types and vice versa.
+    The functions 'qualifyType' and 'unqualifyType' add and remove
+    module qualifiers in a type, respectively.
 
-   When Curry type expression are converted with 'toType' or 'toTypes',
-   type variables are assigned ascending indices in the order of their
-   occurrence. It is possible to pass a list of additional type variables
-   to both functions which are assigned indices before those variables
-   occurring in the type. This allows preserving the order of type variables
-   in the left hand side of a type declaration.
+    When Curry type expression are converted with 'toType' or 'toTypes',
+    type variables are assigned ascending indices in the order of their
+    occurrence. It is possible to pass a list of additional type variables
+    to both functions which are assigned indices before those variables
+    occurring in the type. This allows preserving the order of type variables
+    in the left hand side of a type declaration.
 -}
-
--- TODO: Use MultiParamTypeClasses ?
-
 module Base.Types
   ( -- * Representation of types
     Type (..), applyType, unapplyType, rootOfType

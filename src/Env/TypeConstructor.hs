@@ -45,7 +45,6 @@
     exported at all in order to make the interface more stable against
     changes which are private to the module.
 -}
-{-# LANGUAGE CPP #-}
 module Env.TypeConstructor
   ( TypeInfo (..), tcKind, clsKind, varKind, clsMethods
   , TCEnv, initTCEnv, bindTypeInfo, rebindTypeInfo
@@ -53,9 +52,8 @@ module Env.TypeConstructor
   , getOrigName, reverseLookupByOrigName
   ) where
 
-#if __GLASGOW_HASKELL__ >= 804
 import Prelude hiding ((<>))
-#endif
+import Text.PrettyPrint
 
 import Curry.Base.Ident
 import Curry.Base.Pretty (Pretty(..), blankLine)
@@ -66,7 +64,6 @@ import Base.TopEnv
 import Base.Types
 import Base.Utils         ((++!))
 
-import Text.PrettyPrint
 
 data TypeInfo
   = DataType     QualIdent Kind [DataConstr]

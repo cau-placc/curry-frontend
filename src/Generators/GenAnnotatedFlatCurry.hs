@@ -12,11 +12,7 @@
     This module contains the generation of a type-annotated 'FlatCurry'
     program term for a given module in the intermediate language.
 -}
-{-# LANGUAGE CPP #-}
 module Generators.GenAnnotatedFlatCurry (genAnnotatedFlatCurry) where
-
-
-
 
 import           Control.Monad              ((<=<))
 import           Control.Monad.Extra        (concatMapM)

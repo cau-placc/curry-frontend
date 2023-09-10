@@ -16,14 +16,10 @@
     information between Curry modules. This is used to create Makefile
     dependencies and to update programs composed of multiple modules.
 -}
-{-# LANGUAGE CPP #-}
 module CurryDeps
   ( Source (..), flatDeps, deps, flattenDeps, sourceDeps, moduleDeps ) where
 
-#if __GLASGOW_HASKELL__ >= 804
-import Prelude hiding ((<>))
-#endif
-
+import           Prelude         hiding ((<>))
 import           Control.Monad   (foldM)
 import           Data.List       (isSuffixOf, nub)
 import qualified Data.Map as Map (Map, empty, insert, lookup, toList)

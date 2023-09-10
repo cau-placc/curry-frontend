@@ -108,7 +108,13 @@ instance Symbol Token where
                                         in  (ld, cd + 11)
   dist _ _                            = (0, 0)
 
--- TODO: Comment
+-- For strings and nested comments, which are the only tokens that might span more than a colum,
+-- we potentially have to update the column distance when computing the distance between
+-- the start and end position of a token. If the line distance is zero,
+-- the token does not span more than one line and the column distance is not changed.
+-- Otherwise, the column distance is reduced by the start column position given in the first argument.
+-- Note that we add 1 to that new distance,
+-- since the column distance is the number of characters between the start and end column.
 updColDist :: Int -> Distance -> Distance
 updColDist c (ld, cd) = (ld, if ld == 0 then cd else cd - c + 1)
 
@@ -401,7 +407,7 @@ idTok :: Category -> [String] -> String -> Token
 idTok t mIdent ident = Token t
   IdentAttributes { modulVal = mIdent, sval = ident }
 
--- TODO
+-- |Construct a 'Token' for the options pragma
 pragmaOptionsTok :: Maybe String -> String -> Token
 pragmaOptionsTok mbTool s = Token PragmaOptions
   OptionsAttributes { toolVal = mbTool, toolArgs = s }

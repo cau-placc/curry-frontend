@@ -2,20 +2,25 @@
   Module      :  $Header$
   Description :  Deriving instances
   Copyright   :  (c) 2016        Finn Teegen
+                     2023        Kai-Oliver Prott
   License     :  BSD-3-clause
 
-  Maintainer  :  bjp@informatik.uni-kiel.de
+  Maintainer  :  kpr@informatik.uni-kiel.de
   Stability   :  experimental
   Portability :  portable
 
-  TODO
+  The transformation defined in this module adds
+  derived type class instances according to the
+  previously checked deriving clauses give by the user.
+
+  None of the compiler environments are changed by this transformation.
+  However, the transformation returns the new module,
+  which does not contain any deriving clauses anymore.
+  Instead of these clauses, the derived instances
+  are added to the module.
 -}
-{-# LANGUAGE CPP #-}
 module Transformations.Derive (derive) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative      ((<$>))
-#endif
 import qualified Control.Monad.State as S (State, evalState, gets, modify)
 import           Data.List         (intercalate, intersperse)
 import           Data.Maybe        (fromJust, isJust)
@@ -74,8 +79,6 @@ getNextId = do
   nid <- S.gets nextId
   S.modify $ \s -> s { nextId = succ nid }
   return nid
-
--- TODO: Comment (here and below)
 
 type ConstrInfo = (Int, QualIdent, Maybe [Ident], [Type])
 

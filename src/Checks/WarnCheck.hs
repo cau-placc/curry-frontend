@@ -14,13 +14,9 @@
     This module searches for potentially irregular code and generates
     warning messages.
 -}
-{-# LANGUAGE CPP #-}
 module Checks.WarnCheck (warnCheck) where
 
-#if __GLASGOW_HASKELL__ >= 804
-import Prelude hiding ((<>))
-#endif
-
+import           Prelude hiding ((<>))
 import           Control.Applicative
   ((<|>))
 import           Control.Monad
@@ -145,7 +141,8 @@ runOn s f = sort $ warnings $ execState f s
 -- checkExports
 -- ---------------------------------------------------------------------------
 
-checkExports :: Maybe ExportSpec -> WCM () -- TODO checks
+-- TODO: Add more checks (see GHC)
+checkExports :: Maybe ExportSpec -> WCM ()
 checkExports Nothing                      = ok
 checkExports (Just (Exporting _ exports)) = do
   mapM_ visitExport exports
@@ -280,7 +277,7 @@ checkDecl (InstanceDecl p _ cx cls ty ds) = do
   mapM_ checkDecl ds
 checkDecl _                             = ok
 
---TODO: shadowing und context etc.
+--TODO: Add shadowing warnings
 checkConstrDecl :: ConstrDecl -> WCM ()
 checkConstrDecl (ConstrDecl     _ c tys) = inNestedScope $ do
   visitId c

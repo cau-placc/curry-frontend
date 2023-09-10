@@ -13,7 +13,6 @@
     from Hughes and Peyton-Jones. In addition, it re-exports the type class
     'Pretty' for pretty printing arbitrary types.
 -}
-{-# LANGUAGE CPP #-}
 module Curry.Base.Pretty
   ( module Curry.Base.Pretty
   , module Text.PrettyPrint

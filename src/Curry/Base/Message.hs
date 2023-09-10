@@ -12,17 +12,13 @@
     The type message represents a compiler message with an optional source
     code position.
 -}
-{-# LANGUAGE CPP #-}
 module Curry.Base.Message
   ( Message (..), message, posMessage, spanMessage, spanInfoMessage
   , showWarning, showError
   , ppMessage, ppWarning, ppError, ppMessages, ppMessagesWithPreviews
   ) where
 
-#if __GLASGOW_HASKELL__ >= 804
 import Prelude hiding ((<>))
-#endif
-
 import Curry.Base.Position
 import Curry.Base.Pretty
 import Curry.Base.Span

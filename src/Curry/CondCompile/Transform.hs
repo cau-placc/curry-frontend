@@ -1,15 +1,23 @@
 {- |
     Module      :  $Header$
     Description :  Conditional compiling transformation
-    Copyright   :  (c) 2017        Kai-Oliver Prott
-                       2017        Finn Teegen
+    Copyright   :  (c) 2017        Finn Teegen
+                       2017 - 2023 Kai-Oliver Prott
     License     :  BSD-3-clause
 
-    Maintainer  :  fte@informatik.uni-kiel.de
+    Maintainer  :  kpr@informatik.uni-kiel.de
     Stability   :  experimental
     Portability :  portable
 
-    TODO
+    This module defines the transformation of a program
+    with respect to its conditional compiling directives.
+
+    The result of the transformation is a program where
+    all directives are removed and the corresponding lines
+    are either included or excluded, depending on the
+    definitions of the conditional compiling directives.
+
+    Any removed lines are replaced by empty lines.
 -}
 module Curry.CondCompile.Transform (condTransform) where
 
@@ -41,7 +49,7 @@ transformWith s p = show $ pPrint $ evalState (transform p) s
 
 convertError :: ParseError -> Message
 convertError err = posMessage pos $
-  foldr ($+$) empty $ map text $ tail $ lines $ show err
+  foldr (($+$) . text) empty (tail $ lines $ show err)
   where pos = Position (sourceName src) (sourceLine src) (sourceColumn src)
         src = errorPos err
 
@@ -95,7 +103,7 @@ instance FillLength Stmt where
   fillLength (Define _ _         ) = 1
   fillLength (Undef  _           ) = 1
   fillLength (If     _ stmts is e) =
-    3 + fillLength stmts + fillLength e + fillLength is
+    2 + fillLength stmts + fillLength e + fillLength is
   fillLength (IfDef  v stmts is e) = fillLength (If (Defined  v) stmts is e)
   fillLength (IfNDef v stmts is e) = fillLength (If (NDefined v) stmts is e)
 
