@@ -699,7 +699,6 @@ data DetType = VarTy VarIndex
 data DetScheme = Forall [VarIndex] DetType
   deriving (Eq, Ord, Show)
 
-
 toDetExpr :: DetScheme -> CS.DetExpr
 toDetExpr (Forall _ ty) = tyToDetExpr ty
 

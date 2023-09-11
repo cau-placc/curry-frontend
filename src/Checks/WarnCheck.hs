@@ -5,15 +5,17 @@
                        2011 - 2014 Björn Peemöller
                        2014 - 2015 Jan Tikovsky
                        2016 - 2017 Finn Teegen
+                       2017 - 2023 Kai-Oliver Prott
     License     :  BSD-3-clause
 
-    Maintainer  :  bjp@informatik.uni-kiel.de
+    Maintainer  :  kpr@informatik.uni-kiel.de
     Stability   :  experimental
     Portability :  portable
 
     This module searches for potentially irregular code and generates
     warning messages.
 -}
+{-# LANGUAGE TupleSections #-}
 module Checks.WarnCheck (warnCheck) where
 
 import           Prelude hiding ((<>))
@@ -21,14 +23,18 @@ import           Control.Applicative
   ((<|>))
 import           Control.Monad
   (filterM, foldM_, guard, liftM, liftM2, when, unless, void)
-import           Control.Monad.State.Strict    (State, execState, gets, modify)
+import           Control.Monad.State.Strict
+  (State, execState, gets, modify)
 import qualified Data.IntSet         as IntSet
   (IntSet, empty, insert, notMember, singleton, union, unions)
-import qualified Data.Map            as Map    (empty, insert, lookup, (!))
+import           Data.Map
+  (Map)
+import qualified Data.Map            as Map
+  (empty, insert, lookup, (!), fromList, union)
 import           Data.Maybe
   (catMaybes, fromMaybe, listToMaybe, isJust)
 import           Data.List
-  ((\\), intersect, intersectBy, nub, sort, unionBy)
+  ((\\), intersect, intersectBy, nub, sort, unionBy, find)
 import           Data.Char
   (isLower, isUpper, toLower, toUpper, isAlpha)
 import qualified Data.Set.Extra as Set
@@ -52,7 +58,7 @@ import Base.Utils (findMultiples)
 import Env.ModuleAlias (AliasEnv)
 import Env.Class (ClassEnv, visibleClassMethods, hasDefaultImpl)
 import Env.TypeConstructor ( TCEnv, TypeInfo (..), lookupTypeInfo
-                           , qualLookupTypeInfo, getOrigName )
+                           , qualLookupTypeInfo, getOrigName, qualLookupTypeInfoUnique )
 import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 
 import CompilerOpts
@@ -70,15 +76,15 @@ import CompilerOpts
 warnCheck :: WarnOpts -> CaseMode -> AliasEnv -> ValueEnv -> TCEnv -> ClassEnv
           -> Module a -> [Message]
 warnCheck wOpts cOpts aEnv valEnv tcEnv clsEnv mdl
-  = runOn (initWcState mid aEnv valEnv tcEnv clsEnv (wnWarnFlags wOpts) cOpts) $ do
-      checkImports   is
-      checkDeclGroup ds
-      checkExports   es
+  = runOn (initWcState mid aEnv valEnv tcEnv clsEnv (wnWarnFlags wOpts) cOpts ds) $ do
+      checkImports is
+      checkDeclGroup False ds
+      checkExports es
       checkMissingTypeSignatures ds
       checkModuleAlias is
-      checkCaseMode  ds
+      checkCaseMode ds
       checkRedContext ds
-  where Module _ _ _ mid es is ds = fmap (const ()) mdl
+  where Module _ _ _ mid es is ds = void mdl
 
 type ScopeEnv = NestEnv IdInfo
 
@@ -93,6 +99,7 @@ data WcState = WcState
   , warnFlags   :: [WarnFlag]
   , caseMode    :: CaseMode
   , warnings    :: [Message]
+  , signatures  :: Map Ident DetExpr
   }
 
 -- The monadic representation of the state allows the usage of monadic
@@ -101,11 +108,15 @@ data WcState = WcState
 type WCM = State WcState
 
 initWcState :: ModuleIdent -> AliasEnv -> ValueEnv -> TCEnv -> ClassEnv
-            -> [WarnFlag] -> CaseMode -> WcState
-initWcState mid ae ve te ce wf cm = WcState mid emptyEnv ae ve te ce wf cm []
+            -> [WarnFlag] -> CaseMode -> [Decl a] -> WcState
+initWcState mid ae ve te ce wf cm ds = WcState mid emptyEnv ae ve te ce wf cm [] $
+  Map.fromList $ concat $ [ map (,s) is | DetSig _ is s <- ds ]
 
 getModuleIdent :: WCM ModuleIdent
 getModuleIdent = gets moduleId
+
+getDetSignatures :: WCM (Map Ident DetExpr)
+getDetSignatures = gets signatures
 
 modifyScope :: (ScopeEnv -> ScopeEnv) -> WCM ()
 modifyScope f = modify $ \s -> s { scope = f $ scope s }
@@ -176,14 +187,14 @@ checkImports = warnFor WarnMultipleImports . foldM_ checkImport Map.empty
         setImportSpec env mid (is', hs)
     | null iis  = setImportSpec env mid (is' ++ is, hs)
     | otherwise = do
-        mapM_ (report . (warnMultiplyImportedSymbol mid) . impName) iis
+        mapM_ (report . warnMultiplyImportedSymbol mid . impName) iis
         setImportSpec env mid (unionBy cmpImport is' is, hs)
     where iis = intersectBy cmpImport is' is
 
   checkImportSpec env _ mid (is, hs) (Just (Hiding _ hs'))
     | null ihs  = setImportSpec env mid (is, hs' ++ hs)
     | otherwise = do
-        mapM_ (report . (warnMultiplyHiddenSymbol mid) . impName) ihs
+        mapM_ (report . warnMultiplyHiddenSymbol mid . impName) ihs
         setImportSpec env mid (is, unionBy cmpImport hs' hs)
     where ihs = intersectBy cmpImport hs' hs
 
@@ -194,8 +205,8 @@ checkImports = warnFor WarnMultipleImports . foldM_ checkImport Map.empty
   setImportSpec env mid ishs = return $ Map.insert mid ishs env
 
   cmpImport (ImportTypeWith _ id1 cs1) (ImportTypeWith _ id2 cs2)
-    = id1 == id2 && null (intersect cs1 cs2)
-  cmpImport i1 i2 = (impName i1) == (impName i2)
+    = id1 == id2 && null (cs1 `intersect` cs2)
+  cmpImport i1 i2 = impName i1 == impName i2
 
   impName (Import           _ v) = v
   impName (ImportTypeAll    _ t) = t
@@ -219,16 +230,16 @@ warnMultiplyHiddenSymbol mid ident = spanInfoMessage ident $ hsep $ map text
 -- checkDeclGroup
 -- ---------------------------------------------------------------------------
 
-checkDeclGroup :: [Decl ()] -> WCM ()
-checkDeclGroup ds = do
-  mapM_ insertDecl   ds
-  mapM_ checkDecl    ds
+checkDeclGroup :: Bool -> [Decl ()] -> WCM ()
+checkDeclGroup hasSig ds = do
+  mapM_ insertDecl ds
+  mapM_ (checkDecl hasSig) ds
   checkRuleAdjacency ds
 
-checkLocalDeclGroup :: [Decl ()] -> WCM ()
-checkLocalDeclGroup ds = do
+checkLocalDeclGroup :: Bool -> [Decl ()] -> WCM ()
+checkLocalDeclGroup hasSig ds = do
   mapM_ checkLocalDecl ds
-  checkDeclGroup       ds
+  checkDeclGroup hasSig ds
 
 -- ---------------------------------------------------------------------------
 -- Find function rules which are disjoined
@@ -254,28 +265,45 @@ warnDisjoinedFunctionRules ident pos = spanInfoMessage ident $ hsep (map text
   [ "Rules for function", escName ident, "are disjoined" ])
   <+> parens (text "first occurrence at" <+> text (showLine pos))
 
-checkDecl :: Decl () -> WCM ()
-checkDecl (DataDecl          _ _ vs cs _) = inNestedScope $ do
+checkDecl :: Bool -> Decl () -> WCM ()
+checkDecl _      (DataDecl          _ _ vs cs _) = inNestedScope $ do
   mapM_ insertTypeVar   vs
   mapM_ checkConstrDecl cs
   reportUnusedTypeVars  vs
-checkDecl (NewtypeDecl       _ _ vs nc _) = inNestedScope $ do
+checkDecl _      (NewtypeDecl       _ _ vs nc _) = inNestedScope $ do
   mapM_ insertTypeVar   vs
   checkNewConstrDecl nc
   reportUnusedTypeVars vs
-checkDecl (TypeDecl            _ _ vs ty) = inNestedScope $ do
+checkDecl _      (TypeDecl            _ _ vs ty) = inNestedScope $ do
   mapM_ insertTypeVar  vs
   checkTypeExpr ty
   reportUnusedTypeVars vs
-checkDecl (FunctionDecl        p _ f eqs) = checkFunctionDecl p f eqs
-checkDecl (PatternDecl           _ p rhs) = checkPattern p >> checkRhs rhs
-checkDecl (DefaultDecl             _ tys) = mapM_ checkTypeExpr tys
-checkDecl (ClassDecl        _ _ _ _ _ ds) = mapM_ checkDecl ds
-checkDecl (InstanceDecl p _ cx cls ty ds) = do
+checkDecl hasSig (FunctionDecl        p _ f eqs) = do
+  sigs <- getDetSignatures
+  case Map.lookup f sigs of
+    Nothing -> checkFunctionDecl p f hasSig eqs
+    Just _  -> do
+      checkFunctionDecl p f True eqs
+checkDecl hasSig (PatternDecl           _ p rhs) = checkPattern p >> checkRhs hasSig rhs
+checkDecl _      (DefaultDecl             _ tys) = mapM_ checkTypeExpr tys
+checkDecl _      (ClassDecl        _ _ _ _ _ ds) = do
+  let clsSigs = concat [ map (,s) is | DetSig _ is s <- ds]
+  modify (\s -> s { signatures = Map.fromList clsSigs `Map.union` signatures s})
+  mapM_ (checkDecl False) ds
+checkDecl _      (InstanceDecl p _ cx cls ty ds) = do
   checkOrphanInstance p cx cls ty
   checkMissingMethodImplementations p cls ds
-  mapM_ checkDecl ds
-checkDecl _                             = ok
+  mid <- getModuleIdent
+  tcEnv <- gets tyConsEnv
+  let meths = case qualLookupTypeInfoUnique mid cls tcEnv of
+        [TypeClass _ _ meths'] -> meths'
+        _ -> internalError $ "Checks.WarnCheck.checkDecl: " ++ show cls
+      go d@(FunctionDecl _ _ f _) = do
+        let hasSig = isJust $ find ((==f) . methodName) meths >>= methodDetSchemeAnn
+        checkDecl hasSig d
+      go d = checkDecl False d
+  mapM_ go ds
+checkDecl _      _                             = ok
 
 --TODO: Add shadowing warnings
 checkConstrDecl :: ConstrDecl -> WCM ()
@@ -319,20 +347,21 @@ checkLocalDecl (FreeDecl        _ vs) = mapM_ (checkShadowing . varIdent) vs
 checkLocalDecl (PatternDecl    _ p _) = checkPattern p
 checkLocalDecl _                      = ok
 
-checkFunctionDecl :: SpanInfo -> Ident -> [Equation ()] -> WCM ()
-checkFunctionDecl _ _ []  = ok
-checkFunctionDecl p f eqs = inNestedScope $ do
-  mapM_ checkEquation eqs
-  checkFunctionPatternMatch p f eqs
+checkFunctionDecl :: SpanInfo -> Ident -> Bool -> [Equation ()] -> WCM ()
+checkFunctionDecl _ _ _ []  = ok
+checkFunctionDecl p f hasSig eqs = inNestedScope $ do
+  mapM_ (checkEquation hasSig) eqs
+  checkFunctionPatternMatch p f hasSig eqs
 
-checkFunctionPatternMatch :: SpanInfo -> Ident -> [Equation ()] -> WCM ()
-checkFunctionPatternMatch spi f eqs = do
+checkFunctionPatternMatch :: SpanInfo -> Ident -> Bool -> [Equation ()] -> WCM ()
+checkFunctionPatternMatch spi f hasSig eqs = do
   let pats = map (\(Equation _ lhs _) -> snd (flatLhs lhs)) eqs
   let guards = map eq2Guards eqs
   (nonExhaustive, overlapped, nondet) <- checkPatternMatching pats guards
   unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
     warnMissingPattern spi ("an equation for " ++ escName f) nonExhaustive
-  when (nondet || not (null overlapped)) $ warnFor WarnOverlapping $ report $
+  when (not hasSig && (nondet || not (null overlapped))) $
+    warnFor WarnOverlapping $ report $
     warnNondetOverlapping spi ("Function " ++ escName f)
   where eq2Guards :: Equation () -> [CondExpr ()]
         eq2Guards (Equation _ _ (GuardedRhs _ _ conds _)) = conds
@@ -341,10 +370,10 @@ checkFunctionPatternMatch spi f eqs = do
 -- Check an equation for warnings.
 -- This is done in a seperate scope as the left-hand-side may introduce
 -- new variables.
-checkEquation :: Equation () -> WCM ()
-checkEquation (Equation _ lhs rhs) = inNestedScope $ do
+checkEquation :: Bool -> Equation () -> WCM ()
+checkEquation hasSig (Equation _ lhs rhs) = inNestedScope $ do
   checkLhs lhs
-  checkRhs rhs
+  checkRhs hasSig rhs
   reportUnusedVars
 
 checkLhs :: Lhs a -> WCM ()
@@ -376,75 +405,77 @@ checkPattern _                            = ok
 -- Check the right-hand-side of an equation.
 -- Because local declarations may introduce new variables, we need
 -- another scope nesting.
-checkRhs :: Rhs () -> WCM ()
-checkRhs (SimpleRhs _ _ e ds) = inNestedScope $ do
-  checkLocalDeclGroup ds
-  checkExpr e
+checkRhs :: Bool -> Rhs () -> WCM ()
+checkRhs hasSig (SimpleRhs _ _ e ds) = inNestedScope $ do
+  checkLocalDeclGroup hasSig ds
+  checkExpr hasSig e
   reportUnusedVars
-checkRhs (GuardedRhs _ _ ce ds) = inNestedScope $ do
-  checkLocalDeclGroup ds
-  mapM_ checkCondExpr ce
+checkRhs hasSig (GuardedRhs _ _ ce ds) = inNestedScope $ do
+  checkLocalDeclGroup hasSig ds
+  mapM_ (checkCondExpr hasSig) ce
   reportUnusedVars
 
-checkCondExpr :: CondExpr () -> WCM ()
-checkCondExpr (CondExpr _ c e) = checkExpr c >> checkExpr e
+checkCondExpr :: Bool -> CondExpr () -> WCM ()
+checkCondExpr hasSig (CondExpr _ c e) = checkExpr hasSig c >> checkExpr hasSig e
 
-checkExpr :: Expression () -> WCM ()
-checkExpr (Variable            _ _ v) = visitQId v
-checkExpr (Paren                 _ e) = checkExpr e
-checkExpr (Typed               _ e _) = checkExpr e
-checkExpr (Record           _ _ _ fs) = mapM_ (checkField checkExpr) fs
-checkExpr (RecordUpdate       _ e fs) = do
-  checkExpr e
-  mapM_ (checkField checkExpr) fs
-checkExpr (Tuple                _ es) = mapM_ checkExpr es
-checkExpr (List               _ _ es) = mapM_ checkExpr es
-checkExpr (ListCompr         _ e sts) = checkStatements sts e
-checkExpr (EnumFrom              _ e) = checkExpr e
-checkExpr (EnumFromThen      _ e1 e2) = mapM_ checkExpr [e1, e2]
-checkExpr (EnumFromTo        _ e1 e2) = mapM_ checkExpr [e1, e2]
-checkExpr (EnumFromThenTo _ e1 e2 e3) = mapM_ checkExpr [e1, e2, e3]
-checkExpr (UnaryMinus            _ e) = checkExpr e
-checkExpr (Apply             _ e1 e2) = mapM_ checkExpr [e1, e2]
-checkExpr (InfixApply     _ e1 op e2) = do
+checkExpr :: Bool -> Expression () -> WCM ()
+checkExpr _      (Variable            _ _ v) = visitQId v
+checkExpr hasSig (Paren                 _ e) = checkExpr hasSig e
+checkExpr hasSig (Typed               _ e _) = checkExpr hasSig e
+checkExpr hasSig (Record           _ _ _ fs) = mapM_ (checkField (checkExpr hasSig)) fs
+checkExpr hasSig (RecordUpdate       _ e fs) = do
+  checkExpr hasSig e
+  mapM_ (checkField (checkExpr hasSig)) fs
+checkExpr hasSig (Tuple                _ es) = mapM_ (checkExpr hasSig) es
+checkExpr hasSig (List               _ _ es) = mapM_ (checkExpr hasSig) es
+checkExpr hasSig (ListCompr         _ e sts) = checkStatements  hasSig sts e
+checkExpr hasSig (EnumFrom              _ e) = checkExpr hasSig e
+checkExpr hasSig (EnumFromThen      _ e1 e2) = mapM_ (checkExpr hasSig) [e1, e2]
+checkExpr hasSig (EnumFromTo        _ e1 e2) = mapM_ (checkExpr hasSig) [e1, e2]
+checkExpr hasSig (EnumFromThenTo _ e1 e2 e3) = mapM_ (checkExpr hasSig) [e1, e2, e3]
+checkExpr hasSig (UnaryMinus            _ e) = checkExpr hasSig e
+checkExpr hasSig (Apply             _ e1 e2) = mapM_ (checkExpr hasSig) [e1, e2]
+checkExpr hasSig (InfixApply     _ e1 op e2) = do
   visitQId (opName op)
-  mapM_ checkExpr [e1, e2]
-checkExpr (LeftSection         _ e _) = checkExpr e
-checkExpr (RightSection        _ _ e) = checkExpr e
-checkExpr (Lambda             _ ps e) = inNestedScope $ do
+  mapM_ (checkExpr hasSig) [e1, e2]
+checkExpr hasSig (LeftSection         _ e _) = checkExpr hasSig e
+checkExpr hasSig (RightSection        _ _ e) = checkExpr hasSig e
+checkExpr hasSig (Lambda             _ ps e) = inNestedScope $ do
   mapM_ checkPattern ps
   mapM_ (insertPattern False) ps
-  checkExpr e
+  checkExpr hasSig e
   reportUnusedVars
-checkExpr (Let              _ _ ds e) = inNestedScope $ do
-  checkLocalDeclGroup ds
-  checkExpr e
+checkExpr hasSig (Let              _ _ ds e) = inNestedScope $ do
+  checkLocalDeclGroup hasSig ds
+  checkExpr hasSig e
   reportUnusedVars
-checkExpr (Do              _ _ sts e) = checkStatements sts e
-checkExpr (IfThenElse     _ e1 e2 e3) = mapM_ checkExpr [e1, e2, e3]
-checkExpr (Case      spi _ ct e alts) = do
-  checkExpr e
-  mapM_ checkAlt alts
-  checkCaseAlts spi ct alts
-checkExpr _                       = ok
+checkExpr hasSig (Do              _ _ sts e) = checkStatements hasSig sts e
+checkExpr hasSig (IfThenElse     _ e1 e2 e3) = mapM_ (checkExpr hasSig) [e1, e2, e3]
+checkExpr hasSig (Case      spi _ ct e alts) = do
+  checkExpr hasSig e
+  mapM_ (checkAlt hasSig) alts
+  checkCaseAlts spi ct hasSig alts
+checkExpr _      _                       = ok
 
-checkStatements :: [Statement ()] -> Expression () -> WCM ()
-checkStatements []     e = checkExpr e
-checkStatements (s:ss) e = inNestedScope $ do
-  checkStatement s >> checkStatements ss e
+checkStatements :: Bool -> [Statement ()] -> Expression () -> WCM ()
+checkStatements hasSig []     e = checkExpr hasSig e
+checkStatements hasSig (s:ss) e = inNestedScope $ do
+  checkStatement hasSig s >> checkStatements hasSig ss e
   reportUnusedVars
 
-checkStatement :: Statement () -> WCM ()
-checkStatement (StmtExpr    _ e) = checkExpr e
-checkStatement (StmtDecl _ _ ds) = checkLocalDeclGroup ds
-checkStatement (StmtBind _  p e) = do
+checkStatement :: Bool -> Statement () -> WCM ()
+checkStatement hasSig (StmtExpr    _ e) =
+  checkExpr hasSig e
+checkStatement hasSig (StmtDecl _ _ ds) =
+  checkLocalDeclGroup hasSig ds
+checkStatement hasSig (StmtBind _  p e) = do
   checkPattern p >> insertPattern False p
-  checkExpr e
+  checkExpr hasSig e
 
-checkAlt :: Alt () -> WCM ()
-checkAlt (Alt _ p rhs) = inNestedScope $ do
+checkAlt :: Bool -> Alt () -> WCM ()
+checkAlt hasSig (Alt _ p rhs) = inNestedScope $ do
   checkPattern p >> insertPattern False p
-  checkRhs rhs
+  checkRhs hasSig rhs
   reportUnusedVars
 
 checkField :: (a -> WCM ()) -> Field a -> WCM ()
@@ -550,9 +581,9 @@ warnAliasNameClash mids = spanInfoMessage (head mids) $ text
 -- Check for overlapping/unreachable and non-exhaustive case alternatives
 -- -----------------------------------------------------------------------------
 
-checkCaseAlts :: SpanInfo -> CaseType -> [Alt ()] -> WCM ()
-checkCaseAlts _ _ []      = ok
-checkCaseAlts spi ct alts = do
+checkCaseAlts :: SpanInfo -> CaseType -> Bool -> [Alt ()] -> WCM ()
+checkCaseAlts _   _  _      []   = ok
+checkCaseAlts spi ct hasSig alts = do
   let spis = map (\(Alt s _ _) -> s) alts
   let pats = map (\(Alt _ pat _) -> [pat]) alts
   let guards = map alt2Guards alts
@@ -561,13 +592,15 @@ checkCaseAlts spi ct alts = do
     Flex -> do
       unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
         warnMissingPattern spi "an fcase alternative" nonExhaustive
-      when (nondet || not (null overlapped)) $ warnFor WarnOverlapping $ report
+      when (not hasSig && (nondet || not (null overlapped)))
+        $ warnFor WarnOverlapping $ report
         $ warnNondetOverlapping spi "An fcase expression"
     Rigid -> do
       unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
         warnMissingPattern spi "a case alternative" nonExhaustive
-      unless (null overlapped) $ void $ mapM (warnFor WarnOverlapping . report) $
-        map (\(i, pat) -> warnUnreachablePattern (spis !! i) pat) overlapped
+      unless (null overlapped) $ mapM_ ((warnFor WarnOverlapping . report) .
+                                        (\(i, pat) -> warnUnreachablePattern (spis !! i) pat))
+                                  overlapped
   where alt2Guards :: Alt () -> [CondExpr ()]
         alt2Guards (Alt _ _ (GuardedRhs _ _ conds _)) = conds
         alt2Guards _ = []
@@ -619,9 +652,9 @@ simplifyPat (NegativePattern       spi a l) =
   negateLit x         = x
 simplifyPat v@(VariablePattern       _ _ _) = return v
 simplifyPat (ConstructorPattern spi a c ps) =
-  ConstructorPattern spi a c `liftM` mapM simplifyPat ps
+  ConstructorPattern spi a c <$> mapM simplifyPat ps
 simplifyPat (InfixPattern    spi a p1 c p2) =
-  ConstructorPattern spi a c `liftM` mapM simplifyPat [p1, p2]
+  ConstructorPattern spi a c <$> mapM simplifyPat [p1, p2]
 simplifyPat (ParenPattern              _ p) = simplifyPat p
 simplifyPat (RecordPattern        _ _ c fs) = do
   (_, ls) <- getAllLabels c
@@ -632,7 +665,7 @@ simplifyPat (RecordPattern        _ _ c fs) = do
       fromMaybe wildPat (lookup l' [(unqualify l, p) | (l, p) <- fs'])
 simplifyPat (TuplePattern            _ ps) =
   ConstructorPattern NoSpanInfo () (qTupleId (length ps))
-    `liftM` mapM simplifyPat ps
+    <$> mapM simplifyPat ps
 simplifyPat (ListPattern           _ _ ps) =
   simplifyListPattern `liftM` mapM simplifyPat ps
 simplifyPat (AsPattern             _ _ p) = simplifyPat p
@@ -972,6 +1005,7 @@ maxPattern = 4
 warnNondetOverlapping :: SpanInfo -> String -> Message
 warnNondetOverlapping spi loc = spanInfoMessage spi $
   text loc <+> text "is potentially non-deterministic due to overlapping rules"
+  $+$ text "To suppress this warning, add a determinism annotation"
 
 -- -----------------------------------------------------------------------------
 

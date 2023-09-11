@@ -8,7 +8,7 @@ module Checks.DeterminismCheck (determinismCheck, DetEnv) where
 
 import Prelude hiding ( (<>) )
 import Control.Arrow ( second )
-import Control.Monad ( liftM2, void, zipWithM, replicateM, forM_, foldM )
+import Control.Monad ( liftM2, void, zipWithM, replicateM, forM_ )
 import Control.Monad.Extra ( concatMapM )
 import Control.Monad.State ( evalStateT, modify, gets, liftIO, StateT )
 import Data.List ( nub, (\\), find )
@@ -676,75 +676,89 @@ checkInstanceDecl _ _ _ = return $ return Set.empty
 solveConstraints :: Set DetConstraint -> DM NestDetEnv
 solveConstraints constraints = do
   liftIO $ putStrLn $ render $ pPrint $ Set.toList constraints
-  let grps = scc defs uses $ Set.toAscList constraints
-  liftIO $ putStrLn $ render $ pPrint $ grps
-  solved <- foldM solveGroup Map.empty grps
+  solved <- doSolve Map.empty $ Set.toList constraints
   lcl <- gets localDetEnv
   return $ mapNestEnv (`substDetSchema` solved) lcl
-  where
-    -- TODO: useless to group this
-    defs (AppliedType v w _) = [v, w]
-    defs (EqualType v ty) = v : detTypeVars ty
-    uses (AppliedType v w ty) = v : w : concatMap detTypeVars ty
-    uses (EqualType v ty) = v : detTypeVars ty
+
+resolve :: Map VarIndex DetType -> VarIndex -> Maybe DetType
+resolve = resolveWith Set.empty
+
+resolveWith :: Set VarIndex -> Map VarIndex DetType -> VarIndex -> Maybe DetType
+resolveWith seen m v = case Map.lookup v m of
+  Nothing -> Nothing
+  Just (VarTy v')
+    | v' `elem` seen -> Just (VarTy v')
+    | otherwise -> resolveWith (Set.insert v' seen) m v'
+  Just ty -> Just ty
 
 -- TODO not monadic
-solveGroup :: Map VarIndex DetType -> [DetConstraint] -> DM (Map VarIndex DetType)
-solveGroup solutions = go Map.empty . map (`substCon` solutions)
+doSolve :: Map VarIndex DetType -> [DetConstraint] -> DM (Map VarIndex DetType)
+doSolve solutions [] = do
+  liftIO $ putStrLn "Solved:"
+  liftIO $ putStrLn $ render $ pPrint $ Map.toList solutions
+  reduceSolutions solutions
+doSolve current (c:cs) = do
+  liftIO $ putStrLn "Iteration"
+  liftIO $ putStrLn $ render $ pPrint $ Map.toList current
+  liftIO $ putStrLn $ render $ pPrint (c:cs)
+  case c of
+    EqualType v (VarTy w) -> case resolveWith (Set.singleton w) current v of
+      Nothing
+        | v == w -> doSolve current cs
+        | otherwise -> doSolve (Map.insert v (VarTy w) current) cs
+      Just ty
+        | ty == VarTy w -> doSolve current cs
+        | otherwise -> doSolve (Map.insert v ty current) cs
+    EqualType v ty -> case resolve current v of
+      Nothing -> doSolve (Map.insert v ty current) cs
+      Just ty'
+        | ty == ty' -> doSolve current cs
+        | v `elem` detTypeVars ty -> doSolve (Map.insert v Nondet current) cs
+        | otherwise -> case unify ty ty' cs of
+          (newTy, cs') -> doSolve (Map.insert v newTy current) cs'
+    AppliedType v w tys ->
+      case resolve current w of
+        Nothing -> doSolve current cs
+        Just ty -> case resolve current v of
+          Nothing -> doSolve (Map.insert v (applyTy ty tys) current) cs
+          Just ty' -> case unify ty' (applyTy ty tys) cs of
+            (new, cs')
+              | new == VarTy v -> doSolve current cs
+              | v `elem` detTypeVars new -> doSolve (Map.insert v Nondet current) cs
+              | otherwise -> doSolve (Map.insert v new current) cs'
   where
-    go current [] = return $ Map.union current solutions
-    go current (c:cs) = do
-      liftIO $ putStrLn $ render $ pPrint $ Map.toList current
-      liftIO $ putStrLn $ render $ pPrint c
-      case c of
-        AppliedType v w tys ->
-          case Map.lookup w current of
-            -- Applied types are always the last entries in the list,
-            -- so w can only be constrained by an applied type.
-            Nothing -> go current cs
-            Just ty -> case Map.lookup v current of
-              Nothing -> go (Map.insert v (applyTy ty tys) current) cs
-              Just ty' -> case unify ty' (applyTy ty tys) current cs of
-                (new, cs') -> go (Map.insert v new current)  cs' -- TODO: Might fail if v has been equated to Det already and application is Nondet
-        EqualType v ty
-          | ty == VarTy v -> go current cs
-          | v `elem` detTypeVars ty -> go (Map.insert v Nondet current) cs
-          | otherwise ->
-            case Map.lookup v current of
-              Nothing ->
-                let new = Map.singleton v ty
-                in go (Map.insert v ty (Map.map (`substDetTy` new) current)) (map (`substCon` new) cs)
-              Just ty' -> case unify ty ty' current cs of
-                (newTy, cs')  ->
-                  let new = Map.singleton v newTy
-                  in go (Map.insert v newTy (Map.map (`substDetTy` new) current)) (map (`substCon` new) cs')
-
     -- returns the combined list of old constraints and the new ones that have to hold,
     -- and the new type to be used for the variable in question
-    unify :: DetType -> DetType -> Map VarIndex DetType -> [DetConstraint] -> (DetType, [DetConstraint])
-    unify (VarTy v) (VarTy w) _ cs | v == w = (VarTy v, cs)
-    unify (VarTy v) ty current cs = case Map.lookup v current of
-      Nothing -> (ty, EqualType v ty : cs)
-      Just ty' -> unify ty' ty current cs
-    unify ty (VarTy v) current cs = case Map.lookup v current of
-      Nothing -> (ty, EqualType v ty : cs)
-      Just ty' -> unify ty ty' current cs
-    unify Det Det _ cs = (Det, cs)
-    unify Nondet Nondet _ cs = (Nondet, cs)
-    unify Nondet _ _ cs = (Nondet, cs)
-    unify _ Nondet _ cs = (Nondet, cs)
-    unify (DetArrow ty1 ty2) (DetArrow ty1' ty2') current cs =
-      let (new1, cs1) = unify ty1 ty1' current cs
-          (new2, cs2) = unify ty2 ty2' current cs1
-      in (DetArrow new1 new2, cs2)
-    unify (DetArrow ty1 ty2) Det current cs =
-      let (new1, cs1) = unify ty1 Det current cs
-          (new2, cs2) = unify ty2 Det current cs1
-      in (DetArrow new1 new2, cs2)
-    unify Det (DetArrow ty1 ty2) current cs =
-      let (new1, cs1) = unify Det ty1 current cs
-          (new2, cs2) = unify Det ty2 current cs1
-      in (DetArrow new1 new2, cs2)
+    unify :: DetType -> DetType -> [DetConstraint] -> (DetType, [DetConstraint])
+    unify (VarTy v) (VarTy w) cs' =
+      case resolveWith (Set.fromList [v, w]) current v of
+        Nothing -> (VarTy v, EqualType v (VarTy w) : cs')
+        Just (VarTy u)
+          | u == v -> (VarTy v, cs')
+          | otherwise -> (VarTy v, EqualType v (VarTy w) : cs')
+        Just ty -> unify ty (VarTy w) cs'
+    unify (VarTy v) ty cs' = case Map.lookup v current of
+      Nothing -> (ty, EqualType v ty : cs')
+      Just ty' -> unify ty' ty cs'
+    unify ty (VarTy v) cs' = case Map.lookup v current of
+      Nothing -> (ty, EqualType v ty : cs')
+      Just ty' -> unify ty ty' cs'
+    unify Det Det cs' = (Det, cs')
+    unify Nondet Nondet cs' = (Nondet, cs')
+    unify Nondet _ cs' = (Nondet, cs')
+    unify _ Nondet cs' = (Nondet, cs')
+    unify (DetArrow ty1 ty2) (DetArrow ty1' ty2') cs' =
+      let (new1, cs'1) = unify ty1 ty1' cs'
+          (new2, cs'2) = unify ty2 ty2' cs'1
+      in (DetArrow new1 new2, cs'2)
+    unify (DetArrow ty1 ty2) Det cs' =
+      let (new1, cs'1) = unify ty1 Det cs'
+          (new2, cs'2) = unify ty2 Det cs'1
+      in (DetArrow new1 new2, cs'2)
+    unify Det (DetArrow ty1 ty2) cs' =
+      let (new1, cs'1) = unify Det ty1 cs'
+          (new2, cs'2) = unify Det ty2 cs'1
+      in (DetArrow new1 new2, cs'2)
 
     applyTy :: DetType -> [DetType] -> DetType
     applyTy ty [] = ty
@@ -753,6 +767,11 @@ solveGroup solutions = go Map.empty . map (`substCon` solutions)
       Just s -> applyTy (substDetTy ty2 s) rest
       Nothing -> Nondet
     applyTy ty tys = internalError $ "applyTy: not enough arguments " ++ show ty ++ " @ " ++ show tys
+
+reduceSolutions :: Map VarIndex DetType -> DM (Map VarIndex DetType)
+reduceSolutions sols = return $ foldr reduce sols $ Map.toList sols
+  where
+    reduce (v, ty) = Map.map (`substDetTy` Map.singleton v ty)
 
 moreSpecific :: DetType -> DetType -> Maybe (Map VarIndex DetType)
 moreSpecific ty (VarTy v) = Just (Map.singleton v ty)
@@ -785,10 +804,6 @@ substDetTy (VarTy v) solutions = case Map.lookup v solutions of
   Just ty -> ty
 substDetTy (DetArrow ty1 ty2) solutions = DetArrow (substDetTy ty1 solutions) (substDetTy ty2 solutions)
 substDetTy ty _ = ty
-
-substCon :: DetConstraint -> Map VarIndex DetType -> DetConstraint
-substCon (EqualType v t) mp = EqualType v (substDetTy t mp)
-substCon (AppliedType v w ts) mp = AppliedType v w (map (`substDetTy` mp) ts)
 
 overlaps :: [Equation PredType] -> DM Bool
 overlaps = checkOverlap . map (getPats . void)
