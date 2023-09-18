@@ -46,7 +46,8 @@ module Base.Types
     -- * Representation of quantification
   , TypeScheme (..), monoType, polyType, typeScheme
     -- * Representation of determinism types
-  , toDetExpr, toDetType, toDetSchema, abstractDetScheme, detTypeVars
+  , toDetExpr, toDetType, toDetSchema
+  , abstractDetScheme, substDetTy, detTypeVars
   , DetScheme (..), DetType(..), VarIndex
   , rawType
     -- * Predefined types
@@ -693,7 +694,7 @@ type VarIndex = Int
 data DetType = VarTy VarIndex
              | Det
              | DetArrow DetType DetType
-             | Nondet
+             | Any
   deriving (Eq, Ord, Show)
 
 data DetScheme = Forall [VarIndex] DetType
@@ -704,8 +705,8 @@ toDetExpr (Forall _ ty) = tyToDetExpr ty
 
 tyToDetExpr :: DetType -> CS.DetExpr
 tyToDetExpr (VarTy v) = CS.VarDetExpr NoSpanInfo (identSupply !! v)
-tyToDetExpr Det = CS.DDetExpr NoSpanInfo
-tyToDetExpr Nondet = CS.NDDetExpr NoSpanInfo
+tyToDetExpr Det = CS.DetDetExpr NoSpanInfo
+tyToDetExpr Any = CS.AnyDetExpr NoSpanInfo
 tyToDetExpr (DetArrow ty1 ty2) = CS.ArrowDetExpr NoSpanInfo (tyToDetExpr ty1) (tyToDetExpr ty2)
 
 toDetType :: CS.DetExpr -> DetScheme
@@ -714,8 +715,8 @@ toDetType = abstractDetScheme . toDetSchema . fst . go Map.empty
     go s (CS.VarDetExpr _ v) = case Map.lookup v s of
       Just ty -> (ty, s)
       Nothing -> (VarTy (Map.size s), Map.insert v (VarTy (Map.size s)) s)
-    go s (CS.DDetExpr _) = (Det, s)
-    go s (CS.NDDetExpr _) = (Nondet, s)
+    go s (CS.DetDetExpr _) = (Det, s)
+    go s (CS.AnyDetExpr _) = (Any, s)
     go s (CS.ParenDetExpr _ ty) = go s ty
     go s (CS.ArrowDetExpr _ ty1 ty2) = (DetArrow ty1' ty2', s'')
       where (ty1', s') = go s ty1
@@ -725,7 +726,18 @@ toDetSchema :: DetType -> DetScheme
 toDetSchema = Forall []
 
 abstractDetScheme :: DetScheme -> DetScheme
-abstractDetScheme (Forall _ ty) = Forall (nub (detTypeVars ty)) ty
+abstractDetScheme (Forall _ ty) =
+  Forall [0 .. Map.size subst - 1] (ty `substDetTy` subst)
+  where
+    vars = nub (detTypeVars ty)
+    subst = Map.fromList $ zip vars (map VarTy [0..])
+
+substDetTy :: DetType -> Map.Map VarIndex DetType -> DetType
+substDetTy (VarTy v) subst = case Map.lookup v subst of
+  Nothing -> VarTy v
+  Just ty -> ty
+substDetTy (DetArrow ty1 ty2) subst = DetArrow (substDetTy ty1 subst) (substDetTy ty2 subst)
+substDetTy ty _ = ty
 
 detTypeVars :: DetType -> [VarIndex]
 detTypeVars (VarTy v) = [v]
@@ -738,15 +750,14 @@ detTypeVars _ = []
 
 instance Pretty DetScheme where
   pPrint (Forall [] ty) = pPrint ty
-  pPrint (Forall vs ty) = text "forall" <+> hsep (map (pPrint . VarTy) vs) <> dot <> pPrint ty
+  pPrint (Forall vs ty) = text "forall" <+> hsep (map (pPrint . VarTy) vs) <> dot <+> pPrint ty
 
 instance Pretty DetType where
-  pPrintPrec _ (VarTy v) = text "a" <> pPrint v
+  pPrintPrec _ (VarTy v) = pPrint $ identSupply !! v
   pPrintPrec _ Det = text "Det"
-  pPrintPrec _ Nondet = text "Nondet"
+  pPrintPrec _ Any = text "Any"
   pPrintPrec p (DetArrow ty1 ty2) = parenIf (p > 0) $
     pPrintPrec 1 ty1 <+> text "->" <+> pPrintPrec 0 ty2
-
 
 instance Pretty Type where
   pPrint = pPrintPrec 0 . fromType identSupply

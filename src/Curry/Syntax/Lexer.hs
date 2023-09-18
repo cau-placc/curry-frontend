@@ -56,6 +56,7 @@ instance Symbol Token where
   dist _ (Token EOF                _) = (0,  0)
   dist _ (Token DotDot             _) = (0,  1)
   dist _ (Token DoubleColon        _) = (0,  1)
+  dist _ (Token ColonQ             _) = (0,  1)
   dist _ (Token LeftArrow          _) = (0,  1)
   dist _ (Token RightArrow         _) = (0,  1)
   dist _ (Token DoubleArrow        _) = (0,  1)
@@ -88,7 +89,6 @@ instance Symbol Token where
   dist _ (Token Id_hiding          _) = (0,  5)
   dist _ (Token KW_newtype         _) = (0,  6)
   dist _ (Token KW_external        _) = (0,  7)
-  dist _ (Token KW_det             _) = (0,  2)
   dist _ (Token Id_interface       _) = (0,  8)
   dist _ (Token Id_primitive       _) = (0,  8)
   dist _ (Token Id_qualified       _) = (0,  8)
@@ -194,13 +194,13 @@ data Category
   | KW_then
   | KW_type
   | KW_where
-  | KW_det
 
   -- reserved operators
   | At           -- @
   | Colon        -- :
   | DotDot       -- ..
   | DoubleColon  -- ::
+  | ColonQ       -- :?
   | Equals       -- =
   | Backslash    -- \
   | Bar          -- |
@@ -322,6 +322,7 @@ instance Show Token where
   showsPrec _ (Token DotDot             _) = showsEscaped ".."
   showsPrec _ (Token DoubleArrow        _) = showsEscaped "=>"
   showsPrec _ (Token DoubleColon        _) = showsEscaped "::"
+  showsPrec _ (Token ColonQ             _) = showsEscaped ":?"
   showsPrec _ (Token Equals             _) = showsEscaped "="
   showsPrec _ (Token Backslash          _) = showsEscaped "\\"
   showsPrec _ (Token Bar                _) = showsEscaped "|"
@@ -355,7 +356,6 @@ instance Show Token where
   showsPrec _ (Token KW_then            _) = showsEscaped "then"
   showsPrec _ (Token KW_type            _) = showsEscaped "type"
   showsPrec _ (Token KW_where           _) = showsEscaped "where"
-  showsPrec _ (Token KW_det             _) = showsEscaped "det"
   showsPrec _ (Token Id_as              _) = showsSpecialIdent "as"
   showsPrec _ (Token Id_ccall           _) = showsSpecialIdent "ccall"
   showsPrec _ (Token Id_forall          _) = showsSpecialIdent "forall"
@@ -433,6 +433,7 @@ reservedOps = Map.fromList
   , (":" , Colon      )
   , ("=>", DoubleArrow)
   , ("::", DoubleColon)
+  , (":?", ColonQ     )
   , ("..", DotDot     )
   , ("=" , Equals     )
   , ("\\", Backslash  )
@@ -477,7 +478,6 @@ keywords = Map.fromList
   , ("then"    , KW_then    )
   , ("type"    , KW_type    )
   , ("where"   , KW_where   )
-  , ("det"     , KW_det     )
   ]
 
 -- |Map of keywords and special identifiers

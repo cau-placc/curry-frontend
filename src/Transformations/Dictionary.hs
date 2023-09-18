@@ -694,9 +694,10 @@ instance DictTrans Expression where
     internalError $ "Dictionary.dictTrans: " ++ show e
 
 -- Just like before in desugaring, we ignore the context in the type signature
--- of a typed expression, since there should be no possibility to provide an
+-- of a typed expression, since there should be no possibility to provide a
 -- non-empty context without scoped type-variables.
--- TODO: Correct for now, but not with NullaryTypeClasses. Ask Finn.
+-- The context is even irrelevant with Nullary/MultiParam TypeClasses,
+-- since the dictionary has to be provided to the corresponding function anyway.
 dictTransQualTypeExpr :: QualTypeExpr -> DTM QualTypeExpr
 dictTransQualTypeExpr (QualTypeExpr spi _ ty) = return $ QualTypeExpr spi [] ty
 

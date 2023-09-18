@@ -244,7 +244,6 @@ importSyntaxCheck iEnv (CS.Module _ _ _ _ _ imps _) = mapM checkImportDecl imps
 -- Checking a module
 -- ---------------------------------------------------------------------------
 
--- TODO: The order of the checks should be improved!
 checkModule :: Options -> CompEnv (CS.Module ())
             -> CYIO (CompEnv (CS.Module PredType))
 checkModule opts mdl = do

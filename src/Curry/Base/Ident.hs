@@ -81,6 +81,7 @@ module Curry.Base.Ident
   , qAndOpId, qEqOpId, qLeqOpId, qLtOpId, qOrOpId, qAppendOpId, qDotOpId
   , qAValueId, qDataEqId
   , qBindId, qFailId
+  , qFromIntId, qFromFloatId, qNegateId
 
     -- * Extended functionality
     -- ** Functional patterns
@@ -918,6 +919,18 @@ qBindId = qPreludeIdent $ mkIdent ">>="
 -- | 'QualIdent' for the 'fail' method from the 'MonadFail' class
 qFailId :: QualIdent
 qFailId = qPreludeIdent $ mkIdent "fail"
+
+-- | 'QualIdent' for the 'fromInt' method from the 'Num' class
+qFromIntId :: QualIdent
+qFromIntId = qPreludeIdent $ mkIdent "fromInt"
+
+-- | 'QualIdent' for the 'fromFloat' method from the 'Fractional' class
+qFromFloatId :: QualIdent
+qFromFloatId = qPreludeIdent $ mkIdent "fromFloat"
+
+-- | 'QualIdent' for the 'negate' method from the 'Num' class
+qNegateId :: QualIdent
+qNegateId = qPreludeIdent $ mkIdent "negate"
 
 -- ---------------------------------------------------------------------------
 -- Micellaneous functions for generating and testing extended identifiers

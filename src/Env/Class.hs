@@ -15,7 +15,6 @@
     For both the type class identifier and the list of super classes original
     names are used. Thus, the use of a flat environment is sufficient.
 -}
-
 module Env.Class
   ( ClassEnv, initClassEnv
   , ClassInfo, bindClassInfo, mergeClassInfo, lookupClassInfo

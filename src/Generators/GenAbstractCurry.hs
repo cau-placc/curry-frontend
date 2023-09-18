@@ -381,9 +381,6 @@ trLocalIdent i = return ("", idName i)
 qFlip :: QualIdent
 qFlip = qualifyWith preludeMIdent (mkIdent "flip")
 
-qNegateId :: QualIdent
-qNegateId = qualifyWith preludeMIdent (mkIdent "negate")
-
 qIfThenElseId :: QualIdent
 qIfThenElseId = qualifyWith preludeMIdent (mkIdent "ifThenElse")
 

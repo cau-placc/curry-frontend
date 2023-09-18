@@ -1309,6 +1309,9 @@ checkCaseModeDecl (InstanceDecl _ _ cx _ inst ds) = do
   checkCaseModeContext cx
   checkCaseModeTypeExpr inst
   mapM_ checkCaseModeDecl ds
+checkCaseModeDecl (DetSig _ fs dty) = do
+  mapM_ (checkCaseModeID isFuncName) fs
+  checkCaseModeDetExpr dty
 checkCaseModeDecl _ = ok
 
 checkCaseModeConstr :: ConstrDecl -> WCM ()
@@ -1363,6 +1366,16 @@ checkCaseModeQualTypeExpr :: QualTypeExpr -> WCM ()
 checkCaseModeQualTypeExpr (QualTypeExpr _ cx ty) = do
   checkCaseModeContext cx
   checkCaseModeTypeExpr ty
+
+checkCaseModeDetExpr :: DetExpr -> WCM ()
+checkCaseModeDetExpr (DetDetExpr _) = ok
+checkCaseModeDetExpr (AnyDetExpr _) = ok
+checkCaseModeDetExpr (ParenDetExpr _ dty) =
+  checkCaseModeDetExpr dty
+checkCaseModeDetExpr (VarDetExpr _ v) =
+  checkCaseModeID isVarName v
+checkCaseModeDetExpr (ArrowDetExpr _ dty1 dty2) =
+  checkCaseModeDetExpr dty1 >> checkCaseModeDetExpr dty2
 
 checkCaseModeEquation :: Equation a -> WCM ()
 checkCaseModeEquation (Equation _ lhs rhs) = do

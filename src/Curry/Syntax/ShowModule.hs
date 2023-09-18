@@ -339,12 +339,12 @@ showsTypeExpr (ForallType spi vars ty)
   . showsString ")"
 
 showsDetExpr :: DetExpr -> ShowS
-showsDetExpr (DDetExpr spi)
-  = showsString "(DDetExpr "
+showsDetExpr (DetDetExpr spi)
+  = showsString "(DetDetExpr "
   . showsSpanInfo spi
   . showsString ")"
-showsDetExpr (NDDetExpr spi)
-  = showsString "(NDDetExpr "
+showsDetExpr (AnyDetExpr spi)
+  = showsString "(AnyDetExpr "
   . showsSpanInfo spi
   . showsString ")"
 showsDetExpr (ParenDetExpr spi det)

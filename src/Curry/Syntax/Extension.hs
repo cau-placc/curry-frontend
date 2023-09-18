@@ -55,6 +55,7 @@ data KnownExtension
   | NoFunctionalPatterns      -- ^ no functional patterns
   | NoImplicitPrelude         -- ^ no implicit import of the prelude
   | NoDataDeriving            -- ^ no implicit deriving of the Data class
+  | DeterminismSignatures     -- ^ determinism signatures
     deriving (Eq, Ord, Read, Show, Enum, Bounded, Generic, Binary)
 
 -- |Classifies a 'String' as an 'Extension'

@@ -224,8 +224,8 @@ data QualTypeExpr = QualTypeExpr SpanInfo Context TypeExpr
 -- ---------------------------------------------------------------------------
 
 -- |Determinism expressions
-data DetExpr = DDetExpr SpanInfo
-             | NDDetExpr SpanInfo
+data DetExpr = DetDetExpr SpanInfo
+             | AnyDetExpr SpanInfo
              | ArrowDetExpr SpanInfo DetExpr DetExpr
              | ParenDetExpr SpanInfo DetExpr
              | VarDetExpr SpanInfo Ident
@@ -648,20 +648,20 @@ instance HasSpanInfo QualTypeExpr where
     setEndPosition (getSrcSpanEnd ty) t
 
 instance HasSpanInfo DetExpr where
-  getSpanInfo (DDetExpr sp) = sp
-  getSpanInfo (NDDetExpr sp) = sp
+  getSpanInfo (DetDetExpr sp) = sp
+  getSpanInfo (AnyDetExpr sp) = sp
   getSpanInfo (ArrowDetExpr sp _ _) = sp
   getSpanInfo (ParenDetExpr sp _) = sp
   getSpanInfo (VarDetExpr sp _) = sp
 
-  setSpanInfo sp (DDetExpr _) = DDetExpr sp
-  setSpanInfo sp (NDDetExpr _) = NDDetExpr sp
+  setSpanInfo sp (DetDetExpr _) = DetDetExpr sp
+  setSpanInfo sp (AnyDetExpr _) = AnyDetExpr sp
   setSpanInfo sp (ArrowDetExpr _ det1 det2) = ArrowDetExpr sp det1 det2
   setSpanInfo sp (ParenDetExpr _ det) = ParenDetExpr sp det
   setSpanInfo sp (VarDetExpr _ idt) = VarDetExpr sp idt
 
-  updateEndPos d@(DDetExpr _) = d
-  updateEndPos d@(NDDetExpr _) = d
+  updateEndPos d@(DetDetExpr _) = d
+  updateEndPos d@(AnyDetExpr _) = d
   updateEndPos d@(ArrowDetExpr _ _ det2) =
     setEndPosition (getSrcSpanEnd det2) d
   updateEndPos d@(ParenDetExpr (SpanInfo _ (s:ss)) _) =

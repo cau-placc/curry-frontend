@@ -392,7 +392,8 @@ unitType' = IL.TypeConstructor qUnitId []
 -- All specified constructors must be of the same type.
 -- This functions uses the module environment 'menv', which contains all
 -- imported constructors, except for the built-in list constructors.
--- TODO: Check if the list constructors are in the menv.
+-- Note that the list constructors are not in the module environment,
+-- while we are compiling the Prelude.
 getComplConstrs :: Module -> InterfaceEnv -> TCEnv
                 -> [QualIdent] -> [(QualIdent, [Type])]
 getComplConstrs _                 _    _     []
@@ -400,14 +401,10 @@ getComplConstrs _                 _    _     []
 getComplConstrs (Module mid _ ds) menv tcEnv cs@(c:_)
   -- built-in lists
   | c `elem` [qNilId, qConsId] =
-    let mid' = (ModuleIdent NoSpanInfo ["Prelude"])
-    in case maybeToList (lookupInterface mid' menv) >>= getCCFromIDecls mid' cs tcEnv of
-      [] -> error "nothing"
-      xs -> error ("just" ++ show (length xs))
-    -- complementary cs --- TODO: resolve todo above
-    -- [ (qNilId, [])
-    -- , (qConsId, [TypeVariable 0, TypeConstructor qListId [TypeVariable 0]])
-    -- ]
+    complementary cs
+    [ (qNilId, [])
+    , (qConsId, [TypeVariable 0, TypeConstructor qListId [TypeVariable 0]])
+    ]
   -- current module
   | mid' == mid                = getCCFromDecls cs ds
   -- imported module

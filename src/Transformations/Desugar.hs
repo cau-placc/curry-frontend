@@ -789,7 +789,8 @@ dsExpr p (Case _ _ ct e alts) = dsCase p ct e alts
 -- We ignore the context in the type signature of a typed expression, since
 -- there should be no possibility to provide a non-empty context without
 -- scoped type-variables.
--- TODO: Correct for now, but not with NullaryTypeClasses. Ask Finn.
+-- The context is even irrelevant with Nullary/MultiParam TypeClasses,
+-- since the dictionary has to be provided to the corresponding function anyway.
 dsQualTypeExpr :: QualTypeExpr -> DsM QualTypeExpr
 dsQualTypeExpr (QualTypeExpr _ cx ty) =
   QualTypeExpr NoSpanInfo cx <$> dsTypeExpr ty

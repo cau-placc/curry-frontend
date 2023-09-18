@@ -119,7 +119,7 @@ instance Pretty (Decl a) where
       ppIf (not $ null ds) (text "where") $$
       ppIf (not $ null ds) (indent $ ppBlock ds)
   pPrint (DetSig _ vs dty) =
-    text "det" <+> list (map ppIdent vs) <+> text "::" <+> pPrintPrec 0 dty
+    list (map ppIdent vs) <+> text ":?" <+> pPrintPrec 0 dty
 
 ppClassInstHead :: String -> Context -> Doc -> Doc -> Doc
 ppClassInstHead kw cx cls ty = text kw <+> ppContext cx <+> cls <+> ty
@@ -225,7 +225,7 @@ instance Pretty IDecl where
     sep [ ppQIdent f, maybePP (ppPragma "METHOD" . ppIdent) cm
         , int a
         , text "::", pPrintPrec 0 ty
-        , text "::", pPrintPrec 0 dty ]
+        , text ":?", pPrintPrec 0 dty ]
   pPrint (HidingClassDecl _ cx qcls k clsvar ids) = text "hiding" <+>
     ppClassInstHead "class" cx (ppQIdentWithKind qcls k) (ppIdent clsvar) <+> text "where" <+>
       lbrace $$
@@ -249,10 +249,10 @@ ppITypeDeclLhs kw tc k tvs =
 instance Pretty IMethodDecl where
   pPrint (IMethodDecl _ f a qty ddty mdty) =
     ppIdent f <+> maybePP int a <+> text "::" <+> pPrintPrec 0 qty
-                                <+> text "::" <+> pPrintPrec 0 ddty
+                                <+> text ":?" <+> pPrintPrec 0 ddty
                                 <> case mdty of
                                       Nothing -> empty
-                                      Just dty -> space <> text "::" <+> pPrintPrec 0 dty
+                                      Just dty -> space <> text ":?" <+> pPrintPrec 0 dty
 
 ppIMethodImpl :: IMethodImpl -> Doc
 ppIMethodImpl (f, a, dty) = ppIdent f <+> int a <+> colon <> colon <+> pPrint dty
@@ -316,8 +316,8 @@ instance Pretty TypeExpr where
 -- ---------------------------------------------------------------------------
 
 instance Pretty DetExpr where
-  pPrintPrec _ (DDetExpr _) = text "D"
-  pPrintPrec _ (NDDetExpr _) = text "ND"
+  pPrintPrec _ (DetDetExpr _) = text "Det"
+  pPrintPrec _ (AnyDetExpr _) = text "Any"
   pPrintPrec _ (ParenDetExpr _ e) = parens (pPrintPrec 0 e)
   pPrintPrec p (ArrowDetExpr _ dty1 dty2) = parenIf (p > 0) $
     pPrintPrec 1 dty1 <+> rarrow <+> pPrintPrec 0 dty2

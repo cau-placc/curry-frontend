@@ -387,8 +387,8 @@ idsDetExpr :: DetExpr -> [Code]
 idsDetExpr (VarDetExpr       _ v) = [Identifier IdRefer False (qualify v)]
 idsDetExpr (ArrowDetExpr _ d1 d2) = concatMap idsDetExpr [d1, d2]
 idsDetExpr (ParenDetExpr     _ d) = idsDetExpr d
-idsDetExpr (DDetExpr           _) = []
-idsDetExpr (NDDetExpr          _) = []
+idsDetExpr (DetDetExpr           _) = []
+idsDetExpr (AnyDetExpr          _) = []
 
 idsFieldDecl :: FieldDecl -> [Code]
 idsFieldDecl (FieldDecl _ ls ty) =
@@ -508,6 +508,7 @@ showToken (Token Colon              _) = ":"
 showToken (Token DotDot             _) = ".."
 showToken (Token DoubleArrow        _) = "=>"
 showToken (Token DoubleColon        _) = "::"
+showToken (Token ColonQ             _) = ":?"
 showToken (Token Equals             _) = "="
 showToken (Token Backslash          _) = "\\"
 showToken (Token Bar                _) = "|"
@@ -541,7 +542,6 @@ showToken (Token KW_of              _) = "of"
 showToken (Token KW_then            _) = "then"
 showToken (Token KW_type            _) = "type"
 showToken (Token KW_where           _) = "where"
-showToken (Token KW_det             _) = "det"
 showToken (Token Id_as              _) = "as"
 showToken (Token Id_ccall           _) = "ccall"
 showToken (Token Id_forall          _) = "forall"

@@ -337,6 +337,8 @@ extensions =
     , "do not implicitly import the Prelude"         )
   , ( NoDataDeriving           , "NoDataDeriving"
     , "do not implicitly derive the Data class"      )
+  , ( DeterminismSignatures    , "DeterminismSignatures"
+    , "enable determinism signatures"                )
   ]
 
 -- -----------------------------------------------------------------------------

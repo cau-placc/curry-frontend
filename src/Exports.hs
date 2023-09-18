@@ -206,7 +206,7 @@ iInstDecl m tcEnv dEnv tvs (cls, tc) (m', ps, is) =
         QualTypeExpr _ cx ty = fromQualPredType m tvs pty
         n = kindArity (tcKind m tc tcEnv) - kindArity (clsKind m cls tcEnv)
         mm = if m == m' then Nothing else Just m'
-        getDetInfo (f, a) = case Map.lookup (II cls tc (qualifyLike cls f)) dEnv of
+        getDetInfo (f, a) = case Map.lookup (II cls (qualQualify m tc) (qualifyLike cls f)) dEnv of
           Just dty -> (f, a, toDetExpr dty)
           Nothing -> internalError $ "Exports.iInstDecl: " ++ show (cls, tc, f)
 

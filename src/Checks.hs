@@ -142,14 +142,19 @@ typeCheck _ (env, Module spi li ps m es is ds)
                                           (valueEnv env) (classEnv env)
                                           (instEnv env) ds
 
-determinismCheck :: Options -> CompEnv (Module PredType) -> CYT IO (CompEnv (Module PredType))
-determinismCheck _opts (env, mdl) = do
-  (dE, tE, msgs) <- liftIO $ DC.determinismCheck (moduleIdent env) (tyConsEnv env)
-                                                 (valueEnv env) (classEnv env)
-                                                 (instEnv env) (detEnv env) mdl
-  if null msgs
-    then ok (env {detEnv = dE, tyConsEnv = tE}, mdl)
-    else failMessages msgs
+-- |Infer and check the determinism types of all declarations.
+--
+-- * Declarations: remain unchanged
+-- * Environment:  The determinism environment and type constructor environments are updated
+determinismCheck :: Options -> CompEnv (Module PredType) -> Check m (Module PredType)
+determinismCheck opts (env, mdl)
+  | null msgs = ok (env {detEnv = dE, tyConsEnv = tE}, mdl)
+  | otherwise = failMessages msgs
+  where
+    (dE, tE, msgs) = DC.determinismCheck (moduleIdent env) (tyConsEnv env)
+                                         (valueEnv env) (classEnv env)
+                                         (instEnv env) (detEnv env)
+                                         (optExtensions opts) mdl
 
 -- |Check the export specification
 exportCheck :: Monad m => Check m (Module a)
