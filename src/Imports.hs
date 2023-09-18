@@ -35,16 +35,14 @@ import Base.Types
 import Base.TypeSubst
 
 import Env.Class
+import Env.Determinism
 import Env.Instance
 import Env.Interface
 import Env.ModuleAlias (importAliases, initAliasEnv)
 import Env.OpPrec
 import Env.TypeConstructor
 import Env.Value
-
 import CompilerEnv
-import Checks.DeterminismCheck
-import Env.Determinism (IdentInfo(..))
 
 importModules :: Monad m => Module a -> InterfaceEnv -> [ImportDecl]
               -> CYT m CompilerEnv

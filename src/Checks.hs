@@ -146,7 +146,7 @@ typeCheck _ (env, Module spi li ps m es is ds)
 --
 -- * Declarations: remain unchanged
 -- * Environment:  The determinism environment and type constructor environments are updated
-determinismCheck :: Options -> CompEnv (Module PredType) -> Check m (Module PredType)
+determinismCheck :: Monad m => Check m (Module PredType)
 determinismCheck opts (env, mdl)
   | null msgs = ok (env {detEnv = dE, tyConsEnv = tE}, mdl)
   | otherwise = failMessages msgs
