@@ -18,8 +18,8 @@ module Prelude
   , Bool (..), Ordering (..), Maybe (..), Either (..)
 
   -- * Type Classes
-  , Data(..), Eq (..) , Ord (..)
-  , Show (..), ShowS, shows, showChar, showString, showParen
+  , Data(..), (/==), Eq (..) , Ord (..)
+  , Show (..), ShowS, shows, showChar, showString, showParen, showTuple
   , Read (..), ReadS, reads, readParen, read, lex
   , Bounded (..), Enum (..)
   -- ** Numerical Typeclasses
@@ -60,7 +60,7 @@ module Prelude
   -- * Constraint Programming
   , Success, success, solve, doSolve, (=:=), (=:<=)
 #ifdef __PAKCS__
-  , (=:<<=)
+  , constrEq, (=:<<=)
 #endif
   , (&), (&>)
 
@@ -72,9 +72,28 @@ module Prelude
 #ifdef __PAKCS__
   , letrec, failure
 #endif
+  , DET, PEVAL
   ) where
 
+infixr 9 .
+infixl 9 !!
+infixl 7 *, /, `div`, `mod`, `quot`, `rem`
+infixl 6 +, -
+infixr 5 ++
+--++ The (:) operator is built-in syntax with the following fixity:
 --++ infixr 5 :
+infix  4 ==, /=, <, >, <=, >=
+infix  4 =:=, =:<=, ===, /==
+#ifdef __PAKCS__
+infix  4 =:<<=
+#endif
+infix  4 `elem`, `notElem`
+infixl 4 <$, <$>, <*>, <*, *>
+infixl 3 <|>
+infixr 3 &&
+infixr 2 ||
+infixl 1 >>, >>=
+infixr 0 ?, $, $!, $!!, $#, $##, `seq`, &, &>
 
 external data Char
 
@@ -82,6 +101,13 @@ external data Int
 
 external data Float
 
+data Bool = False | True
+
+data Ordering = LT | EQ | GT
+
+data Void
+
+------------------------------------------------------------------------------
 --++ data () = ()
 
 --++ data (a, b) = (a, b)
@@ -94,27 +120,27 @@ external data Float
 
 --++ data (->) a b
 
-data Bool = False | True
-
-data Ordering = LT | EQ | GT
-
-infix 4 ==, /=
-
 class Data a where
+  (===)  :? Det -> Det -> Det
   (===)  :: a -> a -> Bool
+  aValue :? Any
   aValue :: a
+
+--- The negation of strict equality.
+(/==) :: Data a => a -> a -> Bool
+x /== y = not (x ===y)
 
 instance Data Char where
   (===) = (==)
-  aValue = a where a free
+  aValue = aValueChar
 
 instance Data Int where
   (===) = (==)
-  aValue = a where a free
+  aValue = aValueInt
 
 instance Data Float where
   (===) = (==)
-  aValue = a where a free
+  aValue = aValueFloat
 
 instance Data a => Data [a] where
   []     === []     = True
@@ -146,8 +172,39 @@ instance (Data a, Data b, Data c, Data d, Data e) => Data (a, b, c, d, e) where
     a1 === a2 && b1 === b2 && c1 === c2 && d1 === d2 && e1 === e2
   aValue = (aValue, aValue, aValue, aValue, aValue)
 
+instance (Data a, Data b, Data c, Data d, Data e, Data f) =>
+         Data (a, b, c, d, e, f) where
+  (a1, b1, c1, d1, e1, f1) === (a2, b2, c2, d2, e2, f2) =
+    a1 === a2 && b1 === b2 && c1 === c2 && d1 === d2 && e1 === e2 && f1 === f2
+  aValue = (aValue, aValue, aValue, aValue, aValue, aValue)
+
+instance (Data a, Data b, Data c, Data d, Data e, Data f, Data g) =>
+         Data (a, b, c, d, e, f, g) where
+  (a1, b1, c1, d1, e1, f1, g1) === (a2, b2, c2, d2, e2, f2, g2) =
+    a1 === a2 && b1 === b2 && c1 === c2 && d1 === d2 && e1 === e2 &&
+    f1 === f2 && g1 === g2
+  aValue = (aValue, aValue, aValue, aValue, aValue, aValue, aValue)
+
+-- Value generator for integers.
+aValueInt :: Int
+aValueInt = genPos 1 ? 0  ?  0 - genPos 1
+ where
+  genPos n = n  ?  genPos (2 * n)  ?  genPos (2 * n + 1)
+
+-- Value generator for chars.
+aValueChar :: Char
+aValueChar = foldr1 (?) [minBound .. maxBound]
+
+-- Value generator for floats.
+-- Since there is no good way to enumerate floats, a free variable
+-- is returned.
+aValueFloat :: Float
+aValueFloat = x where x free
+
+------------------------------------------------------------------------------
 
 class Eq a where
+  (==), (/=) :? Det -> Det -> Det
   (==), (/=) :: a -> a -> Bool
 
   x == y = not (x /= y)
@@ -178,6 +235,10 @@ instance (Eq a, Eq b, Eq c, Eq d, Eq e) => Eq (a, b, c, d, e) where
   (a, b, c, d, e) == (a', b', c', d', e') =
     a == a' && b == b' && c == c' && d == d' && e == e'
 
+instance (Eq a, Eq b, Eq c, Eq d, Eq e, Eq f) => Eq (a, b, c, d, e, f) where
+  (a, b, c, d, e, f) == (a', b', c', d', e', f') =
+    a == a' && b == b' && c == c' && d == d' && e == e' && f == f'
+
 instance Eq a => Eq [a] where
   []     == []     = True
   []     == (_:_)  = False
@@ -205,7 +266,9 @@ instance Eq Ordering where
 eqChar :: Char -> Char -> Bool
 #ifdef __KICS2__
 eqChar external
-#elif defined(__PAKCS__)
+#elif  __KMCC__ > 0
+eqChar external
+#else
 eqChar x y = (prim_eqChar $# y) $# x
 
 prim_eqChar :: Char -> Char -> Bool
@@ -216,7 +279,9 @@ prim_eqChar external
 eqInt :: Int -> Int -> Bool
 #ifdef __KICS2__
 eqInt external
-#elif defined(__PAKCS__)
+#elif  __KMCC__ > 0
+eqInt external
+#else
 eqInt x y = (prim_eqInt $# y) $# x
 
 prim_eqInt :: Int -> Int -> Bool
@@ -227,18 +292,22 @@ prim_eqInt external
 eqFloat :: Float -> Float -> Bool
 #ifdef __KICS2__
 eqFloat external
-#elif defined(__PAKCS__)
+#elif  __KMCC__ > 0
+eqFloat external
+#else
 eqFloat x y = (prim_eqFloat $# y) $# x
 
 prim_eqFloat :: Float -> Float -> Bool
 prim_eqFloat external
 #endif
 
-infix 4 <, >, <=, >=
 
 class Eq a => Ord a where
+  compare :? Det -> Det -> Det
   compare :: a -> a -> Ordering
+  (<), (>), (<=), (>=) :? Det -> Det -> Det
   (<), (>), (<=), (>=) :: a -> a -> Bool
+  min, max :? Det -> Det -> Det
   min, max :: a -> a -> a
 
   compare x y | x == y = EQ
@@ -314,7 +383,9 @@ instance Ord Ordering where
 ltEqChar :: Char -> Char -> Bool
 #ifdef __KICS2__
 ltEqChar external
-#elif defined(__PAKCS__)
+#elif  __KMCC__ > 0
+ltEqChar external
+#else
 ltEqChar x y = (prim_ltEqChar $# y) $# x
 
 prim_ltEqChar :: Char -> Char -> Bool
@@ -325,7 +396,9 @@ prim_ltEqChar external
 ltEqInt :: Int -> Int -> Bool
 #ifdef __KICS2__
 ltEqInt external
-#elif defined(__PAKCS__)
+#elif  __KMCC__ > 0
+ltEqInt external
+#else
 ltEqInt x y = (prim_ltEqInt $# y) $# x
 
 prim_ltEqInt :: Int -> Int -> Bool
@@ -336,7 +409,9 @@ prim_ltEqInt external
 ltEqFloat :: Float -> Float -> Bool
 #ifdef __KICS2__
 ltEqFloat external
-#elif defined(__PAKCS__)
+#elif  __KMCC__ > 0
+ltEqFloat external
+#else
 ltEqFloat x y = (prim_ltEqFloat $# y) $# x
 
 prim_ltEqFloat :: Float -> Float -> Bool
@@ -381,6 +456,11 @@ instance (Show a, Show b, Show c, Show d, Show e) => Show (a, b, c, d, e) where
   showsPrec _ (a, b, c, d, e) =
     showTuple [shows a, shows b, shows c, shows d, shows e]
 
+instance (Show a, Show b, Show c, Show d, Show e, Show f) =>
+         Show (a, b, c, d, e, f) where
+  showsPrec _ (a, b, c, d, e, f) =
+    showTuple [shows a, shows b, shows c, shows d, shows e, shows f]
+
 instance Show a => Show [a] where
   showsPrec _ = showList
 
@@ -393,12 +473,15 @@ instance Show Ordering where
   showsPrec _ EQ = showString "EQ"
   showsPrec _ GT = showString "GT"
 
+--- Converts a showable value to a show function that prepends this value.
 shows :: Show a => a -> ShowS
 shows = showsPrec 0
 
+--- Converts a character to a show function that prepends the character.
 showChar :: Char -> ShowS
 showChar = (:)
 
+--- Converts a string to a show function that prepends the string.
 showString :: String -> ShowS
 showString str s = foldr showChar s str
 
@@ -408,6 +491,9 @@ showListDefault (x:xs) s = '[' : shows x (showl xs)
  where showl []     = ']' : s
        showl (y:ys) = ',' : shows y (showl ys)
 
+--- If the first argument is `True`, Converts a show function to a
+--- show function adding enclosing brackets, otherwise the show function
+--- is returned unchanged.
 showParen :: Bool -> ShowS -> ShowS
 showParen b s = if b then showChar '(' . s . showChar ')' else s
 
@@ -416,6 +502,8 @@ showSigned showPos p x
   | x < 0     = showParen (p > 6) (showChar '-' . showPos (-x))
   | otherwise = showPos x
 
+--- Converts a list of show functions to a show function combining
+--- the given show functions to a tuple representation.
 showTuple :: [ShowS] -> ShowS
 showTuple ss = showChar '('
              . foldr1 (\s r -> s . showChar ',' . r) ss
@@ -423,22 +511,31 @@ showTuple ss = showChar '('
 
 -- Returns the string representation of a character.
 showCharLiteral :: Char -> String
-showCharLiteral x = prim_show $## x
+showCharLiteral x = prim_showCharLiteral $## x
+
+prim_showCharLiteral :: Char -> String
+prim_showCharLiteral external
 
 -- Returns the string representation of a string.
 showStringLiteral :: String -> String
-showStringLiteral x = prim_show $## x
+showStringLiteral x = prim_showStringLiteral $## x
+
+prim_showStringLiteral :: String -> String
+prim_showStringLiteral external
 
 -- Returns the string representation of an integer.
 showIntLiteral :: Int -> String
-showIntLiteral x = prim_show $## x
+showIntLiteral x = prim_showIntLiteral $## x
+
+prim_showIntLiteral :: Int -> String
+prim_showIntLiteral external
 
 -- Returns the string representation of a floating point number.
 showFloatLiteral :: Float -> String
-showFloatLiteral x = prim_show $## x
+showFloatLiteral x = prim_showFloatLiteral $## x
 
-prim_show :: _ -> String
-prim_show external
+prim_showFloatLiteral :: Float -> String
+prim_showFloatLiteral external
 
 type ReadS a = String -> [(a, String)]
 
@@ -517,6 +614,23 @@ instance (Read a, Read b, Read c, Read d, Read e) => Read (a, b, c, d, e) where
                                                 , (",", x) <- lex w
                                                 , (e, y) <- reads x
                                                 , (")", z) <- lex y ])
+
+instance (Read a, Read b, Read c, Read d, Read e, Read f) =>
+    Read (a, b, c, d, e, f) where
+  readsPrec _ = readParen False
+                  (\o -> [ ((a, b, c, d, e, f), z) | ("(", p) <- lex o
+                                                   , (a, q) <- reads p
+                                                   , (",", r) <- lex q
+                                                   , (b, s) <- reads r
+                                                   , (",", t) <- lex s
+                                                   , (c, u) <- reads t
+                                                   , (",", v) <- lex u
+                                                   , (d, w) <- reads v
+                                                   , (",", x) <- lex w
+                                                   , (e, y) <- reads x
+                                                   , (",", z1) <- lex y
+                                                   , (f, z2) <- reads z1
+                                                   , (")", z) <- lex z2 ])
 
 instance Read a => Read [a] where
   readsPrec _ = readList
@@ -748,14 +862,16 @@ instance Enum Ordering where
   enumFrom x = enumFromTo x GT
   enumFromThen x y = enumFromThenTo x y (if x <= y then GT else LT)
 
-infixl 6 +, -
-infixl 7 *
-
 class Num a where
+  (+), (-), (*) :? Det -> Det -> Det
   (+), (-), (*) :: a -> a -> a
+  negate :? Det -> Det
   negate :: a -> a
+  abs :? Det -> Det
   abs :: a -> a
+  signum :? Det -> Det
   signum :: a -> a
+  fromInt :? Det -> Det
   fromInt :: Int -> a
 
   x - y = x + negate y
@@ -789,7 +905,9 @@ instance Num Float where
 plusInt :: Int -> Int -> Int
 #ifdef __KICS2__
 plusInt external
-#elif defined(__PAKCS__)
+#elif  __KMCC__ > 0
+plusInt external
+#else
 x `plusInt` y = (prim_plusInt $# y) $# x
 
 prim_plusInt :: Int -> Int -> Int
@@ -800,7 +918,9 @@ prim_plusInt external
 minusInt :: Int -> Int -> Int
 #ifdef __KICS2__
 minusInt external
-#elif defined(__PAKCS__)
+#elif  __KMCC__ > 0
+minusInt external
+#else
 x `minusInt` y = (prim_minusInt $# y) $# x
 
 prim_minusInt :: Int -> Int -> Int
@@ -811,7 +931,9 @@ prim_minusInt external
 timesInt :: Int -> Int -> Int
 #ifdef __KICS2__
 timesInt external
-#elif defined(__PAKCS__)
+#elif  __KMCC__ > 0
+timesInt external
+#else
 x `timesInt` y = (prim_timesInt $# y) $# x
 
 prim_timesInt :: Int -> Int -> Int
@@ -820,30 +942,45 @@ prim_timesInt external
 
 -- Adds two floating point numbers.
 plusFloat :: Float -> Float -> Float
+#ifdef __KMCC__
+plusFloat external
+#else
 x `plusFloat` y = (prim_plusFloat $# y) $# x
 
 prim_plusFloat :: Float -> Float -> Float
 prim_plusFloat external
+#endif
 
 -- Subtracts two floating point numbers.
 minusFloat :: Float -> Float -> Float
+#ifdef __KMCC__
+minusFloat external
+#else
 x `minusFloat` y = (prim_minusFloat $# y) $# x
 
 prim_minusFloat :: Float -> Float -> Float
 prim_minusFloat external
+#endif
 
 -- Multiplies two floating point numbers.
 timesFloat :: Float -> Float -> Float
+#ifdef __KMCC__
+timesFloat external
+#else
 x `timesFloat` y = (prim_timesFloat $# y) $# x
 
 prim_timesFloat :: Float -> Float -> Float
 prim_timesFloat external
+#endif
 
 -- Negates a floating point number.
 negateFloat :: Float -> Float
+negateFloat :? Det -> Det
 #ifdef __KICS2__
 negateFloat external
-#elif defined(__PAKCS__)
+#elif  __KMCC__ > 0
+negateFloat external
+#else
 negateFloat x = prim_negateFloat $# x
 
 prim_negateFloat :: Float -> Float
@@ -852,16 +989,20 @@ prim_negateFloat external
 
 -- Converts from integers to floating point numbers.
 intToFloat :: Int -> Float
+intToFloat :? Det -> Det
+#ifdef __KMCC__
+intToFloat external
+#else
 intToFloat x = prim_intToFloat $# x
 
 prim_intToFloat :: Int -> Float
 prim_intToFloat external
-
-infixl 7 /
+#endif
 
 class Num a => Fractional a where
   (/) :: a -> a -> a
   recip :: a -> a
+  fromFloat :? Det -> Det
   fromFloat :: Float -> a
 
   recip x = 1.0 / x
@@ -873,10 +1014,14 @@ instance Fractional Float where
 
 -- Division on floating point numbers.
 divFloat :: Float -> Float -> Float
+#ifdef __KMCC__
+divFloat external
+#else
 x `divFloat` y = (prim_divFloat $# y) $# x
 
 prim_divFloat :: Float -> Float -> Float
 prim_divFloat external
+#endif
 
 class (Num a, Ord a) => Real a where
   toFloat :: a -> Float
@@ -887,7 +1032,6 @@ instance Real Int where
 instance Real Float where
   toFloat x = x
 
-infixl 7 `div`, `mod`, `quot`, `rem`
 
 class (Real a, Enum a) => Integral a where
   div, mod :: a -> a -> a
@@ -931,7 +1075,9 @@ realToFrac = fromFloat . toFloat
 divInt :: Int -> Int -> Int
 #ifdef __KICS2__
 divInt external
-#elif defined(__PAKCS__)
+#elif  __KMCC__ > 0
+divInt external
+#else
 x `divInt` y = (prim_divInt $# y) $# x
 
 prim_divInt :: Int -> Int -> Int
@@ -943,7 +1089,9 @@ prim_divInt external
 modInt :: Int -> Int -> Int
 #ifdef __KICS2__
 modInt external
-#elif defined(__PAKCS__)
+#elif  __KMCC__ > 0
+modInt external
+#else
 x `modInt` y = (prim_modInt $# y) $# x
 
 prim_modInt :: Int -> Int -> Int
@@ -955,7 +1103,9 @@ prim_modInt external
 quotInt :: Int -> Int -> Int
 #ifdef __KICS2__
 quotInt external
-#elif defined(__PAKCS__)
+#elif  __KMCC__ > 0
+quotInt external
+#else
 x `quotInt` y = (prim_quotInt $# y) $# x
 
 prim_quotInt :: Int -> Int -> Int
@@ -967,7 +1117,9 @@ prim_quotInt external
 remInt :: Int -> Int -> Int
 #ifdef __KICS2__
 remInt external
-#elif defined(__PAKCS__)
+#elif  __KMCC__ > 0
+remInt external
+#else
 x `remInt` y = (prim_remInt $# y) $# x
 
 prim_remInt :: Int -> Int -> Int
@@ -1003,20 +1155,28 @@ instance RealFrac Float where
 -- Conversion function from floating point numbers to integers.
 -- The result is the closest integer between the argument and 0.
 truncateFloat :: Float -> Int
+#ifdef __KMCC__
+truncateFloat external
+#else
 truncateFloat x = prim_truncateFloat $# x
 
 prim_truncateFloat :: Float -> Int
 prim_truncateFloat external
+#endif
 
 -- Conversion function from floating point numbers to integers.
 -- The result is the nearest integer to the argument.
 -- If the argument is equidistant between two integers,
 -- it is rounded to the closest even integer value.
 roundFloat :: Float -> Int
+#ifdef __KMCC__
+roundFloat external
+#else
 roundFloat x = prim_roundFloat $# x
 
 prim_roundFloat :: Float -> Int
 prim_roundFloat external
+#endif
 
 class Fractional a => Floating a where
   pi :: a
@@ -1053,109 +1213,168 @@ instance Floating Float where
 
 -- Natural logarithm.
 logFloat :: Float -> Float
+#ifdef __KMCC__
+logFloat external
+#else
 logFloat x = prim_logFloat $# x
 
 prim_logFloat :: Float -> Float
 prim_logFloat external
+#endif
 
 -- Natural exponent.
 expFloat :: Float -> Float
+#ifdef __KMCC__
+expFloat external
+#else
 expFloat x = prim_expFloat $# x
 
 prim_expFloat :: Float -> Float
 prim_expFloat external
+#endif
 
 -- Square root.
 sqrtFloat :: Float -> Float
+#ifdef __KMCC__
+sqrtFloat external
+#else
 sqrtFloat x = prim_sqrtFloat $# x
 
 prim_sqrtFloat :: Float -> Float
 prim_sqrtFloat external
+#endif
 
 -- Sine.
 sinFloat :: Float -> Float
+#ifdef __KMCC__
+sinFloat external
+#else
 sinFloat x = prim_sinFloat $# x
 
 prim_sinFloat :: Float -> Float
 prim_sinFloat external
+#endif
 
 -- Cosine.
 cosFloat :: Float -> Float
+#ifdef __KMCC__
+cosFloat external
+#else
 cosFloat x = prim_cosFloat $# x
 
 prim_cosFloat :: Float -> Float
 prim_cosFloat external
+#endif
 
 -- Tangent.
 tanFloat :: Float -> Float
+#ifdef __KMCC__
+tanFloat external
+#else
 tanFloat x = prim_tanFloat $# x
 
 prim_tanFloat :: Float -> Float
 prim_tanFloat external
+#endif
 
 -- Arcus sine.
 asinFloat :: Float -> Float
+#ifdef __KMCC__
+asinFloat external
+#else
 asinFloat x = prim_asinFloat $# x
 
 prim_asinFloat :: Float -> Float
 prim_asinFloat external
+#endif
 
 -- Arcus cosine.
 acosFloat :: Float -> Float
+#ifdef __KMCC__
+acosFloat external
+#else
 acosFloat x = prim_acosFloat $# x
 
 prim_acosFloat :: Float -> Float
 prim_acosFloat external
+#endif
 
 -- Arcus tangent.
 atanFloat :: Float -> Float
+#ifdef __KMCC__
+atanFloat external
+#else
 atanFloat x = prim_atanFloat $# x
 
 prim_atanFloat :: Float -> Float
 prim_atanFloat external
+#endif
 
 -- Hyperbolic sine.
 sinhFloat :: Float -> Float
+#ifdef __KMCC__
+sinhFloat external
+#else
 sinhFloat x = prim_sinhFloat $# x
 
 prim_sinhFloat :: Float -> Float
 prim_sinhFloat external
+#endif
 
 -- Hyperbolic cosine.
 coshFloat :: Float -> Float
+#ifdef __KMCC__
+coshFloat external
+#else
 coshFloat x = prim_coshFloat $# x
 
 prim_coshFloat :: Float -> Float
 prim_coshFloat external
+#endif
 
 -- Hyperbolic tangent.
 tanhFloat :: Float -> Float
+#ifdef __KMCC__
+tanhFloat external
+#else
 tanhFloat x = prim_tanhFloat $# x
 
 prim_tanhFloat :: Float -> Float
 prim_tanhFloat external
+#endif
 
 -- Hyperbolic arcus sine.
 asinhFloat :: Float -> Float
+#ifdef __KMCC__
+asinhFloat external
+#else
 asinhFloat x = prim_asinhFloat $# x
 
 prim_asinhFloat :: Float -> Float
 prim_asinhFloat external
+#endif
 
 -- Hyperbolic arcus cosine.
 acoshFloat :: Float -> Float
+#ifdef __KMCC__
+acoshFloat external
+#else
 acoshFloat x = prim_acoshFloat $# x
 
 prim_acoshFloat :: Float -> Float
 prim_acoshFloat external
+#endif
 
 -- Hyperbolic arcus tangent.
 atanhFloat :: Float -> Float
+#ifdef __KMCC__
+atanhFloat external
+#else
 atanhFloat x = prim_atanhFloat $# x
 
 prim_atanhFloat :: Float -> Float
 prim_atanhFloat external
-
+#endif
 
 (^) :: (Num a, Integral b) => a -> b -> a
 x0 ^ y0 | y0 < 0    = error "Negative exponent"
@@ -1218,7 +1437,6 @@ instance Monoid Ordering where
   EQ `mappend` y = y
   GT `mappend` _ = GT
 
-infixl 4 <$, <$>
 
 class Functor f where
   fmap :: (a -> b) -> f a -> f b
@@ -1235,7 +1453,6 @@ instance Functor ((->) r) where
 (<$>) :: Functor f => (a -> b) -> f a -> f b
 (<$>) = fmap
 
-infixl 4 <*>, <*, *>
 
 class Functor f => Applicative f where
   pure :: a -> f a
@@ -1260,7 +1477,6 @@ instance Applicative ((->) a) where
   (<*>) f g x = f x (g x)
   liftA2 q f g x = q (f x) (g x)
 
-infixl 3 <|>
 
 -- | A monoid on applicative functors.
 --
@@ -1278,23 +1494,22 @@ class Applicative f => Alternative f where
 
     -- | One or more.
     some :: f a -> f [a]
-    some v = some_v
+    some v = some_ v
       where
-        many_v = some_v <|> pure []
-        some_v = (:) <$> v <*> many_v
+        many_ x = some_ x <|> pure []
+        some_ x = (:) <$> x <*> many_ x
 
     -- | Zero or more.
     many :: f a -> f [a]
-    many v = many_v
+    many v = many_ v
       where
-        many_v = some_v <|> pure []
-        some_v = (:) <$> v <*> many_v
+        many_ x = some_ x <|> pure []
+        some_ x = (:) <$> x <*> many_ x
 
 instance Alternative [] where
     empty = []
     (<|>) = (++)
 
-infixl 1 >>, >>=
 
 class Applicative m => Monad m where
   (>>=) :: m a -> (a -> m b) -> m b
@@ -1372,7 +1587,7 @@ isAlphaNum c = isAlpha c || isDigit c
 
 --- Returns true if the argument is a binary digit.
 isBinDigit :: Char -> Bool
-isBinDigit c = c >= '0' || c <= '1'
+isBinDigit c = c == '0' || c == '1'
 
 --- Returns true if the argument is an octal digit.
 isOctDigit :: Char -> Bool
@@ -1397,9 +1612,12 @@ prim_ord :: Char -> Int
 prim_ord external
 
 --- Converts a Unicode value into a character.
---- Fails if the value is out of bounds.
+--- The conversion is total, i.e., for out-of-bound values, the smallest
+--- or largest character is generated.
 chr :: Int -> Char
-chr n | n >= 0 && n <= 1114111 = prim_chr $# n
+chr n | n < 0       = prim_chr 0
+      | n > 1114111 = prim_chr 1114111
+      | otherwise   = prim_chr $# n
 
 prim_chr :: Int -> Char
 prim_chr external
@@ -1433,7 +1651,6 @@ unwords :: [String] -> String
 unwords ws = if ws == [] then []
                          else foldr1 (\w s -> w ++ ' ' : s) ws
 
-infixr 0 $, $!, $!!, $#, $##, `seq`
 
 --- Right-associative application.
 ($) :: (a -> b) -> a -> b
@@ -1441,11 +1658,13 @@ f $ x = f x
 
 --- Right-associative application with strict evaluation of its argument
 --- to head normal form.
+($!) :? (a -> b) -> a -> b
 ($!) :: (a -> b) -> a -> b
 ($!) external
 
 --- Right-associative application with strict evaluation of its argument
 --- to normal form.
+($!!) :? (a -> b) -> a -> b
 ($!!) :: (a -> b) -> a -> b
 ($!!) external
 
@@ -1456,6 +1675,7 @@ f $# x = f $! (ensureNotFree x)
 
 --- Right-associative application with strict evaluation of its argument
 --- to ground normal form.
+($##) :? (a -> b) -> a -> b
 ($##) :: (a -> b) -> a -> b
 ($##) external
 
@@ -1485,7 +1705,6 @@ normalForm x = id $!! x
 groundNormalForm :: a -> a
 groundNormalForm x = id $## x
 
-infixr 9 .
 
 --- Function composition.
 (.) :: (b -> c) -> (a -> b) -> (a -> c)
@@ -1521,8 +1740,6 @@ flip f x y = f y x
 until :: (a -> Bool) -> (a -> a) -> a -> a
 until p f x = if p x then x else until p f (f x)
 
-infixr 3 &&
-infixr 2 ||
 
 --- Sequential conjunction on Booleans.
 (&&) :: Bool -> Bool -> Bool
@@ -1556,9 +1773,6 @@ fst (x, _) = x
 snd :: (_, b) -> b
 snd (_, y) = y
 
-infixr 5 ++
-infixl 9 !!
-infix 4 `elem`, `notElem`
 
 --- Computes the first element of a list.
 head :: [a] -> a
@@ -1582,9 +1796,8 @@ null (_:_) = False
 
 --- Computes the length of a list.
 length :: [_] -> Int
-length xs = len xs 0
- where len []     n = n
-       len (_:ys) n = let np1 = n + 1 in len ys $!! np1
+length [] = 0
+length (_:xs) = 1 + length xs
 
 --- List index (subscript) operator, head has index 0.
 (!!) :: [a] -> Int -> a
@@ -1805,6 +2018,19 @@ data Either a b = Left a
                 | Right b
   deriving (Eq, Ord, Show, Read)
 
+instance Functor (Either a) where
+  fmap _ (Left e)  = Left e
+  fmap f (Right x) = Right (f x)
+
+instance Applicative (Either a) where
+  pure = Right
+  (<*>) = ap
+
+instance Monad (Either a) where
+  return          = Right
+  (Left e)  >>= _ = Left e
+  (Right x) >>= f = f x
+
 either :: (a -> c) -> (b -> c) -> Either a b -> c
 either left _     (Left  a) = left a
 either _    right (Right b) = right b
@@ -1820,11 +2046,7 @@ instance  Functor IO where
 
 instance Applicative IO where
   pure = returnIO
-#ifdef __PAKCS__
-  (*>) = seqIO
-#else
   m *> k = m >>= \_ -> k
-#endif
   (<*>) = ap
   liftA2 = liftM2
 
@@ -1842,9 +2064,6 @@ instance MonadFail IO where
 
 bindIO :: IO a -> (a -> IO b) -> IO b
 bindIO external
-
-seqIO :: IO a -> IO b -> IO b
-seqIO external
 
 returnIO :: a -> IO a
 returnIO external
@@ -1938,13 +2157,13 @@ userError = UserError
 
 --- Raises an I/O exception with a given error value.
 ioError :: IOError -> IO _
-#ifdef __PAKCS__
-ioError err = error (show err)
-#else
+#ifdef __KICS2__
 ioError err = prim_ioError $## err
 
 prim_ioError :: IOError -> IO _
 prim_ioError external
+#else
+ioError err = error (show err)
 #endif
 
 --- Catches a possible error or failure during the execution of an
@@ -1954,11 +2173,6 @@ prim_ioError external
 catch :: IO a -> (IOError -> IO a) -> IO a
 catch external
 
-infix 4 =:=, =:<=
-#ifdef __PAKCS__
-infix 4 =:<<=
-#endif
-infixr 0 &, &>
 
 type Success = Bool
 
@@ -1981,18 +2195,49 @@ doSolve b | b = return ()
 --- reduced to a unifiable data term (i.e., a term without defined
 --- function symbols).
 (=:=) :: Data a => a -> a -> Bool
+#ifdef __PAKCS__
+x =:= y = constrEq x y
+#else
 (=:=) external
+#endif
 
---- Non-strict equational constraint. Used to implement functional patterns.
+--- Internal operation to implement equational constraints.
+--- It is used by the strict equality optimizer but should not be used
+--- in regular programs.
+#ifdef __PAKCS__
+constrEq :: a -> a -> Bool
+constrEq external
+#endif
+
+--- Non-strict equational constraint.
+--- This operation is not intended to be used in source programs
+--- but it is used to implement
+--- [functional patterns](https://doi.org/10.1007/11680093_2).
+--- Conceptually, `(e1 =:<= e2)` is satisfiable if `e1` can be evaluated
+--- to some pattern (data term) that matches `e2`, i.e., `e2` is
+--- an instance of this pattern.
+--- The `Data` context is required since the resulting pattern might be
+--- non-linear so that it abbreviates some further equational constraints,
+--- see [Section 7](https://doi.org/10.1007/978-3-030-46714-2_15).
 (=:<=) :: Data a => a -> a -> Bool
+#ifdef __PAKCS__
+x =:<= y = nonstrictEq x y
+#else
 (=:<=) external
+#endif
 
 #ifdef __PAKCS__
+nonstrictEq :: a -> a -> Bool
+nonstrictEq external
+
 --- Non-strict equational constraint for linear functional patterns.
---- Thus, it must be ensured that the first argument is always (after evalutation
---- by narrowing) a linear pattern. Experimental.
+--- Thus, it must be ensured that the first argument is always
+--- (after evalutation by narrowing) a linear pattern. Experimental.
 (=:<<=) :: Data a => a -> a -> Bool
-(=:<<=) external
+x =:<<= y = unifEqLinear x y
+
+unifEqLinear :: a -> a -> Bool
+unifEqLinear external
 
 --- internal function to implement =:<=
 ifVar :: _ -> a -> a -> a
@@ -2011,8 +2256,6 @@ ifVar external
 --- The expression has no value if the condition does not evaluate to `True`.
 (&>) :: Bool -> a -> a
 True &> x = x
-
-infixr 0 ?
 
 --- Non-deterministic choice _par excellence_.
 --- The value of `x ? y` is either `x` or `y`.
@@ -2057,3 +2300,18 @@ letrec external
 failure :: _ -> _ -> _
 failure external
 #endif
+
+
+----------------------------------------------------------------
+-- Extras used by specific Curry tools.
+
+--- Identity type synonym used to mark deterministic operations.
+--- Used by the Curry preprocessor.
+type DET a = a
+
+--- Identity function used by the partial evaluator
+--- to mark expressions to be partially evaluated.
+PEVAL   :: a -> a
+PEVAL x = x
+
+----------------------------------------------------------------
