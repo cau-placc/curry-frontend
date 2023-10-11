@@ -20,7 +20,7 @@ module Imports (importInterfaces, importModules, qualifyEnv) where
 
 import           Data.List                  (nubBy, find)
 import qualified Data.Map            as Map
-import           Data.Maybe                 (catMaybes, fromMaybe, isJust)
+import           Data.Maybe                 (fromMaybe, isJust, mapMaybe)
 import qualified Data.Set            as Set
 
 import Curry.Base.Ident
@@ -76,12 +76,13 @@ importInterfaces (Interface m is _) iEnv
 -- Importing an interface into the module
 -- ---------------------------------------------------------------------------
 
--- Four kinds of environments are computed from the interface:
+-- Five kinds of environments are computed from the interface:
 --
 -- 1. The operator precedences
 -- 2. The type constructors
 -- 3. The types of the data constructors and functions (values)
 -- 4. The instances
+-- 5. The determinism types
 --
 -- Note that the original names of all entities defined in the imported module
 -- are qualified appropriately. The same is true for type expressions.
@@ -138,12 +139,12 @@ importEntities ents m q isVisible' f ds env =
 
 importData :: (Ident -> Bool) -> TypeInfo -> TypeInfo
 importData isVisible' (DataType tc k cs) =
-  DataType tc k $ catMaybes $ map (importConstr isVisible') cs
+  DataType tc k $ mapMaybe (importConstr isVisible') cs
 importData isVisible' (RenamingType tc k nc) =
   maybe (DataType tc k []) (RenamingType tc k) (importConstr isVisible' nc)
 importData _ (AliasType tc k n ty) = AliasType tc k n ty
 importData isVisible' (TypeClass qcls k ms) =
-  TypeClass qcls k $ catMaybes $ map (importMethod isVisible') ms
+  TypeClass qcls k $ mapMaybe (importMethod isVisible') ms
 importData _ (TypeVar _) = internalError "Imports.importData: type variable"
 
 importConstr :: (Ident -> Bool) -> DataConstr -> Maybe DataConstr
@@ -157,26 +158,33 @@ importMethod isVisible' mthd
   | otherwise                    = Nothing
 
 importClasses :: ModuleIdent -> [IDecl] -> ClassEnv -> ClassEnv
-importClasses m = flip $ foldr (bindClass m)
+importClasses m ds ce = foldr (bindClass dsMap m) ce ds
+  where
+    dsMap = Map.fromList [(i, d) | d@(IFunctionDecl _ i _ _ _ _) <- ds]
 
-bindClass :: ModuleIdent -> IDecl -> ClassEnv -> ClassEnv
-bindClass m (HidingClassDecl _ cx cls _ _ ids) =
+bindClass :: Map.Map QualIdent IDecl -> ModuleIdent -> IDecl -> ClassEnv -> ClassEnv
+bindClass dsMap m (HidingClassDecl _ cx cls _ _ ids) =
+  bindClassInfo qcls (sclss, ms)
+  where qcls = qualQualify m cls
+        sclss = map (\(Constraint _ scls _) -> qualQualify m scls) cx
+        ms = map (\i -> (i, False, False, getDet i)) ids
+        getDet i = case Map.lookup (qualifyLike qcls i) dsMap of
+          Just (IFunctionDecl _ _ _ _ _ de) -> Just $ toDetType de
+          _                                 -> internalError "Imports.bindClass"
+bindClass _ m (IClassDecl _ cx cls _ _ ds ids) =
   bindClassInfo (qualQualify m cls) (sclss, ms)
   where sclss = map (\(Constraint _ scls _) -> qualQualify m scls) cx
-        ms = map (, False, False) ids
-bindClass m (IClassDecl _ cx cls _ _ ds ids) =
-  bindClassInfo (qualQualify m cls) (sclss, ms)
-  where sclss = map (\(Constraint _ scls _) -> qualQualify m scls) cx
-        ms = map (\d -> (imethod d, isJust $ imethodArity d, isVis d)) ds
+        ms = map (\d -> (imethod d, isJust $ imethodArity d, isVis d, toDetType <$> imethodDetTypeAnn d)) ds
         isVis (IMethodDecl _ idt _ _ _ _) = idt `notElem` ids
-bindClass _ _ = id
+bindClass _ _ _ = id
 
 importInstances :: ModuleIdent -> [IDecl] -> InstEnv -> InstEnv
 importInstances m = flip $ foldr (bindInstance m)
 
 bindInstance :: ModuleIdent -> IDecl -> InstEnv -> InstEnv
 bindInstance m (IInstanceDecl _ cx qcls ty is mm) = bindInstInfo
-  (qualQualify m qcls, qualifyTC m $ typeConstr ty) (fromMaybe m mm, ps, map (\(f, a, _) -> (f, a)) is)
+  (qualQualify m qcls, qualifyTC m $ typeConstr ty)
+  (fromMaybe m mm, ps, mapMaybe (\(f, a, _) -> fmap (f,) a) is)
   where PredType ps _ = toQualPredType m [] $ QualTypeExpr NoSpanInfo cx ty
 bindInstance _ _ = id
 
@@ -190,7 +198,29 @@ bindDetEnv m (IInstanceDecl _ _ cls ty ds _) dEnv =
   foldr (bindDetEnvInstance m cls ty) dEnv ds
 bindDetEnv m (IFunctionDecl _ f _ _ _ dty) dEnv =
   Map.insert (QI (qualQualify m f)) (toDetType dty) dEnv
+bindDetEnv m (IDataDecl _ _ _ _ cs _) dEnv =
+  foldr (bindDetEnvConstr m) dEnv cs
+bindDetEnv m (INewtypeDecl _ _ _ _ nc _) dEnv =
+  bindDetEnvConstr m nc dEnv
 bindDetEnv _ _ dEnv = dEnv
+
+class BindDetEnvConstr a where
+  bindDetEnvConstr :: ModuleIdent -> a -> DetEnv -> DetEnv
+
+instance BindDetEnvConstr ConstrDecl where
+  bindDetEnvConstr m (RecordDecl _ _ fs) =
+    flip (foldr go) fs
+    where
+      go (FieldDecl _ ls _) = flip (foldr go') ls
+      go' i = Map.insert (QI (qualifyWith m i))
+                $ Forall [0] (DetArrow (VarTy 0) (VarTy 0))
+  bindDetEnvConstr _ _ = id
+
+instance BindDetEnvConstr NewConstrDecl where
+  bindDetEnvConstr m (NewRecordDecl _ i _) =
+    Map.insert (QI (qualifyWith m i))
+      $ Forall [0] (DetArrow (VarTy 0) (VarTy 0))
+  bindDetEnvConstr _ _ = id
 
 bindDetEnvClass :: ModuleIdent -> QualIdent -> IMethodDecl -> DetEnv -> DetEnv
 bindDetEnvClass m cls (IMethodDecl _ f _ _ ddty _) =
@@ -198,8 +228,8 @@ bindDetEnvClass m cls (IMethodDecl _ f _ _ ddty _) =
 
 bindDetEnvInstance :: ModuleIdent -> QualIdent -> TypeExpr -> IMethodImpl -> DetEnv -> DetEnv
 bindDetEnvInstance m cls ty (f, _, ddty) =
-  Map.insert (II (qualQualify m cls) (qualQualify m (typeConstr ty)) (qualifyWith m f)) (toDetType ddty)
-
+  Map.insert (II qcls (qualQualify m (typeConstr ty)) (qualifyLike qcls f)) (toDetType ddty)
+  where qcls = qualQualify m cls
 -- ---------------------------------------------------------------------------
 -- Building the initial environment
 -- ---------------------------------------------------------------------------
@@ -414,6 +444,7 @@ importInterfaceIntf (Interface m _ ds) env = env
   , valueEnv  = importEntitiesIntf m (values m)       ds $ valueEnv  env
   , classEnv  = importClasses      m                  ds $ classEnv  env
   , instEnv   = importInstances    m                  ds $ instEnv   env
+  , detEnv    = importDetEnv       m                  ds $ detEnv    env
   }
 
 importEntitiesIntf :: Entity a => ModuleIdent -> (IDecl -> [a]) -> [IDecl]

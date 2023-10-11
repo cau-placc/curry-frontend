@@ -34,7 +34,7 @@ module Transformations.CaseCompletion (completeCase) where
 
 import qualified Control.Monad.State as S   (State, evalState, gets, modify)
 import           Data.List                  (find)
-import           Data.Maybe                 (fromMaybe, listToMaybe, maybeToList)
+import           Data.Maybe                 (fromMaybe, listToMaybe)
 
 import           Curry.Base.Ident
 import qualified Curry.Syntax        as CS
@@ -54,7 +54,6 @@ import Transformations.CurryToIL            (transType)
 import Transformations.Dictionary           (qImplMethodId, qDictTypeId, qInstFunId)
 
 import IL
-import Curry.Base.SpanInfo
 
 -- Completes case expressions by adding branches for missing constructors.
 -- The interface environment 'iEnv' is needed to compute these constructors.

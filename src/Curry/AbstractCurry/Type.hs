@@ -24,7 +24,7 @@ module Curry.AbstractCurry.Type
   , CDefaultDecl (..), CClassDecl (..), CInstanceDecl (..)
   , CTypeDecl (..), CConsDecl (..), CFieldDecl (..)
   , CConstraint, CContext (..), CTypeExpr (..), CQualTypeExpr (..)
-  , COpDecl (..), CFixity (..), Arity, CFuncDecl (..), CRhs (..), CRule (..)
+  , COpDecl (..), CFixity (..), Arity, CFuncDecl (..), CDetType (..), CRhs (..), CRule (..)
   , CLocalDecl (..), CVarIName, CExpr (..), CCaseType (..), CStatement (..)
   , CPattern (..), CLiteral (..), CField, version
   ) where
@@ -35,7 +35,7 @@ module Curry.AbstractCurry.Type
 
 -- |Current version of AbstractCurry
 version :: String
-version = "AbstractCurry 3.0"
+version = "AbstractCurry 4.0"
 
 -- |A module name.
 type MName = String
@@ -207,10 +207,11 @@ type Arity = Int
 -- |Data type for representing function declarations.
 -- A function declaration in FlatCurry is a term of the form
 -- @
--- (CFunc name arity visibility type (CRules eval [CRule rule1,...,rulek]))
+-- (CFunc name arity visibility type dtype (CRules eval [CRule rule1,...,rulek]))
 -- @
 -- and represents the function @name@ with definition
 -- @
+-- name :? dtype
 -- name :: type
 -- rule1
 -- ...
@@ -219,15 +220,33 @@ type Arity = Int
 -- /Note:/ The variable indices are unique inside each rule.
 -- External functions are represented as
 -- @
--- (CFunc name arity type (CExternal s))
+-- (CFunc name arity type dtype (CExternal s))
 -- @
 -- where s is the external name associated to this function.
 -- Thus, a function declaration consists of the name, arity, type, and
 -- a list of rules.
 -- If the list of rules is empty, the function is considered
 -- to be externally defined.
-data CFuncDecl = CFunc QName Arity CVisibility CQualTypeExpr [CRule]
+data CFuncDecl = CFunc QName Arity CVisibility CQualTypeExpr CDetType [CRule]
     deriving (Eq, Read, Show)
+
+-- |Determinism type
+-- A determinism type describes how a function behaves w.r.t nondeterminism.
+-- A function with determinism type @ a1 -> ... -> Det @
+-- is guaranteed to be deterministic when the input provided to the function
+-- has the required types @a1 ... an-1@.
+-- If the type of the arguments does not match, the function might produce
+-- nondeterministic results.
+-- A determinism type can either be deterministic (@CDet@),
+-- nondeterministic (@CAny@),
+-- a type variable (@CDetVar@) to allow "determiminism polymorphism"
+-- or a function type (@CDetArrow@).
+data CDetType
+  = CDet
+  | CAny
+  | CDetVar CTVarIName
+  | CDetArrow  CDetType CDetType
+  deriving (Eq, Read, Show)
 
 -- |The general form of a function rule. It consists of a list of patterns
 -- (left-hand side), a list of guards (@success@ if not present in the

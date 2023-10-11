@@ -24,6 +24,7 @@ import qualified Data.Map   as Map (foldrWithKey, toList, lookup)
 import           Data.Maybe        (mapMaybe)
 import qualified Data.Set   as Set ( Set, empty, insert, deleteMin, fromList
                                    , member, toList )
+import           Text.PrettyPrint  (render)
 
 import Curry.Base.Position
 import Curry.Base.SpanInfo
@@ -77,8 +78,8 @@ exportInterface' m es pEnv tcEnv vEnv dEnv clsEnv inEnv = Interface m imports de
   imports = map (IImportDecl NoPos) $ usedModules decls'
   precs   = foldr (infixDecl m pEnv) [] es
   types   = foldr (typeDecl m tcEnv clsEnv tvs) [] es
-  values  = foldr (valueDecl m vEnv dEnv tvs) [] es
-  insts   = Map.foldrWithKey (instDecl m tcEnv dEnv tvs) [] inEnv
+  values  = foldr (valueDecl m vEnv dEnv clsEnv tvs) [] es
+  insts   = Map.foldrWithKey (instDecl m tcEnv clsEnv dEnv tvs) [] inEnv
   decls   = precs ++ types ++ values ++ insts
   decls'  = closeInterface m tcEnv clsEnv inEnv dEnv tvs Set.empty decls
 
@@ -175,8 +176,8 @@ methodDecl m tvs (ClassMethod f a (PredType ps ty) (Just ddty) mdty) = IMethodDe
   (fromQualPredType m tvs $ PredType (Set.deleteMin ps) ty) (toDetExpr ddty) (fmap toDetExpr mdty)
 methodDecl _ _ _ = internalError "Exports.methodDecl: unknown determinism expression of method"
 
-valueDecl :: ModuleIdent -> ValueEnv -> DetEnv -> [Ident] -> Export -> [IDecl] -> [IDecl]
-valueDecl m vEnv dEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
+valueDecl :: ModuleIdent -> ValueEnv -> DetEnv -> ClassEnv -> [Ident] -> Export -> [IDecl] -> [IDecl]
+valueDecl m vEnv dEnv cEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
   [Value _ cm a (ForAll _ pty)] ->
     IFunctionDecl NoPos (qualUnqualify m f)
         (fmap (const (head tvs)) cm) a (fromQualPredType m tvs pty) dty : ds
@@ -184,31 +185,41 @@ valueDecl m vEnv dEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
         dty = case lookupDetEnv f dEnv of
                 Just dty' -> toDetExpr dty'
                 Nothing -> case cm of
-                  Just _  -> VarDetExpr NoSpanInfo (tvs !! 1) -- use a dummy one, not used for class methods
+                  Just qcls  -> case getDeterminismAnnotation qcls (unqualify f) cEnv of
+                    Just dty' -> toDetExpr dty'
+                    Nothing   -> AnyDetExpr NoSpanInfo
                   Nothing -> internalError $ "Exports.valueDecl: " ++ show f
   [Label _ _ _ ] -> ds -- Record labels are collected somewhere else.
   _ -> internalError $ "Exports.valueDecl: " ++ show f
-valueDecl _ _ _ _ (ExportTypeWith _ _ _) ds = ds
-valueDecl _ _ _ _ _ _ = internalError "Exports.valueDecl: no pattern match"
+valueDecl _ _ _ _ _ (ExportTypeWith _ _ _) ds = ds
+valueDecl _ _ _ _ _ _ _ = internalError "Exports.valueDecl: no pattern match"
 
-instDecl :: ModuleIdent -> TCEnv -> DetEnv -> [Ident] -> InstIdent -> InstInfo -> [IDecl]
+instDecl :: ModuleIdent -> TCEnv -> ClassEnv -> DetEnv -> [Ident] -> InstIdent -> InstInfo -> [IDecl]
          -> [IDecl]
-instDecl m tcEnv dEnv tvs ident@(cls, tc) info@(m', _, _) ds
+instDecl m tcEnv cEnv dEnv tvs ident@(cls, tc) info@(m', _, _) ds
   | qidModule cls /= Just m' && qidModule tc /= Just m' =
-    iInstDecl m tcEnv dEnv tvs ident info : ds
+    iInstDecl m tcEnv cEnv dEnv tvs ident info : ds
   | otherwise = ds
 
-iInstDecl :: ModuleIdent -> TCEnv -> DetEnv -> [Ident] -> InstIdent -> InstInfo -> IDecl
-iInstDecl m tcEnv dEnv tvs (cls, tc) (m', ps, is) =
-  IInstanceDecl NoPos cx (qualUnqualify m cls) ty (map getDetInfo is) mm
+iInstDecl :: ModuleIdent -> TCEnv -> ClassEnv -> DetEnv -> [Ident] -> InstIdent -> InstInfo -> IDecl
+iInstDecl m tcEnv cEnv dEnv tvs (cls, tc) (m', ps, is) =
+  IInstanceDecl NoPos cx (qualUnqualify m cls) ty (map getDetInfo allIs) mm
   where pty = PredType ps $ applyType (TypeConstructor tc) $
                 map TypeVariable [0 .. n-1]
+        allMthds = allClassMethods cls cEnv
+        allIs = map (\i -> (i, lookup i is)) allMthds
         QualTypeExpr _ cx ty = fromQualPredType m tvs pty
         n = kindArity (tcKind m tc tcEnv) - kindArity (clsKind m cls tcEnv)
         mm = if m == m' then Nothing else Just m'
-        getDetInfo (f, a) = case Map.lookup (II cls (qualQualify m tc) (qualifyLike cls f)) dEnv of
-          Just dty -> (f, a, toDetExpr dty)
-          Nothing -> internalError $ "Exports.iInstDecl: " ++ show (cls, tc, f)
+        getDetInfo (f, ma) = case Map.lookup (II cls tcQualifiedPrel (qualifyLike cls f)) dEnv of
+          Just dty -> (f, ma, toDetExpr dty)
+          Nothing -> internalError $ "Exports.iInstDecl: " ++ render (pPrint (cls, tc, f, tcQualifiedPrel, dEnv))
+        tcQualifiedPrel = case unqualify tc of
+          i | isTupleId i
+            || i == unitId
+            || i == listId
+            || i == arrowId -> qualQualify preludeMIdent tc
+            | otherwise     -> qualQualify m tc
 
 -- The compiler determines the list of imported modules from the set of
 -- module qualifiers that are used in the interface. Careful readers
@@ -327,7 +338,7 @@ closeInterface m tcEnv clsEnv inEnv dEnv tvs is (d:ds)
     d : closeInterface m tcEnv clsEnv inEnv dEnv tvs (Set.insert i is) (ds ++ ds')
   where i   = iInfo d
         ds' = hiddenTypes m tcEnv clsEnv tvs d ++
-                instances m tcEnv inEnv dEnv tvs is i
+                instances m tcEnv inEnv clsEnv dEnv tvs is i
 
 hiddenTypes :: ModuleIdent -> TCEnv -> ClassEnv -> [Ident] -> IDecl -> [IDecl]
 hiddenTypes m tcEnv clsEnv tvs d =
@@ -351,27 +362,27 @@ hiddenTypes m tcEnv clsEnv tvs d =
                       ids = map (\(ClassMethod i _ _ _ _) -> i) mths
                   in  HidingClassDecl NoPos cx tc k' tv ids
 
-instances :: ModuleIdent -> TCEnv -> InstEnv -> DetEnv -> [Ident] -> Set.Set IInfo
+instances :: ModuleIdent -> TCEnv -> InstEnv -> ClassEnv -> DetEnv -> [Ident] -> Set.Set IInfo
           -> IInfo -> [IDecl]
-instances _ _ _ _ _ _ IOther = []
-instances m tcEnv inEnv dEnv tvs is (IType tc) =
-  [ iInstDecl m tcEnv dEnv tvs ident info
+instances _ _ _ _ _ _ _ IOther = []
+instances m tcEnv inEnv clsEnv dEnv tvs is (IType tc) =
+  [ iInstDecl m tcEnv clsEnv dEnv tvs ident info
   | (ident@(cls, tc'), info@(m', _, _)) <- Map.toList inEnv,
     qualQualify m tc == tc',
     if qidModule cls == Just m' then Set.member (IClass (qualUnqualify m cls)) is
                                 else qidModule tc' == Just m' ]
-instances m tcEnv inEnv dEnv tvs is (IClass cls) =
-  [ iInstDecl m tcEnv dEnv tvs ident info
+instances m tcEnv inEnv clsEnv dEnv tvs is (IClass cls) =
+  [ iInstDecl m tcEnv clsEnv dEnv tvs ident info
   | (ident@(cls', tc), info@(m', _, _)) <- Map.toList inEnv,
     qualQualify m cls == cls',
     qidModule cls' == Just m',
     m /= m' || isPrimTypeId tc
             || qidModule tc /= Just m
             || Set.member (IType (qualUnqualify m tc)) is ]
-instances _ _ _ _ _ _ (IInst _) = []
+instances _ _ _ _ _ _ _ (IInst _) = []
 
 definedTypes :: [IDecl] -> [QualIdent]
-definedTypes ds = foldr definedType [] ds
+definedTypes = foldr definedType []
   where
   definedType :: IDecl -> [QualIdent] -> [QualIdent]
   definedType (HidingDataDecl       _ tc _ _) tcs = tc : tcs

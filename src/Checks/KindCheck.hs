@@ -396,7 +396,10 @@ bindClass :: ModuleIdent -> TCEnv -> ClassEnv -> Decl a -> ClassEnv
 bindClass m tcEnv clsEnv (ClassDecl _ _ cx cls _ ds) =
   bindClassInfo qcls (sclss, ms) clsEnv
   where qcls = qualifyWith m cls
-        ms = map (\f -> (f, f `elem` fs, True)) $ concatMap methods ds
+        mths = concatMap methods ds
+        dSigs = concatMap detSigs ds
+        mthsD = map (\mthd -> (mthd, lookup mthd dSigs)) mths
+        ms = map (\(f, mbd) -> (f, f `elem` fs, True, fmap toDetType mbd)) mthsD
         fs = concatMap impls ds
         sclss = nub $ map (\(Constraint _ cls' _) -> getOrigName m cls' tcEnv) cx
 bindClass _ _ clsEnv _ = clsEnv

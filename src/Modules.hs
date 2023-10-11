@@ -108,7 +108,7 @@ compileModule opts m fn = do
   let intf = uncurry exportInterface qmdl'
   writeInterface opts (fst mdl') intf
   when withFlat $ do
-    ((env, il), mdl'') <- transModule opts qmdl'
+    ((env, il), mdl'') <- transModule opts (second (fmap fst) qmdl')
     writeFlat opts env (snd mdl'') il
   where
   withFlat = any (`elem` optTargetTypes opts) [ AnnotatedFlatCurry
@@ -118,7 +118,7 @@ compileModule opts m fn = do
                                               ]
 
 loadAndCheckModule :: Options -> ModuleIdent -> FilePath
-                   -> CYIO (CompEnv (CS.Module PredType))
+                   -> CYIO (CompEnv (CS.Module (PredType, DetType)))
 loadAndCheckModule opts m fn = do
   ce <- loadModule opts m fn >>= checkModule opts
   warnMessages $ uncurry (warnCheck opts) ce
@@ -245,7 +245,7 @@ importSyntaxCheck iEnv (CS.Module _ _ _ _ _ imps _) = mapM checkImportDecl imps
 -- ---------------------------------------------------------------------------
 
 checkModule :: Options -> CompEnv (CS.Module ())
-            -> CYIO (CompEnv (CS.Module PredType))
+            -> CYIO (CompEnv (CS.Module (PredType, DetType)))
 checkModule opts mdl = do
   _   <- dumpCS DumpParsed mdl
   exc <- extensionCheck  opts mdl >>= dumpCS DumpExtensionChecked
@@ -393,7 +393,7 @@ writeFlatIntf opts env prog
   useSubDir       = addOutDirModule (optUseOutDir opts) (optOutDir opts) (moduleIdent env)
   outputInterface = liftIO $ FC.writeFlatCurry (useSubDir targetFile) fint
 
-writeAbstractCurry :: Options -> CompEnv (CS.Module PredType) -> CYIO ()
+writeAbstractCurry :: Options -> CompEnv (CS.Module (PredType, DetType)) -> CYIO ()
 writeAbstractCurry opts (env, mdl) = do
   when acyTarget  $ liftIO
                   $ AC.writeCurry (useSubDir $ acyName (filePath env))

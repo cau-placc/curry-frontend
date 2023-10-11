@@ -142,7 +142,7 @@ data IMethodDecl = IMethodDecl Position Ident (Maybe Arity) QualTypeExpr DetExpr
   deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Class method implementations
-type IMethodImpl = (Ident, Arity, DetExpr)
+type IMethodImpl = (Ident, Maybe Arity, DetExpr)
 
 -- |Kind expressions
 data KindExpr

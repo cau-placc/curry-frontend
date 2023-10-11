@@ -993,10 +993,12 @@ dictTransIConstrDecl _ _ cd                       = cd
 
 iFunctionDeclFromValue :: ModuleIdent -> ValueEnv -> DetEnv -> QualIdent -> IDecl
 iFunctionDeclFromValue m vEnv dEnv f = case qualLookupValue f vEnv of
-  [Value _ _ a (ForAll _ pty)] -> case lookupDetEnv f dEnv of
-    Just dty -> IFunctionDecl NoPos (qualUnqualify m f) Nothing a
-                  (fromQualPredType m identSupply pty) (toDetExpr dty)
-    Nothing -> internalError $ "Dictionary.iFunctionDeclFromValue: " ++ show f
+  [Value _ _ a (ForAll _ pty)] ->
+    let dty = case lookupDetEnv f dEnv of
+          Just dty' -> dty'
+          Nothing -> Forall [0] (VarTy 0) -- We need a default for dictionary-related functions
+    in IFunctionDecl NoPos (qualUnqualify m f) Nothing a
+          (fromQualPredType m identSupply pty) (toDetExpr dty)
   _ -> internalError $ "Dictionary.iFunctionDeclFromValue: " ++ show f
 
 iConstrDeclFromDataConstructor :: ModuleIdent -> ValueEnv -> QualIdent

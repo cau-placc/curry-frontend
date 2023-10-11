@@ -185,15 +185,19 @@ checkImport (IClassDecl _ cx cls k clsvar ms _) = do
   let check (TypeClass cls' k' fs)
         | cls == cls' && toKind' k 0 == k' &&
           [cls'' | Constraint _ cls'' _ <- cx] == superClasses cls' clsEnv &&
-          map (\m -> (imethod m, imethodArity m)) ms ==
-            map (\f -> (methodName f, methodArity f)) fs
+          map (\m -> (imethod m, imethodArity m
+                     , Just $ toDetType $ imethodDefaultDetType m
+                     , toDetType <$> imethodDetTypeAnn m)) ms ==
+            map (\f -> (methodName f, methodArity f
+                       , methodDefaultDet f, methodDetSchemeAnn f)) fs
         = Just $ mapM_ (checkMethodImport cls clsvar) ms
       check _ = Nothing
   checkTypeInfo "type class" check cls cls
 checkImport (IInstanceDecl _ cx cls ty is m) =
   checkInstInfo check cls (cls, typeConstr ty) m
   where PredType ps _ = toPredType [] $ QualTypeExpr NoSpanInfo cx ty
-        check ps' is' = ps == ps' && sort is == sort is'
+        check ps' is' = ps == ps' && sort (map transDet is) == sort (map transDet is')
+        transDet (a, b, dty) = (a, b, toDetType dty)
 
 checkConstrImport :: QualIdent -> [Ident] -> ConstrDecl -> IC ()
 checkConstrImport tc tvs (ConstrDecl _ c tys) = do
@@ -272,7 +276,7 @@ checkTypeInfo what check p tc = do
         _    -> internalError "checkTypeInfo"
   checkImported checkInfo tc
 
-checkInstInfo :: HasSpanInfo s => (PredSet -> [(Ident, Int, DetExpr)] -> Bool) -> s -> InstIdent
+checkInstInfo :: HasSpanInfo s => (PredSet -> [(Ident, Maybe Int, DetExpr)] -> Bool) -> s -> InstIdent
               -> Maybe ModuleIdent -> IC ()
 checkInstInfo check p i@(qcls, qtc) mm = do
   inEnv <- getInstEnv
@@ -285,11 +289,17 @@ checkInstInfo check p i@(qcls, qtc) mm = do
         Nothing -> report $ errNoInstance p m i
   checkImported checkInfo (maybe qualify qualifyWith mm anonId)
   where
-    getDetInfo (i', d) = do
+    getDetInfo (i', arity) = do
       dEnv <- getDetEnv
-      case Map.lookup (II qcls qtc (qualifyLike qcls i')) dEnv of
-        Just d' -> return (i', d, toDetExpr d')
-        Nothing -> internalError "checkInstInfo"
+      let qtc' = case qidIdent qtc of
+            tc | tc == listId  -> qualQualify preludeMIdent qtc
+               | tc == arrowId -> qualQualify preludeMIdent qtc
+               | tc == unitId  -> qualQualify preludeMIdent qtc
+               | isTupleId tc  -> qualQualify preludeMIdent qtc
+               | otherwise     -> qtc
+      case Map.lookup (II qcls qtc' (qualifyLike qcls i')) dEnv of
+        Just d' -> return (i', Just arity, toDetExpr d')
+        Nothing -> internalError $ "checkInstInfo" ++ render (pPrint (i', qcls, qtc))
 
 checkValueInfo :: HasSpanInfo a => String -> (ValueInfo -> Bool) -> a
                -> QualIdent -> IC ()

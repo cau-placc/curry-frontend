@@ -255,7 +255,9 @@ instance Pretty IMethodDecl where
                                       Just dty -> space <> text ":?" <+> pPrintPrec 0 dty
 
 ppIMethodImpl :: IMethodImpl -> Doc
-ppIMethodImpl (f, a, dty) = ppIdent f <+> int a <+> colon <> colon <+> pPrint dty
+ppIMethodImpl (f, a, dty) = ppIdent f <+> ppMaybe a <+> text ":?" <+> pPrint dty
+  where ppMaybe Nothing = text "_"
+        ppMaybe (Just a') = int a'
 
 ppQIdentWithKind :: QualIdent -> Maybe KindExpr -> Doc
 ppQIdentWithKind tc (Just k) =

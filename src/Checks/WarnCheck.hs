@@ -15,7 +15,9 @@
     This module searches for potentially irregular code and generates
     warning messages.
 -}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TupleSections     #-}
 module Checks.WarnCheck (warnCheck) where
 
 import           Prelude hiding ((<>))
@@ -24,7 +26,8 @@ import           Control.Applicative
 import           Control.Monad
   (filterM, foldM_, guard, liftM, liftM2, when, unless, void)
 import           Control.Monad.State.Strict
-  (State, execState, gets, modify)
+  (State, execState, gets, modify, MonadState)
+import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import qualified Data.IntSet         as IntSet
   (IntSet, empty, insert, notMember, singleton, union, unions)
 import           Data.Map
@@ -52,11 +55,11 @@ import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                        , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv
                        , qualModifyNestEnv)
 import Base.TopEnv     (allBoundQualIdents)
-
 import Base.Types
 import Base.Utils (findMultiples)
+import Checks.DeterminismCheck (applyDetType)
 import Env.ModuleAlias (AliasEnv)
-import Env.Class (ClassEnv, visibleClassMethods, hasDefaultImpl)
+import Env.Class (ClassEnv, visibleClassMethods, hasDefaultImpl, minPredSet)
 import Env.TypeConstructor ( TCEnv, TypeInfo (..), lookupTypeInfo
                            , qualLookupTypeInfo, getOrigName, qualLookupTypeInfoUnique )
 import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
@@ -73,18 +76,20 @@ import CompilerOpts
 --   - non-adjacent function rules
 --   - wrong case mode
 --   - redundant context
+--   - determinism of IO actions
 warnCheck :: WarnOpts -> CaseMode -> AliasEnv -> ValueEnv -> TCEnv -> ClassEnv
-          -> Module a -> [Message]
+          -> Module (PredType, DetType) -> [Message]
 warnCheck wOpts cOpts aEnv valEnv tcEnv clsEnv mdl
   = runOn (initWcState mid aEnv valEnv tcEnv clsEnv (wnWarnFlags wOpts) cOpts ds) $ do
       checkImports is
-      checkDeclGroup False ds
+      checkDeclGroup False (void <$> ds)
       checkExports es
       checkMissingTypeSignatures ds
       checkModuleAlias is
       checkCaseMode ds
       checkRedContext ds
-  where Module _ _ _ mid es is ds = void mdl
+      checkDeterministicIO ds
+  where Module _ _ _ mid es is ds = mdl
 
 type ScopeEnv = NestEnv IdInfo
 
@@ -112,7 +117,7 @@ initWcState :: ModuleIdent -> AliasEnv -> ValueEnv -> TCEnv -> ClassEnv
 initWcState mid ae ve te ce wf cm ds = WcState mid emptyEnv ae ve te ce wf cm [] $
   Map.fromList $ concat $ [ map (,s) is | DetSig _ is s <- ds ]
 
-getModuleIdent :: WCM ModuleIdent
+getModuleIdent :: MonadState WcState m => m ModuleIdent
 getModuleIdent = gets moduleId
 
 getDetSignatures :: WCM (Map Ident DetExpr)
@@ -141,7 +146,7 @@ unAlias q = do
       Nothing -> return q
       Just m' -> return $ qualifyWith m' (unqualify q)
 
-ok :: WCM ()
+ok :: Monad m => m ()
 ok = return ()
 
 -- |Run a 'WCM' action and return the list of messages
@@ -1650,8 +1655,283 @@ checkRedContextFieldExpr :: Field (Expression a) -> WCM ()
 checkRedContextFieldExpr (Field _ _ e) = checkRedContextExpr e
 
 -- ---------------------------------------------------------------------------
--- Warnings messages
+-- Check that IO is used deterministically
 -- ---------------------------------------------------------------------------
+
+-- We use MaybeT to olny throw the innermost warning for each declaration.
+checkDeterministicIO :: [Decl (PredType, DetType)] -> WCM ()
+checkDeterministicIO = warnFor WarnNondeterministicIO .
+  mapM_ (runMaybeT . checkDeterministicIODecl)
+
+type CheckIO = MaybeT WCM
+
+checkDeterministicIODecl :: Decl (PredType, DetType) -> CheckIO ()
+checkDeterministicIODecl (FunctionDecl _ _ _ eqs) =
+  mapM_ checkDeterministicIOEq eqs
+checkDeterministicIODecl (PatternDecl _ _ rhs) =
+  checkDeterministicIORhs rhs
+checkDeterministicIODecl (ClassDecl _ _ _ _ _ ds) =
+  mapM_ checkDeterministicIODecl ds
+checkDeterministicIODecl (InstanceDecl _ _ _ _ _ ds) =
+  mapM_ checkDeterministicIODecl ds
+checkDeterministicIODecl _ = return ()
+
+checkDeterministicIOEq :: Equation (PredType, DetType) -> CheckIO ()
+checkDeterministicIOEq (Equation _ _ rhs) = checkDeterministicIORhs rhs
+
+checkDeterministicIORhs :: Rhs (PredType, DetType) -> CheckIO ()
+checkDeterministicIORhs (SimpleRhs  _ _ e  ds) = do
+  checkDeterministicIOExpr e
+  mapM_ checkDeterministicIODecl ds
+checkDeterministicIORhs (GuardedRhs _ _ cs ds) = do
+  mapM_ checkDeterministicIOCond cs
+  mapM_ checkDeterministicIODecl ds
+
+checkDeterministicIOCond :: CondExpr (PredType, DetType) -> CheckIO ()
+checkDeterministicIOCond (CondExpr _ e1 e2) = do
+  checkDeterministicIOExpr e1
+  checkDeterministicIOExpr e2
+
+checkDeterministicIOExpr :: Expression (PredType, DetType) -> CheckIO ()
+checkDeterministicIOExpr (Paren _ e) =
+  checkDeterministicIOExpr e
+checkDeterministicIOExpr (Typed _ e _) =
+  checkDeterministicIOExpr e
+checkDeterministicIOExpr (Record _ _ _ fs) =
+  mapM_ checkDeterministicIOFieldExpr fs
+checkDeterministicIOExpr (RecordUpdate _ e fs) = do
+  checkDeterministicIOExpr e
+  mapM_ checkDeterministicIOFieldExpr fs
+checkDeterministicIOExpr (Tuple  _ es) =
+  mapM_ checkDeterministicIOExpr es
+checkDeterministicIOExpr (List _ _ es) =
+  mapM_ checkDeterministicIOExpr es
+checkDeterministicIOExpr (ListCompr _ e sts) = do
+  checkDeterministicIOExpr e
+  mapM_ checkDeterministicIOStmt sts
+checkDeterministicIOExpr (EnumFrom _ e) =
+  checkDeterministicIOExpr e
+checkDeterministicIOExpr (EnumFromThen _ e1 e2) = do
+  checkDeterministicIOExpr e1
+  checkDeterministicIOExpr e2
+checkDeterministicIOExpr (EnumFromTo _ e1 e2) = do
+  checkDeterministicIOExpr e1
+  checkDeterministicIOExpr e2
+checkDeterministicIOExpr (EnumFromThenTo _ e1 e2 e3) = do
+  checkDeterministicIOExpr e1
+  checkDeterministicIOExpr e2
+  checkDeterministicIOExpr e3
+checkDeterministicIOExpr (UnaryMinus _ e) =
+  checkDeterministicIOExpr e
+checkDeterministicIOExpr e@(Apply spi e1 e2) = do
+  checkDeterministicIOExpr e1
+  checkDeterministicIOExpr e2
+  let (PredType _ ty1', _) = bothTypesOf e1
+      (PredType _ _, dty) = bothTypesOf e
+      ty1 = ty1'
+  when (checkNDIOType ty1 dty) $ liftAndAbort $
+    report $ warnNondeterministicIO spi "application"
+checkDeterministicIOExpr e@(InfixApply spi e1 op e2) = do
+  checkDeterministicIOExpr e1
+  checkDeterministicIOExpr e2
+  let (PredType _ ty1', _) = bothTypesOf op
+      (PredType _ _, dty) = bothTypesOf e
+      ty1 =ty1'
+  when (checkNDIOType ty1 dty) $ liftAndAbort $
+    report $ warnNondeterministicIO spi "infix application"
+checkDeterministicIOExpr e@(LeftSection spi e' op) = do
+  checkDeterministicIOExpr e'
+  let (PredType _ ty1', _) = bothTypesOf op
+      (PredType _ _, dty) = bothTypesOf e
+      ty1 = ty1'
+  when (checkNDIOType ty1 dty) $ liftAndAbort $
+    report $ warnNondeterministicIO spi "left section"
+checkDeterministicIOExpr e@(RightSection spi op e') = do
+  checkDeterministicIOExpr e'
+  let (PredType _ ty1', _) = bothTypesOf op
+      (PredType _ _, dty) = bothTypesOf e
+      ty1 = ty1'
+  when (checkNDIOType ty1 dty) $ liftAndAbort $
+    report $ warnNondeterministicIO spi "right section"
+checkDeterministicIOExpr (Lambda _ _ e) =
+  checkDeterministicIOExpr e
+checkDeterministicIOExpr (Let _ _ ds e) = do
+  mapM_ checkDeterministicIODecl ds
+  checkDeterministicIOExpr e
+checkDeterministicIOExpr (IfThenElse _ e1 e2 e3) = do
+  checkDeterministicIOExpr e1
+  checkDeterministicIOExpr e2
+  checkDeterministicIOExpr e3
+checkDeterministicIOExpr (Case _ _ _ e as) = do
+  checkDeterministicIOExpr e
+  mapM_ checkDeterministicIOAlt as
+checkDeterministicIOExpr (Do _ _ stms e) = do
+  mapM_ checkDeterministicIOStmt stms
+  checkDeterministicIOExpr e
+checkDeterministicIOExpr Literal {} = ok
+checkDeterministicIOExpr Constructor {} = ok
+checkDeterministicIOExpr Variable {} = ok
+
+checkDeterministicIOStmt :: Statement (PredType, DetType) -> CheckIO ()
+checkDeterministicIOStmt (StmtExpr   _  e) = checkDeterministicIOExpr e
+checkDeterministicIOStmt (StmtDecl _ _ ds) = mapM_ checkDeterministicIODecl ds
+checkDeterministicIOStmt (StmtBind _ _ e) = checkDeterministicIOExpr e
+
+checkDeterministicIOAlt :: Alt (PredType, DetType) -> CheckIO ()
+checkDeterministicIOAlt (Alt _ _ rhs) = checkDeterministicIORhs rhs
+
+checkDeterministicIOFieldExpr :: Field (Expression (PredType, DetType)) -> CheckIO ()
+checkDeterministicIOFieldExpr (Field _ _ e) = checkDeterministicIOExpr e
+
+liftAndAbort :: WCM () -> CheckIO ()
+liftAndAbort wcm = MaybeT $ do
+  wcm
+  return Nothing
+
+-- When the function returns something in IO and
+-- the result of this application is nondeterministic,
+-- then we generate a warning.
+{-# INLINE checkNDIOType #-}
+checkNDIOType :: Type -> DetType -> Bool
+checkNDIOType ty1 resdty =
+  rootOfTypeMaybe (snd (arrowUnapply ty1)) == Just qIOId &&
+  snd (arrowUnapplyDetType resdty) == Any
+
+class BothTypesOf a where
+  bothTypesOf :: a -> (PredType, DetType)
+
+instance BothTypesOf (PredType, DetType) where
+  bothTypesOf = id
+
+{-# SPECIALISE bothTypesOf :: Expression (PredType, DetType) #-}
+instance BothTypesOf a => BothTypesOf (Expression a) where
+  bothTypesOf (Variable _ a _) = bothTypesOf a
+  bothTypesOf (Constructor _ a _) = bothTypesOf a
+  bothTypesOf (Paren _ e) = bothTypesOf e
+  bothTypesOf (Literal _ a _) = bothTypesOf a
+  bothTypesOf (Typed _ e _) = bothTypesOf e
+  bothTypesOf (Tuple _ es) =
+    let (ptys, dtys) = unzip $ map bothTypesOf es
+        (pss, tys) = unzip $ map (\(PredType ps ty) -> (ps, ty)) ptys
+    in (PredType (Set.unions pss) (mkTupleTy tys), head dtys)
+  bothTypesOf (List _ a _) = bothTypesOf a
+  bothTypesOf (UnaryMinus _ e) = bothTypesOf e
+  bothTypesOf (Record _ a _ _) = bothTypesOf a
+  bothTypesOf (RecordUpdate _ e _) = bothTypesOf e
+  bothTypesOf (Do _ _ _ e) = bothTypesOf e
+  bothTypesOf (IfThenElse _ _ e _) = bothTypesOf e
+  bothTypesOf (Let _ _ _ e) = bothTypesOf e
+  bothTypesOf (Case _ _ _ _ alts) = bothTypesOf $ head alts
+  bothTypesOf (ListCompr _ e _) =
+    let (PredType ps ty, dty) = bothTypesOf e
+    in (PredType ps (listType ty), dty)
+  bothTypesOf (EnumFrom _ e) =
+    let (PredType ps ty, dty) = bothTypesOf e
+    in (PredType ps (listType ty), dty)
+  bothTypesOf (EnumFromThen _ e _) =
+    let (PredType ps ty, dty) = bothTypesOf e
+    in (PredType ps (listType ty), dty)
+  bothTypesOf (EnumFromTo _ e _) =
+    let (PredType ps ty, dty) = bothTypesOf e
+    in (PredType ps (listType ty), dty)
+  bothTypesOf (EnumFromThenTo _ e _ _) =
+    let (PredType ps ty, dty) = bothTypesOf e
+    in (PredType ps (listType ty), dty)
+  bothTypesOf (Lambda _ pats e) =
+    let (ptys, dtys) = unzip $ map bothTypesOf pats
+        (PredType eps ety, edty) = bothTypesOf e
+        (pss, tys) = unzip $ map (\(PredType ps ty) -> (ps, ty)) ptys
+        ty' = foldr TypeArrow ety tys
+        dty' = foldr DetArrow edty dtys
+    in (PredType (Set.unions (eps:pss)) ty', dty')
+  bothTypesOf (LeftSection _ e op) =
+    let (PredType eps _, edty) = bothTypesOf e
+        (PredType ops oty, odty) = bothTypesOf op
+        ty' = case oty of
+          TypeArrow _ ty -> ty
+          _ -> internalError $ "WarnCheck.bothTypesOf.LeftSection: " ++ show oty
+        dty' = applyDetType odty [edty]
+    in (PredType (Set.union eps ops) ty', dty')
+  bothTypesOf (RightSection _ op e) =
+    let (PredType eps _, edty) = bothTypesOf e
+        (PredType ops oty, odty) = bothTypesOf op
+        ty' = case oty of
+          TypeArrow ty1 (TypeArrow _ ty2) -> TypeArrow ty1 ty2
+          _ -> internalError $ "WarnCheck.bothTypesOf.RightSection: " ++ show oty
+        dty' = case odty of
+          DetArrow dty1 dty2 -> DetArrow dty1 (applyDetType dty2 [edty])
+          VarTy _ -> Det
+          Det -> Det
+          Any -> Any
+    in (PredType (Set.union eps ops) ty', dty')
+  bothTypesOf (Apply _ e1 e2) =
+    let (PredType e1ps e1ty, e1dty) = bothTypesOf e1
+        (PredType e2ps _, e2dty) = bothTypesOf e2
+        ty' = case e1ty of
+          TypeArrow _ ty -> ty
+          _ -> internalError $ "WarnCheck.bothTypesOf.Apply: " ++ show e1ty
+        dty' = applyDetType e1dty [e2dty]
+    in (PredType (Set.union e1ps e2ps) ty', dty')
+  bothTypesOf (InfixApply _ e1 op e2) =
+    let (PredType e1ps _, e1dty) = bothTypesOf e1
+        (PredType e2ps _, e2dty) = bothTypesOf e2
+        (PredType ops opty, opdty) = bothTypesOf op
+        ty' = case opty of
+          TypeArrow _ (TypeArrow _ ty) -> ty
+          _ -> internalError $ "WarnCheck.bothTypesOf.InfixApply: " ++ show opty
+        dty' = applyDetType opdty [e1dty, e2dty]
+    in (PredType (Set.union e1ps (Set.union e2ps ops)) ty', dty')
+
+instance BothTypesOf a => BothTypesOf (InfixOp a) where
+  bothTypesOf (InfixConstr a _) = bothTypesOf a
+  bothTypesOf (InfixOp a _) = bothTypesOf a
+
+instance BothTypesOf a => BothTypesOf (Pattern a) where
+  bothTypesOf (VariablePattern _ a _) = bothTypesOf a
+  bothTypesOf (LiteralPattern _ a _) = bothTypesOf a
+  bothTypesOf (NegativePattern _ a _) = bothTypesOf a
+  bothTypesOf (ConstructorPattern _ a _ _) = bothTypesOf a
+  bothTypesOf (InfixPattern _ a _ _ _) = bothTypesOf a
+  bothTypesOf (RecordPattern _ a _ _) = bothTypesOf a
+  bothTypesOf (ListPattern _ a _) = bothTypesOf a
+  bothTypesOf (InfixFuncPattern _ a _ _ _) = bothTypesOf a
+  bothTypesOf (FunctionPattern _ a _ _) = bothTypesOf a
+  bothTypesOf (ParenPattern _ p) = bothTypesOf p
+  bothTypesOf (AsPattern _ _ p) = bothTypesOf p
+  bothTypesOf (LazyPattern _ p) = bothTypesOf p
+  bothTypesOf (TuplePattern _ pats) =
+    let (ptys, dtys) = unzip $ map bothTypesOf pats
+        (pss, tys) = unzip $ map (\(PredType ps ty) -> (ps, ty)) ptys
+    in (PredType (Set.unions pss) (mkTupleTy tys), head dtys)
+
+instance BothTypesOf a => BothTypesOf (Alt a) where
+  bothTypesOf (Alt _ _ rhs) = bothTypesOf rhs
+
+instance BothTypesOf a => BothTypesOf (Rhs a) where
+  bothTypesOf (SimpleRhs _ _ e _) = bothTypesOf e
+  bothTypesOf (GuardedRhs _ _ gs _) = bothTypesOf $ head gs
+
+instance BothTypesOf a => BothTypesOf (CondExpr a) where
+  bothTypesOf (CondExpr _ _ e) = bothTypesOf e
+
+mkTupleTy :: [Type] -> Type
+mkTupleTy xs = foldr TypeApply (TypeConstructor (qTupleId (length xs))) xs
+
+arrowUnapplyDetType :: DetType -> ([DetType], DetType)
+arrowUnapplyDetType (DetArrow ty1 ty2) =
+  let (tys, res) = arrowUnapplyDetType ty2
+  in (ty1:tys, res)
+arrowUnapplyDetType ty = ([], ty)
+
+-- ---------------------------------------------------------------------------
+-- Warning messages
+-- ---------------------------------------------------------------------------
+
+warnNondeterministicIO :: SpanInfo -> String -> Message
+warnNondeterministicIO spi s = spanInfoMessage spi $
+  text "Potentially nondeterministic use of I/O in" <+> text s
+  $+$ text "Consider encapsulating the offending sub-expressssion"
+  $+$ text "or add a determinism signature to the applied function"
 
 warnRedFuncString :: [Ident] -> Doc
 warnRedFuncString is = text "type signature for function" <>

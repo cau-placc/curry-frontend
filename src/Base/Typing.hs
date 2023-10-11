@@ -25,6 +25,7 @@ module Base.Typing
 
 import Data.List (nub)
 import Data.Maybe (fromMaybe)
+import GHC.Stack (HasCallStack)
 
 import Curry.Base.Ident
 import Curry.Syntax
@@ -125,7 +126,7 @@ instance Typeable a => Typeable (Alt a) where
 withType :: (Functor f, Typeable (f Type)) => Type -> f Type -> f Type
 withType ty e = fmap (subst (matchType (typeOf e) ty idSubst)) e
 
-matchType :: Type -> Type -> TypeSubst -> TypeSubst
+matchType :: HasCallStack => Type -> Type -> TypeSubst -> TypeSubst
 matchType ty1 ty2 = fromMaybe noMatch (matchType' ty1 ty2)
   where
     noMatch = internalError $ "Base.Typing.matchType: " ++

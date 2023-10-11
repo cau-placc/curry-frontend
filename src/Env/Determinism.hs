@@ -18,15 +18,20 @@
     This module additionally defines a nested environment that is used
     during the determinism inference and check.
 -}
+{-# LANGUAGE FlexibleInstances    #-}
 module Env.Determinism where
 
 import Prelude hiding ( (<>) )
 import Data.Map ( Map )
 import qualified Data.Map as Map
 
+import Base.Messages ( internalError )
+import Base.TopEnv (origName)
 import Base.Types ( DetScheme(..) )
-import Curry.Base.Ident ( QualIdent )
+import Curry.Base.Ident
 import Curry.Base.Pretty ( Pretty(..), parens, dot, (<+>), (<>) )
+import Curry.Syntax ( TypeExpr(..), InstanceType )
+import Env.TypeConstructor (TCEnv, qualLookupTypeInfo)
 
 type DetEnv = Map IdentInfo DetScheme
 
@@ -71,7 +76,8 @@ flattenNestDetEnv (Top env) = env
 flattenNestDetEnv (LocalEnv env lcl) = Map.union lcl (flattenNestDetEnv env)
 
 data IdentInfo = QI QualIdent
-               | II QualIdent QualIdent QualIdent -- class, tycon, method (only for known instances with the given type constructor)
+               -- class, tycon, method (only for known instances with the given type constructor)
+               | II QualIdent QualIdent QualIdent
                | CI QualIdent QualIdent -- class, default method
   deriving (Eq, Ord, Show)
 
@@ -80,7 +86,47 @@ identInfoFun (QI meth) = meth
 identInfoFun (II _ _ meth) = meth
 identInfoFun (CI _ meth) = meth
 
+toClassIdent :: QualIdent -> IdentInfo -> IdentInfo
+toClassIdent cls (QI qid) = CI cls (qid' { qidIdent = (qidIdent qid') { idUnique = 0 } })
+  where qid' = case qidModule qid of
+            Nothing -> qualifyLike cls (unqualify qid)
+            Just _  -> qid
+toClassIdent _ ii = ii
+
+toInstanceIdent :: ModuleIdent -> TCEnv -> QualIdent -> InstanceType -> IdentInfo -> IdentInfo
+toInstanceIdent mid tcE cls ty ii = case toInstanceIdentMaybe mid tcE cls ty ii of
+  Just ii' -> ii'
+  Nothing  -> internalError (show ty ++ " is not a constructor type")
+
+toInstanceIdentMaybe :: ModuleIdent -> TCEnv -> QualIdent -> InstanceType -> IdentInfo -> Maybe IdentInfo
+toInstanceIdentMaybe mid tcE cls ty (QI qid) = case ty of
+  ConstructorType _ tc ->
+    Just $ II qcls qtc (qid { qidIdent = (qidIdent qid) { idUnique = 0 }
+                            , qidModule = qidModule qcls })
+    where
+      qcls | isQualified cls = cls
+           | otherwise       = qualifyLike qid (unqualify cls)
+      qtc = case qualLookupTypeInfo tc tcE of
+        [i] -> qualQualify mid (origName i)
+        _ | unqualify tc == listId   -> qualQualify preludeMIdent tc
+          | unqualify tc == unitId   -> qualQualify preludeMIdent tc
+          | unqualify tc == arrowId  -> qualQualify preludeMIdent tc
+          | isTupleId (unqualify tc) -> qualQualify preludeMIdent tc
+          | otherwise                -> internalError $ "Env.Determinism: " ++ show tc ++ " not found"
+  ListType sp _ -> toInstanceIdentMaybe mid tcE cls (ConstructorType sp qList) (QI qid)
+    where qList = qualifyWith preludeMIdent listId
+  TupleType sp args -> toInstanceIdentMaybe mid tcE cls (ConstructorType sp qTuple) (QI qid)
+    where qTuple = qualQualify preludeMIdent (qTupleId (length args))
+  ArrowType sp _ _ -> toInstanceIdentMaybe mid tcE cls (ConstructorType sp qArrowId) (QI qid)
+  ParenType _ ty' -> toInstanceIdentMaybe mid tcE cls ty' (QI qid)
+  ApplyType _ ty' _ -> toInstanceIdentMaybe mid tcE cls ty' (QI qid)
+  _ -> Nothing
+toInstanceIdentMaybe _ _ _ _ ii = Just ii
+
 instance Pretty IdentInfo where
   pPrint (QI qid) = pPrint qid
   pPrint (II cls tc meth) = parens (pPrint cls <+> pPrint tc) <> dot <> pPrint meth
   pPrint (CI cls meth) = pPrint cls <+> pPrint meth
+
+instance Pretty DetEnv where
+  pPrint = pPrint . Map.toList

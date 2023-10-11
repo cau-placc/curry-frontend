@@ -29,13 +29,13 @@
 -}
 module Base.Types
   ( -- * Representation of types
-    Type (..), applyType, unapplyType, rootOfType
+    Type (..), applyType, unapplyType, rootOfType, rootOfTypeMaybe
   , isArrowType, arrowArity, arrowArgs, arrowBase, arrowUnapply
   , IsType (..), typeConstrs
   , qualifyType, unqualifyType, qualifyTC
     -- * Representation of predicate, predicate sets and predicated types
   , Pred (..), qualifyPred, unqualifyPred
-  , PredSet, emptyPredSet, partitionPredSet, minPredSet, maxPredSet
+  , PredSet, emptyPredSet, partitionPredSet
   , qualifyPredSet, unqualifyPredSet
   , PredType (..), predType, unpredType, qualifyPredType, unqualifyPredType
     -- * Representation of data constructors
@@ -71,6 +71,7 @@ import Data.List      (nub)
 import Data.Maybe     (fromMaybe)
 import qualified Data.Map as Map (Map, fromList, lookup, size, insert, empty)
 import qualified Data.Set.Extra as Set
+import GHC.Stack      (HasCallStack)
 
 import Base.Expr      ( Expr(..), QuantExpr(..) )
 import Base.Messages  ( internalError )
@@ -79,8 +80,6 @@ import Curry.Base.Ident
 import Curry.Base.Pretty
 import Curry.Base.SpanInfo (SpanInfo(..) )
 import qualified Curry.Syntax as CS
-
-import Env.Class      ( ClassEnv, allSuperClasses )
 
 -- ---------------------------------------------------------------------------
 -- Types
@@ -147,12 +146,17 @@ unapplyType dflt ty = unapply ty []
 
 -- The function 'rootOfType' returns the name of the type constructor at the
 -- root of a type. This function must not be applied to a type whose root is
--- a type variable or a skolem type.
+-- a type variable or a skolem type. In that case, use 'rootOfTypeMaybe'.
 
-rootOfType :: Type -> QualIdent
-rootOfType ty = case fst (unapplyType True ty) of
-  TypeConstructor tc -> tc
-  _ -> internalError $ "Base.Types.rootOfType: " ++ show ty
+rootOfType :: HasCallStack => Type -> QualIdent
+rootOfType ty = case rootOfTypeMaybe ty of
+  Just tc -> tc
+  Nothing -> internalError $ "Base.Types.rootOfType: " ++ show ty
+
+rootOfTypeMaybe :: Type -> Maybe QualIdent
+rootOfTypeMaybe ty = case fst (unapplyType True ty) of
+  TypeConstructor tc -> Just tc
+  _ -> Nothing
 
 -- The function 'isArrowType' checks whether a type is a function
 -- type t_1 -> t_2 -> ... -> t_n. The function 'arrowArity' computes
@@ -295,23 +299,6 @@ partitionPredSet = Set.partition $ \(Pred _ ty) -> isTypeVariable ty
     isTypeVariable (TypeVariable _) = True
     isTypeVariable (TypeApply ty _) = isTypeVariable ty
     isTypeVariable _                = False
-
--- The function 'minPredSet' transforms a predicate set by removing all
--- predicates from the predicate set which are implied by other predicates
--- according to the super class hierarchy. Inversely, the function 'maxPredSet'
--- adds all predicates to a predicate set which are implied by the predicates
--- in the given predicate set.
-
-minPredSet :: ClassEnv -> PredSet -> PredSet
-minPredSet clsEnv ps =
-  ps `Set.difference` Set.concatMap implied ps
-  where implied (Pred cls ty) = Set.fromList
-          [Pred cls' ty | cls' <- tail (allSuperClasses cls clsEnv)]
-
-maxPredSet :: ClassEnv -> PredSet -> PredSet
-maxPredSet clsEnv = Set.concatMap implied
-  where implied (Pred cls ty) = Set.fromList
-          [Pred cls' ty | cls' <- allSuperClasses cls clsEnv]
 
 qualifyPredSet :: ModuleIdent -> PredSet -> PredSet
 qualifyPredSet m = Set.map (qualifyPred m)
@@ -689,7 +676,7 @@ ppTypeScheme m (ForAll _ pty) = ppPredType m pty
 -- Determinism types
 -- ---------------------------------------------------------------------------
 
-type VarIndex = Int
+type VarIndex = Integer
 
 data DetType = VarTy VarIndex
              | Det
@@ -704,7 +691,9 @@ toDetExpr :: DetScheme -> CS.DetExpr
 toDetExpr (Forall _ ty) = tyToDetExpr ty
 
 tyToDetExpr :: DetType -> CS.DetExpr
-tyToDetExpr (VarTy v) = CS.VarDetExpr NoSpanInfo (identSupply !! v)
+tyToDetExpr (VarTy v) = CS.VarDetExpr NoSpanInfo $
+  -- clamp down to the maximum Int value
+  identSupply !! fromInteger (min v (fromIntegral (maxBound :: Int)))
 tyToDetExpr Det = CS.DetDetExpr NoSpanInfo
 tyToDetExpr Any = CS.AnyDetExpr NoSpanInfo
 tyToDetExpr (DetArrow ty1 ty2) = CS.ArrowDetExpr NoSpanInfo (tyToDetExpr ty1) (tyToDetExpr ty2)
@@ -714,7 +703,8 @@ toDetType = abstractDetScheme . toDetSchema . fst . go Map.empty
   where
     go s (CS.VarDetExpr _ v) = case Map.lookup v s of
       Just ty -> (ty, s)
-      Nothing -> (VarTy (Map.size s), Map.insert v (VarTy (Map.size s)) s)
+      Nothing -> ( VarTy (fromIntegral $ Map.size s)
+                 , Map.insert v (VarTy (fromIntegral $ Map.size s)) s )
     go s (CS.DetDetExpr _) = (Det, s)
     go s (CS.AnyDetExpr _) = (Any, s)
     go s (CS.ParenDetExpr _ ty) = go s ty
@@ -727,7 +717,7 @@ toDetSchema = Forall []
 
 abstractDetScheme :: DetScheme -> DetScheme
 abstractDetScheme (Forall _ ty) =
-  Forall [0 .. Map.size subst - 1] (ty `substDetTy` subst)
+  Forall [0 .. fromIntegral (Map.size subst) - 1] (ty `substDetTy` subst)
   where
     vars = nub (detTypeVars ty)
     subst = Map.fromList $ zip vars (map VarTy [0..])
@@ -753,7 +743,7 @@ instance Pretty DetScheme where
   pPrint (Forall vs ty) = text "forall" <+> hsep (map (pPrint . VarTy) vs) <> dot <+> pPrint ty
 
 instance Pretty DetType where
-  pPrintPrec _ (VarTy v) = pPrint $ identSupply !! v
+  pPrintPrec _ (VarTy v) = pPrint $ tyToDetExpr (VarTy v)
   pPrintPrec _ Det = text "Det"
   pPrintPrec _ Any = text "Any"
   pPrintPrec p (DetArrow ty1 ty2) = parenIf (p > 0) $

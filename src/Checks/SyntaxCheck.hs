@@ -529,7 +529,8 @@ checkAmbiguousMethod _ =
 checkMethods :: QualIdent -> [Ident] -> [Decl a] -> SCM ()
 checkMethods qcls ms ds =
   mapM_ (report . errUndefinedMethod qcls) $ filter (`notElem` ms) fs
-  where fs = [f | FunctionDecl _ _ f _ <- ds]
+  where fs = nub $ [f | FunctionDecl _ _ f _ <- ds]
+                   ++ concat [fs' | DetSig _ fs' _ <- ds]
 
 updateClassAndInstanceDecls :: [Decl a] -> [Decl a] -> [Decl a] -> [Decl a]
 updateClassAndInstanceDecls [] [] ds = ds

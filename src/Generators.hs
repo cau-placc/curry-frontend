@@ -31,17 +31,17 @@ import qualified Generators.GenAnnotatedFlatCurry
                                                 as GAFC (genAnnotatedFlatCurry)
 import qualified Generators.GenTypedFlatCurry   as GTFC (genTypedFlatCurry)
 
-import           Base.Types                             (Type, PredType)
+import           Base.Types                             (Type, PredType, DetType)
 
 import           CompilerEnv                            (CompilerEnv (..))
 import qualified IL                                     (Module)
 
 -- |Generate typed AbstractCurry
-genTypedAbstractCurry :: CompilerEnv -> CS.Module PredType -> AC.CurryProg
+genTypedAbstractCurry :: CompilerEnv -> CS.Module (PredType, DetType) -> AC.CurryProg
 genTypedAbstractCurry = GAC.genAbstractCurry False
 
 -- |Generate untyped AbstractCurry
-genUntypedAbstractCurry :: CompilerEnv -> CS.Module PredType -> AC.CurryProg
+genUntypedAbstractCurry :: CompilerEnv -> CS.Module (PredType, DetType) -> AC.CurryProg
 genUntypedAbstractCurry = GAC.genAbstractCurry True
 
 -- |Generate typed FlatCurry

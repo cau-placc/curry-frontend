@@ -293,7 +293,12 @@ iInstanceDecl = (\(sp, _, cx, qcls, inst) ->
 
 -- |Parser for an interface method implementation
 iImpl :: Parser a Token IMethodImpl
-iImpl = (,,) <$> fun <*> arity <*-> token DoubleColon <*> detExpr
+iImpl = mkIImpl <$> fun <*> ((impl <$> arity <*-> token ColonQ <*> detExpr)
+                        <|> (notImpl <$> (token Underscore <-*> token ColonQ <-*> detExpr)))
+  where
+    mkIImpl i f = f i
+    impl  a d i = (i, Just a , d)
+    notImpl d i = (i, Nothing, d)
 
 iModulePragma :: Parser a Token ModuleIdent
 iModulePragma = token PragmaModule <-*> modIdent <*-> token PragmaEnd
