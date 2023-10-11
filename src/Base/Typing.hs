@@ -25,6 +25,7 @@ module Base.Typing
 
 import Data.List (nub)
 import Data.Maybe (fromMaybe)
+import GHC.Stack (HasCallStack)
 
 import Curry.Base.Ident
 import Curry.Syntax
@@ -45,9 +46,21 @@ instance Typeable Type where
 instance Typeable PredType where
   typeOf = unpredType
 
+instance Typeable a => Typeable [a] where
+  typeOf [] = internalError "Base.Typing.typeOf: empty list"
+  typeOf (e:_) = typeOf e
+
+instance Typeable a => Typeable (Equation a) where
+  typeOf (Equation _ lhs rhs) = typeOfLhs lhs (typeOf rhs)
+
+typeOfLhs :: Typeable a => Lhs a -> Type -> Type
+typeOfLhs (FunLhs _ _ ts) ty = foldr (TypeArrow . typeOf) ty ts
+typeOfLhs (OpLhs _ t1 _ t2) ty = TypeArrow (typeOf t1) (TypeArrow (typeOf t2) ty)
+typeOfLhs (ApLhs _ lhs t2) ty = typeOfLhs lhs (TypeArrow (typeOf t2) ty)
+
 instance Typeable a => Typeable (Rhs a) where
   typeOf (SimpleRhs  _ _ e _ ) = typeOf e
-  typeOf (GuardedRhs _ _ es _) = head [typeOf e | CondExpr _ _ e <- es]
+  typeOf (GuardedRhs _ _ es _) = typeOf [e | CondExpr _ _ e <- es]
 
 instance Typeable a => Typeable (Pattern a) where
   typeOf (LiteralPattern _ a _) = typeOf a
@@ -113,7 +126,7 @@ instance Typeable a => Typeable (Alt a) where
 withType :: (Functor f, Typeable (f Type)) => Type -> f Type -> f Type
 withType ty e = fmap (subst (matchType (typeOf e) ty idSubst)) e
 
-matchType :: Type -> Type -> TypeSubst -> TypeSubst
+matchType :: HasCallStack => Type -> Type -> TypeSubst -> TypeSubst
 matchType ty1 ty2 = fromMaybe noMatch (matchType' ty1 ty2)
   where
     noMatch = internalError $ "Base.Typing.matchType: " ++

@@ -1,24 +1,25 @@
 {- |
     Module      :  $Header$
     Description :  Abstract syntax for conditional compiling
-    Copyright   :  (c) 2017        Kai-Oliver Prott
-                       2017        Finn Teegen
+    Copyright   :  (c) 2017        Finn Teegen
+                       2017 - 2023 Kai-Oliver Prott
     License     :  BSD-3-clause
 
-    Maintainer  :  fte@informatik.uni-kiel.de
+    Maintainer  :  kpr@informatik.uni-kiel.de
     Stability   :  experimental
     Portability :  portable
 
-    TODO
+    This module defines the syntax and the pretty printer
+    for conditional compiling.
+
+    In this syntax, a program consists of a list of statements (program lines),
+    which are classified into ordinary lines and CPP directives.
 -}
-{-# LANGUAGE CPP #-}
 module Curry.CondCompile.Type
   ( Program, Stmt (..), Else (..), Elif (..), Cond (..), Op (..)
   ) where
 
-#if __GLASGOW_HASKELL__ >= 804
 import Prelude hiding ((<>))
-#endif
 
 import Curry.Base.Pretty
 

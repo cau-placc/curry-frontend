@@ -52,7 +52,6 @@
   As we are going to insert references to real prelude entities,
   all names must be properly qualified before calling this module.
 -}
-{-# LANGUAGE CPP           #-}
 module Transformations.Desugar (desugar) where
 
 import           Control.Arrow              (first, second)
@@ -70,7 +69,6 @@ import Curry.Base.SpanInfo
 import Curry.Syntax
 
 import Base.Expr
-import Base.CurryTypes
 import Base.Messages (internalError)
 import Base.TypeExpansion
 import Base.Types
@@ -789,10 +787,10 @@ dsExpr p (IfThenElse _ e1 e2 e3) = do
 dsExpr p (Case _ _ ct e alts) = dsCase p ct e alts
 
 -- We ignore the context in the type signature of a typed expression, since
--- there should be no possibility to provide an non-empty context without
+-- there should be no possibility to provide a non-empty context without
 -- scoped type-variables.
--- TODO: Verify
-
+-- The context is even irrelevant with Nullary/MultiParam TypeClasses,
+-- since the dictionary has to be provided to the corresponding function anyway.
 dsQualTypeExpr :: QualTypeExpr -> DsM QualTypeExpr
 dsQualTypeExpr (QualTypeExpr _ cx ty) =
   QualTypeExpr NoSpanInfo cx <$> dsTypeExpr ty

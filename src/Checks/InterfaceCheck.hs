@@ -52,19 +52,20 @@ import           Control.Monad            (unless)
 import qualified Control.Monad.State as S
 import           Data.List                (sort)
 import           Data.Maybe               (fromMaybe, isJust, isNothing)
+import qualified Data.Map as Map
 
 import Curry.Base.Ident
 import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
 
-import Base.CurryKinds (toKind')
-import Base.CurryTypes
 import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.TopEnv
 import Base.Types
+import Base.Kinds
 
 import Env.Class
+import Env.Determinism (lookupDetEnv, DetEnv, IdentInfo (..))
 import Env.Instance
 import Env.OpPrec
 import Env.TypeConstructor
@@ -77,6 +78,7 @@ data ICState = ICState
   , classEnv    :: ClassEnv
   , instEnv     :: InstEnv
   , valueEnv    :: ValueEnv
+  , detEnv      :: DetEnv
   , errors      :: [Message]
   }
 
@@ -100,6 +102,9 @@ getInstEnv = S.gets instEnv
 getValueEnv :: IC ValueEnv
 getValueEnv = S.gets valueEnv
 
+getDetEnv :: IC DetEnv
+getDetEnv = S.gets detEnv
+
 -- |Report a syntax error
 report :: Message -> IC ()
 report msg = S.modify $ \s -> s { errors = msg : errors s }
@@ -107,12 +112,12 @@ report msg = S.modify $ \s -> s { errors = msg : errors s }
 ok :: IC ()
 ok = return ()
 
-interfaceCheck :: OpPrecEnv -> TCEnv -> ClassEnv -> InstEnv -> ValueEnv
+interfaceCheck :: OpPrecEnv -> TCEnv -> ClassEnv -> InstEnv -> ValueEnv -> DetEnv
                -> Interface -> [Message]
-interfaceCheck pEnv tcEnv clsEnv inEnv tyEnv (Interface m _ ds) =
+interfaceCheck pEnv tcEnv clsEnv inEnv tyEnv dEnv (Interface m _ ds) =
   reverse (errors s)
   where s = S.execState (mapM_ checkImport ds) initState
-        initState = ICState m pEnv tcEnv clsEnv inEnv tyEnv []
+        initState = ICState m pEnv tcEnv clsEnv inEnv tyEnv dEnv []
 
 checkImport :: IDecl -> IC ()
 checkImport (IInfixDecl _ fix pr op) = checkPrecInfo check op op
@@ -148,25 +153,30 @@ checkImport (ITypeDecl _ tc k tvs ty) = do
         = Just ok
       check _ = Nothing
   checkTypeInfo "synonym type" check tc tc
-checkImport (IFunctionDecl _ f (Just tv) n ty) = do
+checkImport (IFunctionDecl _ f (Just tv) n ty dty) = do
   m <- getModuleIdent
   let check (Value f' cm' n' (ForAll _ ty')) =
         f == f' && isJust cm' && n' == n &&
         toQualPredType m [tv] ty == ty'
       check _ = False
+      checkD dty' = toDetType dty == dty'
   checkValueInfo "method" check f f
-checkImport (IFunctionDecl _ f Nothing n ty) = do
+  checkDetInfo "method" checkD f f
+checkImport (IFunctionDecl _ f Nothing n ty dty) = do
   m <- getModuleIdent
   let check (Value f' cm' n' (ForAll _ ty')) =
         f == f' && isNothing cm' && n' == n &&
         toQualPredType m [] ty == ty'
       check _ = False
+      checkD dty' = toDetType dty == dty'
   checkValueInfo "function" check f f
-checkImport (HidingClassDecl _ cx cls k _) = do
+  checkDetInfo "function" checkD f f
+checkImport (HidingClassDecl _ cx cls k _ ids) = do
   clsEnv <- getClassEnv
-  let check (TypeClass cls' k' _)
+  let check (TypeClass cls' k' mths)
         | cls == cls' && toKind' k 0 == k' &&
-          [cls'' | Constraint _ cls'' _ <- cx] == superClasses cls' clsEnv
+          [cls'' | Constraint _ cls'' _ <- cx] == superClasses cls' clsEnv &&
+          sort (map (\(ClassMethod i _ _ _ _) -> i) mths) == sort ids
         = Just ok
       check _ = Nothing
   checkTypeInfo "hidden type class" check cls cls
@@ -175,15 +185,19 @@ checkImport (IClassDecl _ cx cls k clsvar ms _) = do
   let check (TypeClass cls' k' fs)
         | cls == cls' && toKind' k 0 == k' &&
           [cls'' | Constraint _ cls'' _ <- cx] == superClasses cls' clsEnv &&
-          map (\m -> (imethod m, imethodArity m)) ms ==
-            map (\f -> (methodName f, methodArity f)) fs
+          map (\m -> (imethod m, imethodArity m
+                     , Just $ toDetType $ imethodDefaultDetType m
+                     , toDetType <$> imethodDetTypeAnn m)) ms ==
+            map (\f -> (methodName f, methodArity f
+                       , methodDefaultDet f, methodDetSchemeAnn f)) fs
         = Just $ mapM_ (checkMethodImport cls clsvar) ms
       check _ = Nothing
   checkTypeInfo "type class" check cls cls
 checkImport (IInstanceDecl _ cx cls ty is m) =
   checkInstInfo check cls (cls, typeConstr ty) m
   where PredType ps _ = toPredType [] $ QualTypeExpr NoSpanInfo cx ty
-        check ps' is' = ps == ps' && sort is == sort is'
+        check ps' is' = ps == ps' && sort (map transDet is) == sort (map transDet is')
+        transDet (a, b, dty) = (a, b, toDetType dty)
 
 checkConstrImport :: QualIdent -> [Ident] -> ConstrDecl -> IC ()
 checkConstrImport tc tvs (ConstrDecl _ c tys) = do
@@ -230,13 +244,17 @@ checkNewConstrImport tc tvs (NewRecordDecl _ c (l, ty)) = do
   checkValueInfo "newtype constructor" check c qc
 
 checkMethodImport :: QualIdent -> Ident -> IMethodDecl -> IC ()
-checkMethodImport qcls clsvar (IMethodDecl _ f _ qty) =
+checkMethodImport qcls clsvar (IMethodDecl _ f _ qty ddty mdty) = do
   checkValueInfo "method" check f qf
+  checkDetInfo "method" checkD f qf
+  checkMaybeDetInfo "method" checkM qcls f qf
   where qf = qualifyLike qcls f
         check (Value f' cm' _ (ForAll _ pty)) =
           qf == f' && isJust cm' &&
           toMethodType qcls clsvar qty == pty
         check _ = False
+        checkD = (toDetType ddty ==)
+        checkM = (fmap toDetType mdty ==)
 
 checkPrecInfo :: HasSpanInfo s => (PrecInfo -> Bool) -> s -> QualIdent -> IC ()
 checkPrecInfo check p op = do
@@ -258,17 +276,30 @@ checkTypeInfo what check p tc = do
         _    -> internalError "checkTypeInfo"
   checkImported checkInfo tc
 
-checkInstInfo :: HasSpanInfo s => (PredSet -> [(Ident, Int)] -> Bool) -> s -> InstIdent
+checkInstInfo :: HasSpanInfo s => (PredSet -> [(Ident, Maybe Int, DetExpr)] -> Bool) -> s -> InstIdent
               -> Maybe ModuleIdent -> IC ()
-checkInstInfo check p i mm = do
+checkInstInfo check p i@(qcls, qtc) mm = do
   inEnv <- getInstEnv
   let checkInfo m _ = case lookupInstInfo i inEnv of
         Just (m', ps, is)
           | m /= m'   -> report $ errNoInstance p m i
-          | otherwise ->
-            unless (check ps is) $ report $ errInstanceConflict p m i
+          | otherwise -> do
+            is' <- mapM getDetInfo is
+            unless (check ps is') $ report $ errInstanceConflict p m i
         Nothing -> report $ errNoInstance p m i
   checkImported checkInfo (maybe qualify qualifyWith mm anonId)
+  where
+    getDetInfo (i', arity) = do
+      dEnv <- getDetEnv
+      let qtc' = case qidIdent qtc of
+            tc | tc == listId  -> qualQualify preludeMIdent qtc
+               | tc == arrowId -> qualQualify preludeMIdent qtc
+               | tc == unitId  -> qualQualify preludeMIdent qtc
+               | isTupleId tc  -> qualQualify preludeMIdent qtc
+               | otherwise     -> qtc
+      case Map.lookup (II qcls qtc' (qualifyLike qcls i')) dEnv of
+        Just d' -> return (i', Just arity, toDetExpr d')
+        Nothing -> internalError $ "checkInstInfo" ++ render (pPrint (i', qcls, qtc))
 
 checkValueInfo :: HasSpanInfo a => String -> (ValueInfo -> Bool) -> a
                -> QualIdent -> IC ()
@@ -279,6 +310,27 @@ checkValueInfo what check p x = do
         [vi] -> unless (check vi)
                   (report $ errImportConflict p' what m x')
         _    -> internalError "checkValueInfo"
+  checkImported checkInfo x
+  where p' = getSpanInfo p
+
+checkDetInfo :: HasSpanInfo a => String -> (DetScheme -> Bool) -> a
+             -> QualIdent -> IC ()
+checkDetInfo what check p x = do
+  dEnv <- getDetEnv
+  let checkInfo m x' = case lookupDetEnv x dEnv of
+        Nothing -> report $ errNotExported p' what m x'
+        Just ty -> unless (check ty)
+                    (report $ errImportConflict p' what m x')
+  checkImported checkInfo x
+  where p' = getSpanInfo p
+
+checkMaybeDetInfo :: HasSpanInfo a => String -> (Maybe DetScheme -> Bool)
+                  -> QualIdent -> a -> QualIdent -> IC ()
+checkMaybeDetInfo what check qcls p x = do
+  dEnv <- getDetEnv
+  let checkInfo m x' = case Map.lookup (CI qcls x) dEnv of
+        res -> unless (check res)
+                (report $ errImportConflict p' what m x')
   checkImported checkInfo x
   where p' = getSpanInfo p
 

@@ -22,13 +22,14 @@ import Curry.Syntax
 
 import Base.TopEnv (allBindings, allLocalBindings)
 
-import Env.Class
-import Env.Instance
-import Env.Interface
-import Env.ModuleAlias (AliasEnv, initAliasEnv)
-import Env.OpPrec
-import Env.TypeConstructor
-import Env.Value
+import Env.Class ( initClassEnv, ClassEnv )
+import Env.Determinism ( initDetEnv, DetEnv )
+import Env.Instance ( initInstEnv, InstEnv )
+import Env.Interface ( initInterfaceEnv, InterfaceEnv )
+import Env.ModuleAlias ( initAliasEnv, AliasEnv)
+import Env.OpPrec ( initOpPrecEnv, OpPrecEnv )
+import Env.TypeConstructor ( initTCEnv, TCEnv )
+import Env.Value ( initDCEnv, ValueEnv )
 
 type CompEnv a = (CompilerEnv, a)
 
@@ -47,6 +48,7 @@ data CompilerEnv = CompilerEnv
   , instEnv      :: InstEnv             -- ^ instances
   , valueEnv     :: ValueEnv            -- ^ functions and data constructors
   , opPrecEnv    :: OpPrecEnv           -- ^ operator precedences
+  , detEnv       :: DetEnv              -- ^ determinism information
   }
 
 -- |Initial 'CompilerEnv'
@@ -63,6 +65,7 @@ initCompilerEnv mid = CompilerEnv
   , instEnv      = initInstEnv
   , valueEnv     = initDCEnv
   , opPrecEnv    = initOpPrecEnv
+  , detEnv       = initDetEnv
   }
 
 -- |Show the 'CompilerEnv'
@@ -80,9 +83,10 @@ showCompilerEnv env allBinds simpleEnv = show $ vcat
   , header "Classes            " $ ppMap simpleEnv $ classEnv env
   , header "Instances          " $ ppMap simpleEnv $ instEnv env
   , header "Values             " $ ppAL simpleEnv $ bindings $ valueEnv  env
+  , header "Determinism types  " $ ppMap simpleEnv $ detEnv env
   ]
   where
-  header hdr content = hang (text hdr <+> colon) 4 content
+  header hdr = hang (text hdr <+> colon) 4
   bindings = if allBinds then allBindings else allLocalBindings
 
 -- |Pretty print a 'Map'

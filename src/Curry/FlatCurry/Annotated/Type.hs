@@ -4,11 +4,18 @@
     Copyright   : (c) 2016 - 2017 Finn Teegen
     License     : BSD-3-clause
 
-    Maintainer  : fte@informatik.uni-kiel.de
+    Maintainer  : kpr@informatik.uni-kiel.de
     Stability   : experimental
     Portability : portable
 
-    TODO
+    This library contains a version of FlatCurry's abstract syntax tree
+    modified so that it is polymorphic in the type of annotations.
+
+    Most of the time, these annotations are used to store information about
+    the type of a syntax node.
+
+    For more information about the abstract syntax tree of `FlatCurry`,
+    see the documentation of the respective module.
 -}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveFunctor  #-}

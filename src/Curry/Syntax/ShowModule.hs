@@ -222,6 +222,11 @@ showsDecl (InstanceDecl spi li context qcls inst decls)
   . showsInstanceType inst . space
   . showsList showsDecl decls
   . showsString ")"
+showsDecl (DetSig spi vs dty)
+  = showsString "(DetSig "
+  . showsSpanInfo spi . space
+  . showsList showsIdent vs . space
+  . showsDetExpr dty
 
 showsContext :: Context -> ShowS
 showsContext = showsList showsConstraint
@@ -331,6 +336,32 @@ showsTypeExpr (ForallType spi vars ty)
   . showsSpanInfo spi . space
   . showsList showsIdent vars
   . showsTypeExpr ty
+  . showsString ")"
+
+showsDetExpr :: DetExpr -> ShowS
+showsDetExpr (DetDetExpr spi)
+  = showsString "(DetDetExpr "
+  . showsSpanInfo spi
+  . showsString ")"
+showsDetExpr (AnyDetExpr spi)
+  = showsString "(AnyDetExpr "
+  . showsSpanInfo spi
+  . showsString ")"
+showsDetExpr (ParenDetExpr spi det)
+  = showsString "(ParenDetExpr "
+  . showsSpanInfo spi . space
+  . showsDetExpr det
+  . showsString ")"
+showsDetExpr (ArrowDetExpr spi det1 det2)
+  = showsString "(ArrowDetExpr "
+  . showsSpanInfo spi . space
+  . showsDetExpr det1 . space
+  . showsDetExpr det2
+  . showsString ")"
+showsDetExpr (VarDetExpr spi ident)
+  = showsString "(DetVar "
+  . showsSpanInfo spi . space
+  . showsIdent ident
   . showsString ")"
 
 showsEquation :: Show a => Equation a -> ShowS

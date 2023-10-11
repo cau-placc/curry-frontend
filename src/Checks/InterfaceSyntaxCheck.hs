@@ -23,7 +23,7 @@
 
 module Checks.InterfaceSyntaxCheck (intfSyntaxCheck) where
 
-import           Control.Monad            (liftM, liftM2, unless, when)
+import           Control.Monad            (unless, when)
 import qualified Control.Monad.State as S
 import           Data.List                (nub, partition)
 import           Data.Maybe               (isNothing)
@@ -31,7 +31,7 @@ import           Data.Maybe               (isNothing)
 import Base.Expr
 import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.TopEnv
-import Base.Utils    (findMultiples, findDouble)
+import Base.Utils    (findMultiples, findDouble, fst3)
 
 import Env.TypeConstructor
 import Env.Type
@@ -66,18 +66,18 @@ intfSyntaxCheck (Interface n is ds) = (Interface n is ds', reverse $ errors s')
 -- The latter must not occur in type expressions in interfaces.
 
 bindType :: IDecl -> TypeEnv -> TypeEnv
-bindType (IInfixDecl           _ _ _ _) = id
-bindType (HidingDataDecl      _ tc _ _) = qualBindTopEnv tc (Data tc [])
-bindType (IDataDecl      _ tc _ _ cs _) =
+bindType (IInfixDecl            _ _ _ _) = id
+bindType (HidingDataDecl       _ tc _ _) = qualBindTopEnv tc (Data tc [])
+bindType (IDataDecl       _ tc _ _ cs _) =
   qualBindTopEnv tc (Data tc (map constrId cs))
-bindType (INewtypeDecl   _ tc _ _ nc _) =
+bindType (INewtypeDecl    _ tc _ _ nc _) =
   qualBindTopEnv tc (Data tc [nconstrId nc])
-bindType (ITypeDecl         _ tc _ _ _) = qualBindTopEnv tc (Alias tc)
-bindType (IFunctionDecl      _ _ _ _ _) = id
-bindType (HidingClassDecl  _ _ cls _ _) = qualBindTopEnv cls (Class cls [])
-bindType (IClassDecl _ _ cls _ _ ms hs) =
+bindType (ITypeDecl          _ tc _ _ _) = qualBindTopEnv tc (Alias tc)
+bindType (IFunctionDecl     _ _ _ _ _ _) = id
+bindType (HidingClassDecl _ _ cls _ _ _) = qualBindTopEnv cls (Class cls [])
+bindType (IClassDecl  _ _ cls _ _ ms hs) =
   qualBindTopEnv cls (Class cls (filter (`notElem` hs) (map imethod ms)))
-bindType (IInstanceDecl    _ _ _ _ _ _) = id
+bindType (IInstanceDecl     _ _ _ _ _ _) = id
 
 -- The checks applied to the interface are similar to those performed
 -- during syntax checking of type expressions.
@@ -103,14 +103,14 @@ checkIDecl (INewtypeDecl p tc k tvs nc hs) = do
         labels = nrecordLabels nc
 checkIDecl (ITypeDecl p tc k tvs ty) = do
   checkTypeLhs tvs
-  liftM (ITypeDecl p tc k tvs) (checkClosedType tvs ty)
-checkIDecl (IFunctionDecl p f cm n qty) =
-  liftM (IFunctionDecl p f cm n) (checkQualType qty)
-checkIDecl (HidingClassDecl p cx qcls k clsvar) = do
+  ITypeDecl p tc k tvs <$> checkClosedType tvs ty
+checkIDecl (IFunctionDecl p f cm n qty dty) =
+  IFunctionDecl p f cm n <$> checkQualType qty <*> pure dty
+checkIDecl (HidingClassDecl p cx qcls k clsvar ids) = do
   checkTypeVars "hiding class declaration" [clsvar]
   cx' <- checkClosedContext [clsvar] cx
   checkSimpleContext cx'
-  return $ HidingClassDecl p cx' qcls k clsvar
+  return $ HidingClassDecl p cx' qcls k clsvar ids
 checkIDecl (IClassDecl p cx qcls k clsvar ms hs) = do
   checkTypeVars "class declaration" [clsvar]
   cx' <- checkClosedContext [clsvar] cx
@@ -123,7 +123,7 @@ checkIDecl (IInstanceDecl p cx qcls inst is m) = do
   QualTypeExpr _ cx' inst' <- checkQualType $ QualTypeExpr NoSpanInfo cx inst
   checkSimpleContext cx'
   checkInstanceType inst'
-  mapM_ (report . errMultipleImplementation . head) $ findMultiples $ map fst is
+  mapM_ (report . errMultipleImplementation . head) $ findMultiples $ map fst3 is
   return $ IInstanceDecl p cx' qcls inst' is m
 
 checkHiddenType :: QualIdent -> [Ident] -> [Ident] -> ISC ()
@@ -147,21 +147,21 @@ checkTypeVars what tvs = do
 
 checkConstrDecl :: [Ident] -> ConstrDecl -> ISC ConstrDecl
 checkConstrDecl tvs (ConstrDecl p c tys) = do
-  liftM (ConstrDecl p c) (mapM (checkClosedType tvs) tys)
+  ConstrDecl p c <$> mapM (checkClosedType tvs) tys
 checkConstrDecl tvs (ConOpDecl p ty1 op ty2) = do
-  liftM2 (\t1 t2 -> ConOpDecl p t1 op t2)
-         (checkClosedType tvs ty1)
-         (checkClosedType tvs ty2)
+  (\t1 t2 -> ConOpDecl p t1 op t2)
+    <$> checkClosedType tvs ty1
+    <*> checkClosedType tvs ty2
 checkConstrDecl tvs (RecordDecl p c fs) = do
-  liftM (RecordDecl p c) (mapM (checkFieldDecl tvs) fs)
+  RecordDecl p c <$> mapM (checkFieldDecl tvs) fs
 
 checkFieldDecl :: [Ident] -> FieldDecl -> ISC FieldDecl
 checkFieldDecl tvs (FieldDecl p ls ty) =
-  liftM (FieldDecl p ls) (checkClosedType tvs ty)
+  FieldDecl p ls <$> checkClosedType tvs ty
 
 checkNewConstrDecl :: [Ident] -> NewConstrDecl -> ISC NewConstrDecl
 checkNewConstrDecl tvs (NewConstrDecl p c ty) =
-  liftM (NewConstrDecl p c) (checkClosedType tvs ty)
+  NewConstrDecl p c <$> checkClosedType tvs ty
 checkNewConstrDecl tvs (NewRecordDecl p c (l, ty)) = do
   ty' <- checkClosedType tvs ty
   return $ NewRecordDecl p c (l, ty')
@@ -174,19 +174,19 @@ checkSimpleConstraint c@(Constraint _ _ ty) =
   unless (isVariableType ty) $ report $ errIllegalSimpleConstraint c
 
 checkIMethodDecl :: Ident -> IMethodDecl -> ISC IMethodDecl
-checkIMethodDecl tv (IMethodDecl p f a qty) = do
+checkIMethodDecl tv (IMethodDecl p f a qty ddty mdty) = do
   qty' <- checkQualType qty
   unless (tv `elem` fv qty') $ report $ errAmbiguousType f tv
   let QualTypeExpr _ cx _ = qty'
   when (tv `elem` fv cx) $ report $ errConstrainedClassVariable f tv
-  return $ IMethodDecl p f a qty'
+  return $ IMethodDecl p f a qty' ddty mdty
 
 checkInstanceType :: InstanceType -> ISC ()
 checkInstanceType inst = do
   tEnv <- getTypeEnv
   unless (isSimpleType inst &&
     not (isTypeSyn (typeConstr inst) tEnv) &&
-    null (filter isAnonId $ typeVars inst) &&
+    not (any isAnonId (typeVars inst)) &&
     isNothing (findDouble $ fv inst)) $
       report $ errIllegalInstanceType inst inst
 
@@ -208,7 +208,7 @@ checkContext = mapM checkConstraint
 checkConstraint :: Constraint -> ISC Constraint
 checkConstraint (Constraint spi qcls ty) = do
   checkClass qcls
-  Constraint spi qcls `liftM` checkType ty
+  Constraint spi qcls <$> checkType ty
 
 checkClass :: QualIdent -> ISC ()
 checkClass qcls = do
@@ -229,15 +229,15 @@ checkClosedType tvs ty = do
 checkType :: TypeExpr -> ISC TypeExpr
 checkType (ConstructorType spi tc) = checkTypeConstructor spi tc
 checkType (ApplyType  spi ty1 ty2) =
-  liftM2 (ApplyType spi) (checkType ty1) (checkType ty2)
+  ApplyType spi <$> checkType ty1 <*> checkType ty2
 checkType (VariableType    spi tv) =
   checkType $ ConstructorType spi (qualify tv)
-checkType (TupleType      spi tys) = liftM (TupleType spi) (mapM checkType tys)
-checkType (ListType        spi ty) = liftM (ListType spi) (checkType ty)
+checkType (TupleType      spi tys) = TupleType spi <$> mapM checkType tys
+checkType (ListType        spi ty) = ListType spi <$> checkType ty
 checkType (ArrowType  spi ty1 ty2) =
-  liftM2 (ArrowType spi) (checkType ty1) (checkType ty2)
-checkType (ParenType      spi  ty) = liftM (ParenType spi) (checkType ty)
-checkType (ForallType   spi vs ty) = liftM (ForallType spi vs) (checkType ty)
+  ArrowType spi <$> checkType ty1 <*> checkType ty2
+checkType (ParenType      spi  ty) = ParenType spi <$> checkType ty
+checkType (ForallType   spi vs ty) = ForallType spi vs <$> checkType ty
 
 checkClosed :: [Ident] -> TypeExpr -> ISC ()
 checkClosed _   (ConstructorType _ _) = return ()

@@ -1,18 +1,29 @@
 {- |
     Module      :  $Header$
     Description :  Internal representation of kinds
-    Copyright   :  (c) 2016        Finn Teegen
+    Copyright   :  (c) 2016-2022 Finn Teegen
+                       2023      Kai-Oliver Prott
     License     :  BSD-3-clause
 
-    Maintainer  :  bjp@informatik.uni-kiel.de
+    Maintainer  :  kpr@informatik.uni-kiel.de
     Stability   :  experimental
     Portability :  portable
 
    This module modules provides the definitions for the internal
    representation of kinds in the compiler.
+
+   The functions 'tokind' and 'fromKind' convert Curry kind expressions into
+   kinds and vice versa.
+
+   When Curry kinds are converted with 'fromKind', kind variables are
+   instantiated with the kind *.
 -}
 
 module Base.Kinds where
+
+import Curry.Base.Pretty (Pretty(..))
+import Curry.Syntax.Type (KindExpr (..))
+import Curry.Syntax.Pretty ()
 
 -- A kind is either *, which is the kind of a value's type, a kind
 -- variable, or an arrow kind. Kind variables are used internally during
@@ -60,3 +71,22 @@ isSimpleKind k = k == simpleKind (kindArity k)
 kindArgs :: Kind -> [Kind]
 kindArgs (KindArrow k k') = k : kindArgs k'
 kindArgs _                = []
+
+toKind :: KindExpr -> Kind
+toKind Star              = KindStar
+toKind (ArrowKind k1 k2) = KindArrow (toKind k1) (toKind k2)
+
+toKind' :: Maybe KindExpr -> Int -> Kind
+toKind' k n = maybe (simpleKind n) toKind k
+
+fromKind :: Kind -> KindExpr
+fromKind KindStar          = Star
+fromKind (KindVariable  _) = Star
+fromKind (KindArrow k1 k2) = ArrowKind (fromKind k1) (fromKind k2)
+
+fromKind' :: Kind -> Int -> Maybe KindExpr
+fromKind' k n | k == simpleKind n = Nothing
+              | otherwise         = Just (fromKind k)
+
+instance Pretty Kind where
+  pPrint = pPrintPrec 0 . fromKind

@@ -15,21 +15,28 @@
     For both the type class identifier and the list of super classes original
     names are used. Thus, the use of a flat environment is sufficient.
 -}
-
 module Env.Class
   ( ClassEnv, initClassEnv
   , ClassInfo, bindClassInfo, mergeClassInfo, lookupClassInfo
-  , superClasses, allSuperClasses, classMethods, hasDefaultImpl
+  , superClasses, allSuperClasses, visibleClassMethods, allClassMethods
+  , hasDefaultImpl, getDeterminismAnnotation
+  , minPredSet, maxPredSet
   ) where
 
 import           Data.List       (nub, sort)
 import qualified Data.Map as Map (Map, empty, insertWith, lookup)
+import qualified Data.Set.Extra as Set
 
 import Curry.Base.Ident
 
 import Base.Messages (internalError)
+import Base.Types (DetScheme, PredSet, Pred(..))
+import Base.Utils (fst4)
 
-type ClassInfo = ([QualIdent], [(Ident, Bool)])
+type ClassInfo = ([QualIdent], [(Ident, HasDefaultImpl, IsVisible, Maybe DetScheme)])
+
+type HasDefaultImpl = Bool
+type IsVisible      = Bool
 
 type ClassEnv = Map.Map QualIdent ClassInfo
 
@@ -62,14 +69,43 @@ allSuperClasses cls clsEnv = nub $ classes cls
   where
     classes cls' = cls' : concatMap classes (superClasses cls' clsEnv)
 
-classMethods :: QualIdent -> ClassEnv -> [Ident]
-classMethods cls clsEnv = case lookupClassInfo cls clsEnv of
-  Just (_, ms) -> map fst ms
-  _ -> internalError $ "Env.Classes.classMethods: " ++ show cls
+visibleClassMethods :: QualIdent -> ClassEnv -> [Ident]
+visibleClassMethods cls clsEnv = case lookupClassInfo cls clsEnv of
+  Just (_, ms) -> map fst4 $ filter (\(_,_,vis, _) -> vis) ms
+  _ -> internalError $ "Env.Classes.visibleClassMethods: " ++ show cls
+
+allClassMethods :: QualIdent -> ClassEnv -> [Ident]
+allClassMethods cls clsEnv = case lookupClassInfo cls clsEnv of
+  Just (_, ms) -> map fst4 ms
+  _ -> internalError $ "Env.Classes.allClassMethods: " ++ show cls
 
 hasDefaultImpl :: QualIdent -> Ident -> ClassEnv -> Bool
 hasDefaultImpl cls f clsEnv = case lookupClassInfo cls clsEnv of
-  Just (_, ms) -> case lookup f ms of
+  Just (_, ms) -> case lookup f $ map (\(i, d, _, _) -> (i, d)) ms of
     Just dflt -> dflt
     Nothing -> internalError $ "Env.Classes.hasDefaultImpl: " ++ show f
   _ -> internalError $ "Env.Classes.hasDefaultImpl: " ++ show cls
+
+getDeterminismAnnotation :: QualIdent -> Ident -> ClassEnv -> Maybe DetScheme
+getDeterminismAnnotation cls f clsEnv = case lookupClassInfo cls clsEnv of
+  Just (_, ms) -> case lookup f $ map (\(i, _, _, d) -> (i, d)) ms of
+    Just d -> d
+    Nothing -> internalError $ "Env.Classes.getDeterminismAnnotation: " ++ show f
+  _ -> internalError $ "Env.Classes.getDeterminismAnnotation: " ++ show cls
+
+-- The function 'minPredSet' transforms a predicate set by removing all
+-- predicates from the predicate set which are implied by other predicates
+-- according to the super class hierarchy. Inversely, the function 'maxPredSet'
+-- adds all predicates to a predicate set which are implied by the predicates
+-- in the given predicate set.
+
+minPredSet :: ClassEnv -> PredSet -> PredSet
+minPredSet clsEnv ps =
+  ps `Set.difference` Set.concatMap implied ps
+  where implied (Pred cls ty) = Set.fromList
+          [Pred cls' ty | cls' <- tail (allSuperClasses cls clsEnv)]
+
+maxPredSet :: ClassEnv -> PredSet -> PredSet
+maxPredSet clsEnv = Set.concatMap implied
+  where implied (Pred cls ty) = Set.fromList
+          [Pred cls' ty | cls' <- allSuperClasses cls clsEnv]

@@ -25,8 +25,10 @@ module Modules
   , writeTokens, writeComments, writeParsed, writeHtml, writeAST, writeShortAST
   ) where
 
+import           Control.DeepSeq          (force)
 import qualified Control.Exception as C   (catch, IOException)
-import           Control.Monad            (liftM, unless, when)
+import           Control.Monad            (unless, when, void)
+import           Data.Bifunctor           (second, first)
 import           Data.Char                (toUpper)
 import qualified Data.Map          as Map (elems, lookup)
 import qualified Data.ByteString.Lazy as ByteString
@@ -97,8 +99,8 @@ compileModule opts m fn = do
   writeParsed   opts mdl
   let qmdl = qual mdl
   writeHtml     opts qmdl
-  writeAST      opts (fst  mdl, fmap (const ()) (snd  mdl))
-  writeShortAST opts (fst qmdl, fmap (const ()) (snd qmdl))
+  writeAST      opts (second void mdl)
+  writeShortAST opts (second void qmdl)
   mdl' <- expandExports opts mdl
   qmdl' <- dumpWith opts CS.showModule pPrint DumpQualified $ qual mdl'
   writeAbstractCurry opts qmdl'
@@ -106,7 +108,7 @@ compileModule opts m fn = do
   let intf = uncurry exportInterface qmdl'
   writeInterface opts (fst mdl') intf
   when withFlat $ do
-    ((env, il), mdl'') <- transModule opts qmdl'
+    ((env, il), mdl'') <- transModule opts (second (fmap fst) qmdl')
     writeFlat opts env (snd mdl'') il
   where
   withFlat = any (`elem` optTargetTypes opts) [ AnnotatedFlatCurry
@@ -116,7 +118,7 @@ compileModule opts m fn = do
                                               ]
 
 loadAndCheckModule :: Options -> ModuleIdent -> FilePath
-                   -> CYIO (CompEnv (CS.Module PredType))
+                   -> CYIO (CompEnv (CS.Module (PredType, DetType)))
 loadAndCheckModule opts m fn = do
   ce <- loadModule opts m fn >>= checkModule opts
   warnMessages $ uncurry (warnCheck opts) ce
@@ -153,7 +155,7 @@ parseModule opts m fn = do
       prepd   <- preprocess (optPrepOpts opts) fn ul
       condC   <- condCompile (optCppOpts opts) fn prepd
       doDump ((optDebugOpts opts) { dbDumpEnv = False })
-             (DumpCondCompiled, undefined, condC)
+             (DumpCondCompiled, initCompilerEnv m, condC)
       -- We ignore the warnings issued by the lexer because
       -- they will be issued a second time during parsing.
       spanToks <- liftCYM $ silent $ CS.lexSource fn condC
@@ -175,7 +177,7 @@ preprocess opts fn src
         case ec of
           ExitFailure x -> return $ Left [message $ text $
               "Preprocessor exited with exit code " ++ show x]
-          ExitSuccess   -> Right `liftM` readFile outFn
+          ExitSuccess   -> Right <$> readFile outFn
     either failMessages ok res
 
 withTempFile :: (FilePath -> Handle -> IO a) -> IO a
@@ -234,7 +236,7 @@ importSyntaxCheck :: Monad m => InterfaceEnv -> CS.Module a -> CYT m [CS.ImportD
 importSyntaxCheck iEnv (CS.Module _ _ _ _ _ imps _) = mapM checkImportDecl imps
   where
   checkImportDecl (CS.ImportDecl p m q asM is) = case Map.lookup m iEnv of
-    Just intf -> CS.ImportDecl p m q asM `liftM` importCheck intf is
+    Just intf -> CS.ImportDecl p m q asM  <$> importCheck intf is
     Nothing   -> internalError $ "Modules.importModules: no interface for "
                                     ++ show m
 
@@ -242,9 +244,8 @@ importSyntaxCheck iEnv (CS.Module _ _ _ _ _ imps _) = mapM checkImportDecl imps
 -- Checking a module
 -- ---------------------------------------------------------------------------
 
--- TODO: The order of the checks should be improved!
 checkModule :: Options -> CompEnv (CS.Module ())
-            -> CYIO (CompEnv (CS.Module PredType))
+            -> CYIO (CompEnv (CS.Module (PredType, DetType)))
 checkModule opts mdl = do
   _   <- dumpCS DumpParsed mdl
   exc <- extensionCheck  opts mdl >>= dumpCS DumpExtensionChecked
@@ -256,7 +257,7 @@ checkModule opts mdl = do
   inc <- instanceCheck   opts dc  >>= dumpCS DumpInstanceChecked
   tc  <- typeCheck       opts inc >>= dumpCS DumpTypeChecked
   ec  <- exportCheck     opts tc  >>= dumpCS DumpExportChecked
-  return ec
+  determinismCheck       opts ec  >>= dumpCS DumpDeterminismChecked
   where
   dumpCS :: (MonadIO m, Show a) => DumpLevel -> CompEnv (CS.Module a)
          -> m (CompEnv (CS.Module a))
@@ -325,7 +326,7 @@ writeParsed opts (env, mdl) = when srcTarget $ liftIO $
 
 writeHtml :: Options -> CompEnv (CS.Module a) -> CYIO ()
 writeHtml opts (env, mdl) = when htmlTarget $
-  source2html opts (moduleIdent env) (map (\(sp, tok) -> (span2Pos sp, tok)) (tokens env)) mdl
+  source2html opts (moduleIdent env) (map (first span2Pos) (tokens env)) mdl
   where htmlTarget = Html `elem` optTargetTypes opts
 
 writeInterface :: Options -> CompilerEnv -> CS.Interface -> CYIO ()
@@ -382,9 +383,8 @@ writeFlatIntf opts env prog
   | not (optInterface opts) = return ()
   | optForce opts           = outputInterface
   | otherwise               = do
-      mfint <- liftIO $ FC.readFlatInterface targetFile
+      mfint <- force <$> liftIO (FC.readFlatInterface targetFile)
       let oldInterface = fromMaybe emptyIntf mfint
-      when (mfint == mfint) $ return () -- necessary to close file -- TODO
       unless (oldInterface `eqInterface` fint) outputInterface
   where
   targetFile      = flatIntName (filePath env)
@@ -393,7 +393,7 @@ writeFlatIntf opts env prog
   useSubDir       = addOutDirModule (optUseOutDir opts) (optOutDir opts) (moduleIdent env)
   outputInterface = liftIO $ FC.writeFlatCurry (useSubDir targetFile) fint
 
-writeAbstractCurry :: Options -> CompEnv (CS.Module PredType) -> CYIO ()
+writeAbstractCurry :: Options -> CompEnv (CS.Module (PredType, DetType)) -> CYIO ()
 writeAbstractCurry opts (env, mdl) = do
   when acyTarget  $ liftIO
                   $ AC.writeCurry (useSubDir $ acyName (filePath env))

@@ -21,7 +21,6 @@
 
     Qualified identifiers may optionally be prefixed by a module name.
 -}
-{-# LANGUAGE CPP            #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric  #-}
 module Curry.Base.Ident
@@ -81,6 +80,8 @@ module Curry.Base.Ident
   , qShowsPrecId, qShowParenId, qShowStringId
   , qAndOpId, qEqOpId, qLeqOpId, qLtOpId, qOrOpId, qAppendOpId, qDotOpId
   , qAValueId, qDataEqId
+  , qBindId, qFailId
+  , qFromIntId, qFromFloatId, qNegateId
 
     -- * Extended functionality
     -- ** Functional patterns
@@ -92,17 +93,17 @@ module Curry.Base.Ident
   , renameLabel, mkLabelIdent
   ) where
 
-import Control.Monad
-import Data.Binary
+import Prelude             hiding ((<>))
+import Control.Monad       (liftM3)
+import Data.Binary         (Binary(..))
 import Data.Char           (isAlpha, isAlphaNum)
 import Data.Function       (on)
 import Data.List           (intercalate, isInfixOf, isPrefixOf)
 import Data.Maybe          (isJust, fromMaybe)
 import GHC.Generics        (Generic)
-import Prelude hiding ((<>))
 
 import Curry.Base.Position
-import Curry.Base.Span hiding (file)
+import Curry.Base.Span     (Span(..))
 import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 
@@ -910,6 +911,26 @@ qDataEqId = qPreludeIdent dataEqId
 -- | 'QualIdent' for the '++' operator
 qAppendOpId :: QualIdent
 qAppendOpId = qPreludeIdent appendOpId
+
+-- | 'QualIdent' for the '>>=' operator
+qBindId :: QualIdent
+qBindId = qPreludeIdent $ mkIdent ">>="
+
+-- | 'QualIdent' for the 'fail' method from the 'MonadFail' class
+qFailId :: QualIdent
+qFailId = qPreludeIdent $ mkIdent "fail"
+
+-- | 'QualIdent' for the 'fromInt' method from the 'Num' class
+qFromIntId :: QualIdent
+qFromIntId = qPreludeIdent $ mkIdent "fromInt"
+
+-- | 'QualIdent' for the 'fromFloat' method from the 'Fractional' class
+qFromFloatId :: QualIdent
+qFromFloatId = qPreludeIdent $ mkIdent "fromFloat"
+
+-- | 'QualIdent' for the 'negate' method from the 'Num' class
+qNegateId :: QualIdent
+qNegateId = qPreludeIdent $ mkIdent "negate"
 
 -- ---------------------------------------------------------------------------
 -- Micellaneous functions for generating and testing extended identifiers

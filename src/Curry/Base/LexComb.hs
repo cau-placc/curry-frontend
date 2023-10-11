@@ -48,7 +48,9 @@ infixl 1 `thenP`, `thenP_`
 class (Ord s, Show s) => Symbol s where
   -- |Does the 'Symbol' represent the end of the input?
   isEOF :: s -> Bool
-  -- |Compute the distance of a 'Symbol'
+  -- |Compute the distance of a 'Symbol',
+  -- where the first argument is the starting column of the thing
+  -- that needs its distance computed.
   dist :: Int -> s -> Distance
 
 -- |Type for indentations, necessary for the layout rule

@@ -3,38 +3,52 @@
     Description :  Internal representation of types
     Copyright   :  (c) 2002 - 2004 Wolfgang Lux
                                    Martin Engelke
+                       2011 - 2014 Björn Peemöller(c)
                        2015        Jan Tikovsky
-                       2016        Finn Teegen
+                       2016 - 2022 Finn Teegen
+                       2023        Kai-Oliver Prott
     License     :  BSD-3-clause
 
-    Maintainer  :  bjp@informatik.uni-kiel.de
+    Maintainer  :  kpr@informatik.uni-kiel.de
     Stability   :  experimental
     Portability :  portable
 
-   This module modules provides the definitions for the internal
-   representation of types in the compiler along with some helper functions.
+    This module modules provides the definitions for the internal
+    representation of types in the compiler along with some helper functions.
+    It also exports the functions 'toType', 'toTypes', and 'fromType'
+    which convert Curry type expressions into types and vice versa.
+    The functions 'qualifyType' and 'unqualifyType' add and remove
+    module qualifiers in a type, respectively.
+
+    When Curry type expression are converted with 'toType' or 'toTypes',
+    type variables are assigned ascending indices in the order of their
+    occurrence. It is possible to pass a list of additional type variables
+    to both functions which are assigned indices before those variables
+    occurring in the type. This allows preserving the order of type variables
+    in the left hand side of a type declaration.
 -}
-
--- TODO: Use MultiParamTypeClasses ?
-
 module Base.Types
   ( -- * Representation of types
-    Type (..), applyType, unapplyType, rootOfType
+    Type (..), applyType, unapplyType, rootOfType, rootOfTypeMaybe
   , isArrowType, arrowArity, arrowArgs, arrowBase, arrowUnapply
   , IsType (..), typeConstrs
   , qualifyType, unqualifyType, qualifyTC
     -- * Representation of predicate, predicate sets and predicated types
   , Pred (..), qualifyPred, unqualifyPred
-  , PredSet, emptyPredSet, partitionPredSet, minPredSet, maxPredSet
+  , PredSet, emptyPredSet, partitionPredSet
   , qualifyPredSet, unqualifyPredSet
   , PredType (..), predType, unpredType, qualifyPredType, unqualifyPredType
     -- * Representation of data constructors
   , DataConstr (..), constrIdent, constrTypes, recLabels, recLabelTypes
   , tupleData
     -- * Representation of class methods
-  , ClassMethod (..), methodName, methodArity, methodType
+  , ClassMethod (..), methodName, methodArity, methodType, methodDefaultDet, methodDetSchemeAnn
     -- * Representation of quantification
   , TypeScheme (..), monoType, polyType, typeScheme
+    -- * Representation of determinism types
+  , toDetExpr, toDetType, toDetSchema
+  , abstractDetScheme, substDetTy, detTypeVars
+  , DetScheme (..), DetType(..), VarIndex
   , rawType
     -- * Predefined types
   , arrowType, unitType, predUnitType, boolType, predBoolType, charType
@@ -42,15 +56,30 @@ module Base.Types
   , listType, consType, ioType, tupleType
   , numTypes, fractionalTypes
   , predefTypes
+    -- * Functions on types and Curry syntax types
+  , toType, toTypes, toQualType, toQualTypes
+  , toPred, toQualPred, toPredSet, toQualPredSet, toPredType, toQualPredType
+  , toConstrType, toMethodType
+  , fromType, fromQualType
+  , fromPred, fromQualPred, fromPredSet, fromQualPredSet, fromPredType
+  , fromQualPredType
+  , ppType, ppPred, ppPredType, ppTypeScheme
   ) where
 
+import Prelude hiding ((<>))
+import Data.List      (nub)
+import Data.Maybe     (fromMaybe)
+import qualified Data.Map as Map (Map, fromList, lookup, size, insert, empty)
 import qualified Data.Set.Extra as Set
+import GHC.Stack      (HasCallStack)
+
+import Base.Expr      ( Expr(..), QuantExpr(..) )
+import Base.Messages  ( internalError )
 
 import Curry.Base.Ident
-
-import Base.Messages (internalError)
-
-import Env.Class (ClassEnv, allSuperClasses)
+import Curry.Base.Pretty
+import Curry.Base.SpanInfo (SpanInfo(..) )
+import qualified Curry.Syntax as CS
 
 -- ---------------------------------------------------------------------------
 -- Types
@@ -117,12 +146,17 @@ unapplyType dflt ty = unapply ty []
 
 -- The function 'rootOfType' returns the name of the type constructor at the
 -- root of a type. This function must not be applied to a type whose root is
--- a type variable or a skolem type.
+-- a type variable or a skolem type. In that case, use 'rootOfTypeMaybe'.
 
-rootOfType :: Type -> QualIdent
-rootOfType ty = case fst (unapplyType True ty) of
-  TypeConstructor tc -> tc
-  _ -> internalError $ "Base.Types.rootOfType: " ++ show ty
+rootOfType :: HasCallStack => Type -> QualIdent
+rootOfType ty = case rootOfTypeMaybe ty of
+  Just tc -> tc
+  Nothing -> internalError $ "Base.Types.rootOfType: " ++ show ty
+
+rootOfTypeMaybe :: Type -> Maybe QualIdent
+rootOfTypeMaybe ty = case fst (unapplyType True ty) of
+  TypeConstructor tc -> Just tc
+  _ -> Nothing
 
 -- The function 'isArrowType' checks whether a type is a function
 -- type t_1 -> t_2 -> ... -> t_n. The function 'arrowArity' computes
@@ -266,23 +300,6 @@ partitionPredSet = Set.partition $ \(Pred _ ty) -> isTypeVariable ty
     isTypeVariable (TypeApply ty _) = isTypeVariable ty
     isTypeVariable _                = False
 
--- The function 'minPredSet' transforms a predicate set by removing all
--- predicates from the predicate set which are implied by other predicates
--- according to the super class hierarchy. Inversely, the function 'maxPredSet'
--- adds all predicates to a predicate set which are implied by the predicates
--- in the given predicate set.
-
-minPredSet :: ClassEnv -> PredSet -> PredSet
-minPredSet clsEnv ps =
-  ps `Set.difference` Set.concatMap implied ps
-  where implied (Pred cls ty) = Set.fromList
-          [Pred cls' ty | cls' <- tail (allSuperClasses cls clsEnv)]
-
-maxPredSet :: ClassEnv -> PredSet -> PredSet
-maxPredSet clsEnv ps = Set.concatMap implied ps
-  where implied (Pred cls ty) = Set.fromList
-          [Pred cls' ty | cls' <- allSuperClasses cls clsEnv]
-
 qualifyPredSet :: ModuleIdent -> PredSet -> PredSet
 qualifyPredSet m = Set.map (qualifyPred m)
 
@@ -354,19 +371,28 @@ tupleData = [DataConstr (tupleId n) (take n tvs) | n <- [2 ..]]
 
 -- The type 'ClassMethod' is used to represent class methods introduced
 -- by class declarations. The 'Maybe Int' denotes the arity of the provided
--- default implementation.
+-- default implementation and the first 'Maybe Int' denotes the determinism annotation of the method's default implementation.
+-- It is Nothing before all determinism info has been checked.
+-- The second 'Maybe DetScheme' denotes the determinism
+-- annotation of the method if it exists.
 
-data ClassMethod = ClassMethod Ident (Maybe Int) PredType
+data ClassMethod = ClassMethod Ident (Maybe Int) PredType (Maybe DetScheme) (Maybe DetScheme)
   deriving (Eq, Show)
 
 methodName :: ClassMethod -> Ident
-methodName (ClassMethod f _ _) = f
+methodName (ClassMethod f _ _ _ _) = f
 
 methodArity :: ClassMethod -> Maybe Int
-methodArity (ClassMethod _ a _) = a
+methodArity (ClassMethod _ a _ _ _) = a
 
 methodType :: ClassMethod -> PredType
-methodType (ClassMethod _ _ pty) = pty
+methodType (ClassMethod _ _ pty _ _) = pty
+
+methodDefaultDet :: ClassMethod -> Maybe DetScheme
+methodDefaultDet (ClassMethod _ _ _ det _) = det
+
+methodDetSchemeAnn :: ClassMethod -> Maybe DetScheme
+methodDetSchemeAnn (ClassMethod _ _ _ _ ann) = ann
 
 -- ---------------------------------------------------------------------------
 -- Quantification
@@ -476,3 +502,274 @@ predefTypes =
   ]
   where a = TypeVariable 0
         b = TypeVariable 1
+
+-- ---------------------------------------------------------------------------
+-- Functions on types and Curry syntax types
+-- ---------------------------------------------------------------------------
+
+enumTypeVars :: (Expr a, QuantExpr a) => [Ident] -> a -> Map.Map Ident Int
+enumTypeVars tvs ty = Map.fromList $ zip (tvs ++ tvs') [0..]
+  where
+    tvs' = [tv | tv <- nub (fv ty), tv `notElem` tvs] ++
+             [tv | tv <- nub (bv ty), tv `notElem` tvs]
+
+toType :: [Ident] -> CS.TypeExpr -> Type
+toType tvs ty = toType' (enumTypeVars tvs ty) ty []
+
+toTypes :: [Ident] -> [CS.TypeExpr] -> [Type]
+toTypes tvs tys = map (flip (toType' (enumTypeVars tvs tys)) []) tys
+
+toType' :: Map.Map Ident Int -> CS.TypeExpr -> [Type] -> Type
+toType' _   (CS.ConstructorType _ tc) tys = applyType (TypeConstructor tc) tys
+toType' tvs (CS.ApplyType  _ ty1 ty2) tys =
+  toType' tvs ty1 (toType' tvs ty2 [] : tys)
+toType' tvs (CS.VariableType    _ tv) tys =
+  applyType (TypeVariable (toVar tvs tv)) tys
+toType' tvs (CS.TupleType      _ tys) tys'
+  | null tys  = internalError "Base.CurryTypes.toType': zero-element tuple"
+  | null tys' = tupleType $ map ((flip $ toType' tvs) []) tys
+  | otherwise = internalError "Base.CurryTypes.toType': tuple type application"
+toType' tvs (CS.ListType        _ ty) tys
+  | null tys  = listType $ toType' tvs ty []
+  | otherwise = internalError "Base.CurryTypes.toType': list type application"
+toType' tvs (CS.ArrowType  _ ty1 ty2) tys
+  | null tys = TypeArrow (toType' tvs ty1 []) (toType' tvs ty2 [])
+  | otherwise = internalError "Base.CurryTypes.toType': arrow type application"
+toType' tvs (CS.ParenType       _ ty) tys = toType' tvs ty tys
+toType' tvs (CS.ForallType _ tvs' ty) tys
+  | null tvs' = toType' tvs ty tys
+  | otherwise = applyType (TypeForall (map (toVar tvs) tvs')
+                                      (toType' tvs ty []))
+                          tys
+
+toVar :: Map.Map Ident Int -> Ident -> Int
+toVar tvs tv = case Map.lookup tv tvs of
+  Just tv' -> tv'
+  Nothing  -> internalError "Base.CurryTypes.toVar: unknown type variable"
+
+toQualType :: ModuleIdent -> [Ident] -> CS.TypeExpr -> Type
+toQualType m tvs = qualifyType m . toType tvs
+
+toQualTypes :: ModuleIdent -> [Ident] -> [CS.TypeExpr] -> [Type]
+toQualTypes m tvs = map (qualifyType m) . toTypes tvs
+
+toPred :: [Ident] -> CS.Constraint -> Pred
+toPred tvs c = toPred' (enumTypeVars tvs c) c
+
+toPred' :: Map.Map Ident Int -> CS.Constraint -> Pred
+toPred' tvs (CS.Constraint _ qcls ty) = Pred qcls (toType' tvs ty [])
+
+toQualPred :: ModuleIdent -> [Ident] -> CS.Constraint -> Pred
+toQualPred m tvs = qualifyPred m . toPred tvs
+
+toPredSet :: [Ident] -> CS.Context -> PredSet
+toPredSet tvs cx = toPredSet' (enumTypeVars tvs cx) cx
+
+toPredSet' :: Map.Map Ident Int -> CS.Context -> PredSet
+toPredSet' tvs = Set.fromList . map (toPred' tvs)
+
+toQualPredSet :: ModuleIdent -> [Ident] -> CS.Context -> PredSet
+toQualPredSet m tvs = qualifyPredSet m . toPredSet tvs
+
+toPredType :: [Ident] -> CS.QualTypeExpr -> PredType
+toPredType tvs qty = toPredType' (enumTypeVars tvs qty) qty
+
+toPredType' :: Map.Map Ident Int -> CS.QualTypeExpr -> PredType
+toPredType' tvs (CS.QualTypeExpr _ cx ty) =
+  PredType (toPredSet' tvs cx) (toType' tvs ty [])
+
+toQualPredType :: ModuleIdent -> [Ident] -> CS.QualTypeExpr -> PredType
+toQualPredType m tvs = qualifyPredType m . toPredType tvs
+
+-- The function 'toConstrType' returns the type of a data or newtype
+-- constructor. Hereby, it restricts the context to those type variables
+-- which are free in the argument types.
+
+toConstrType :: QualIdent -> [Ident] -> [CS.TypeExpr] -> PredType
+toConstrType tc tvs tys = toPredType tvs $
+  CS.QualTypeExpr NoSpanInfo [] ty'
+  where ty'  = foldr (CS.ArrowType NoSpanInfo) ty0 tys
+        ty0  = foldl (CS.ApplyType NoSpanInfo)
+                     (CS.ConstructorType NoSpanInfo tc)
+                     (map (CS.VariableType NoSpanInfo) tvs)
+
+-- The function 'toMethodType' returns the type of a type class method.
+-- It adds the implicit type class constraint to the method's type signature
+-- and ensures that the class' type variable is always assigned index 0.
+
+toMethodType :: QualIdent -> Ident -> CS.QualTypeExpr -> PredType
+toMethodType qcls clsvar (CS.QualTypeExpr spi cx ty) =
+  toPredType [clsvar] (CS.QualTypeExpr spi cx' ty)
+  where cx' = CS.Constraint NoSpanInfo qcls
+                (CS.VariableType NoSpanInfo clsvar) : cx
+
+fromType :: [Ident] -> Type -> CS.TypeExpr
+fromType tvs ty = fromType' tvs ty []
+
+fromType' :: [Ident] -> Type -> [CS.TypeExpr] -> CS.TypeExpr
+fromType' _   (TypeConstructor    tc) tys
+  | isQTupleId tc && qTupleArity tc == length tys
+    = CS.TupleType NoSpanInfo tys
+  | tc == qListId && length tys == 1
+    = CS.ListType NoSpanInfo (head tys)
+  | otherwise
+  = foldl (CS.ApplyType NoSpanInfo) (CS.ConstructorType NoSpanInfo tc) tys
+fromType' tvs (TypeApply     ty1 ty2) tys =
+  fromType' tvs ty1 (fromType tvs ty2 : tys)
+fromType' tvs (TypeVariable       tv) tys =
+  foldl (CS.ApplyType NoSpanInfo) (CS.VariableType NoSpanInfo (fromVar tvs tv))
+    tys
+fromType' tvs (TypeArrow     ty1 ty2) tys =
+  foldl (CS.ApplyType NoSpanInfo)
+    (CS.ArrowType NoSpanInfo (fromType tvs ty1) (fromType tvs ty2)) tys
+fromType' tvs (TypeConstrained tys _) tys' = fromType' tvs (head tys) tys'
+fromType' tvs (TypeForall    tvs' ty) tys
+  | null tvs' = fromType' tvs ty tys
+  | otherwise = foldl (CS.ApplyType NoSpanInfo)
+                      (CS.ForallType NoSpanInfo (map (fromVar tvs) tvs')
+                                                (fromType tvs ty))
+                      tys
+
+fromVar :: [Ident] -> Int -> Ident
+fromVar tvs tv = if tv >= 0 then tvs !! tv else mkIdent ('_' : show (-tv))
+
+fromQualType :: ModuleIdent -> [Ident] -> Type -> CS.TypeExpr
+fromQualType m tvs = fromType tvs . unqualifyType m
+
+fromPred :: [Ident] -> Pred -> CS.Constraint
+fromPred tvs (Pred qcls ty) = CS.Constraint NoSpanInfo qcls (fromType tvs ty)
+
+fromQualPred :: ModuleIdent -> [Ident] -> Pred -> CS.Constraint
+fromQualPred m tvs = fromPred tvs .  unqualifyPred m
+
+-- Due to the sorting of the predicate set, the list of constraints is sorted
+-- as well.
+
+fromPredSet :: [Ident] -> PredSet -> CS.Context
+fromPredSet tvs = map (fromPred tvs) . Set.toAscList
+
+fromQualPredSet :: ModuleIdent -> [Ident] -> PredSet -> CS.Context
+fromQualPredSet m tvs = fromPredSet tvs . unqualifyPredSet m
+
+fromPredType :: [Ident] -> PredType -> CS.QualTypeExpr
+fromPredType tvs (PredType ps ty) =
+  CS.QualTypeExpr NoSpanInfo (fromPredSet tvs ps) (fromType tvs ty)
+
+fromQualPredType :: ModuleIdent -> [Ident] -> PredType -> CS.QualTypeExpr
+fromQualPredType m tvs = fromPredType tvs . unqualifyPredType m
+
+-- The following functions implement pretty-printing for types.
+
+ppType :: ModuleIdent -> Type -> Doc
+ppType m = pPrintPrec 0 . fromQualType m identSupply
+
+ppPred :: ModuleIdent -> Pred -> Doc
+ppPred m = pPrint . fromQualPred m identSupply
+
+ppPredType :: ModuleIdent -> PredType -> Doc
+ppPredType m = pPrint . fromQualPredType m identSupply
+
+ppTypeScheme :: ModuleIdent -> TypeScheme -> Doc
+ppTypeScheme m (ForAll _ pty) = ppPredType m pty
+
+-- ---------------------------------------------------------------------------
+-- Determinism types
+-- ---------------------------------------------------------------------------
+
+type VarIndex = Integer
+
+data DetType = VarTy VarIndex
+             | Det
+             | DetArrow DetType DetType
+             | Any
+  deriving (Eq, Ord, Show)
+
+data DetScheme = Forall [VarIndex] DetType
+  deriving (Eq, Ord, Show)
+
+toDetExpr :: DetScheme -> CS.DetExpr
+toDetExpr (Forall _ ty) = tyToDetExpr ty
+
+tyToDetExpr :: DetType -> CS.DetExpr
+tyToDetExpr (VarTy v) = CS.VarDetExpr NoSpanInfo $
+  -- clamp down to the maximum Int value
+  identSupply !! fromInteger (min v (fromIntegral (maxBound :: Int)))
+tyToDetExpr Det = CS.DetDetExpr NoSpanInfo
+tyToDetExpr Any = CS.AnyDetExpr NoSpanInfo
+tyToDetExpr (DetArrow ty1 ty2) = CS.ArrowDetExpr NoSpanInfo (tyToDetExpr ty1) (tyToDetExpr ty2)
+
+toDetType :: CS.DetExpr -> DetScheme
+toDetType = abstractDetScheme . toDetSchema . fst . go Map.empty
+  where
+    go s (CS.VarDetExpr _ v) = case Map.lookup v s of
+      Just ty -> (ty, s)
+      Nothing -> ( VarTy (fromIntegral $ Map.size s)
+                 , Map.insert v (VarTy (fromIntegral $ Map.size s)) s )
+    go s (CS.DetDetExpr _) = (Det, s)
+    go s (CS.AnyDetExpr _) = (Any, s)
+    go s (CS.ParenDetExpr _ ty) = go s ty
+    go s (CS.ArrowDetExpr _ ty1 ty2) = (DetArrow ty1' ty2', s'')
+      where (ty1', s') = go s ty1
+            (ty2', s'') = go s' ty2
+
+toDetSchema :: DetType -> DetScheme
+toDetSchema = Forall []
+
+abstractDetScheme :: DetScheme -> DetScheme
+abstractDetScheme (Forall _ ty) =
+  Forall [0 .. fromIntegral (Map.size subst) - 1] (ty `substDetTy` subst)
+  where
+    vars = nub (detTypeVars ty)
+    subst = Map.fromList $ zip vars (map VarTy [0..])
+
+substDetTy :: DetType -> Map.Map VarIndex DetType -> DetType
+substDetTy (VarTy v) subst = case Map.lookup v subst of
+  Nothing -> VarTy v
+  Just ty -> ty
+substDetTy (DetArrow ty1 ty2) subst = DetArrow (substDetTy ty1 subst) (substDetTy ty2 subst)
+substDetTy ty _ = ty
+
+detTypeVars :: DetType -> [VarIndex]
+detTypeVars (VarTy v) = [v]
+detTypeVars (DetArrow ty1 ty2) = detTypeVars ty1 ++ detTypeVars ty2
+detTypeVars _ = []
+
+-- ---------------------------------------------------------------------------
+-- Pretty printing
+-- ---------------------------------------------------------------------------
+
+instance Pretty DetScheme where
+  pPrint (Forall [] ty) = pPrint ty
+  pPrint (Forall vs ty) = text "forall" <+> hsep (map (pPrint . VarTy) vs) <> dot <+> pPrint ty
+
+instance Pretty DetType where
+  pPrintPrec _ (VarTy v) = pPrint $ tyToDetExpr (VarTy v)
+  pPrintPrec _ Det = text "Det"
+  pPrintPrec _ Any = text "Any"
+  pPrintPrec p (DetArrow ty1 ty2) = parenIf (p > 0) $
+    pPrintPrec 1 ty1 <+> text "->" <+> pPrintPrec 0 ty2
+
+instance Pretty Type where
+  pPrint = pPrintPrec 0 . fromType identSupply
+
+instance Pretty Pred where
+  pPrint = pPrint . fromPred identSupply
+
+instance Pretty PredType where
+  pPrint = pPrint . fromPredType identSupply
+
+instance Pretty DataConstr where
+  pPrint (DataConstr i tys)      = pPrint i <+> hsep (map pPrint tys)
+  pPrint (RecordConstr i ls tys) =     pPrint i
+                                   <+> braces (hsep (punctuate comma pLs))
+    where
+      pLs = zipWith (\l ty -> pPrint l <+> colon <> colon <+> pPrint ty) ls tys
+
+instance Pretty ClassMethod where
+  pPrint (ClassMethod f mar pty ddty mdty) = pPrint f
+    <>  text "/" <> int (fromMaybe 0 mar)
+    <+> colon <> colon <+> pPrint pty
+    <+> colon <> colon <+> pPrint ddty <> comma <> pPrint mdty
+
+instance Pretty TypeScheme where
+  pPrint (ForAll _ ty) = pPrint ty

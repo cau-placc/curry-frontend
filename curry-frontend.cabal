@@ -56,17 +56,15 @@ library
     , binary           >= 0.8   && < 0.9
     , time             >= 1.9   && < 2.0
     , parsec           >= 3.1   && < 3.2
+    , deepseq          >= 1.4   && < 1.5
+    , equivalence      >= 0.4   && < 0.5
   exposed-modules:
       Base.AnnotExpr
-    , Base.CurryKinds
-    , Base.CurryTypes
     , Base.Expr
     , Base.KindSubst
     , Base.Kinds
     , Base.Messages
     , Base.NestEnv
-    , Base.PrettyKinds
-    , Base.PrettyTypes
     , Base.SCC
     , Base.Subst
     , Base.TopEnv
@@ -77,6 +75,7 @@ library
     , Base.Utils
     , Checks
     , Checks.DeriveCheck
+    , Checks.DeterminismCheck
     , Checks.ExportCheck
     , Checks.ExtensionCheck
     , Checks.ImportSyntaxCheck
@@ -133,6 +132,7 @@ library
     , CurryBuilder
     , CurryDeps
     , Env.Class
+    , Env.Determinism
     , Env.Instance
     , Env.Interface
     , Env.ModuleAlias

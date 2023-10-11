@@ -16,11 +16,11 @@ module Base.TypeExpansion
   ) where
 
 import qualified Data.Set.Extra as Set (map)
+import GHC.Stack (HasCallStack)
 
 import Curry.Base.Ident
 import Curry.Syntax
 
-import Base.CurryTypes
 import Base.Messages
 import Base.Types
 import Base.TypeSubst
@@ -35,10 +35,10 @@ import Env.TypeConstructor
 -- with the name of the module in which the class was defined. The
 -- function 'expandPredSet' minimizes the predicate set after expansion.
 
-expandType :: ModuleIdent -> TCEnv -> Type -> Type
+expandType :: HasCallStack => ModuleIdent -> TCEnv -> Type -> Type
 expandType m tcEnv ty = expandType' m tcEnv ty []
 
-expandType' :: ModuleIdent -> TCEnv -> Type -> [Type] -> Type
+expandType' :: HasCallStack => ModuleIdent -> TCEnv -> Type -> [Type] -> Type
 expandType' m tcEnv (TypeConstructor     tc) tys =
   case qualLookupTypeInfo tc tcEnv of
     [DataType       tc' _ _ ] -> applyType (TypeConstructor tc') tys

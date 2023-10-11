@@ -91,7 +91,7 @@ values (IDataDecl     _ tc _ _ cs hs) =
 values (INewtypeDecl  _ tc _ _ nc hs) =
   cidents tc [nconstrId nc] hs ++
   lidents tc [(l, [c]) | NewRecordDecl _ c (l, _) <- [nc]] hs
-values (IFunctionDecl      _ f _ _ _) = [Var f []]
+values (IFunctionDecl      _ f _ _ _ _) = [Var f []]
 values (IClassDecl _ _ cls _ _ ms hs) = midents cls (map imethod ms) hs
 values _                              = []
 

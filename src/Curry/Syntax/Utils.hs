@@ -15,7 +15,7 @@
     This module provides some utility functions for working with the
     abstract syntax tree of Curry.
 -}
-
+{-# LANGUAGE TupleSections #-}
 module Curry.Syntax.Utils
   ( hasLanguageExtension, knownExtensions
   , isTopDecl, isBlockDecl
@@ -32,7 +32,7 @@ module Curry.Syntax.Utils
   , constrId, nconstrId
   , nconstrType
   , recordLabels, nrecordLabels
-  , methods, impls, imethod, imethodArity
+  , methods, detSigs, impls, imethod, imethodArity, imethodDefaultDetType, imethodDetTypeAnn
   , shortenModuleAST
   ) where
 
@@ -241,6 +241,10 @@ methods :: Decl a -> [Ident]
 methods (TypeSig _ fs _) = fs
 methods _                = []
 
+detSigs :: Decl a -> [(Ident, DetExpr)]
+detSigs (DetSig _ fs de) = map (,de) fs
+detSigs _                = []
+
 -- | Get the method identifiers of a type class method implementations
 impls :: Decl a -> [Ident]
 impls (FunctionDecl _ _ f _) = [f]
@@ -248,11 +252,17 @@ impls _                      = []
 
 -- | Get the declared method identifier of an interface method declaration
 imethod :: IMethodDecl -> Ident
-imethod (IMethodDecl _ f _ _) = f
+imethod (IMethodDecl _ f _ _ _ _) = f
 
 -- | Get the arity of an interface method declaration
 imethodArity :: IMethodDecl -> Maybe Int
-imethodArity (IMethodDecl _ _ a _) = a
+imethodArity (IMethodDecl _ _ a _ _ _) = a
+
+imethodDefaultDetType :: IMethodDecl -> DetExpr
+imethodDefaultDetType (IMethodDecl _ _ _ _ d _ ) = d
+
+imethodDetTypeAnn :: IMethodDecl -> Maybe DetExpr
+imethodDetTypeAnn (IMethodDecl _ _ _ _ _ d) = d
 
 --------------------------------------------------------
 -- constructing elements of the abstract syntax tree

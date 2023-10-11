@@ -8,7 +8,9 @@
     Stability   :  experimental
     Portability :  portable
 
-    TODO
+    This module exports a type class and a method for extracting
+    free (i.e. unbound) qualified variables annotated with a type
+    from various syntax elements.
 -}
 module Base.AnnotExpr (QualAnnotExpr (..)) where
 

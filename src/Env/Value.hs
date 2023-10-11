@@ -22,7 +22,6 @@
     information. On import two values are considered equal if their original
     names match.
 -}
-{-# LANGUAGE CPP #-}
 module Env.Value
   ( ValueEnv, ValueInfo (..)
   , bindGlobalInfo, bindFun, qualBindFun, rebindFun, unbindFun
@@ -31,20 +30,17 @@ module Env.Value
   , ValueType (..), bindLocalVars, bindLocalVar
   ) where
 
-#if __GLASGOW_HASKELL__ >= 804
 import Prelude hiding ((<>))
-#endif
+import Text.PrettyPrint
 
 import Curry.Base.Ident
 import Curry.Base.Pretty (Pretty(..))
 
 import Base.Messages (internalError)
-import Base.PrettyTypes ()
 import Base.TopEnv
 import Base.Types
 import Base.Utils ((++!))
 
-import Text.PrettyPrint
 
 data ValueInfo
   -- |Data constructor with original name, arity, list of record labels and type

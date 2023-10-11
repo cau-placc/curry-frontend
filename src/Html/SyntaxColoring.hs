@@ -84,6 +84,7 @@ data ConsUsage
 data FuncUsage
   = FuncDeclare
   | FuncTypeSig
+  | FuncDetSig
   | FuncCall
   | FuncInfix
   | FuncExport
@@ -100,7 +101,7 @@ data IdentUsage
 -- @param lex-Result
 -- @return code list
 genProgram :: Module a -> [(Position, Token)] -> [Code]
-genProgram m pts = encodeToks (first "") (filter validCode (idsModule m)) pts
+genProgram m = encodeToks (first "") (filter validCode (idsModule m))
 
 -- predicate to remove identifier codes for primitives
 -- because they do not form valid link targets
@@ -130,7 +131,7 @@ encodeToks cur ids toks@((pos, tok) : ts)
   -- pragma token
   | isPragmaToken tok       = case break (isPragmaEnd . snd) toks of
                                 (_, [])          -> internalError "SyntaxColoring: Malformed Pragma tokens"
-                                (ps, (end:rest)) -> Pragma s : encodeToks (incr cur (length s)) ids rest
+                                (ps, end:rest) -> Pragma s : encodeToks (incr cur (length s)) ids rest
                                   where
                                     s = unwords $ map (showToken . snd) (ps ++ [end])
   -- identifier token
@@ -319,6 +320,8 @@ idsDecl (TypeDecl          _ t vs ty) =
     map (Identifier IdDeclare False . qualify) vs ++ idsTypeExpr ty
 idsDecl (TypeSig            _ fs qty) =
   map (Function FuncTypeSig False . qualify) fs ++ idsQualTypeExpr qty
+idsDecl (DetSig            _ fs dty) =
+  map (Function FuncDetSig False . qualify) fs ++ idsDetExpr dty
 idsDecl (FunctionDecl      _ _ _ eqs) = concatMap idsEquation eqs
 idsDecl (ExternalDecl           _ fs) =
   map (Function FuncDeclare False . qualify . varIdent) fs
@@ -336,7 +339,7 @@ idsConstrDecl :: ConstrDecl -> [Code]
 idsConstrDecl (ConstrDecl     _ c tys) =
   DataCons ConsDeclare False (qualify c) : concatMap idsTypeExpr tys
 idsConstrDecl (ConOpDecl _ ty1 op ty2) =
-  idsTypeExpr ty1 ++ (DataCons ConsDeclare False $ qualify op) : idsTypeExpr ty2
+  idsTypeExpr ty1 ++ DataCons ConsDeclare False (qualify op) : idsTypeExpr ty2
 idsConstrDecl (RecordDecl      _ c fs) =
   DataCons ConsDeclare False (qualify c) : concatMap idsFieldDecl fs
 
@@ -345,7 +348,7 @@ idsNewConstrDecl (NewConstrDecl _ c     ty) =
   DataCons ConsDeclare False (qualify c) : idsTypeExpr ty
 idsNewConstrDecl (NewRecordDecl _ c (l,ty)) =
   DataCons ConsDeclare False (qualify c) :
-    (Function FuncDeclare False $ qualify l) : idsTypeExpr ty
+    Function FuncDeclare False (qualify l) : idsTypeExpr ty
 
 idsClassDecl :: Decl a -> [Code]
 idsClassDecl (TypeSig       _ fs qty) =
@@ -379,6 +382,13 @@ idsTypeExpr (ArrowType   _ ty1 ty2) = concatMap idsTypeExpr [ty1, ty2]
 idsTypeExpr (ParenType        _ ty) = idsTypeExpr ty
 idsTypeExpr (ForallType    _ vs ty) =
   map (Identifier IdDeclare False . qualify) vs ++ Symbol "." : idsTypeExpr ty
+
+idsDetExpr :: DetExpr -> [Code]
+idsDetExpr (VarDetExpr       _ v) = [Identifier IdRefer False (qualify v)]
+idsDetExpr (ArrowDetExpr _ d1 d2) = concatMap idsDetExpr [d1, d2]
+idsDetExpr (ParenDetExpr     _ d) = idsDetExpr d
+idsDetExpr (DetDetExpr           _) = []
+idsDetExpr (AnyDetExpr          _) = []
 
 idsFieldDecl :: FieldDecl -> [Code]
 idsFieldDecl (FieldDecl _ ls ty) =
@@ -498,6 +508,7 @@ showToken (Token Colon              _) = ":"
 showToken (Token DotDot             _) = ".."
 showToken (Token DoubleArrow        _) = "=>"
 showToken (Token DoubleColon        _) = "::"
+showToken (Token ColonQ             _) = ":?"
 showToken (Token Equals             _) = "="
 showToken (Token Backslash          _) = "\\"
 showToken (Token Bar                _) = "|"

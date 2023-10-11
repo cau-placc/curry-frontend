@@ -12,28 +12,20 @@
     Stability   :  experimental
     Portability :  portable
 
-   After the type declarations have been checked, the compiler performs
-   a syntax check on the remaining declarations. This check disambiguates
-   nullary data constructors and variables which -- in contrast to Haskell --
-   is not possible on purely syntactic criteria. In addition, this pass checks
-   for undefined as well as ambiguous variables and constructors. In order to
-   allow lifting of local definitions in later phases, all local variables are
-   renamed by adding a key identifying their scope. Therefore, all variables
-   defined in the same scope share the same key so that multiple definitions
-   can be recognized. Finally, all (adjacent) equations of a function are
-   merged into a single definition.
+    After the type declarations have been checked, the compiler performs
+    a syntax check on the remaining declarations. This check disambiguates
+    nullary data constructors and variables which -- in contrast to Haskell --
+    is not possible on purely syntactic criteria. In addition, this pass checks
+    for undefined as well as ambiguous variables and constructors. In order to
+    allow lifting of local definitions in later phases, all local variables are
+    renamed by adding a key identifying their scope. Therefore, all variables
+    defined in the same scope share the same key so that multiple definitions
+    can be recognized. Finally, all (adjacent) equations of a function are
+    merged into a single definition.
 -}
-{-# LANGUAGE CPP #-}
 module Checks.SyntaxCheck (syntaxCheck) where
 
-#if __GLASGOW_HASKELL__ >= 804
-import Prelude hiding ((<>))
-#endif
-
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative        ((<$>), (<*>))
-#endif
-
+import           Prelude             hiding ((<>))
 import           Control.Monad       (unless, when)
 import qualified Control.Monad.State as S (State, gets, modify, runState,
                                            withState)
@@ -537,7 +529,8 @@ checkAmbiguousMethod _ =
 checkMethods :: QualIdent -> [Ident] -> [Decl a] -> SCM ()
 checkMethods qcls ms ds =
   mapM_ (report . errUndefinedMethod qcls) $ filter (`notElem` ms) fs
-  where fs = [f | FunctionDecl _ _ f _ <- ds]
+  where fs = nub $ [f | FunctionDecl _ _ f _ <- ds]
+                   ++ concat [fs' | DetSig _ fs' _ <- ds]
 
 updateClassAndInstanceDecls :: [Decl a] -> [Decl a] -> [Decl a] -> [Decl a]
 updateClassAndInstanceDecls [] [] ds = ds

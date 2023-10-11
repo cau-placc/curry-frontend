@@ -222,6 +222,7 @@ data WarnFlag
   | WarnOrphanInstances      -- ^ Warn for orphan instances
   | WarnIrregularCaseMode    -- ^ Warn for irregular case mode
   | WarnRedundantContext     -- ^ Warn for redundant context in type signatures
+  | WarnNondeterministicIO   -- ^ Warn for nondeterministic IO actions
     deriving (Eq, Bounded, Enum, Show)
 
 -- |Warning flags enabled by default
@@ -230,7 +231,7 @@ stdWarnFlags =
   [ WarnMultipleImports   , WarnDisjoinedRules   --, WarnUnusedGlobalBindings
   , WarnUnusedBindings    , WarnNameShadowing    , WarnOverlapping
   , WarnIncompletePatterns, WarnMissingSignatures, WarnMissingMethods
-  , WarnIrregularCaseMode , WarnRedundantContext
+  , WarnIrregularCaseMode , WarnRedundantContext, WarnNondeterministicIO
   ]
 
 -- |Description and flag of warnings flags
@@ -262,6 +263,8 @@ warnFlags =
     , "irregular case mode")
   , ( WarnRedundantContext    , "redundant-context"
     , "redundant context")
+  , (WarnNondeterministicIO   , "nondeterministic-io"
+    , "nondeterministic IO actions")
   ]
 
 -- |Dump level
@@ -277,6 +280,7 @@ data DumpLevel
   | DumpInstanceChecked   -- ^ dump source code after instance checking
   | DumpTypeChecked       -- ^ dump source code after type checking
   | DumpExportChecked     -- ^ dump source code after export checking
+  | DumpDeterminismChecked-- ^ dump source code after export checking
   | DumpQualified         -- ^ dump source code after qualification
   | DumpDerived           -- ^ dump source code after deriving
   | DumpDesugared         -- ^ dump source code after desugaring
@@ -292,28 +296,29 @@ data DumpLevel
 
 -- |Description and flag of dump levels
 dumpLevel :: [(DumpLevel, String, String)]
-dumpLevel = [ (DumpCondCompiled     , "dump-cond" , "conditional compiling"           )
-            , (DumpParsed           , "dump-parse", "parsing"                         )
-            , (DumpExtensionChecked , "dump-exc"  , "extension checking"              )
-            , (DumpTypeSyntaxChecked, "dump-tsc"  , "type syntax checking"            )
-            , (DumpKindChecked      , "dump-kc"   , "kind checking"                   )
-            , (DumpSyntaxChecked    , "dump-sc"   , "syntax checking"                 )
-            , (DumpPrecChecked      , "dump-pc"   , "precedence checking"             )
-            , (DumpDeriveChecked    , "dump-dc"   , "derive checking"                 )
-            , (DumpInstanceChecked  , "dump-inc"  , "instance checking"               )
-            , (DumpTypeChecked      , "dump-tc"   , "type checking"                   )
-            , (DumpExportChecked    , "dump-ec"   , "export checking"                 )
-            , (DumpQualified        , "dump-qual" , "qualification"                   )
-            , (DumpDerived          , "dump-deriv", "deriving"                        )
-            , (DumpDesugared        , "dump-ds"   , "desugaring"                      )
-            , (DumpDictionaries     , "dump-dict" , "dictionary insertion"            )
-            , (DumpNewtypes         , "dump-new"  , "removing newtype constructors"   )
-            , (DumpLifted           , "dump-lift" , "lifting"                         )
-            , (DumpSimplified       , "dump-simpl", "simplification"                  )
-            , (DumpTranslated       , "dump-trans", "pattern matching compilation"    )
-            , (DumpCaseCompleted    , "dump-cc"   , "case completion"                 )
-            , (DumpTypedFlatCurry   , "dump-tflat", "translation into typed FlatCurry")
-            , (DumpFlatCurry        , "dump-flat" , "translation into FlatCurry"      )
+dumpLevel = [ (DumpCondCompiled      , "dump-cond" , "conditional compiling"           )
+            , (DumpParsed            , "dump-parse", "parsing"                         )
+            , (DumpExtensionChecked  , "dump-exc"  , "extension checking"              )
+            , (DumpTypeSyntaxChecked , "dump-tsc"  , "type syntax checking"            )
+            , (DumpKindChecked       , "dump-kc"   , "kind checking"                   )
+            , (DumpSyntaxChecked     , "dump-sc"   , "syntax checking"                 )
+            , (DumpPrecChecked       , "dump-pc"   , "precedence checking"             )
+            , (DumpDeriveChecked     , "dump-dc"   , "derive checking"                 )
+            , (DumpInstanceChecked   , "dump-inc"  , "instance checking"               )
+            , (DumpTypeChecked       , "dump-tc"   , "type checking"                   )
+            , (DumpExportChecked     , "dump-ec"   , "export checking"                 )
+            , (DumpDeterminismChecked, "dump-det"  , "determinism checking"            )
+            , (DumpQualified         , "dump-qual" , "qualification"                   )
+            , (DumpDerived           , "dump-deriv", "deriving"                        )
+            , (DumpDesugared         , "dump-ds"   , "desugaring"                      )
+            , (DumpDictionaries      , "dump-dict" , "dictionary insertion"            )
+            , (DumpNewtypes          , "dump-new"  , "removing newtype constructors"   )
+            , (DumpLifted            , "dump-lift" , "lifting"                         )
+            , (DumpSimplified        , "dump-simpl", "simplification"                  )
+            , (DumpTranslated        , "dump-trans", "pattern matching compilation"    )
+            , (DumpCaseCompleted     , "dump-cc"   , "case completion"                 )
+            , (DumpTypedFlatCurry    , "dump-tflat", "translation into typed FlatCurry")
+            , (DumpFlatCurry         , "dump-flat" , "translation into FlatCurry"      )
             ]
 
 -- |Description and flag of language extensions
@@ -335,6 +340,8 @@ extensions =
     , "do not implicitly import the Prelude"         )
   , ( NoDataDeriving           , "NoDataDeriving"
     , "do not implicitly derive the Data class"      )
+  , ( DeterminismSignatures    , "DeterminismSignatures"
+    , "enable determinism signatures"                )
   ]
 
 -- -----------------------------------------------------------------------------

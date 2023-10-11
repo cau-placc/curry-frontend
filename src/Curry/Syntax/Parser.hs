@@ -214,8 +214,9 @@ iHidingDecl = tokenPos Id_hiding <**> (hDataDecl <|> hClassDecl)
   where
   hDataDecl = hiddenData <$-> token KW_data <*> withKind qtycon <*> many tyvar
   hClassDecl = hiddenClass <$> classInstHead KW_class (withKind qtycls) clsvar
+                           <*-> token KW_where <*> braces (fun `sepBy` semicolon)
   hiddenData (tc, k) tvs p = HidingDataDecl p tc k tvs
-  hiddenClass (_, _, cx, (qcls, k), tv) p = HidingClassDecl p cx qcls k tv
+  hiddenClass (_, _, cx, (qcls, k), tv) ids p = HidingClassDecl p cx qcls k tv ids
 
 -- |Parser for an interface data declaration
 iDataDecl :: Parser a Token IDecl
@@ -243,6 +244,7 @@ iHiddenPragma = token PragmaHiding
 iFunctionDecl :: Parser a Token IDecl
 iFunctionDecl = IFunctionDecl <$> position <*> qfun <*> option iMethodPragma
                 <*> arity <*-> token DoubleColon <*> qualType
+                          <*-> token ColonQ <*> detExpr
 
 -- |Parser for an interface method pragma
 iMethodPragma :: Parser a Token Ident
@@ -269,6 +271,10 @@ iClassDecl = (\(sp, _, cx, (qcls, k), tv) ->
 iMethod :: Parser a Token IMethodDecl
 iMethod = IMethodDecl <$> position
                       <*> fun <*> option int <*-> token DoubleColon <*> qualType
+                                             <*-> token ColonQ <*> detExpr
+                                             <*> option iDefaultMethodDetType
+
+  where iDefaultMethodDetType = token ColonQ <-*> detExpr
 
 -- |Parser for an interface hiding pragma
 iClassHidden :: Parser a Token [Ident]
@@ -287,7 +293,12 @@ iInstanceDecl = (\(sp, _, cx, qcls, inst) ->
 
 -- |Parser for an interface method implementation
 iImpl :: Parser a Token IMethodImpl
-iImpl = (,) <$> fun <*> arity
+iImpl = mkIImpl <$> fun <*> ((impl <$> arity <*-> token ColonQ <*> detExpr)
+                        <|> (notImpl <$> (token Underscore <-*> token ColonQ <-*> detExpr)))
+  where
+    mkIImpl i f = f i
+    impl  a d i = (i, Just a , d)
+    notImpl d i = (i, Nothing, d)
 
 iModulePragma :: Parser a Token ModuleIdent
 iModulePragma = token PragmaModule <-*> modIdent <*-> token PragmaEnd
@@ -405,10 +416,42 @@ funRule = mkFunDecl <$> lhs <*> declRhs
                  <$> fun <|?> funLhs
 
 funListDecl :: Parser a Token (([Ident],[Span]) -> Span -> Decl ())
-funListDecl = typeSig <|> mkExtFun <$> tokenSpan KW_external
+funListDecl = typeSig <|> detSig <|> mkExtFun <$> tokenSpan KW_external
   where mkExtFun sp1 (vs,ss) sp2 = updateEndPos $
           ExternalDecl (spanInfo sp2 (ss++[sp1])) (map (Var ()) vs)
 
+detSig :: Parser a Token (([Ident],[Span]) -> Span -> Decl ())
+detSig = sig <$> tokenSpan ColonQ <*> detExpr
+  where
+    sig :: Span -> DetExpr -> ([Ident], [Span]) -> Span -> Decl ()
+    sig colons dty (vs, commas) sp = updateEndPos $
+      DetSig (spanInfo sp (sp : commas ++ [colons])) vs dty
+
+-- detExpr ::= detExpr -> ...
+detExpr :: Parser a Token DetExpr
+detExpr = detExpr0 `chainr1` arrowDetExpr
+
+-- arrowDetExpr ::= ->
+arrowDetExpr :: Parser a Token (DetExpr -> DetExpr -> DetExpr)
+arrowDetExpr = mkArrow <$> tokenSpan RightArrow
+  where mkArrow sp1 d1 d2 = updateEndPos $
+          ArrowDetExpr (spanInfo sp1 [sp1]) d1 d2
+
+-- detExpr0 ::= (detExpr) | D | ND | tyvar
+-- note that we actually parse D and ND as tyvars
+-- and then convert them later.
+detExpr0 :: Parser a Token DetExpr
+detExpr0 =  (pExpr <$> spanPosition <*> parensSp detExpr)
+        <|> (vExpr <$> spanPosition <*> tyvar)
+  where
+    pExpr sp1 (dty, sp2, sp3) = updateEndPos $
+      ParenDetExpr (spanInfo sp1 [sp2, sp3]) dty
+    dExpr sp = DetDetExpr (spanInfo sp [sp])
+    ndExpr sp = AnyDetExpr (spanInfo sp [sp])
+    vExpr sp tv = case idName tv of
+      "Det" -> dExpr sp
+      "Any" -> ndExpr sp
+      _     -> updateEndPos $ VarDetExpr (spanInfo sp []) tv
 
 typeSig :: Parser a Token (([Ident],[Span]) -> Span -> Decl ())
 typeSig = sig <$> tokenSpan DoubleColon <*> qualType
@@ -543,10 +586,9 @@ classDecl = mkClass
         <$> classInstHead KW_class tycls clsvar
         <*> whereClause innerDecl
   where
-    --TODO: Refactor by left-factorization
     --TODO: Support infixDecl
     innerDecl = foldr1 (<|?>)
-      [ spanPosition <**> (fun `sepBy1Sp` comma <**> typeSig)
+      [ spanPosition <**> (fun `sepBy1Sp` comma <**> (typeSig <|> detSig))
       , spanPosition <**> funRule
       {-, infixDecl-} ]
     mkClass (sp1, ss, cx, cls, tv) (Just sp2, ds, li) = updateEndPos $
@@ -712,7 +754,6 @@ pattern0 = pattern1 `chainr1` (mkInfixPattern <$> gconop)
 -- pattern1 ::= varId
 --           |  QConId { pattern2 }
 --           |  '-'  Integer
---           |  '-.' Float
 --           |  '(' parenPattern'
 --           | pattern2
 pattern1 :: Parser a Token (Pattern ())
@@ -767,7 +808,13 @@ identPattern :: Parser a Token (Pattern ())
 identPattern =  varId <**> optAsRecPattern -- unqualified
             <|> qConId <\> varId <**> optRecPattern               -- qualified
 
--- TODO: document me!
+-- parenPattern ::= '(' '-' minusPattern              -- e.g. (-5), (-4 + x), etc...
+--               |  "TupleConstructor"                -- in prefix notation, e.g. (,,,)
+--               |  '(' funSymbol ')' optAsRecPattern -- e.g. (<<>)@p
+--               |  '(' parenTuplePattern ')'         -- e.g. (x,y,z), (p)
+--
+-- minusPattern ::= ')' optAsRecPattern               -- if you want to shadow "-" locally
+--               |  parenMinusPattern ')'             -- e.g. -x), -x + y), etc...
 parenPattern :: Parser a Token (Pattern ())
 parenPattern = tokenSpan LeftParen <**> parenPattern'
   where
@@ -899,7 +946,7 @@ expr0 = expr1 `chainr1` (mkInfixApply <$> infixOp)
   where mkInfixApply op e1 e2 = InfixApply
           (fromSrcSpan (combineSpans (getSrcSpan e1) (getSrcSpan e2))) e1 op e2
 
--- expr1 ::= - expr2 | -. expr2 | expr2
+-- expr1 ::= - expr2 | expr2
 expr1 :: Parser a Token (Expression ())
 expr1 =  mkUnaryMinus <$> minus <*> expr2
      <|> expr2

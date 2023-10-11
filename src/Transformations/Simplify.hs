@@ -25,12 +25,8 @@
      * Remove pattern bindings to constructor terms
      * Inline simple constants.
 -}
-{-# LANGUAGE CPP #-}
 module Transformations.Simplify (simplify) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative        ((<$>), (<*>))
-#endif
 import           Control.Monad.Extra        (concatMapM)
 import           Control.Monad.State as S   (State, runState, gets, modify)
 import qualified Data.Map            as Map (Map, empty, insert, lookup)
@@ -241,13 +237,12 @@ simplifyAlt env (Alt p t rhs) = Alt p t <$> simRhs env rhs
 -- @t = v, v = e@ whenever @t@ is not a variable. This is used to share
 -- the expression @e@ using the fresh variable @v@.
 sharePatternRhs :: Decl Type -> SIM [Decl Type]
---TODO: change to patterns instead of case
 sharePatternRhs (PatternDecl p t rhs) = case t of
-  VariablePattern _ _ _ -> return [PatternDecl p t rhs]
-  _                     -> do
+  VariablePattern {} -> return [PatternDecl p t rhs]
+  _                  -> do
     let ty = typeOf t
     v  <- freshIdent patternId
-    return [ PatternDecl p t                      (simpleRhs p (mkVar ty v))
+    return [ PatternDecl p t (simpleRhs p (mkVar ty v))
            , PatternDecl p (VariablePattern NoSpanInfo ty v) rhs
            ]
   where patternId n = mkIdent ("_#pat" ++ show n)

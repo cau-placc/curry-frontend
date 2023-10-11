@@ -1,6 +1,6 @@
 {- |
     Module      :  $Header$
-    Description :  TODO
+    Description :  Computation of types for IL syntax
     Copyright   :  (c)        2017 Finn Teegen
     License     :  BSD-3-clause
 
@@ -8,9 +8,9 @@
     Stability   :  experimental
     Portability :  portable
 
-   TODO
+    This module exports a type class and a method for extracting
+    types from various syntax elements of the intermediate language.
 -}
-
 module IL.Typing (Typeable(..)) where
 
 import Base.Messages (internalError)

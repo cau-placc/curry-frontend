@@ -8,21 +8,14 @@
     Stability   :  experimental
     Portability :  portable
 
-   After the type syntax has been checked und nullary type constructors and
-   type variables have been disambiguated, the compiler infers kinds for all
-   type constructors and type classes defined in the current module and
-   performs kind checking on all type definitions and type signatures.
+    After the type syntax has been checked und nullary type constructors and
+    type variables have been disambiguated, the compiler infers kinds for all
+    type constructors and type classes defined in the current module and
+    performs kind checking on all type definitions and type signatures.
 -}
-{-# LANGUAGE CPP #-}
 module Checks.KindCheck (kindCheck) where
 
-#if __GLASGOW_HASKELL__ >= 804
-import Prelude hiding ((<>))
-#endif
-
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative      ((<$>), (<*>))
-#endif
+import           Prelude                  hiding ((<>))
 import           Control.Monad            (when, foldM)
 import           Control.Monad.Fix        (mfix)
 import qualified Control.Monad.State as S (State, runState, gets, modify)
@@ -35,7 +28,6 @@ import Curry.Base.Pretty
 import Curry.Syntax
 import Curry.Syntax.Pretty
 
-import Base.CurryKinds
 import Base.Expr
 import Base.Kinds
 import Base.KindSubst
@@ -153,6 +145,7 @@ instance HasType (Decl a) where
   fts m (ClassDecl         _ _ cx _ _ ds) = fts m cx . fts m ds
   fts m (InstanceDecl _ _ cx cls inst ds) =
     fts m cx . fts m cls . fts m inst . fts m ds
+  fts _ (DetSig                    _ _ _) = id
 
 instance HasType ConstrDecl where
   fts m (ConstrDecl     _ _ tys) = fts m tys
@@ -349,12 +342,18 @@ bindKind m tcEnv' clsEnv tcEnv (ClassDecl _ _ _ cls tv ds) =
   where
     mkMethods (TypeSig _ fs qty) = map (mkMethod qty) fs
     mkMethods _                  = []
-    mkMethod qty f = ClassMethod f (findArity f ds) $
-                       expandMethodType m tcEnv' clsEnv (qualify cls) tv qty
+    mkMethod qty f = ClassMethod f (findArity f ds)
+                        (expandMethodType m tcEnv' clsEnv (qualify cls) tv qty)
+                        Nothing
+                        (findDetAnn f ds)
     findArity _ []                                    = Nothing
     findArity f (FunctionDecl _ _ f' eqs:_) | f == f' =
       Just $ eqnArity $ head eqs
     findArity f (_:ds')                               = findArity f ds'
+
+    findDetAnn _ [] = Nothing
+    findDetAnn f (DetSig _ fs ann:_) | f `elem` fs = Just (toDetType ann)
+    findDetAnn f (_:ds') = findDetAnn f ds'
 bindKind _ _      _      tcEnv _                          = return tcEnv
 
 bindTypeConstructor :: (QualIdent -> Kind -> a -> TypeInfo) -> Ident
@@ -397,7 +396,10 @@ bindClass :: ModuleIdent -> TCEnv -> ClassEnv -> Decl a -> ClassEnv
 bindClass m tcEnv clsEnv (ClassDecl _ _ cx cls _ ds) =
   bindClassInfo qcls (sclss, ms) clsEnv
   where qcls = qualifyWith m cls
-        ms = map (\f -> (f, f `elem` fs)) $ concatMap methods ds
+        mths = concatMap methods ds
+        dSigs = concatMap detSigs ds
+        mthsD = map (\mthd -> (mthd, lookup mthd dSigs)) mths
+        ms = map (\(f, mbd) -> (f, f `elem` fs, True, fmap toDetType mbd)) mthsD
         fs = concatMap impls ds
         sclss = nub $ map (\(Constraint _ cls' _) -> getOrigName m cls' tcEnv) cx
 bindClass _ _ clsEnv _ = clsEnv
@@ -471,6 +473,7 @@ kcDecl tcEnv (InstanceDecl p _ cx qcls inst ds) = do
     where
       what = "instance declaration"
       doc = pPrint (InstanceDecl p WhitespaceLayout cx qcls inst [])
+kcDecl _ (DetSig _ _ _) = ok
 
 kcConstrDecl :: TCEnv -> ConstrDecl -> KCM ()
 kcConstrDecl tcEnv d@(ConstrDecl _ _ tys) = do
@@ -607,9 +610,9 @@ kcTypeExpr :: TCEnv -> String -> Doc -> Int -> TypeExpr -> KCM Kind
 kcTypeExpr tcEnv _ _ n (ConstructorType p tc) = do
   m <- getModuleIdent
   case qualLookupTypeInfo tc tcEnv of
-    [AliasType _ _ n' _] -> case n >= n' of
-      True -> return $ tcKind m tc tcEnv
-      False -> do
+    [AliasType _ _ n' _] -> if n >= n'
+      then return $ tcKind m tc tcEnv
+      else do
         report $ errPartialAlias p tc n' n
         freshKindVar
     _ -> return $ tcKind m tc tcEnv
@@ -744,7 +747,7 @@ errRecursiveClasses (cls:clss) = spanInfoMessage cls $
 errNonArrowKind :: HasSpanInfo p => p -> String -> Doc -> Kind -> Message
 errNonArrowKind p what doc k = spanInfoMessage p $ vcat
   [ text "Kind error in" <+> text what, doc
-  , text "Kind:" <+> ppKind k
+  , text "Kind:" <+> pPrint k
   , text "Cannot be applied"
   ]
 
@@ -761,6 +764,6 @@ errPartialAlias p tc arity argc = spanInfoMessage p $ hsep
 errKindMismatch :: HasSpanInfo p => p -> String -> Doc -> Kind -> Kind -> Message
 errKindMismatch p what doc k1 k2 = spanInfoMessage p $ vcat
   [ text "Kind error in"  <+> text what, doc
-  , text "Inferred kind:" <+> ppKind k2
-  , text "Expected kind:" <+> ppKind k1
+  , text "Inferred kind:" <+> pPrint k2
+  , text "Expected kind:" <+> pPrint k1
   ]

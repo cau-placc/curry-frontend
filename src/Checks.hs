@@ -26,6 +26,7 @@ import qualified Checks.SyntaxCheck       as SC  (syntaxCheck)
 import qualified Checks.TypeCheck         as TC  (typeCheck)
 import qualified Checks.TypeSyntaxCheck   as TSC (typeSyntaxCheck)
 import qualified Checks.WarnCheck         as WC  (warnCheck)
+import qualified Checks.DeterminismCheck  as DC  (determinismCheck)
 
 import Curry.Base.Monad
 import Curry.Syntax (Module (..), Interface (..), ImportSpec)
@@ -43,7 +44,7 @@ interfaceCheck _ (env, intf)
   | null msgs = ok (env, intf)
   | otherwise = failMessages msgs
   where msgs = IC.interfaceCheck (opPrecEnv env) (tyConsEnv env) (classEnv env)
-                                 (instEnv env) (valueEnv env) intf
+                                 (instEnv env) (valueEnv env) (detEnv env) intf
 
 importCheck :: Monad m => Interface -> Maybe ImportSpec
             -> CYT m (Maybe ImportSpec)
@@ -141,6 +142,22 @@ typeCheck _ (env, Module spi li ps m es is ds)
                                           (valueEnv env) (classEnv env)
                                           (instEnv env) ds
 
+-- |Infer and check the determinism types of all declarations.
+--
+-- * Declarations: Determinism types are added to all expressions.
+-- * Environment:  The determinism environment and type constructor environments are updated
+determinismCheck :: Monad m => Options -> CompEnv (Module PredType)
+                 -> CYT m (CompEnv (Module (PredType, DetType)))
+determinismCheck opts (env, mdl@(Module a b c d e f _))
+  | null msgs = ok (env {detEnv = dE, tyConsEnv = tE},
+                   Module a b c d e f ds')
+  | otherwise = failMessages msgs
+  where
+    (dE, tE, ds', msgs) = DC.determinismCheck (moduleIdent env) (tyConsEnv env)
+                                         (valueEnv env) (classEnv env)
+                                         (instEnv env) (detEnv env)
+                                         (optExtensions opts) mdl
+
 -- |Check the export specification
 exportCheck :: Monad m => Check m (Module a)
 exportCheck _ (env, mdl@(Module _ _ _ _ es _ _))
@@ -157,6 +174,6 @@ expandExports _ (env, Module spi li ps m es is ds)
                                (tyConsEnv env) (valueEnv env) es
 
 -- |Check for warnings.
-warnCheck :: Options -> CompilerEnv -> Module a -> [Message]
-warnCheck opts env mdl = WC.warnCheck (optWarnOpts opts) (optCaseMode opts)
-  (aliasEnv env) (valueEnv env) (tyConsEnv env) (classEnv env) mdl
+warnCheck :: Options -> CompilerEnv -> Module (PredType, DetType) -> [Message]
+warnCheck opts env = WC.warnCheck (optWarnOpts opts) (optCaseMode opts)
+  (aliasEnv env) (valueEnv env) (tyConsEnv env) (classEnv env)

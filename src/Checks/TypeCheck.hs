@@ -33,19 +33,12 @@
    hold the particular instance at which a polymorphic function or
    variable is used.
 -}
-{-# LANGUAGE CPP #-}
-module Checks.TypeCheck (typeCheck) where
+module Checks.TypeCheck (typeCheck, checkFailablePattern) where
 
-#if __GLASGOW_HASKELL__ >= 804
-import Prelude hiding ((<>))
-#endif
-
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative        ((<$>), (<*>))
-#endif
+import           Prelude             hiding ((<>))
 import           Control.Monad.Trans (lift)
-import           Control.Monad.Extra (allM, filterM, foldM, liftM, (&&^),
-                                      notM, replicateM, when, unless, unlessM)
+import           Control.Monad.Extra ( allM, filterM, foldM, (&&^), notM
+                                     , replicateM, when, unless, unlessM )
 import qualified Control.Monad.State as S
                                      (State, StateT, get, gets, put, modify,
                                       runState, evalStateT)
@@ -64,7 +57,6 @@ import Curry.Base.SpanInfo
 import Curry.Syntax
 import Curry.Syntax.Pretty
 
-import Base.CurryTypes
 import Base.Expr
 import Base.Kinds
 import Base.Messages (Message, spanInfoMessage, internalError)
@@ -356,7 +348,7 @@ bindLabels' m tcEnv vEnv = foldr (bindData . snd) vEnv $ localBindings tcEnv
 bindLabel :: ModuleIdent -> Int -> Type -> (Ident, [QualIdent], Type)
           -> ValueEnv -> ValueEnv
 bindLabel m n ty (l, lcs, lty) =
-  bindGlobalInfo (\qc tyScheme -> Label qc lcs tyScheme) m l
+  bindGlobalInfo (\qc -> Label qc lcs) m l
                  (ForAll n (predType (TypeArrow ty lty)))
 
 -- Defining class methods:
@@ -382,7 +374,7 @@ bindClassMethods' m tcEnv vEnv =
 
 bindClassMethod :: ModuleIdent -> QualIdent -> ClassMethod -> ValueEnv
                 -> ValueEnv
-bindClassMethod m cls (ClassMethod f _ ty) =
+bindClassMethod m cls (ClassMethod f _ ty _ _) =
   bindGlobalInfo (\qc tySc -> Value qc (Just cls) 0 tySc) m f (typeScheme ty)
 
 -- -----------------------------------------------------------------------------
@@ -397,7 +389,7 @@ setDefaults :: Decl a -> TCM ()
 setDefaults (DefaultDecl _ tys) = mapM toDefaultType tys >>= setDefaultTypes
   where
     toDefaultType =
-      liftM snd . (inst =<<) . liftM typeScheme
+      fmap snd . (inst =<<) . fmap typeScheme
                 . expandPoly . QualTypeExpr NoSpanInfo []
 setDefaults _ = ok
 
@@ -443,7 +435,7 @@ tcDecls = fmap (fmap fromPDecls) . tcPDecls . toPDecls
 tcPDecls :: [PDecl a] -> TCM (PredSet, [PDecl PredType])
 tcPDecls pds = withLocalSigEnv $ do
   let (vpds, opds) = partition (isValueDecl . snd) pds
-  setSigEnv $ foldr (bindTypeSigs . snd) emptySigEnv $ opds
+  setSigEnv $ foldr (bindTypeSigs . snd) emptySigEnv opds
   m <- getModuleIdent
   (ps, vpdss') <-
     mapAccumM tcPDeclGroup emptyPredSet $ scc (bv . snd) (qfv m . snd) vpds
@@ -888,6 +880,7 @@ tcTopPDecl (i, InstanceDecl p li cx qcls ty ds) = do
   vpds' <- mapM (tcInstanceMethodPDecl qQualCls pty) vpds
   return (i,InstanceDecl p li cx qcls ty $ fromPDecls $ map untyped opds++vpds')
   where (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
+tcTopPDecl (i, DetSig sp ids dty) = return (i, DetSig sp ids dty)
 tcTopPDecl _ = internalError "TypeCheck.tcTopDecl"
 
 tcClassMethodPDecl :: QualIdent -> Ident -> PDecl a -> TCM (PDecl PredType)
@@ -1187,7 +1180,7 @@ tcExpr e@(RecordUpdate spi e1 fs) = do
     (\e' -> pPrintPrec 0 e $-$ text "Term:" <+> pPrintPrec 0 e') ty) ps fs
   return (ps', ty, RecordUpdate spi e1' fs')
 tcExpr (Tuple spi es) = do
-  (pss, tys, es') <- liftM unzip3 $ mapM (tcExpr) es
+  (pss, tys, es') <- unzip3 <$> mapM (tcExpr) es
   return (Set.unions pss, tupleType tys, Tuple spi es')
 tcExpr e@(List spi _ es) = do
   ty <- freshTypeVar
@@ -1249,7 +1242,7 @@ tcExpr e@(RightSection spi op e1) = do
 tcExpr (Lambda spi ts e) = do
   (pss, tys, ts', ps, ty, e')<- withLocalValueEnv $ do
     bindLambdaVars ts
-    (pss, tys, ts') <- liftM unzip3 $ mapM (tcPattern spi) ts
+    (pss, tys, ts') <- unzip3 <$> mapM (tcPattern spi) ts
     (ps, ty, e') <- tcExpr e
     return (pss, tys, ts', ps, ty, e')
   ps' <- reducePredSet spi "expression" (pPrintPrec 0 e') (Set.unions $ ps : pss)
@@ -1265,7 +1258,7 @@ tcExpr (Do spi li sts e) = do
   (sts', ty, ps', e') <- withLocalValueEnv $ do
     ((ps, mTy), sts') <-
       mapAccumM (uncurry (tcStmt spi)) (emptyPredSet, Nothing) sts
-    ty <- liftM (maybe id TypeApply mTy) freshTypeVar
+    ty <- maybe id TypeApply mTy <$> freshTypeVar
     (ps', e') <- tcExpr e >>- unify spi "statement" (pPrintPrec 0 e) ps ty
     return (sts', ty, ps', e')
   return (ps', ty, Do spi li sts' e')
@@ -1342,40 +1335,42 @@ tcStmt p ps mTy st@(StmtBind spi t e) = do
   return ((ps''', Just ty), StmtBind spi t' e')
 
 checkFailableBind :: Pattern a -> TCM Bool
-checkFailableBind (ConstructorPattern _ _ idt ps   ) = do
-  tcEnv <- getTyConsEnv
+checkFailableBind p = checkFailablePattern <$> getTyConsEnv <*> pure p
+
+checkFailablePattern :: TCEnv -> Pattern a -> Bool
+checkFailablePattern tcEnv (ConstructorPattern _ _ idt ps   ) =
   case qualLookupTypeInfo idt tcEnv of
-    [RenamingType _ _ _ ] -> or <$> mapM checkFailableBind ps -- or [] == False
+    [RenamingType _ _ _ ] -> any (checkFailablePattern tcEnv) ps
     [DataType     _ _ cs]
-      | length cs == 1    -> or <$> mapM checkFailableBind ps
-      | otherwise         -> return True
-    _                     -> return True
-checkFailableBind (InfixPattern       _ _ p1 idt p2) = do
-  tcEnv <- getTyConsEnv
+      | length cs == 1    -> any (checkFailablePattern tcEnv) ps
+      | otherwise         -> True
+    _                     -> True
+checkFailablePattern tcEnv (InfixPattern       _ _ p1 idt p2) =
   case qualLookupTypeInfo idt tcEnv of
-    [RenamingType _ _ _ ] -> (||) <$> checkFailableBind p1
-                                  <*> checkFailableBind p2
+    [RenamingType _ _ _ ] -> checkFailablePattern tcEnv p1 ||
+                             checkFailablePattern tcEnv p2
     [DataType     _ _ cs]
-      | length cs == 1    -> (||) <$> checkFailableBind p1
-                                  <*> checkFailableBind p2
-      | otherwise         -> return True
-    _                     -> return True
-checkFailableBind (RecordPattern      _ _ idt fs   ) = do
-  tcEnv <- getTyConsEnv
+      | length cs == 1    -> checkFailablePattern tcEnv p1 ||
+                             checkFailablePattern tcEnv p2
+      | otherwise         -> True
+    _                     -> True
+checkFailablePattern tcEnv (RecordPattern      _ _ idt fs   ) =
   case qualLookupTypeInfo idt tcEnv of
-    [RenamingType _ _ _ ] -> or <$> mapM (checkFailableBind . fieldContent) fs
+    [RenamingType _ _ _ ] -> any (checkFailablePattern tcEnv . fieldContent) fs
     [DataType     _ _ cs]
-      | length cs == 1    -> or <$> mapM (checkFailableBind . fieldContent) fs
-      | otherwise         -> return True
-    _                     -> return True
+      | length cs == 1    -> any (checkFailablePattern tcEnv . fieldContent) fs
+      | otherwise         -> True
+    _                     -> True
   where fieldContent (Field _ _ c) = c
-checkFailableBind (TuplePattern       _       ps   ) =
-  or <$> mapM checkFailableBind ps
-checkFailableBind (AsPattern          _   _   p    ) = checkFailableBind p
-checkFailableBind (ParenPattern       _       p    ) = checkFailableBind p
-checkFailableBind (LazyPattern        _       _    ) = return False
-checkFailableBind (VariablePattern    _ _ _        ) = return False
-checkFailableBind _                                  = return True
+checkFailablePattern tcEnv (TuplePattern       _       ps   ) =
+  any (checkFailablePattern tcEnv) ps
+checkFailablePattern tcEnv (AsPattern          _   _   p    ) =
+  checkFailablePattern tcEnv p
+checkFailablePattern tcEnv (ParenPattern       _       p    ) =
+  checkFailablePattern tcEnv p
+checkFailablePattern _     (LazyPattern        _       _    ) = False
+checkFailablePattern _     (VariablePattern    _ _ _        ) = False
+checkFailablePattern _     _                                  = True
 
 tcInfixOp :: InfixOp a -> TCM (PredSet, Type, InfixOp PredType)
 tcInfixOp (InfixOp _ op) = do
@@ -1564,7 +1559,7 @@ reportMissingInstance m p what doc inEnv theta (Pred qcls ty) =
         tys'
           | length tys == length tys' -> return theta
           | otherwise ->
-              liftM (flip (bindSubst tv) theta) (freshConstrained tys')
+              flip (bindSubst tv) theta <$> freshConstrained tys'
     ty'
       | hasInstance inEnv qcls ty' -> return theta
       | otherwise -> do

@@ -10,9 +10,6 @@
     Stability   :  experimental
     Portability :  portable
 -}
-
-{-# LANGUAGE CPP #-}
-
 module Curry.Files.PathUtils
   ( -- * Retrieving curry files
     lookupCurryFile
@@ -30,17 +27,12 @@ module Curry.Files.PathUtils
   ) where
 
 import qualified Control.Exception    as C (IOException, handle)
-import           Data.List                 (isPrefixOf, isSuffixOf)
 import qualified Data.ByteString.Lazy as B (ByteString, writeFile)
+import           Data.List                 (isPrefixOf, isSuffixOf)
+import           Data.Time                 (UTCTime)
 import           System.FilePath
 import           System.Directory
 import           System.IO
-
-#if MIN_VERSION_directory(1,2,0)
-import Data.Time                        (UTCTime)
-#else
-import System.Time                      (ClockTime)
-#endif
 
 import Curry.Base.Ident
 import Curry.Files.Filenames
@@ -129,11 +121,7 @@ readModule = tryOnExistingFile readFileUTF8
     hGetContents hdl
 
 -- | Get the modification time of a file, if existent
-#if MIN_VERSION_directory(1,2,0)
 getModuleModTime :: FilePath -> IO (Maybe UTCTime)
-#else
-getModuleModTime :: FilePath -> IO (Maybe ClockTime)
-#endif
 getModuleModTime = tryOnExistingFile getModificationTime
 
 -- |Add the given version string to the file content

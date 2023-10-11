@@ -123,16 +123,12 @@ incrSpan :: Span -> Int -> Span
 incrSpan (Span fn s e) n = Span fn (incr s n) (incr e n)
 incrSpan sp            _ = sp
 
--- TODO: Rename to tab and nl as soon as positions are completely replaced by spans
-
 -- |Convert a position to a single character span.
 pos2Span :: Position -> Span
 pos2Span p@(Position f _ _) = Span f p p
 pos2Span _                  = NoSpan
 
 -- |Convert a span to a (start) position
--- TODO: This function should be removed as soon as positions are completely replaced by spans
--- in the frontend
 span2Pos :: Span -> Position
 span2Pos (Span _ p _) = p
 span2Pos NoSpan       = NoPos

@@ -17,6 +17,7 @@
 
 module Base.Utils
   ( fst3, snd3, thd3, curry3, uncurry3
+  , fst4, snd4, thd4, fth4, curry4, uncurry4
   , (++!), foldr2, mapAccumM, findDouble, findMultiples
   ) where
 
@@ -26,8 +27,8 @@ import Data.List     (partition)
 
 infixr 5 ++!
 
--- The Prelude does not contain standard functions for triples.
--- We provide projection, (un-)currying, and mapping for triples here.
+-- The Prelude does not contain standard functions for triples and quadruples.
+-- We provide projection, (un-)currying, and mapping for triples and quadruples here.
 
 fst3 :: (a, b, c) -> a
 fst3 (x, _, _) = x
@@ -43,6 +44,24 @@ curry3 f x y z = f (x,y,z)
 
 uncurry3 :: (a -> b -> c -> d) -> (a, b, c) -> d
 uncurry3 f (x, y, z) = f x y z
+
+fst4 :: (a, b, c, d) -> a
+fst4 (x, _, _, _) = x
+
+snd4 :: (a, b, c, d) -> b
+snd4 (_, y, _, _) = y
+
+thd4 :: (a, b, c, d) -> c
+thd4 (_, _, z, _) = z
+
+fth4 :: (a, b, c, d) -> d
+fth4 (_, _, _, w) = w
+
+curry4 :: ((a, b, c, d) -> e) -> a -> b -> c -> d -> e
+curry4 f x y z w = f (x,y,z,w)
+
+uncurry4 :: (a -> b -> c -> d -> e) -> (a, b, c, d) -> e
+uncurry4 f (x, y, z, w) = f x y z w
 
 -- The function (++!) is variant of the list concatenation operator (++)
 -- that ignores the second argument if the first is a non-empty list.

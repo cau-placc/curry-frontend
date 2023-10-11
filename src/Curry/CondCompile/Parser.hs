@@ -1,23 +1,20 @@
 {- |
     Module      :  $Header$
     Description :  Parser for conditional compiling
-    Copyright   :  (c) 2017        Kai-Oliver Prott
-                       2017        Finn Teegen
+    Copyright   :  (c) 2017        Finn Teegen
+                       2017 - 2023 Kai-Oliver Prott
     License     :  BSD-3-clause
 
-    Maintainer  :  fte@informatik.uni-kiel.de
+    Maintainer  :  kpr@informatik.uni-kiel.de
     Stability   :  experimental
     Portability :  portable
 
-    TODO
+    This module defines the parser for the abstract syntax
+    of programs with conditional compiling directives.
 -}
-{-# LANGUAGE CPP #-}
 module Curry.CondCompile.Parser where
 
-#if __GLASGOW_HASKELL__ < 710
-import Control.Applicative ((<$>), (<*>), (*>), (<*))
-#endif
-
+import Data.Functor (($>))
 import Text.Parsec
 
 import Curry.CondCompile.Type
@@ -56,7 +53,7 @@ line :: Parser Stmt
 line = do
   sps <- many sp
   try $  ((char '#' <?> "") *> fail "unknown directive")
-     <|> ((Line . (sps ++)) <$> manyTill anyChar (try (lookAhead (eol <|> eof))))
+     <|> (Line . (sps ++) <$> manyTill anyChar (try (lookAhead (eol <|> eof))))
 
 keyword :: String -> Parser String
 keyword = string . ('#' :)
@@ -83,7 +80,7 @@ value :: Parser Int
 value = fmap read (many1 digit)
 
 eol :: Parser ()
-eol = endOfLine *> return ()
+eol = endOfLine $> ()
 
 sp :: Parser Char
 sp = try $  lookAhead (eol *> unexpected "end of line" <?> "")
