@@ -936,7 +936,7 @@ checkPred (Pred cls ty) = do
 -- to a non-variable determinism type if one is known.
 -- TODO: re-run AppliedType checks after an applied type changes anything.
 solveConstraints :: Set DetConstraint -> DM (Map VarIndex DetType)
-solveConstraints constraints = do
+solveConstraints constraints =
   return $ runEquivM id max $ doSolve Map.empty Map.empty constraints
 
 doSolve :: Map VarIndex DetType             -- ^ Substitution
@@ -978,7 +978,7 @@ doSolve current reRun constraints = case Set.minView constraints of
         else case (Map.lookup d1 current, Map.lookup d2 current) of
           (Just dty1, Just dty2) ->
             let vs = d1 : d2 : vars tys
-                (dty1', cs') = unify dty1 (applyDetType dty2 tys) cs
+                (dty1', cs') = unify dty1 (applyDetType dty2 (map (`substDetTy` current) tys)) cs
                 reRun' = foldr (\v' -> Map.insertWith Set.union v' (Set.singleton c))
                           reRun vs
                 vsCons = foldr (\v' s -> Set.union s $ Map.findWithDefault Set.empty v' reRun) cs' vs
@@ -991,7 +991,7 @@ doSolve current reRun constraints = case Set.minView constraints of
                           reRun (d1 : d2 : vars tys)
             in doSolve current reRun' (Set.insert (EqualType d2 dty2) cs)
           (Nothing, Just dty2) ->
-            let dty1 = applyDetType dty2 tys
+            let dty1 = applyDetType dty2 (map (`substDetTy` current) tys)
                 reRun' = foldr (\v' -> Map.insertWith Set.union v' (Set.singleton c))
                           reRun (d1 : d2 : vars tys)
             in doSolve current reRun' (Set.insert (EqualType d1 dty1) cs)
@@ -1050,7 +1050,7 @@ applyDetType Any _ = Any
 applyDetType (DetArrow (VarTy v) ty2) (ty:rest) =
   applyDetType (substDetTy ty2 (Map.singleton v ty)) rest
 applyDetType (DetArrow ty1 ty2) (VarTy v:rest) =
-  applyDetType (DetArrow ty1 ty2) (ty1 : map (`substDetTy` Map.singleton v ty1) rest)
+  applyDetType ty2 (map (`substDetTy` Map.singleton v ty1) rest)
 applyDetType (DetArrow ty1 ty2) (ty:rest) = case ty `moreSpecific` ty1 of
   Just s -> applyDetType (substDetTy ty2 s) rest
   Nothing -> Any
