@@ -143,15 +143,6 @@ failInfos :: [TestInfo]
 failInfos = map (uncurry mkFailTest)
   [ ("CyclicImports/A", ["Cyclic import dependency"])
   , ("CyclicImports/B", ["Cyclic import dependency"])
-  , ("DataFail",
-      [ "Missing instance for Prelude.Data Test1"
-      , "Missing instance for Prelude.Data (Test2"
-      , "Missing instance for Prelude.Data (Test2"
-      , "Missing instance for Prelude.Data Test1"
-      ]
-    )
-  , ("ErrorMultipleSignature", ["More than one type signature for `f'"])
-  , ("ErrorMultipleSignature", ["More than one type signature for `f'"])
   , ("ExportCheck/AmbiguousName", ["Ambiguous name `not'"])
   , ("ExportCheck/AmbiguousType", ["Ambiguous type `Bool'"])
   , ("ExportCheck/ModuleNotImported", ["Module `Foo' not imported"])
@@ -163,7 +154,28 @@ failInfos = map (uncurry mkFailTest)
   , ("ExportCheck/UndefinedElement", ["`foo' is not a constructor or label of type `Bool'"])
   , ("ExportCheck/UndefinedName", ["Undefined name `foo' in export list"])
   , ("ExportCheck/UndefinedType", ["Undefined type or class `Foo' in export list"])
+  , ("ClassHiddenFail", ["`methodB' is not a (visible) method of class `A'"])
+  , ("DataFail",
+      [ "Missing instance for Prelude.Data Test1"
+      , "Missing instance for Prelude.Data (Test2"
+      , "Missing instance for Prelude.Data (Test2"
+      , "Missing instance for Prelude.Data Test1"
+      ]
+    )
+  , ("DetSigFail",
+      [ "Incorrect determinism signature for instance method: someFuncDetSig"
+      , "Incorrect determinism signature for function definition: detF1"
+      , "Incorrect determinism signature for function definition: use5"
+      , "Incorrect determinism signature for function definition: use4"
+      , "Incorrect determinism signature for function definition: use3"
+      , "Incorrect determinism signature for function definition: use2"
+      , "Incorrect determinism signature for function definition: use1"
+      ]
+    )
+  , ("DetSigNoExt", ["Unexpected determinism signature"])
+  , ("ErrorMultipleSignature", ["More than one type signature for `f'"])
   , ("FP_Cyclic", ["Function `g' used in functional pattern depends on `f'  causing a cyclic dependency"])
+  , ("FP_NonGlobal", ["Function `f1' in functional pattern is not global"])
   , ("FP_Restrictions",
       [ "Functional patterns are not supported inside a case expression"
       , "Functional patterns are not supported inside a case expression"
@@ -172,7 +184,6 @@ failInfos = map (uncurry mkFailTest)
       ]
     )
   , ("HaskellRecordsFail", ["Unexpected token `,'"])
-  , ("FP_NonGlobal", ["Function `f1' in functional pattern is not global"])
   , ("ImportError",
       [ "Module Prelude does not export foo"
       , "Module Prelude does not export bar"
@@ -186,10 +197,10 @@ failInfos = map (uncurry mkFailTest)
   , ("MissingLabelInUpdate",
       ["Undefined record label `l1'"] )
   , ("MultipleArities", ["Equations for `test' have different arities"])
-  , ("MultipleInstances", ["Multiple instances for the same class and type"])
   , ("MultipleDefinitions",
       ["Multiple definitions for data/record constructor `Rec'"]
     )
+  , ("MultipleInstances", ["Multiple instances for the same class and type"])
   , ("MultiplePrecedence",
       ["More than one fixity declaration for `f'"]
     )
@@ -242,6 +253,8 @@ passInfos = map mkPassTest
   , "DataPass"
   , "DefaultPrecedence"
   , "Dequeue"
+  , "DetSigOverlap"
+  , "DetSigPass"
   , "EmptyWhere"
   , "ExplicitLayout"
   , "FCase"

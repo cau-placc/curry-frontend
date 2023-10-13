@@ -332,6 +332,8 @@ extensions =
     , "enable functional patterns"                   )
   , ( NegativeLiterals         , "NegativeLiterals"
     , "desugar negated literals as negative literal" )
+  , ( DeterminismSignatures    , "DeterminismSignatures"
+    , "enable determinism signatures"                )
   , ( NoAnonFreeVars           , "NoAnonFreeVars"
     , "disable anonymous free variables"             )
   , ( NoFunctionalPatterns     , "NoFunctionalPatterns"
@@ -340,8 +342,6 @@ extensions =
     , "do not implicitly import the Prelude"         )
   , ( NoDataDeriving           , "NoDataDeriving"
     , "do not implicitly derive the Data class"      )
-  , ( DeterminismSignatures    , "DeterminismSignatures"
-    , "enable determinism signatures"                )
   ]
 
 -- -----------------------------------------------------------------------------

@@ -934,7 +934,6 @@ checkPred (Pred cls ty) = do
 -- Solve by maintaining equivalence classes of variables using a union-find implementation.
 -- We also keep a list that maps the highest element of each eqivalent class
 -- to a non-variable determinism type if one is known.
--- TODO: re-run AppliedType checks after an applied type changes anything.
 solveConstraints :: Set DetConstraint -> DM (Map VarIndex DetType)
 solveConstraints constraints =
   return $ runEquivM id max $ doSolve Map.empty Map.empty constraints
