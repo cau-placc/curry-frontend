@@ -148,7 +148,7 @@ typeCheck _ (env, Module spi li ps m es is ds)
 -- * Environment:  The determinism environment and type constructor environments are updated
 determinismCheck :: Monad m => Options -> CompEnv (Module PredType)
                  -> CYT m (CompEnv (Module (PredType, DetType)))
-determinismCheck opts (env, mdl@(Module a b c d e f _))
+determinismCheck _ (env, mdl@(Module a b c d e f _))
   | null msgs = ok (env {detEnv = dE, tyConsEnv = tE},
                    Module a b c d e f ds')
   | otherwise = failMessages msgs
@@ -156,7 +156,7 @@ determinismCheck opts (env, mdl@(Module a b c d e f _))
     (dE, tE, ds', msgs) = DC.determinismCheck (moduleIdent env) (tyConsEnv env)
                                          (valueEnv env) (classEnv env)
                                          (instEnv env) (detEnv env)
-                                         (optExtensions opts) mdl
+                                         (extensions env) mdl
 
 -- |Check the export specification
 exportCheck :: Monad m => Check m (Module a)

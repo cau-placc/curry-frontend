@@ -284,7 +284,7 @@ checkSigs ds' dE = do
         forM_ (declIdents iE mid tcE d) $ \i ->
           forM_ (Map.lookup (to i) dE) (act (to i))
       go _ _ _ (DetSig sp _ _) =
-        unless (DeterminismSignatures `Set.notMember` exts) $
+        unless (DeterminismSignatures `Set.member` exts) $
           addMessage $ errDeterminismSignatureExt sp
       go _ _ _ _ = return ()
   mid <- gets moduleIdent
