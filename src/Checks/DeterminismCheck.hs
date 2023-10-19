@@ -81,6 +81,7 @@ import Env.Determinism
 import Env.Instance ( InstEnv, lookupInstInfo )
 import Env.TypeConstructor ( TCEnv, lookupTypeInfo, TypeInfo (..), rebindTypeInfo, qualLookupTypeInfo )
 import Env.Value ( qualLookupValue, qualLookupValueUnique, ValueInfo(..), ValueEnv )
+import Debug.Trace
 
 determinismCheck :: ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv -> InstEnv -> DetEnv
                  -> [KnownExtension] -> Module PredType
@@ -679,7 +680,8 @@ checkExprTy v (Paren spi e) = do
   (cs, e') <- checkExprTy v e
   return (cs, Paren spi e')
 checkExprTy v (Constructor spi pty@(PredType _ ty) qid) = do
-  let dty = foldr DetArrow Det (replicate (arrowArity ty) Det)
+  i <- freshVar
+  let dty = foldr DetArrow (VarTy i) (replicate (arrowArity ty) (VarTy i))
   return (Set.singleton (EqualType v dty), Constructor spi (pty, dty) qid)
 checkExprTy v (Tuple spi es) = do
   (css, es') <- mapAndUnzipM (checkExprTy v) es
@@ -834,7 +836,8 @@ checkInfixOpTy v (InfixOp ty i) = do
   cs <- checkVar v ty i
   return (cs, InfixOp (ty, VarTy v) i)
 checkInfixOpTy v (InfixConstr pty@(PredType _ ty) qid) = do
-  let dty = foldr DetArrow Det (replicate (arrowArity ty) Det)
+  i <- freshVar
+  let dty = foldr DetArrow (VarTy i) (replicate (arrowArity ty) (VarTy i))
   return (Set.singleton (EqualType v dty), InfixConstr (pty, dty) qid)
 
 checkVar :: VarIndex -> PredType -> QualIdent -> DM (Set DetConstraint)
@@ -935,14 +938,15 @@ checkPred (Pred cls ty) = do
 -- We also keep a list that maps the highest element of each eqivalent class
 -- to a non-variable determinism type if one is known.
 solveConstraints :: Set DetConstraint -> DM (Map VarIndex DetType)
-solveConstraints constraints =
-  return $ runEquivM id max $ doSolve Map.empty Map.empty constraints
+solveConstraints constraints = do
+  let res = runEquivM id max $ doSolve Map.empty Map.empty constraints
+  return res
 
 doSolve :: Map VarIndex DetType             -- ^ Substitution
         -> Map VarIndex (Set DetConstraint) -- ^ Re-runnable AppliedType constraints
         -> Set DetConstraint                -- ^ Constraints
         -> EquivM s VarIndex VarIndex (Map VarIndex DetType)
-doSolve current reRun constraints = case Set.minView constraints of
+doSolve current reRun constraints = trace (render $ pPrint (constraints, map (\(x,y) -> (VarTy x, y)) $ Map.toList current)) case Set.minView constraints of
   Nothing -> mkSubstitution current
   Just (c, cs) -> case c of
     EqualType v (VarTy w)
@@ -976,6 +980,7 @@ doSolve current reRun constraints = case Set.minView constraints of
         then doSolve (extendSubst (max d1 d2) Any current) reRun cs
         else case (Map.lookup d1 current, Map.lookup d2 current) of
           (Just dty1, Just dty2) ->
+            trace (render $ pPrint ("uni", dty2, (map (`substDetTy` current) tys), applyDetType dty2 (map (`substDetTy` current) tys))) $
             let vs = d1 : d2 : vars tys
                 (dty1', cs') = unify dty1 (applyDetType dty2 (map (`substDetTy` current) tys)) cs
                 reRun' = foldr (\v' -> Map.insertWith Set.union v' (Set.singleton c))
@@ -1003,8 +1008,12 @@ doSolve current reRun constraints = case Set.minView constraints of
     unify (VarTy v) (VarTy w) cs'
       | v == w    = (VarTy v, cs')
       | otherwise = (VarTy v, Set.insert (EqualType v (VarTy w)) cs')
-    unify (VarTy v) ty cs' = (ty, Set.insert (EqualType v ty) cs')
-    unify ty (VarTy v) cs' = (ty, Set.insert (EqualType v ty) cs')
+    unify (VarTy v) ty cs'
+      | v `elem` vars [ty]  = (Any, cs')
+      | otherwise = (ty, Set.insert (EqualType v ty) cs')
+    unify ty (VarTy v) cs'
+      | v `elem` vars [ty] = (Any, cs')
+      | otherwise = (ty, Set.insert (EqualType v ty) cs')
     unify Det Det cs' = (Det, cs')
     unify Any _ cs' = (Any, cs')
     unify _ Any cs' = (Any, cs')
@@ -1055,13 +1064,14 @@ applyDetType (DetArrow ty1 ty2) (ty:rest) = case ty `moreSpecific` ty1 of
   Nothing -> Any
 applyDetType ty tys = internalError $ "applyDetType: not enough arguments " ++ show ty ++ " @ " ++ show tys
 
--- Both `moreSpecific` and `lessSpecific` return `Nothing` if
+-- The function `moreSpecific` returns `Nothing` if
 -- the two types are not in the desired relation.
--- Otherwise they return `Just s`,
+-- Otherwise it returns `Just s`,
 -- where `s` is a substitution that maps variables
--- from the second onto the first type.
+-- from the one type to the other (bidirectional).
 moreSpecific :: DetType -> DetType -> Maybe (Map VarIndex DetType)
 moreSpecific ty (VarTy v) = Just (Map.singleton v ty)
+moreSpecific (VarTy v) ty = Just (Map.singleton v ty)
 moreSpecific (DetArrow ty1 ty2) (DetArrow ty1' ty2') = do
   s1 <- ty1' `moreSpecific` ty1
   s2 <- ty2 `moreSpecific` ty2'
@@ -1071,6 +1081,13 @@ moreSpecific Det Det = Just Map.empty
 moreSpecific Any Any = Just Map.empty
 moreSpecific _ _ = Nothing
 
+-- Like `moreSpecific`, `lessSpecific` returns `Nothing` if
+-- the two types are not in the desired relation.
+-- Otherwise it returns `Just s`,
+-- where `s` is a substitution that maps variables
+-- from the second onto the first type.
+-- That is in contrast to `moreSpecific`,
+-- which can map variables in both directions
 lessSpecific :: DetType -> DetType -> Maybe (Map VarIndex DetType)
 lessSpecific ty (VarTy v) = Just (Map.singleton v ty)
 lessSpecific (DetArrow ty1 ty2) (DetArrow ty1' ty2') = do
