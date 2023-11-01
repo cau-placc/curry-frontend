@@ -48,7 +48,7 @@ import qualified IL
 ilTrans :: Bool -> ValueEnv -> TCEnv -> Module Type -> IL.Module
 ilTrans remIm vEnv tcEnv (Module _ _ _ m _ im ds) = IL.Module m im' ds'
   where ds' = runReader (concatMapM trDecl ds) (TransEnv m vEnv tcEnv)
-        im' = preludeMIdent : if remIm then imports m ds' else map moduleImport im
+        im' = if remIm then imports m ds' else map moduleImport im
         moduleImport (ImportDecl _ mdl _ _ _) = mdl
 
 
@@ -78,19 +78,24 @@ mdlsType (IL.TypeArrow      ty1 ty2) ms = mdlsType ty1 (mdlsType ty2 ms)
 mdlsType (IL.TypeForall        _ ty) ms = mdlsType ty ms
 
 mdlsExpr :: IL.Expression -> Set.Set ModuleIdent -> Set.Set ModuleIdent
-mdlsExpr (IL.Function    _ f _) ms = modules f ms
-mdlsExpr (IL.Constructor _ c _) ms = modules c ms
-mdlsExpr (IL.Apply       e1 e2) ms = mdlsExpr e1 (mdlsExpr e2 ms)
-mdlsExpr (IL.Case       _ e as) ms = mdlsExpr e (foldr mdlsAlt ms as)
+mdlsExpr (IL.Literal       ty _) ms = mdlsType ty ms
+mdlsExpr (IL.Function    ty f _) ms = modules f (mdlsType ty ms)
+mdlsExpr (IL.Variable      ty _) ms = mdlsType ty ms
+mdlsExpr (IL.Constructor ty c _) ms = modules c (mdlsType ty ms)
+mdlsExpr (IL.Apply        e1 e2) ms = mdlsExpr e1 (mdlsExpr e2 ms)
+mdlsExpr (IL.Case        _ e as) ms = mdlsExpr e (foldr mdlsAlt ms as)
   where
   mdlsAlt     (IL.Alt                 t e') = mdlsPattern t . mdlsExpr e'
-  mdlsPattern (IL.ConstructorPattern _ c _) = modules c
-  mdlsPattern _                             = id
-mdlsExpr (IL.Or          e1 e2) ms = mdlsExpr e1 (mdlsExpr e2 ms)
-mdlsExpr (IL.Exist       _ _ e) ms = mdlsExpr e ms
-mdlsExpr (IL.Let           b e) ms = mdlsBinding b (mdlsExpr e ms)
-mdlsExpr (IL.Letrec       bs e) ms = foldr mdlsBinding (mdlsExpr e ms) bs
-mdlsExpr _                      ms = ms
+  mdlsPattern (IL.ConstructorPattern ty c ps) = mdlsType ty . modules c . mdlsPList ps
+  mdlsPattern (IL.VariablePattern       ty _) = mdlsType ty
+  mdlsPattern (IL.LiteralPattern        ty _) = mdlsType ty
+  mdlsPList  []                              = id
+  mdlsPList  ((ty, _):ps')                   = mdlsType ty . mdlsPList ps'
+mdlsExpr (IL.Or           e1 e2) ms = mdlsExpr e1 (mdlsExpr e2 ms)
+mdlsExpr (IL.Exist        _ _ e) ms = mdlsExpr e ms
+mdlsExpr (IL.Let            b e) ms = mdlsBinding b (mdlsExpr e ms)
+mdlsExpr (IL.Letrec        bs e) ms = foldr mdlsBinding (mdlsExpr e ms) bs
+mdlsExpr (IL.Typed         e ty) ms = mdlsType ty (mdlsExpr e ms)
 
 mdlsBinding :: IL.Binding -> Set.Set ModuleIdent -> Set.Set ModuleIdent
 mdlsBinding (IL.Binding _ e) = mdlsExpr e
