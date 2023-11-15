@@ -275,13 +275,12 @@ transModule opts mdl = do
   newtypes   <- dumpCS DumpNewtypes      $ removeNewtypes remNT dicts
   simplified <- dumpCS DumpSimplified    $ simplify             newtypes
   lifted     <- dumpCS DumpLifted        $ lift                 simplified
-  il         <- dumpIL DumpTranslated    $ ilTrans        remIm lifted
+  il         <- dumpIL DumpTranslated    $ ilTrans              lifted
   ilCaseComp <- dumpIL DumpCaseCompleted $ completeCase         il
   return (ilCaseComp, newtypes)
   where
   optOpts = optOptimizations opts
   inlDi = optInlineDictionaries  optOpts
-  remIm = optRemoveUnusedImports optOpts
   remNT = optDesugarNewtypes     optOpts
   dumpCS :: Show a => DumpLevel -> CompEnv (CS.Module a)
          -> CYIO (CompEnv (CS.Module a))
@@ -363,7 +362,8 @@ writeFlat opts env mdl il = do
     liftIO $ FC.writeFlatCurry (useSubDir fcyName) fcy
   writeFlatIntf opts env fcy
   where
-  afcy        = genAnnotatedFlatCurry env mdl il
+  remIm       = optRemoveUnusedImports (optOptimizations opts)
+  afcy        = genAnnotatedFlatCurry remIm env mdl il
   afcyName    = annotatedFlatName (filePath env)
   afcyTarget  = AnnotatedFlatCurry `elem` optTargetTypes opts
   tfcy        = genTypedFlatCurry afcy

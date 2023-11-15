@@ -26,7 +26,9 @@ import           Data.Function              (on)
 import           Data.List                  (nub, sortBy)
 import           Data.Maybe                 (fromMaybe)
 import qualified Data.Map            as Map (Map, empty, insert, lookup)
-import qualified Data.Set            as Set (Set, empty, insert, member)
+import qualified Data.Set            as Set ( Set, empty, singleton, insert
+                                            , member, delete, union, unions
+                                            , fromList, toList )
 
 import           Curry.Base.Ident
 import           Curry.FlatCurry.Annotated.Goodies (typeName)
@@ -44,9 +46,94 @@ import Env.TypeConstructor (TCEnv)
 import qualified IL
 
 -- transforms intermediate language code (IL) to type-annotated FlatCurry code
-genAnnotatedFlatCurry :: CompilerEnv -> CS.Module Type -> IL.Module
-                  -> AProg TypeExpr
-genAnnotatedFlatCurry env mdl il = patchPrelude $ run env mdl (trModule il)
+genAnnotatedFlatCurry :: Bool -> CompilerEnv -> CS.Module Type -> IL.Module
+                      -> AProg TypeExpr
+genAnnotatedFlatCurry remIm env mdl il =
+  patchPrelude $ computeImports remIm $ run env mdl (trModule il)
+
+-- -----------------------------------------------------------------------------
+-- Computing the required set of imports. Due to the transformation of code
+-- into FlatCurry, an import of Prelude might be required even for modules
+-- that do not import the Prelude via -XNoImplicitPrelude.
+-- -----------------------------------------------------------------------------
+
+computeImports :: Bool -> AProg TypeExpr -> AProg TypeExpr
+computeImports remIm (AProg n is ts fs os)
+  | remIm     = AProg n (Set.toList computedImports) ts fs os
+  | otherwise = AProg n (Set.toList (computedImports `Set.union` Set.fromList is)) ts fs os
+  where
+    computedImports = Set.delete n $
+      getImportsFromTypeDecls ts `Set.union`
+      getImportsFromFuncs fs `Set.union`
+      getImportsFromOps os
+    getImportsFromTypeDecls = Set.unions . map getImportsFromTypeDecl
+    getImportsFromTypeDecl (Type    q _ _ cs) =
+      Set.insert (fst q) $ getImportsFromCons cs
+    getImportsFromTypeDecl (TypeSyn q _ _ ty) =
+      Set.insert (fst q) $ getImportsFromType ty
+    getImportsFromTypeDecl (TypeNew q _ _ c) =
+      Set.insert (fst q) $ getImportsFromNewCon c
+    getImportsFromCons = Set.unions . map getImportsFromCon
+    getImportsFromCon (Cons q _ _ tys) =
+      Set.insert (fst q) $ getImportsFromTypes tys
+    getImportsFromNewCon (NewCons q _ ty) =
+      Set.insert (fst q) $ getImportsFromType ty
+    getImportsFromFuncs = Set.unions . map getImportsFromFunc
+    getImportsFromFunc (AFunc q _ _ ty r) =
+      Set.insert (fst q) $ getImportsFromType ty `Set.union` getImportsFromRule r
+    getImportsFromRule (ARule ty _ e) =
+      getImportsFromType ty `Set.union` getImportsFromExpr e
+    getImportsFromRule (AExternal ty _) = getImportsFromType ty
+    getImportsFromExprs = Set.unions . map getImportsFromExpr
+    getImportsFromExpr (AVar ty _) = getImportsFromType ty
+    getImportsFromExpr (ALit ty _) = getImportsFromType ty
+    getImportsFromExpr (AComb ty1 _ (q, ty2) es) =
+      Set.insert (fst q) $ getImportsFromType ty1 `Set.union`
+                           getImportsFromType ty2 `Set.union`
+                           getImportsFromExprs es
+    getImportsFromExpr (ALet ty bs e) =
+      getImportsFromType ty `Set.union`
+      getImportsFromBindings bs `Set.union`
+      getImportsFromExpr e
+    getImportsFromExpr (AFree ty fs e) =
+      getImportsFromType ty `Set.union`
+      getImportsFromVars fs `Set.union`
+      getImportsFromExpr e
+    getImportsFromExpr (AOr ty e1 e2) =
+      getImportsFromType ty `Set.union`
+      getImportsFromExpr e1 `Set.union`
+      getImportsFromExpr e2
+    getImportsFromExpr (ACase ty _ e bs) =
+      getImportsFromType ty `Set.union`
+      getImportsFromExpr e `Set.union`
+      getImportsFromBranches bs
+    getImportsFromExpr (ATyped ty1 e ty2) =
+      getImportsFromType ty1 `Set.union`
+      getImportsFromExpr e `Set.union`
+      getImportsFromType ty2
+    getImportsFromBindings = Set.unions . map getImportsFromBinding
+    getImportsFromBinding ((_, ty), e) =
+      getImportsFromType ty `Set.union` getImportsFromExpr e
+    getImportsFromVars = Set.unions . map getImportsFromVar
+    getImportsFromVar (_, ty) = getImportsFromType ty
+    getImportsFromBranches = Set.unions . map getImportsFromBranch
+    getImportsFromBranch (ABranch p e) =
+      getImportsFromPattern p `Set.union` getImportsFromExpr e
+    getImportsFromPattern (APattern ty1 (q, ty2) vs) =
+      Set.insert (fst q) $ getImportsFromType ty1 `Set.union`
+                           getImportsFromType ty2 `Set.union`
+                           getImportsFromVars vs
+    getImportsFromPattern (ALPattern ty _) =
+      getImportsFromType ty
+    getImportsFromOps = Set.unions . map getImportsFromOp
+    getImportsFromOp (Op q _ _) = Set.singleton (fst q)
+    getImportsFromTypes = Set.unions . map getImportsFromType
+    getImportsFromType (TVar _) = Set.empty
+    getImportsFromType (FuncType ty1 ty2) =
+      getImportsFromType ty1 `Set.union` getImportsFromType ty2
+    getImportsFromType (TCons q tys) =
+      Set.insert (fst q) $ getImportsFromTypes tys
+    getImportsFromType (ForallType _ ty) = getImportsFromType ty
 
 -- -----------------------------------------------------------------------------
 -- Addition of primitive types for lists and tuples to the Prelude
