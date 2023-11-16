@@ -12,11 +12,7 @@
     This module contains the generation of a type-annotated 'FlatCurry'
     program term for a given module in the intermediate language.
 -}
-{-# LANGUAGE CPP #-}
 module Generators.GenAnnotatedFlatCurry (genAnnotatedFlatCurry) where
-
-
-
 
 import           Control.Monad              ((<=<))
 import           Control.Monad.Extra        (concatMapM)
@@ -95,9 +91,9 @@ computeImports remIm (AProg n is ts fs os)
       getImportsFromType ty `Set.union`
       getImportsFromBindings bs `Set.union`
       getImportsFromExpr e
-    getImportsFromExpr (AFree ty fs e) =
+    getImportsFromExpr (AFree ty vs e) =
       getImportsFromType ty `Set.union`
-      getImportsFromVars fs `Set.union`
+      getImportsFromVars vs `Set.union`
       getImportsFromExpr e
     getImportsFromExpr (AOr ty e1 e2) =
       getImportsFromType ty `Set.union`
