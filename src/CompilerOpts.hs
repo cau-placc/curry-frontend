@@ -270,6 +270,7 @@ data DumpLevel
   = DumpCondCompiled      -- ^ dump source code after conditional compiling
   | DumpParsed            -- ^ dump source code after parsing
   | DumpExtensionChecked  -- ^ dump source code after extension checking
+  | DumpCaseModeChecked   -- ^ dump source code after case mode checking
   | DumpTypeSyntaxChecked -- ^ dump source code after type syntax checking
   | DumpKindChecked       -- ^ dump source code after kind checking
   | DumpSyntaxChecked     -- ^ dump source code after syntax checking
@@ -296,6 +297,7 @@ dumpLevel :: [(DumpLevel, String, String)]
 dumpLevel = [ (DumpCondCompiled     , "dump-cond" , "conditional compiling"           )
             , (DumpParsed           , "dump-parse", "parsing"                         )
             , (DumpExtensionChecked , "dump-exc"  , "extension checking"              )
+            , (DumpCaseModeChecked  , "dump-cmc"  , "case mode checking"              )
             , (DumpTypeSyntaxChecked, "dump-tsc"  , "type syntax checking"            )
             , (DumpKindChecked      , "dump-kc"   , "kind checking"                   )
             , (DumpSyntaxChecked    , "dump-sc"   , "syntax checking"                 )

@@ -76,6 +76,7 @@ library
     , Base.Typing
     , Base.Utils
     , Checks
+    , Checks.CaseModeCheck
     , Checks.DeriveCheck
     , Checks.ExportCheck
     , Checks.ExtensionCheck

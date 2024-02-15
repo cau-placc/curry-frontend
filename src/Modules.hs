@@ -248,7 +248,8 @@ checkModule :: Options -> CompEnv (CS.Module ())
 checkModule opts mdl = do
   _   <- dumpCS DumpParsed mdl
   exc <- extensionCheck  opts mdl >>= dumpCS DumpExtensionChecked
-  tsc <- typeSyntaxCheck opts exc >>= dumpCS DumpTypeSyntaxChecked
+  cmc <- caseModeCheck   opts exc >>= dumpCS DumpCaseModeChecked
+  tsc <- typeSyntaxCheck opts cmc >>= dumpCS DumpTypeSyntaxChecked
   kc  <- kindCheck       opts tsc >>= dumpCS DumpKindChecked
   sc  <- syntaxCheck     opts kc  >>= dumpCS DumpSyntaxChecked
   pc  <- precCheck       opts sc  >>= dumpCS DumpPrecChecked
