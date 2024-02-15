@@ -221,7 +221,6 @@ data WarnFlag
   | WarnMissingSignatures    -- ^ Warn for missing type signatures
   | WarnMissingMethods       -- ^ Warn for missing method implementations
   | WarnOrphanInstances      -- ^ Warn for orphan instances
-  | WarnIrregularCaseMode    -- ^ Warn for irregular case mode
   | WarnRedundantContext     -- ^ Warn for redundant context in type signatures
     deriving (Eq, Bounded, Enum, Show)
 
@@ -231,7 +230,7 @@ stdWarnFlags =
   [ WarnMultipleImports   , WarnDisjoinedRules   --, WarnUnusedGlobalBindings
   , WarnUnusedBindings    , WarnNameShadowing    , WarnOverlapping
   , WarnIncompletePatterns, WarnMissingSignatures, WarnMissingMethods
-  , WarnIrregularCaseMode , WarnRedundantContext
+  , WarnRedundantContext
   ]
 
 -- |Description and flag of warnings flags
@@ -259,8 +258,6 @@ warnFlags =
     , "missing method implementations" )
   , ( WarnOrphanInstances     , "orphan-instances"
     , "orphan instances"               )
-  , ( WarnIrregularCaseMode   , "irregular-case-mode"
-    , "irregular case mode")
   , ( WarnRedundantContext    , "redundant-context"
     , "redundant context")
   ]
