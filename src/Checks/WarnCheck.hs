@@ -1463,12 +1463,14 @@ isVarName :: CaseMode -> String -> Bool
 isVarName CaseModeProlog  (x:_) | isAlpha x = isUpper x
 isVarName CaseModeGoedel  (x:_) | isAlpha x = isLower x
 isVarName CaseModeHaskell (x:_) | isAlpha x = isLower x
+isVarName CaseModeCurry   (x:_) | isAlpha x = isLower x
 isVarName _               _     = True
 
 isFuncName :: CaseMode -> String -> Bool
 isFuncName CaseModeHaskell (x:_) | isAlpha x = isLower x
 isFuncName CaseModeGoedel  (x:_) | isAlpha x = isUpper x
 isFuncName CaseModeProlog  (x:_) | isAlpha x = isLower x
+isFuncName CaseModeCurry   (x:_) | isAlpha x = isLower x
 isFuncName _               _     = True
 
 isConstrName :: CaseMode -> String -> Bool
@@ -1481,6 +1483,7 @@ isDataDeclName :: CaseMode -> String -> Bool
 isDataDeclName CaseModeProlog  (x:_) | isAlpha x = isLower x
 isDataDeclName CaseModeGoedel  (x:_) | isAlpha x = isUpper x
 isDataDeclName CaseModeHaskell (x:_) | isAlpha x = isUpper x
+isDataDeclName CaseModeCurry   (x:_) | isAlpha x = isUpper x
 isDataDeclName _               _     = True
 
 -- ---------------------------------------------------------------------------
@@ -1640,6 +1643,7 @@ caseSuggestion _      = internalError
  "Checks.WarnCheck.caseSuggestion: Identifier starts with illegal Symbol"
 
 escapeCaseMode :: CaseMode -> String
+escapeCaseMode CaseModeCurry   = "`curry`"
 escapeCaseMode CaseModeFree    = "`free`"
 escapeCaseMode CaseModeHaskell = "`haskell`"
 escapeCaseMode CaseModeProlog  = "`prolog`"

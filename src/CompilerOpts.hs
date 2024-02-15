@@ -80,7 +80,8 @@ data PrepOpts = PrepOpts
   } deriving Show
 
 data CaseMode
-  = CaseModeFree
+  = CaseModeCurry
+  | CaseModeFree
   | CaseModeHaskell
   | CaseModeProlog
   | CaseModeGoedel
@@ -126,7 +127,7 @@ defaultOptions = Options
   , optTargetTypes   = []
   , optExtensions    = kielExtensions
   , optDebugOpts     = defaultDebugOpts
-  , optCaseMode      = CaseModeFree
+  , optCaseMode      = CaseModeCurry
   , optCppOpts       = defaultCppOpts
   , optOptimizations = defaultOptimizationOpts
   }
@@ -552,7 +553,9 @@ extDescriptions = map toDescr extensions
 
 caseModeDescriptions :: OptErrTable Options
 caseModeDescriptions
-  = [ ( "free"   , "use free case mode"
+  = [ ( "curry"  , "use default curry case mode"
+        , \ opts -> opts { optCaseMode = CaseModeCurry   } )
+    , ( "free"   , "use free case mode"
         , \ opts -> opts { optCaseMode = CaseModeFree    } )
     , ( "haskell", "use haskell style case mode"
         , \ opts -> opts { optCaseMode = CaseModeHaskell } )
