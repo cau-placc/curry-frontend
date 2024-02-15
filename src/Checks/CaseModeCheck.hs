@@ -69,7 +69,11 @@ data CmcState = CmcState
 type CMCM = State CmcState
 
 report :: Message -> CMCM ()
-report w = modify $ \ s -> s { warnings = w : warnings s }
+report m = do
+  cm <- gets caseMode
+  case cm of
+    CaseModeCurry -> modify $ \s -> s { warnings = m : warnings s }
+    _             -> modify $ \s -> s { errors   = m : errors s }
 
 ok :: CMCM ()
 ok = return ()
