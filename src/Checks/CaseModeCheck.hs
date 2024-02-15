@@ -94,35 +94,35 @@ checkCaseMode = mapM_ checkCaseModeDecl
 
 checkCaseModeDecl :: Decl a -> CMCM ()
 checkCaseModeDecl (DataDecl _ tc vs cs _) = do
-  checkCaseModeID isDataDeclName tc
-  mapM_ (checkCaseModeID isVarName) vs
+  checkCaseModeDataDeclName tc
+  mapM_ checkCaseModeVarName vs
   mapM_ checkCaseModeConstr cs
 checkCaseModeDecl (NewtypeDecl _ tc vs nc _) = do
-  checkCaseModeID isDataDeclName tc
-  mapM_ (checkCaseModeID isVarName) vs
+  checkCaseModeDataDeclName tc
+  mapM_ checkCaseModeVarName vs
   checkCaseModeNewConstr nc
 checkCaseModeDecl (TypeDecl _ tc vs ty) = do
-  checkCaseModeID isDataDeclName tc
-  mapM_ (checkCaseModeID isVarName) vs
+  checkCaseModeDataDeclName tc
+  mapM_ checkCaseModeVarName vs
   checkCaseModeTypeExpr ty
 checkCaseModeDecl (TypeSig _ fs qty) = do
-  mapM_ (checkCaseModeID isFuncName) fs
+  mapM_ checkCaseModeFuncName fs
   checkCaseModeQualTypeExpr qty
 checkCaseModeDecl (FunctionDecl _ _ f eqs) = do
-  checkCaseModeID isFuncName f
+  checkCaseModeFuncName f
   mapM_ checkCaseModeEquation eqs
 checkCaseModeDecl (ExternalDecl _ vs) =
-  mapM_ (checkCaseModeID isFuncName . varIdent) vs
+  mapM_ (checkCaseModeFuncName . varIdent) vs
 checkCaseModeDecl (PatternDecl _ t rhs) = do
   checkCaseModePattern t
   checkCaseModeRhs rhs
 checkCaseModeDecl (FreeDecl  _ vs) =
-  mapM_ (checkCaseModeID isVarName . varIdent) vs
+  mapM_ (checkCaseModeVarName . varIdent) vs
 checkCaseModeDecl (DefaultDecl _ tys) = mapM_ checkCaseModeTypeExpr tys
 checkCaseModeDecl (ClassDecl _ _ cx cls tv ds) = do
   checkCaseModeContext cx
-  checkCaseModeID isClassDeclName cls
-  checkCaseModeID isVarName tv
+  checkCaseModeClassDeclName cls
+  checkCaseModeVarName tv
   mapM_ checkCaseModeDecl ds
 checkCaseModeDecl (InstanceDecl _ _ cx _ inst ds) = do
   checkCaseModeContext cx
@@ -132,28 +132,28 @@ checkCaseModeDecl _ = ok
 
 checkCaseModeConstr :: ConstrDecl -> CMCM ()
 checkCaseModeConstr (ConstrDecl _ c tys) = do
-  checkCaseModeID isConstrName c
+  checkCaseModeConstrName c
   mapM_ checkCaseModeTypeExpr tys
 checkCaseModeConstr (ConOpDecl  _ ty1 c ty2) = do
   checkCaseModeTypeExpr ty1
-  checkCaseModeID isConstrName c
+  checkCaseModeConstrName c
   checkCaseModeTypeExpr ty2
 checkCaseModeConstr (RecordDecl _ c fs) = do
-  checkCaseModeID isConstrName c
+  checkCaseModeConstrName c
   mapM_ checkCaseModeFieldDecl fs
 
 checkCaseModeFieldDecl :: FieldDecl -> CMCM ()
 checkCaseModeFieldDecl (FieldDecl _ fs ty) = do
-  mapM_ (checkCaseModeID isFuncName) fs
+  mapM_ checkCaseModeFuncName fs
   checkCaseModeTypeExpr ty
 
 checkCaseModeNewConstr :: NewConstrDecl -> CMCM ()
 checkCaseModeNewConstr (NewConstrDecl _ nc ty) = do
-  checkCaseModeID isConstrName nc
+  checkCaseModeConstrName nc
   checkCaseModeTypeExpr ty
 checkCaseModeNewConstr (NewRecordDecl _ nc (f, ty)) = do
-  checkCaseModeID isConstrName nc
-  checkCaseModeID isFuncName f
+  checkCaseModeConstrName nc
+  checkCaseModeFuncName f
   checkCaseModeTypeExpr ty
 
 checkCaseModeContext :: Context -> CMCM ()
@@ -166,7 +166,7 @@ checkCaseModeTypeExpr :: TypeExpr -> CMCM ()
 checkCaseModeTypeExpr (ApplyType _ ty1 ty2) = do
   checkCaseModeTypeExpr ty1
   checkCaseModeTypeExpr ty2
-checkCaseModeTypeExpr (VariableType _ tv) = checkCaseModeID isVarName tv
+checkCaseModeTypeExpr (VariableType _ tv) = checkCaseModeVarName tv
 checkCaseModeTypeExpr (TupleType _ tys) = mapM_ checkCaseModeTypeExpr tys
 checkCaseModeTypeExpr (ListType _ ty) = checkCaseModeTypeExpr ty
 checkCaseModeTypeExpr (ArrowType _ ty1 ty2) = do
@@ -174,7 +174,7 @@ checkCaseModeTypeExpr (ArrowType _ ty1 ty2) = do
   checkCaseModeTypeExpr ty2
 checkCaseModeTypeExpr (ParenType _ ty) = checkCaseModeTypeExpr ty
 checkCaseModeTypeExpr (ForallType _ tvs ty) = do
-  mapM_ (checkCaseModeID isVarName) tvs
+  mapM_ checkCaseModeVarName tvs
   checkCaseModeTypeExpr ty
 checkCaseModeTypeExpr _ = ok
 
@@ -190,11 +190,11 @@ checkCaseModeEquation (Equation _ lhs rhs) = do
 
 checkCaseModeLhs :: Lhs a -> CMCM ()
 checkCaseModeLhs (FunLhs _ f ts) = do
-  checkCaseModeID isFuncName f
+  checkCaseModeFuncName f
   mapM_ checkCaseModePattern ts
 checkCaseModeLhs (OpLhs _ t1 f t2) = do
   checkCaseModePattern t1
-  checkCaseModeID isFuncName f
+  checkCaseModeFuncName f
   checkCaseModePattern t2
 checkCaseModeLhs (ApLhs _ lhs ts) = do
   checkCaseModeLhs lhs
@@ -214,7 +214,7 @@ checkCaseModeCondExpr (CondExpr _ g e) = do
   checkCaseModeExpr e
 
 checkCaseModePattern :: Pattern a -> CMCM ()
-checkCaseModePattern (VariablePattern _ _ v) = checkCaseModeID isVarName v
+checkCaseModePattern (VariablePattern _ _ v) = checkCaseModeID "variable name" isVarName v
 checkCaseModePattern (ConstructorPattern _ _ _ ts) =
   mapM_ checkCaseModePattern ts
 checkCaseModePattern (InfixPattern _ _ t1 _ t2) = do
@@ -226,7 +226,7 @@ checkCaseModePattern (RecordPattern _ _ _ fs) =
 checkCaseModePattern (TuplePattern _ ts) = mapM_ checkCaseModePattern ts
 checkCaseModePattern (ListPattern _ _ ts) = mapM_ checkCaseModePattern ts
 checkCaseModePattern (AsPattern _ v t) = do
-  checkCaseModeID isVarName v
+  checkCaseModeID "variable name" isVarName v
   checkCaseModePattern t
 checkCaseModePattern (LazyPattern _ t) = checkCaseModePattern t
 checkCaseModePattern (FunctionPattern _ _ _ ts) = mapM_ checkCaseModePattern ts
@@ -303,11 +303,26 @@ checkCaseModeFieldPattern (Field _ _ t) = checkCaseModePattern t
 checkCaseModeFieldExpr :: Field (Expression a) -> CMCM ()
 checkCaseModeFieldExpr (Field _ _ e) = checkCaseModeExpr e
 
-checkCaseModeID :: (CaseMode -> String -> Bool) -> Ident -> CMCM ()
-checkCaseModeID f i@(Ident _ name _) = do
+checkCaseModeVarName :: Ident -> CMCM ()
+checkCaseModeVarName = checkCaseModeID "variable name" isVarName
+
+checkCaseModeFuncName :: Ident -> CMCM ()
+checkCaseModeFuncName = checkCaseModeID "function name" isFuncName
+
+checkCaseModeConstrName :: Ident -> CMCM ()
+checkCaseModeConstrName = checkCaseModeID "constructor name" isConstrName
+
+checkCaseModeClassDeclName :: Ident -> CMCM ()
+checkCaseModeClassDeclName = checkCaseModeID "class declaration name" isClassDeclName
+
+checkCaseModeDataDeclName :: Ident -> CMCM ()
+checkCaseModeDataDeclName = checkCaseModeID "data declaration name" isDataDeclName
+
+checkCaseModeID :: String -> (CaseMode -> String -> Bool) -> Ident -> CMCM ()
+checkCaseModeID what f i@(Ident _ name _) = do
   c <- gets caseMode
 
-  unless (f c name) (report $ wrongCaseMode i c)
+  unless (f c name) (report $ wrongCaseMode what i c)
 
 isVarName :: CaseMode -> String -> Bool
 isVarName CaseModeProlog  (x:_) | isAlpha x = isUpper x
@@ -336,10 +351,10 @@ isDataDeclName CaseModeHaskell (x:_) | isAlpha x = isUpper x
 isDataDeclName CaseModeCurry   (x:_) | isAlpha x = isUpper x
 isDataDeclName _               _     = True
 
-wrongCaseMode :: Ident -> CaseMode -> Message
-wrongCaseMode i@(Ident _ name _ ) c = spanInfoMessage i $
-  text "Wrong case mode in symbol" <+> text (escName i) <+>
-  text "due to selected case mode" <+> text (escapeCaseMode c) <> comma <+>
+wrongCaseMode :: String -> Ident -> CaseMode -> Message
+wrongCaseMode what i@(Ident _ name _ ) c = spanInfoMessage i $
+  text "Symbol" <+> text (escName i) <+> text "is a" <+> text what <> comma <+>
+  text "but the selected case mode is" <+> text (escapeCaseMode c) <> comma <+>
   text "try renaming to" <+> text (caseSuggestion name) <+> text "instead"
 
 caseSuggestion :: String -> String
