@@ -325,6 +325,14 @@ warnInfos = map (uncurry mkFailTest)
       , "Pattern matches are non-exhaustive"
       ]
     )
+  , ("CaseModeC",
+      [ "Symbol `B' is a variable name, but the selected case mode is `curry`, try renaming to b instead"
+      , "Symbol `B' is a variable name, but the selected case mode is `curry`, try renaming to b instead"
+      , "Symbol `Xs' is a variable name, but the selected case mode is `curry`, try renaming to xs instead"
+      , "Symbol `c' is a data declaration name, but the selected case mode is `curry`, try renaming to C instead"
+      , "Symbol `f' is a constructor name, but the selected case mode is `curry`, try renaming to F instead"
+      ]
+    )
   , ("CheckSignature",
       [ "Top-level binding with no type signature: hw"
       , "Top-level binding with no type signature: f"
