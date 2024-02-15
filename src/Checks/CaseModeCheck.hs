@@ -303,7 +303,7 @@ checkCaseModeID :: (CaseMode -> String -> Bool) -> Ident -> CMCM ()
 checkCaseModeID f i@(Ident _ name _) = do
   c <- gets caseMode
 
-  unless (f c name) (report $ warnCaseMode i c)
+  unless (f c name) (report $ wrongCaseMode i c)
 
 isVarName :: CaseMode -> String -> Bool
 isVarName CaseModeProlog  (x:_) | isAlpha x = isUpper x
@@ -332,8 +332,8 @@ isDataDeclName CaseModeHaskell (x:_) | isAlpha x = isUpper x
 isDataDeclName CaseModeCurry   (x:_) | isAlpha x = isUpper x
 isDataDeclName _               _     = True
 
-warnCaseMode :: Ident -> CaseMode -> Message
-warnCaseMode i@(Ident _ name _ ) c = spanInfoMessage i $
+wrongCaseMode :: Ident -> CaseMode -> Message
+wrongCaseMode i@(Ident _ name _ ) c = spanInfoMessage i $
   text "Wrong case mode in symbol" <+> text (escName i) <+>
   text "due to selected case mode" <+> text (escapeCaseMode c) <> comma <+>
   text "try renaming to" <+> text (caseSuggestion name) <+> text "instead"
