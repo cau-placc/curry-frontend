@@ -541,6 +541,7 @@ showToken (Token Id_qualified       _) = "qualified"
 showToken (Token EOF                _) = ""
 showToken (Token PragmaHiding       _) = "{-# HIDING"
 showToken (Token PragmaLanguage     _) = "{-# LANGUAGE"
+showToken (Token PragmaLine         _) = "{-# LINE"
 showToken (Token PragmaOptions      a) = "{-# OPTIONS" ++ showAttr a
 showToken (Token PragmaMethod       _) = "{-# METHOD"
 showToken (Token PragmaModule       _) = "{-# MODULE"

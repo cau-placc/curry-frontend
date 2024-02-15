@@ -88,6 +88,7 @@ instance Symbol Token where
   dist _ (Token Id_hiding          _) = (0,  5)
   dist _ (Token KW_newtype         _) = (0,  6)
   dist _ (Token KW_external        _) = (0,  7)
+  dist _ (Token PragmaLine         _) = (0,  7)
   dist _ (Token Id_interface       _) = (0,  8)
   dist _ (Token Id_primitive       _) = (0,  8)
   dist _ (Token Id_qualified       _) = (0,  8)
@@ -219,6 +220,7 @@ data Category
 
   -- pragmas
   | PragmaLanguage -- {-# LANGUAGE
+  | PragmaLine     -- {-# LINE
   | PragmaOptions  -- {-# OPTIONS
   | PragmaHiding   -- {-# HIDING
   | PragmaMethod   -- {-# METHOD
@@ -355,6 +357,7 @@ instance Show Token where
   showsPrec _ (Token Id_primitive       _) = showsSpecialIdent "primitive"
   showsPrec _ (Token Id_qualified       _) = showsSpecialIdent "qualified"
   showsPrec _ (Token PragmaLanguage     _) = showString "{-# LANGUAGE"
+  showsPrec _ (Token PragmaLine         _) = showString "{-# LINE"
   showsPrec _ (Token PragmaOptions      a) = showString "{-# OPTIONS"
                                            . shows a
   showsPrec _ (Token PragmaHiding       _) = showString "{-# HIDING"
@@ -485,6 +488,7 @@ keywordsSpecialIds = Map.union keywords $ Map.fromList
 pragmas :: Map.Map String Category
 pragmas = Map.fromList
   [ ("language", PragmaLanguage)
+  , ("line"    , PragmaLine    )
   , ("options" , PragmaOptions )
   , ("hiding"  , PragmaHiding  )
   , ("method"  , PragmaMethod  )

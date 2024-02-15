@@ -140,6 +140,7 @@ showToken (Token SymMinus       _) = "SymMinus"
 showToken (Token SymStar        _) = "SymStar"
 -- pragmas
 showToken (Token PragmaLanguage _) = "PragmaLanguage"
+showToken (Token PragmaLine     _) = "PragmaLine"
 showToken (Token PragmaOptions  a) = "PragmaOptions" +++ showAttributes a
 showToken (Token PragmaHiding   _) = "PragmaHiding"
 showToken (Token PragmaMethod   _) = "PragmaMethod"
