@@ -108,9 +108,7 @@ checkDecl (TypeDecl _ tc vs ty) = do
 checkDecl (TypeSig _ fs qty) = do
   mapM_ checkFuncName fs
   checkQualTypeExpr qty
-checkDecl (FunctionDecl _ _ f eqs) = do
-  checkFuncName f
-  mapM_ checkEquation eqs
+checkDecl (FunctionDecl _ _ _ eqs) = mapM_ checkEquation eqs
 checkDecl (ExternalDecl _ vs) =
   mapM_ (checkFuncName . varIdent) vs
 checkDecl (PatternDecl _ t rhs) = do
