@@ -52,7 +52,7 @@ import Data.Char (isAlpha, isUpper, isLower, toUpper, toLower)
 import Data.List (sort)
 
 caseModeCheck :: CaseMode -> Module a -> ([Message], [Message])
-caseModeCheck cm (Module _ _ _ _ _ _ ds) = runOn state $ checkCaseMode ds
+caseModeCheck cm (Module _ _ _ _ _ _ ds) = runOn state $ checkDecls ds
   where
     state = CmcState
       { caseMode = cm
@@ -89,237 +89,237 @@ runOn s f = (sort $ warnings s', sort $ errors s')
 
 -- The following functions traverse the AST and search for (defining)
 -- identifiers and check if their names have the appropriate case mode.
-checkCaseMode :: [Decl a] -> CMCM ()
-checkCaseMode = mapM_ checkCaseModeDecl
+checkDecls :: [Decl a] -> CMCM ()
+checkDecls = mapM_ checkDecl
 
-checkCaseModeDecl :: Decl a -> CMCM ()
-checkCaseModeDecl (DataDecl _ tc vs cs _) = do
-  checkCaseModeDataDeclName tc
-  mapM_ checkCaseModeVarName vs
-  mapM_ checkCaseModeConstr cs
-checkCaseModeDecl (NewtypeDecl _ tc vs nc _) = do
-  checkCaseModeDataDeclName tc
-  mapM_ checkCaseModeVarName vs
-  checkCaseModeNewConstr nc
-checkCaseModeDecl (TypeDecl _ tc vs ty) = do
-  checkCaseModeDataDeclName tc
-  mapM_ checkCaseModeVarName vs
-  checkCaseModeTypeExpr ty
-checkCaseModeDecl (TypeSig _ fs qty) = do
-  mapM_ checkCaseModeFuncName fs
-  checkCaseModeQualTypeExpr qty
-checkCaseModeDecl (FunctionDecl _ _ f eqs) = do
-  checkCaseModeFuncName f
-  mapM_ checkCaseModeEquation eqs
-checkCaseModeDecl (ExternalDecl _ vs) =
-  mapM_ (checkCaseModeFuncName . varIdent) vs
-checkCaseModeDecl (PatternDecl _ t rhs) = do
-  checkCaseModePattern t
-  checkCaseModeRhs rhs
-checkCaseModeDecl (FreeDecl  _ vs) =
-  mapM_ (checkCaseModeVarName . varIdent) vs
-checkCaseModeDecl (DefaultDecl _ tys) = mapM_ checkCaseModeTypeExpr tys
-checkCaseModeDecl (ClassDecl _ _ cx cls tv ds) = do
-  checkCaseModeContext cx
-  checkCaseModeClassDeclName cls
-  checkCaseModeVarName tv
-  mapM_ checkCaseModeDecl ds
-checkCaseModeDecl (InstanceDecl _ _ cx _ inst ds) = do
-  checkCaseModeContext cx
-  checkCaseModeTypeExpr inst
-  mapM_ checkCaseModeDecl ds
-checkCaseModeDecl _ = ok
+checkDecl :: Decl a -> CMCM ()
+checkDecl (DataDecl _ tc vs cs _) = do
+  checkDataDeclName tc
+  mapM_ checkVarName vs
+  mapM_ checkConstr cs
+checkDecl (NewtypeDecl _ tc vs nc _) = do
+  checkDataDeclName tc
+  mapM_ checkVarName vs
+  checkNewConstr nc
+checkDecl (TypeDecl _ tc vs ty) = do
+  checkDataDeclName tc
+  mapM_ checkVarName vs
+  checkTypeExpr ty
+checkDecl (TypeSig _ fs qty) = do
+  mapM_ checkFuncName fs
+  checkQualTypeExpr qty
+checkDecl (FunctionDecl _ _ f eqs) = do
+  checkFuncName f
+  mapM_ checkEquation eqs
+checkDecl (ExternalDecl _ vs) =
+  mapM_ (checkFuncName . varIdent) vs
+checkDecl (PatternDecl _ t rhs) = do
+  checkPattern t
+  checkRhs rhs
+checkDecl (FreeDecl  _ vs) =
+  mapM_ (checkVarName . varIdent) vs
+checkDecl (DefaultDecl _ tys) = mapM_ checkTypeExpr tys
+checkDecl (ClassDecl _ _ cx cls tv ds) = do
+  checkContext cx
+  checkClassDeclName cls
+  checkVarName tv
+  mapM_ checkDecl ds
+checkDecl (InstanceDecl _ _ cx _ inst ds) = do
+  checkContext cx
+  checkTypeExpr inst
+  mapM_ checkDecl ds
+checkDecl _ = ok
 
-checkCaseModeConstr :: ConstrDecl -> CMCM ()
-checkCaseModeConstr (ConstrDecl _ c tys) = do
-  checkCaseModeConstrName c
-  mapM_ checkCaseModeTypeExpr tys
-checkCaseModeConstr (ConOpDecl  _ ty1 c ty2) = do
-  checkCaseModeTypeExpr ty1
-  checkCaseModeConstrName c
-  checkCaseModeTypeExpr ty2
-checkCaseModeConstr (RecordDecl _ c fs) = do
-  checkCaseModeConstrName c
-  mapM_ checkCaseModeFieldDecl fs
+checkConstr :: ConstrDecl -> CMCM ()
+checkConstr (ConstrDecl _ c tys) = do
+  checkConstrName c
+  mapM_ checkTypeExpr tys
+checkConstr (ConOpDecl  _ ty1 c ty2) = do
+  checkTypeExpr ty1
+  checkConstrName c
+  checkTypeExpr ty2
+checkConstr (RecordDecl _ c fs) = do
+  checkConstrName c
+  mapM_ checkFieldDecl fs
 
-checkCaseModeFieldDecl :: FieldDecl -> CMCM ()
-checkCaseModeFieldDecl (FieldDecl _ fs ty) = do
-  mapM_ checkCaseModeFuncName fs
-  checkCaseModeTypeExpr ty
+checkFieldDecl :: FieldDecl -> CMCM ()
+checkFieldDecl (FieldDecl _ fs ty) = do
+  mapM_ checkFuncName fs
+  checkTypeExpr ty
 
-checkCaseModeNewConstr :: NewConstrDecl -> CMCM ()
-checkCaseModeNewConstr (NewConstrDecl _ nc ty) = do
-  checkCaseModeConstrName nc
-  checkCaseModeTypeExpr ty
-checkCaseModeNewConstr (NewRecordDecl _ nc (f, ty)) = do
-  checkCaseModeConstrName nc
-  checkCaseModeFuncName f
-  checkCaseModeTypeExpr ty
+checkNewConstr :: NewConstrDecl -> CMCM ()
+checkNewConstr (NewConstrDecl _ nc ty) = do
+  checkConstrName nc
+  checkTypeExpr ty
+checkNewConstr (NewRecordDecl _ nc (f, ty)) = do
+  checkConstrName nc
+  checkFuncName f
+  checkTypeExpr ty
 
-checkCaseModeContext :: Context -> CMCM ()
-checkCaseModeContext = mapM_ checkCaseModeConstraint
+checkContext :: Context -> CMCM ()
+checkContext = mapM_ checkConstraint
 
-checkCaseModeConstraint :: Constraint -> CMCM ()
-checkCaseModeConstraint (Constraint _ _ ty) = checkCaseModeTypeExpr ty
+checkConstraint :: Constraint -> CMCM ()
+checkConstraint (Constraint _ _ ty) = checkTypeExpr ty
 
-checkCaseModeTypeExpr :: TypeExpr -> CMCM ()
-checkCaseModeTypeExpr (ApplyType _ ty1 ty2) = do
-  checkCaseModeTypeExpr ty1
-  checkCaseModeTypeExpr ty2
-checkCaseModeTypeExpr (VariableType _ tv) = checkCaseModeVarName tv
-checkCaseModeTypeExpr (TupleType _ tys) = mapM_ checkCaseModeTypeExpr tys
-checkCaseModeTypeExpr (ListType _ ty) = checkCaseModeTypeExpr ty
-checkCaseModeTypeExpr (ArrowType _ ty1 ty2) = do
-  checkCaseModeTypeExpr ty1
-  checkCaseModeTypeExpr ty2
-checkCaseModeTypeExpr (ParenType _ ty) = checkCaseModeTypeExpr ty
-checkCaseModeTypeExpr (ForallType _ tvs ty) = do
-  mapM_ checkCaseModeVarName tvs
-  checkCaseModeTypeExpr ty
-checkCaseModeTypeExpr _ = ok
+checkTypeExpr :: TypeExpr -> CMCM ()
+checkTypeExpr (ApplyType _ ty1 ty2) = do
+  checkTypeExpr ty1
+  checkTypeExpr ty2
+checkTypeExpr (VariableType _ tv) = checkVarName tv
+checkTypeExpr (TupleType _ tys) = mapM_ checkTypeExpr tys
+checkTypeExpr (ListType _ ty) = checkTypeExpr ty
+checkTypeExpr (ArrowType _ ty1 ty2) = do
+  checkTypeExpr ty1
+  checkTypeExpr ty2
+checkTypeExpr (ParenType _ ty) = checkTypeExpr ty
+checkTypeExpr (ForallType _ tvs ty) = do
+  mapM_ checkVarName tvs
+  checkTypeExpr ty
+checkTypeExpr _ = ok
 
-checkCaseModeQualTypeExpr :: QualTypeExpr -> CMCM ()
-checkCaseModeQualTypeExpr (QualTypeExpr _ cx ty) = do
-  checkCaseModeContext cx
-  checkCaseModeTypeExpr ty
+checkQualTypeExpr :: QualTypeExpr -> CMCM ()
+checkQualTypeExpr (QualTypeExpr _ cx ty) = do
+  checkContext cx
+  checkTypeExpr ty
 
-checkCaseModeEquation :: Equation a -> CMCM ()
-checkCaseModeEquation (Equation _ lhs rhs) = do
-  checkCaseModeLhs lhs
-  checkCaseModeRhs rhs
+checkEquation :: Equation a -> CMCM ()
+checkEquation (Equation _ lhs rhs) = do
+  checkLhs lhs
+  checkRhs rhs
 
-checkCaseModeLhs :: Lhs a -> CMCM ()
-checkCaseModeLhs (FunLhs _ f ts) = do
-  checkCaseModeFuncName f
-  mapM_ checkCaseModePattern ts
-checkCaseModeLhs (OpLhs _ t1 f t2) = do
-  checkCaseModePattern t1
-  checkCaseModeFuncName f
-  checkCaseModePattern t2
-checkCaseModeLhs (ApLhs _ lhs ts) = do
-  checkCaseModeLhs lhs
-  mapM_ checkCaseModePattern ts
+checkLhs :: Lhs a -> CMCM ()
+checkLhs (FunLhs _ f ts) = do
+  checkFuncName f
+  mapM_ checkPattern ts
+checkLhs (OpLhs _ t1 f t2) = do
+  checkPattern t1
+  checkFuncName f
+  checkPattern t2
+checkLhs (ApLhs _ lhs ts) = do
+  checkLhs lhs
+  mapM_ checkPattern ts
 
-checkCaseModeRhs :: Rhs a -> CMCM ()
-checkCaseModeRhs (SimpleRhs _ _ e ds) = do
-  checkCaseModeExpr e
-  mapM_ checkCaseModeDecl ds
-checkCaseModeRhs (GuardedRhs _ _ es ds) = do
-  mapM_ checkCaseModeCondExpr es
-  mapM_ checkCaseModeDecl ds
+checkRhs :: Rhs a -> CMCM ()
+checkRhs (SimpleRhs _ _ e ds) = do
+  checkExpr e
+  mapM_ checkDecl ds
+checkRhs (GuardedRhs _ _ es ds) = do
+  mapM_ checkCondExpr es
+  mapM_ checkDecl ds
 
-checkCaseModeCondExpr :: CondExpr a -> CMCM ()
-checkCaseModeCondExpr (CondExpr _ g e) = do
-  checkCaseModeExpr g
-  checkCaseModeExpr e
+checkCondExpr :: CondExpr a -> CMCM ()
+checkCondExpr (CondExpr _ g e) = do
+  checkExpr g
+  checkExpr e
 
-checkCaseModePattern :: Pattern a -> CMCM ()
-checkCaseModePattern (VariablePattern _ _ v) = checkCaseModeID "variable name" isVarName v
-checkCaseModePattern (ConstructorPattern _ _ _ ts) =
-  mapM_ checkCaseModePattern ts
-checkCaseModePattern (InfixPattern _ _ t1 _ t2) = do
-  checkCaseModePattern t1
-  checkCaseModePattern t2
-checkCaseModePattern (ParenPattern _ t) = checkCaseModePattern t
-checkCaseModePattern (RecordPattern _ _ _ fs) =
-  mapM_ checkCaseModeFieldPattern fs
-checkCaseModePattern (TuplePattern _ ts) = mapM_ checkCaseModePattern ts
-checkCaseModePattern (ListPattern _ _ ts) = mapM_ checkCaseModePattern ts
-checkCaseModePattern (AsPattern _ v t) = do
-  checkCaseModeID "variable name" isVarName v
-  checkCaseModePattern t
-checkCaseModePattern (LazyPattern _ t) = checkCaseModePattern t
-checkCaseModePattern (FunctionPattern _ _ _ ts) = mapM_ checkCaseModePattern ts
-checkCaseModePattern (InfixFuncPattern _ _ t1 _ t2) = do
-  checkCaseModePattern t1
-  checkCaseModePattern t2
-checkCaseModePattern _ = ok
+checkPattern :: Pattern a -> CMCM ()
+checkPattern (VariablePattern _ _ v) = checkID "variable name" isVarName v
+checkPattern (ConstructorPattern _ _ _ ts) =
+  mapM_ checkPattern ts
+checkPattern (InfixPattern _ _ t1 _ t2) = do
+  checkPattern t1
+  checkPattern t2
+checkPattern (ParenPattern _ t) = checkPattern t
+checkPattern (RecordPattern _ _ _ fs) =
+  mapM_ checkFieldPattern fs
+checkPattern (TuplePattern _ ts) = mapM_ checkPattern ts
+checkPattern (ListPattern _ _ ts) = mapM_ checkPattern ts
+checkPattern (AsPattern _ v t) = do
+  checkID "variable name" isVarName v
+  checkPattern t
+checkPattern (LazyPattern _ t) = checkPattern t
+checkPattern (FunctionPattern _ _ _ ts) = mapM_ checkPattern ts
+checkPattern (InfixFuncPattern _ _ t1 _ t2) = do
+  checkPattern t1
+  checkPattern t2
+checkPattern _ = ok
 
-checkCaseModeExpr :: Expression a -> CMCM ()
-checkCaseModeExpr (Paren _ e) = checkCaseModeExpr e
-checkCaseModeExpr (Typed _ e qty) = do
-  checkCaseModeExpr e
-  checkCaseModeQualTypeExpr qty
-checkCaseModeExpr (Record _ _ _ fs) = mapM_ checkCaseModeFieldExpr fs
-checkCaseModeExpr (RecordUpdate _ e fs) = do
-  checkCaseModeExpr e
-  mapM_ checkCaseModeFieldExpr fs
-checkCaseModeExpr (Tuple _ es) = mapM_ checkCaseModeExpr es
-checkCaseModeExpr (List _ _ es) = mapM_ checkCaseModeExpr es
-checkCaseModeExpr (ListCompr _ e stms)  = do
-  checkCaseModeExpr e
-  mapM_ checkCaseModeStatement stms
-checkCaseModeExpr (EnumFrom _ e) = checkCaseModeExpr e
-checkCaseModeExpr (EnumFromThen _ e1 e2) = do
-  checkCaseModeExpr e1
-  checkCaseModeExpr e2
-checkCaseModeExpr (EnumFromTo _ e1 e2) = do
-  checkCaseModeExpr e1
-  checkCaseModeExpr e2
-checkCaseModeExpr (EnumFromThenTo _ e1 e2 e3) = do
-  checkCaseModeExpr e1
-  checkCaseModeExpr e2
-  checkCaseModeExpr e3
-checkCaseModeExpr (UnaryMinus _ e) = checkCaseModeExpr e
-checkCaseModeExpr (Apply _ e1 e2) = do
-  checkCaseModeExpr e1
-  checkCaseModeExpr e2
-checkCaseModeExpr (InfixApply _ e1 _ e2) = do
-  checkCaseModeExpr e1
-  checkCaseModeExpr e2
-checkCaseModeExpr (LeftSection _ e _) = checkCaseModeExpr e
-checkCaseModeExpr (RightSection _ _ e) = checkCaseModeExpr e
-checkCaseModeExpr (Lambda _ ts e) = do
-  mapM_ checkCaseModePattern ts
-  checkCaseModeExpr e
-checkCaseModeExpr (Let _ _ ds e) = do
-  mapM_ checkCaseModeDecl ds
-  checkCaseModeExpr e
-checkCaseModeExpr (Do _ _ stms e) = do
-  mapM_ checkCaseModeStatement stms
-  checkCaseModeExpr e
-checkCaseModeExpr (IfThenElse _ e1 e2 e3) = do
-  checkCaseModeExpr e1
-  checkCaseModeExpr e2
-  checkCaseModeExpr e3
-checkCaseModeExpr (Case _ _ _ e as) = do
-  mapM_ checkCaseModeAlt as
-  checkCaseModeExpr e
-checkCaseModeExpr _ = ok
+checkExpr :: Expression a -> CMCM ()
+checkExpr (Paren _ e) = checkExpr e
+checkExpr (Typed _ e qty) = do
+  checkExpr e
+  checkQualTypeExpr qty
+checkExpr (Record _ _ _ fs) = mapM_ checkFieldExpr fs
+checkExpr (RecordUpdate _ e fs) = do
+  checkExpr e
+  mapM_ checkFieldExpr fs
+checkExpr (Tuple _ es) = mapM_ checkExpr es
+checkExpr (List _ _ es) = mapM_ checkExpr es
+checkExpr (ListCompr _ e stms)  = do
+  checkExpr e
+  mapM_ checkStatement stms
+checkExpr (EnumFrom _ e) = checkExpr e
+checkExpr (EnumFromThen _ e1 e2) = do
+  checkExpr e1
+  checkExpr e2
+checkExpr (EnumFromTo _ e1 e2) = do
+  checkExpr e1
+  checkExpr e2
+checkExpr (EnumFromThenTo _ e1 e2 e3) = do
+  checkExpr e1
+  checkExpr e2
+  checkExpr e3
+checkExpr (UnaryMinus _ e) = checkExpr e
+checkExpr (Apply _ e1 e2) = do
+  checkExpr e1
+  checkExpr e2
+checkExpr (InfixApply _ e1 _ e2) = do
+  checkExpr e1
+  checkExpr e2
+checkExpr (LeftSection _ e _) = checkExpr e
+checkExpr (RightSection _ _ e) = checkExpr e
+checkExpr (Lambda _ ts e) = do
+  mapM_ checkPattern ts
+  checkExpr e
+checkExpr (Let _ _ ds e) = do
+  mapM_ checkDecl ds
+  checkExpr e
+checkExpr (Do _ _ stms e) = do
+  mapM_ checkStatement stms
+  checkExpr e
+checkExpr (IfThenElse _ e1 e2 e3) = do
+  checkExpr e1
+  checkExpr e2
+  checkExpr e3
+checkExpr (Case _ _ _ e as) = do
+  mapM_ checkAlt as
+  checkExpr e
+checkExpr _ = ok
 
-checkCaseModeStatement :: Statement a -> CMCM ()
-checkCaseModeStatement (StmtExpr _    e) = checkCaseModeExpr e
-checkCaseModeStatement (StmtDecl _ _ ds) = mapM_ checkCaseModeDecl ds
-checkCaseModeStatement (StmtBind _  t e) = do
-  checkCaseModePattern t
-  checkCaseModeExpr e
+checkStatement :: Statement a -> CMCM ()
+checkStatement (StmtExpr _    e) = checkExpr e
+checkStatement (StmtDecl _ _ ds) = mapM_ checkDecl ds
+checkStatement (StmtBind _  t e) = do
+  checkPattern t
+  checkExpr e
 
-checkCaseModeAlt :: Alt a -> CMCM ()
-checkCaseModeAlt (Alt _ t rhs) = checkCaseModePattern t >> checkCaseModeRhs rhs
+checkAlt :: Alt a -> CMCM ()
+checkAlt (Alt _ t rhs) = checkPattern t >> checkRhs rhs
 
-checkCaseModeFieldPattern :: Field (Pattern a) -> CMCM ()
-checkCaseModeFieldPattern (Field _ _ t) = checkCaseModePattern t
+checkFieldPattern :: Field (Pattern a) -> CMCM ()
+checkFieldPattern (Field _ _ t) = checkPattern t
 
-checkCaseModeFieldExpr :: Field (Expression a) -> CMCM ()
-checkCaseModeFieldExpr (Field _ _ e) = checkCaseModeExpr e
+checkFieldExpr :: Field (Expression a) -> CMCM ()
+checkFieldExpr (Field _ _ e) = checkExpr e
 
-checkCaseModeVarName :: Ident -> CMCM ()
-checkCaseModeVarName = checkCaseModeID "variable name" isVarName
+checkVarName :: Ident -> CMCM ()
+checkVarName = checkID "variable name" isVarName
 
-checkCaseModeFuncName :: Ident -> CMCM ()
-checkCaseModeFuncName = checkCaseModeID "function name" isFuncName
+checkFuncName :: Ident -> CMCM ()
+checkFuncName = checkID "function name" isFuncName
 
-checkCaseModeConstrName :: Ident -> CMCM ()
-checkCaseModeConstrName = checkCaseModeID "constructor name" isConstrName
+checkConstrName :: Ident -> CMCM ()
+checkConstrName = checkID "constructor name" isConstrName
 
-checkCaseModeClassDeclName :: Ident -> CMCM ()
-checkCaseModeClassDeclName = checkCaseModeID "class declaration name" isClassDeclName
+checkClassDeclName :: Ident -> CMCM ()
+checkClassDeclName = checkID "class declaration name" isClassDeclName
 
-checkCaseModeDataDeclName :: Ident -> CMCM ()
-checkCaseModeDataDeclName = checkCaseModeID "data declaration name" isDataDeclName
+checkDataDeclName :: Ident -> CMCM ()
+checkDataDeclName = checkID "data declaration name" isDataDeclName
 
-checkCaseModeID :: String -> (CaseMode -> String -> Bool) -> Ident -> CMCM ()
-checkCaseModeID what f i@(Ident _ name _) = do
+checkID :: String -> (CaseMode -> String -> Bool) -> Ident -> CMCM ()
+checkID what f i@(Ident _ name _) = do
   c <- gets caseMode
 
   unless (f c name) (report $ wrongCaseMode what i c)
