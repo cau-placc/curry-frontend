@@ -248,8 +248,7 @@ checkModule :: Options -> CompEnv (CS.Module ())
 checkModule opts mdl = do
   _   <- dumpCS DumpParsed mdl
   exc <- extensionCheck  opts mdl >>= dumpCS DumpExtensionChecked
-  cmc <- caseModeCheck   opts exc >>= dumpCS DumpCaseModeChecked
-  tsc <- typeSyntaxCheck opts cmc >>= dumpCS DumpTypeSyntaxChecked
+  tsc <- typeSyntaxCheck opts exc >>= dumpCS DumpTypeSyntaxChecked
   kc  <- kindCheck       opts tsc >>= dumpCS DumpKindChecked
   sc  <- syntaxCheck     opts kc  >>= dumpCS DumpSyntaxChecked
   pc  <- precCheck       opts sc  >>= dumpCS DumpPrecChecked
@@ -257,7 +256,8 @@ checkModule opts mdl = do
   inc <- instanceCheck   opts dc  >>= dumpCS DumpInstanceChecked
   tc  <- typeCheck       opts inc >>= dumpCS DumpTypeChecked
   ec  <- exportCheck     opts tc  >>= dumpCS DumpExportChecked
-  return ec
+  cmc <- caseModeCheck   opts ec  >>= dumpCS DumpCaseModeChecked
+  return cmc
   where
   dumpCS :: (MonadIO m, Show a) => DumpLevel -> CompEnv (CS.Module a)
          -> m (CompEnv (CS.Module a))
