@@ -259,6 +259,7 @@ passInfos = map mkPassTest
   , "ACVisibility"
   , "AnonymVar"
   , "CaseComplete"
+  , "CaseModeTypeVarDisambiguation"
   , "DataPass"
   , "DefaultPrecedence"
   , "Dequeue"
