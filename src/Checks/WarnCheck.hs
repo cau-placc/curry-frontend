@@ -1269,7 +1269,7 @@ checkCaseModeDecl (PatternDecl _ t rhs) = do
   checkCaseModeRhs rhs
 checkCaseModeDecl (FreeDecl  _ vs) =
   mapM_ (checkCaseModeID isVarName . varIdent) vs
-checkCaseModeDecl (DefaultDecl _ tys) = mapM_ checkTypeExpr tys
+checkCaseModeDecl (DefaultDecl _ tys) = mapM_ checkCaseModeTypeExpr tys
 checkCaseModeDecl (ClassDecl _ _ cx cls tv ds) = do
   checkCaseModeContext cx
   checkCaseModeID isClassDeclName cls
