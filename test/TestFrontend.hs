@@ -146,7 +146,22 @@ mkFailTest name errorMsgs = (name, [], [], Nothing, errorMsgs)
 -- test code and the expected error message(s) to the following list
 failInfos :: [TestInfo]
 failInfos = map (uncurry mkFailTest)
-  [ ("CyclicImports/A", ["Cyclic import dependency"])
+  [ ("CaseModeH",
+      [ "Symbol `B' is a variable name, but the selected case mode is `haskell`, try renaming to b instead"
+      , "Symbol `B' is a variable name, but the selected case mode is `haskell`, try renaming to b instead"
+      , "Symbol `Xs' is a variable name, but the selected case mode is `haskell`, try renaming to xs instead"
+      , "Symbol `c' is a data declaration name, but the selected case mode is `haskell`, try renaming to C instead"
+      , "Symbol `f' is a constructor name, but the selected case mode is `haskell`, try renaming to F instead"
+      ]
+    )
+  , ("CaseModeP",
+      [ "Symbol `a' is a variable name, but the selected case mode is `prolog`, try renaming to A instead"
+      , "Symbol `a' is a variable name, but the selected case mode is `prolog`, try renaming to A instead"
+      , "Symbol `mf' is a variable name, but the selected case mode is `prolog`, try renaming to Mf instead"
+      , "Symbol `E' is a constructor name, but the selected case mode is `prolog`, try renaming to e instead"
+      ]
+    )
+  , ("CyclicImports/A", ["Cyclic import dependency"])
   , ("CyclicImports/B", ["Cyclic import dependency"])
   , ("DataFail",
       [ "Missing instance for Prelude.Data Test1"
@@ -244,6 +259,7 @@ passInfos = map mkPassTest
   , "ACVisibility"
   , "AnonymVar"
   , "CaseComplete"
+  , "CaseModeTypeVarDisambiguation"
   , "DataPass"
   , "DefaultPrecedence"
   , "Dequeue"
@@ -310,19 +326,12 @@ warnInfos = map (uncurry mkFailTest)
       , "Pattern matches are non-exhaustive"
       ]
     )
-  , ("CaseModeH",
-      [ "Wrong case mode in symbol `B' due to selected case mode `haskell`, try renaming to b instead"
-      , "Wrong case mode in symbol `B' due to selected case mode `haskell`, try renaming to b instead"
-      , "Wrong case mode in symbol `Xs' due to selected case mode `haskell`, try renaming to xs instead"
-      , "Wrong case mode in symbol `c' due to selected case mode `haskell`, try renaming to C instead"
-      , "Wrong case mode in symbol `f' due to selected case mode `haskell`, try renaming to F instead"
-      ]
-    )
-  , ("CaseModeP",
-      [ "Wrong case mode in symbol `a' due to selected case mode `prolog`, try renaming to A instead"
-      , "Wrong case mode in symbol `a' due to selected case mode `prolog`, try renaming to A instead"
-      , "Wrong case mode in symbol `mf' due to selected case mode `prolog`, try renaming to Mf instead"
-      , "Wrong case mode in symbol `E' due to selected case mode `prolog`, try renaming to e instead"
+  , ("CaseModeC",
+      [ "Symbol `B' is a variable name, but the selected case mode is `curry`, try renaming to b instead"
+      , "Symbol `B' is a variable name, but the selected case mode is `curry`, try renaming to b instead"
+      , "Symbol `Xs' is a variable name, but the selected case mode is `curry`, try renaming to xs instead"
+      , "Symbol `c' is a data declaration name, but the selected case mode is `curry`, try renaming to C instead"
+      , "Symbol `f' is a constructor name, but the selected case mode is `curry`, try renaming to F instead"
       ]
     )
   , ("CheckSignature",

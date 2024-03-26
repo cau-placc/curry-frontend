@@ -80,7 +80,8 @@ data PrepOpts = PrepOpts
   } deriving Show
 
 data CaseMode
-  = CaseModeFree
+  = CaseModeCurry
+  | CaseModeFree
   | CaseModeHaskell
   | CaseModeProlog
   | CaseModeGoedel
@@ -126,7 +127,7 @@ defaultOptions = Options
   , optTargetTypes   = []
   , optExtensions    = kielExtensions
   , optDebugOpts     = defaultDebugOpts
-  , optCaseMode      = CaseModeFree
+  , optCaseMode      = CaseModeCurry
   , optCppOpts       = defaultCppOpts
   , optOptimizations = defaultOptimizationOpts
   }
@@ -220,7 +221,6 @@ data WarnFlag
   | WarnMissingSignatures    -- ^ Warn for missing type signatures
   | WarnMissingMethods       -- ^ Warn for missing method implementations
   | WarnOrphanInstances      -- ^ Warn for orphan instances
-  | WarnIrregularCaseMode    -- ^ Warn for irregular case mode
   | WarnRedundantContext     -- ^ Warn for redundant context in type signatures
     deriving (Eq, Bounded, Enum, Show)
 
@@ -230,7 +230,7 @@ stdWarnFlags =
   [ WarnMultipleImports   , WarnDisjoinedRules   --, WarnUnusedGlobalBindings
   , WarnUnusedBindings    , WarnNameShadowing    , WarnOverlapping
   , WarnIncompletePatterns, WarnMissingSignatures, WarnMissingMethods
-  , WarnIrregularCaseMode , WarnRedundantContext
+  , WarnRedundantContext
   ]
 
 -- |Description and flag of warnings flags
@@ -258,8 +258,6 @@ warnFlags =
     , "missing method implementations" )
   , ( WarnOrphanInstances     , "orphan-instances"
     , "orphan instances"               )
-  , ( WarnIrregularCaseMode   , "irregular-case-mode"
-    , "irregular case mode")
   , ( WarnRedundantContext    , "redundant-context"
     , "redundant context")
   ]
@@ -269,6 +267,7 @@ data DumpLevel
   = DumpCondCompiled      -- ^ dump source code after conditional compiling
   | DumpParsed            -- ^ dump source code after parsing
   | DumpExtensionChecked  -- ^ dump source code after extension checking
+  | DumpCaseModeChecked   -- ^ dump source code after case mode checking
   | DumpTypeSyntaxChecked -- ^ dump source code after type syntax checking
   | DumpKindChecked       -- ^ dump source code after kind checking
   | DumpSyntaxChecked     -- ^ dump source code after syntax checking
@@ -295,6 +294,7 @@ dumpLevel :: [(DumpLevel, String, String)]
 dumpLevel = [ (DumpCondCompiled     , "dump-cond" , "conditional compiling"           )
             , (DumpParsed           , "dump-parse", "parsing"                         )
             , (DumpExtensionChecked , "dump-exc"  , "extension checking"              )
+            , (DumpCaseModeChecked  , "dump-cmc"  , "case mode checking"              )
             , (DumpTypeSyntaxChecked, "dump-tsc"  , "type syntax checking"            )
             , (DumpKindChecked      , "dump-kc"   , "kind checking"                   )
             , (DumpSyntaxChecked    , "dump-sc"   , "syntax checking"                 )
@@ -552,7 +552,9 @@ extDescriptions = map toDescr extensions
 
 caseModeDescriptions :: OptErrTable Options
 caseModeDescriptions
-  = [ ( "free"   , "use free case mode"
+  = [ ( "curry"  , "use default curry case mode"
+        , \ opts -> opts { optCaseMode = CaseModeCurry   } )
+    , ( "free"   , "use free case mode"
         , \ opts -> opts { optCaseMode = CaseModeFree    } )
     , ( "haskell", "use haskell style case mode"
         , \ opts -> opts { optCaseMode = CaseModeHaskell } )

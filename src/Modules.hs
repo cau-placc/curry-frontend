@@ -256,7 +256,8 @@ checkModule opts mdl = do
   inc <- instanceCheck   opts dc  >>= dumpCS DumpInstanceChecked
   tc  <- typeCheck       opts inc >>= dumpCS DumpTypeChecked
   ec  <- exportCheck     opts tc  >>= dumpCS DumpExportChecked
-  return ec
+  cmc <- caseModeCheck   opts ec  >>= dumpCS DumpCaseModeChecked
+  return cmc
   where
   dumpCS :: (MonadIO m, Show a) => DumpLevel -> CompEnv (CS.Module a)
          -> m (CompEnv (CS.Module a))

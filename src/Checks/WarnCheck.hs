@@ -33,8 +33,6 @@ import           Data.Maybe
   (catMaybes, fromMaybe, listToMaybe, isJust)
 import           Data.List
   ((\\), intersect, intersectBy, nub, sort, unionBy)
-import           Data.Char
-  (isLower, isUpper, toLower, toUpper, isAlpha)
 import qualified Data.Set.Extra as Set
 import           Data.Tuple.Extra
   (snd3)
@@ -70,18 +68,16 @@ import CompilerOpts
 --   - idle case alternatives
 --   - overlapping case alternatives
 --   - non-adjacent function rules
---   - wrong case mode
 --   - redundant context
-warnCheck :: WarnOpts -> CaseMode -> AliasEnv -> ValueEnv -> TCEnv -> ClassEnv
+warnCheck :: WarnOpts -> AliasEnv -> ValueEnv -> TCEnv -> ClassEnv
           -> Module a -> [Message]
-warnCheck wOpts cOpts aEnv valEnv tcEnv clsEnv mdl
-  = runOn (initWcState mid aEnv valEnv tcEnv clsEnv (wnWarnFlags wOpts) cOpts) $ do
+warnCheck wOpts aEnv valEnv tcEnv clsEnv mdl
+  = runOn (initWcState mid aEnv valEnv tcEnv clsEnv (wnWarnFlags wOpts)) $ do
       checkImports   is
       checkDeclGroup ds
       checkExports   es
       checkMissingTypeSignatures ds
       checkModuleAlias is
-      checkCaseMode  ds
       checkRedContext ds
   where Module _ _ _ mid es is ds = fmap (const ()) mdl
 
@@ -96,7 +92,6 @@ data WcState = WcState
   , tyConsEnv   :: TCEnv
   , classEnv    :: ClassEnv
   , warnFlags   :: [WarnFlag]
-  , caseMode    :: CaseMode
   , warnings    :: [Message]
   }
 
@@ -106,8 +101,8 @@ data WcState = WcState
 type WCM = State WcState
 
 initWcState :: ModuleIdent -> AliasEnv -> ValueEnv -> TCEnv -> ClassEnv
-            -> [WarnFlag] -> CaseMode -> WcState
-initWcState mid ae ve te ce wf cm = WcState mid emptyEnv ae ve te ce wf cm []
+            -> [WarnFlag] -> WcState
+initWcState mid ae ve te ce wf = WcState mid emptyEnv ae ve te ce wf []
 
 getModuleIdent :: WCM ModuleIdent
 getModuleIdent = gets moduleId
@@ -1626,24 +1621,6 @@ csep :: [Doc] -> Doc
 csep []     = empty
 csep [x]    = x
 csep (x:xs) = x <> comma <+> csep xs
-
-warnCaseMode :: Ident -> CaseMode -> Message
-warnCaseMode i@(Ident _ name _ ) c = spanInfoMessage i $
-  text "Wrong case mode in symbol" <+> text (escName i) <+>
-  text "due to selected case mode" <+> text (escapeCaseMode c) <> comma <+>
-  text "try renaming to" <+> text (caseSuggestion name) <+> text "instead"
-
-caseSuggestion :: String -> String
-caseSuggestion (x:xs) | isLower x = toUpper x : xs
-                      | isUpper x = toLower x : xs
-caseSuggestion _      = internalError
- "Checks.WarnCheck.caseSuggestion: Identifier starts with illegal Symbol"
-
-escapeCaseMode :: CaseMode -> String
-escapeCaseMode CaseModeFree    = "`free`"
-escapeCaseMode CaseModeHaskell = "`haskell`"
-escapeCaseMode CaseModeProlog  = "`prolog`"
-escapeCaseMode CaseModeGoedel  = "`goedel`"
 
 warnUnrefTypeVar :: Ident -> Message
 warnUnrefTypeVar v = spanInfoMessage v $ hsep $ map text

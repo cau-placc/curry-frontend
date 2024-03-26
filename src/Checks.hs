@@ -14,6 +14,7 @@
 -}
 module Checks where
 
+import qualified Checks.CaseModeCheck     as CMC (caseModeCheck)
 import qualified Checks.InstanceCheck     as INC (instanceCheck)
 import qualified Checks.InterfaceCheck    as IC  (interfaceCheck)
 import qualified Checks.ImportSyntaxCheck as ISC (importCheck)
@@ -37,6 +38,12 @@ import CompilerEnv
 import CompilerOpts
 
 type Check m a = Options -> CompEnv a -> CYT m (CompEnv a)
+
+caseModeCheck :: Monad m => Check m (Module a)
+caseModeCheck opts (env, mdl) = warnMessages warns >> result
+  where (warns, errs) = CMC.caseModeCheck (optCaseMode opts) mdl
+        result | null errs = ok (env, mdl)
+               | otherwise = failMessages errs
 
 interfaceCheck :: Monad m => Check m Interface
 interfaceCheck _ (env, intf)
@@ -158,5 +165,5 @@ expandExports _ (env, Module spi li ps m es is ds)
 
 -- |Check for warnings.
 warnCheck :: Options -> CompilerEnv -> Module a -> [Message]
-warnCheck opts env mdl = WC.warnCheck (optWarnOpts opts) (optCaseMode opts)
+warnCheck opts env mdl = WC.warnCheck (optWarnOpts opts)
   (aliasEnv env) (valueEnv env) (tyConsEnv env) (classEnv env) mdl
