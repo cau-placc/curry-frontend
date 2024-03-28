@@ -86,7 +86,7 @@ warnMessages msgs = tell msgs
 -- |Warnings or failures, depending on whether -Werror is set.
 warnOrFailMessages :: Monad m => WarnOpts -> [Message] -> CYT m ()
 warnOrFailMessages opts msgs | null msgs          = return ()
-                             | wnWarnAsError opts = failMessages msgs
+                             | wnWarnAsError opts = failMessages (msgs ++ [message $ text "Failed due to -Werror"])
                              | otherwise          = warnMessages msgs
 
 -- |Execute a monadic action, but ignore any warnings it issues
