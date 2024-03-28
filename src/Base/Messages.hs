@@ -65,10 +65,10 @@ abortWithMessages msgs = printMessages ppError msgs >> exitFailure
 --  if the -Werror command-line option is set.
 --
 --  Note that module-level checks are encouraged to emit warnings via
---  `warnOrFailMessages`, which handles -Werror at module-level and would cause
---  warnings to show up as errors already. The motivation for checking -Werror
---  again is to provide a fallback for warnings emitted without regard to
---  WarnOpts, e.g. from the lexer.
+--  `warnOrFailMessages`, which handles -Werror at the emission site. These
+--  warnings may thus already show up as errors once they reach this function.
+--  The motivation for checking -Werror again in this function is to provide a
+--  fallback for warnings emitted in non-options-aware contexts, e.g. the lexer.
 warnOrAbort :: WarnOpts -> [Message] -> IO ()
 warnOrAbort opts msgs = when (wnWarn opts && not (null msgs)) $ do
   if wnWarnAsError opts
