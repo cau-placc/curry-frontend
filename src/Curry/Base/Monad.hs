@@ -20,11 +20,6 @@ module Curry.Base.Monad
 import Control.Monad.Identity
 import Control.Monad.Trans.Except (ExceptT, mapExceptT, runExceptT, throwE)
 import Control.Monad.Writer
-    ( MonadTrans(lift),
-      WriterT(runWriterT),
-      censor,
-      mapWriterT,
-      MonadWriter(tell) )
 
 import Curry.Base.Message  (Message, spanMessage, message)
 import Curry.Base.Span (Span)
