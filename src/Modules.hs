@@ -119,7 +119,7 @@ loadAndCheckModule :: Options -> ModuleIdent -> FilePath
                    -> CYIO (CompEnv (CS.Module PredType))
 loadAndCheckModule opts m fn = do
   ce <- loadModule opts m fn >>= checkModule opts
-  warnMessages $ uncurry (warnCheck opts) ce
+  warnOrFailMessages (optWarnOpts opts) $ uncurry (warnCheck opts) ce
   return ce
 
 -- ---------------------------------------------------------------------------
