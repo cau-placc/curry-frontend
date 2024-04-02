@@ -40,7 +40,7 @@ import CompilerOpts
 type Check m a = Options -> CompEnv a -> CYT m (CompEnv a)
 
 caseModeCheck :: Monad m => Check m (Module a)
-caseModeCheck opts (env, mdl) = warnMessages warns >> result
+caseModeCheck opts (env, mdl) = warnOrFailMessages (optWarnOpts opts) warns >> result
   where (warns, errs) = CMC.caseModeCheck (optCaseMode opts) mdl
         result | null errs = ok (env, mdl)
                | otherwise = failMessages errs

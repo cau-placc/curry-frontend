@@ -205,6 +205,10 @@ failInfos = map (uncurry mkFailTest)
     )
   , ("MissingLabelInUpdate",
       ["Undefined record label `l1'"] )
+  , ("ModuleLevelWerror",
+      [ "Failed due to -Werror"
+      , "Top-level binding with no type signature"
+      ])
   , ("MultipleArities", ["Equations for `test' have different arities"])
   , ("MultipleInstances", ["Multiple instances for the same class and type"])
   , ("MultipleDefinitions",
