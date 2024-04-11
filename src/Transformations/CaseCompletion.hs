@@ -52,7 +52,7 @@ import Env.TypeConstructor
 import Env.Interface                        (InterfaceEnv, lookupInterface)
 
 import Transformations.CurryToIL            (transType)
-import Transformations.Dictionary           (qImplMethodId, qDictTypeId, qInstFunId)
+import Transformations.Dictionary           (qImplMethodId)
 
 import IL
 
@@ -128,15 +128,19 @@ ccBinding (Binding v e) = Binding v <$> ccExpr e
 -- Functions for completing case alternatives
 -- ---------------------------------------------------------------------------
 ccCase :: Eval -> Expression -> [Alt] -> CCM Expression
--- flexible cases are not completed, but literal string pats are transformed.
+-- flexible cases are not completed
 ccCase Flex  e alts     = return $ Case Flex e alts
 ccCase Rigid _ []       = internalError $ "CaseCompletion.ccCase: "
                                        ++ "empty alternative list"
 ccCase Rigid e as@(Alt p _:_) = case p of
   VariablePattern    _ _   -> completeVarAlts        e as
   _ | any isLitPat as -> completeLitAlts Rigid e as
-    | otherwise       -> completeConsAlts Rigid e as
+    | otherwise       -> completeConsAlts Rigid e (map emptyStringPatToListPat as)
   where
+    emptyStringPatToListPat (Alt (LiteralPattern _ (String "")) e')
+      = Alt (ConstructorPattern stringType' qNilId []) e'
+    emptyStringPatToListPat a = a
+    isLitPat (Alt (LiteralPattern _ (String "")) _) = False
     isLitPat (Alt (LiteralPattern _ _) _) = True
     isLitPat _                            = False
 
@@ -356,14 +360,8 @@ failedExpr ty = Function ty (qualifyWith preludeMIdent (mkIdent "failed")) 0
 -- Arity 0 is used for the char/int/float (===) implementations,
 -- because they are defined as (===) = (==)
 eqExpr :: CS.Type -> IL.Type -> Expression -> Expression -> Expression
-eqExpr ty ty' e1 | IL.TypeConstructor _ [_] <- ty'
-  = Apply (Apply (Apply (Function eqListTy eqList 3)
-                    (Function dataCharDictType dataCharDict 1)) e1)
-  where eqList = qImplMethodId preludeMIdent qDataId ty $ mkIdent "==="
-        eqListTy = TypeArrow (IL.TypeConstructor (qDictTypeId qDataId) [ty'])
-                     (TypeArrow ty' (TypeArrow ty' boolType'))
-        dataCharDict = qInstFunId preludeMIdent qDataId charType
-        dataCharDictType = TypeArrow unitType' (IL.TypeConstructor (qDictTypeId qDataId) [charType'])
+eqExpr _ ty' e1 | IL.TypeConstructor _ [_] <- ty'
+  = Apply (Apply (Function (TypeArrow ty' (TypeArrow ty' boolType')) qEqStringId 2) e1)
 eqExpr ty ty' e1 =
     Apply (Apply (Function eqTy eq 0) e1)
   where eq   = qImplMethodId preludeMIdent qDataId ty $ mkIdent "==="
@@ -381,8 +379,8 @@ boolType' = IL.TypeConstructor qBoolId []
 charType' :: Type
 charType' = IL.TypeConstructor qCharId []
 
-unitType' :: Type
-unitType' = IL.TypeConstructor qUnitId []
+stringType' :: Type
+stringType' = IL.TypeConstructor qListId [charType']
 
 -- ---------------------------------------------------------------------------
 -- The following functions compute the missing constructors for generating
