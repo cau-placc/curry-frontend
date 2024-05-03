@@ -12,6 +12,7 @@
     Stability   :  experimental
     Portability :  portable
 -}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Curry.Syntax.Lexer
   ( -- * Data types for tokens
     Token (..), Category (..), Attributes (..)
@@ -558,12 +559,35 @@ lexPragma noPragma suc fail sp0 str = pragma (incrSpan sp0 3) (drop 3 str)
     | isSpace c = pragma (nextSpan sp) s
     | isAlpha c = case Map.lookup (map toLower prag) pragmas of
         Nothing            -> skip
+        Just PragmaLine    -> lexLinePragma sp0 suc fail sp1 rest
         Just PragmaOptions -> lexOptionsPragma sp0 suc fail sp1 rest
         Just t             -> suc sp0 (tok t)               sp1 rest
     | otherwise = skip
     where
     (prag, rest) = span isAlphaNum cs
     sp1          = incrSpan sp (length prag)
+
+-- Line pragmas are special in the sense that they are handled (and consumed) at
+-- the lexer-level. They only modify the current span and are effectively
+-- invisible to higher levels such as the parser, since the happy path always
+-- ends up invoking `noPragma` instead of 'returning' it as a token.
+
+lexLinePragma :: forall a. Span -> Lexer Token a
+lexLinePragma sp0 suc fail = lexArgTokens contUpdateSpan fail
+  where
+  lexArgTokens :: Lexer [Token] a
+  lexArgTokens sucTokens = lexer cont
+    where cont sp t@(Token c _)
+            | c == PragmaEnd                = sucTokens sp [t]
+            | c == StringTok || c == IntTok = lexArgTokens (\sp' ts -> sucTokens sp' (t:ts)) fail
+            | otherwise                     = fail sp "Expected string, integer or #-} in line pragma"
+
+  contUpdateSpan :: Span -> [Token] -> P a
+  contUpdateSpan _ ts = case ts of
+    [Token IntTok (IntAttributes l _), Token StringTok (StringAttributes fp _), t]
+      -> suc sp' t
+        where sp' = pos2Span $ Position fp (fromIntegral l) 0
+    _ -> fail sp0 "Line pragma must be of the form {-# LINE <line number> \"<file name>\" #-}"
 
 lexOptionsPragma :: Span -> Lexer Token a
 lexOptionsPragma sp0 _   fail sp [] = fail sp0 "Unterminated Options pragma" sp []
