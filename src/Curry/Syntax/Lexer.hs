@@ -569,8 +569,7 @@ lexPragma noPragma suc fail sp0 str = pragma (incrSpan sp0 3) (drop 3 str)
 
 -- Line pragmas are special in the sense that they are handled (and consumed) at
 -- the lexer-level. They only modify the current span and are effectively
--- invisible to higher levels such as the parser, since the happy path always
--- ends up invoking `noPragma` instead of 'returning' it as a token.
+-- invisible to higher levels such as the parser.
 
 lexLinePragma :: forall a. Span -> Lexer Token a
 lexLinePragma sp0 suc fail = lexArgTokens contUpdateSpan fail
@@ -578,14 +577,14 @@ lexLinePragma sp0 suc fail = lexArgTokens contUpdateSpan fail
   lexArgTokens :: Lexer [Token] a
   lexArgTokens sucTokens = lexer cont
     where cont sp t@(Token c _)
-            | c == PragmaEnd                = sucTokens sp [t]
+            | c == PragmaEnd                = sucTokens sp []
             | c == StringTok || c == IntTok = lexArgTokens (\sp' ts -> sucTokens sp' (t:ts)) fail
             | otherwise                     = fail sp "Expected string, integer or #-} in line pragma"
 
   contUpdateSpan :: Span -> [Token] -> P a
   contUpdateSpan _ ts = case ts of
-    [Token IntTok (IntAttributes l _), Token StringTok (StringAttributes fp _), t]
-      -> suc sp' t
+    [Token IntTok (IntAttributes l _), Token StringTok (StringAttributes fp _)]
+      -> \_ -> lexer suc fail sp' -- continue lexing past the line pragma
         where sp' = pos2Span $ Position fp (fromIntegral l) 0
     _ -> fail sp0 "Line pragma must be of the form {-# LINE <line number> \"<file name>\" #-}"
 
