@@ -28,7 +28,7 @@ module Curry.Syntax.Type
   , ImportDecl (..), ImportSpec (..), Import (..), Qualified
     -- * Interface
   , Interface (..), IImportDecl (..), Arity, IDecl (..), KindExpr (..)
-  , IMethodDecl (..), IMethodImpl
+  , IDeclPragma (..), IMethodDecl (..), IMethodImpl
     -- * Declarations
   , Decl (..), Precedence, Infix (..), ConstrDecl (..), NewConstrDecl (..)
   , FieldDecl (..)
@@ -125,15 +125,20 @@ type Arity = Int
 
 -- |Interface declaration
 data IDecl
-  = IInfixDecl      Position Infix Precedence QualIdent
-  | HidingDataDecl  Position QualIdent (Maybe KindExpr) [Ident]
-  | IDataDecl       Position QualIdent (Maybe KindExpr) [Ident] [ConstrDecl]  [Ident]
-  | INewtypeDecl    Position QualIdent (Maybe KindExpr) [Ident] NewConstrDecl [Ident]
-  | ITypeDecl       Position QualIdent (Maybe KindExpr) [Ident] TypeExpr
-  | IFunctionDecl   Position QualIdent (Maybe Ident) Arity QualTypeExpr
-  | HidingClassDecl Position Context QualIdent (Maybe KindExpr) Ident
-  | IClassDecl      Position Context QualIdent (Maybe KindExpr) Ident [IMethodDecl] [Ident]
-  | IInstanceDecl   Position Context QualIdent InstanceType [IMethodImpl] (Maybe ModuleIdent)
+  = IInfixDecl      [IDeclPragma] Position Infix Precedence QualIdent
+  | HidingDataDecl  [IDeclPragma] Position QualIdent (Maybe KindExpr) [Ident]
+  | IDataDecl       [IDeclPragma] Position QualIdent (Maybe KindExpr) [Ident] [ConstrDecl]  [Ident]
+  | INewtypeDecl    [IDeclPragma] Position QualIdent (Maybe KindExpr) [Ident] NewConstrDecl [Ident]
+  | ITypeDecl       [IDeclPragma] Position QualIdent (Maybe KindExpr) [Ident] TypeExpr
+  | IFunctionDecl   [IDeclPragma] Position QualIdent (Maybe Ident) Arity QualTypeExpr
+  | HidingClassDecl [IDeclPragma] Position Context QualIdent (Maybe KindExpr) Ident
+  | IClassDecl      [IDeclPragma] Position Context QualIdent (Maybe KindExpr) Ident [IMethodDecl] [Ident]
+  | IInstanceDecl   [IDeclPragma] Position Context QualIdent InstanceType [IMethodImpl] (Maybe ModuleIdent)
+    deriving (Eq, Read, Show, Generic, Binary)
+
+-- |Interface declaration pragma.
+data IDeclPragma
+  = OriginPragma SpanInfo SpanInfo -- ^ origin pragma
     deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Class methods

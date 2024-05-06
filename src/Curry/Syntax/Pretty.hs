@@ -24,7 +24,10 @@ module Curry.Syntax.Pretty
 import Prelude hiding ((<>))
 
 import Curry.Base.Ident
+import Curry.Base.Position (Position (..))
 import Curry.Base.Pretty
+import Curry.Base.Span (Span (..))
+import Curry.Base.SpanInfo (SpanInfo (..))
 
 import Curry.Syntax.Type
 import Curry.Syntax.Utils (opName)
@@ -205,31 +208,41 @@ instance Pretty IImportDecl where
   pPrint (IImportDecl _ m) = text "import" <+> ppMIdent m
 
 instance Pretty IDecl where
-  pPrint (IInfixDecl   _ fix p op) = ppPrec fix (Just p) <+> ppQInfixOp op
-  pPrint (HidingDataDecl _ tc k tvs) =
+  pPrint (IInfixDecl ps _ fix p op) =
+    vcat (map pPrint ps) $$
+    ppPrec fix (Just p) <+> ppQInfixOp op
+  pPrint (HidingDataDecl ps _ tc k tvs) =
+    vcat (map pPrint ps) $$
     text "hiding" <+> ppITypeDeclLhs "data" tc k tvs
-  pPrint (IDataDecl   _ tc k tvs cs hs) =
+  pPrint (IDataDecl ps _ tc k tvs cs hs) =
+    vcat (map pPrint ps) $$
     sep (ppITypeDeclLhs "data" tc k tvs :
       map indent (zipWith (<+>) (equals : repeat vbar) (map pPrint cs)) ++
       [indent (ppHiding hs)])
-  pPrint (INewtypeDecl _ tc k tvs nc hs) =
+  pPrint (INewtypeDecl ps _ tc k tvs nc hs) =
+    vcat (map pPrint ps) $$
     sep [ ppITypeDeclLhs "newtype" tc k tvs <+> equals
         , indent (pPrint nc)
         , indent (ppHiding hs)
         ]
-  pPrint (ITypeDecl _ tc k tvs ty) =
+  pPrint (ITypeDecl ps _ tc k tvs ty) =
+    vcat (map pPrint ps) $$
     sep [ppITypeDeclLhs "type" tc k tvs <+> equals,indent (pPrintPrec 0 ty)]
-  pPrint (IFunctionDecl _ f cm a ty) =
+  pPrint (IFunctionDecl ps _ f cm a ty) =
+    vcat (map pPrint ps) $$
     sep [ ppQIdent f, maybePP (ppPragma "METHOD" . ppIdent) cm
         , int a, text "::", pPrintPrec 0 ty ]
-  pPrint (HidingClassDecl _ cx qcls k clsvar) = text "hiding" <+>
+  pPrint (HidingClassDecl ps _ cx qcls k clsvar) = text "hiding" <+>
+    vcat (map pPrint ps) $$
     ppClassInstHead "class" cx (ppQIdentWithKind qcls k) (ppIdent clsvar)
-  pPrint (IClassDecl _ cx qcls k clsvar ms hs) =
+  pPrint (IClassDecl ps _ cx qcls k clsvar ms hs) =
+    vcat (map pPrint ps) $$
     ppClassInstHead "class" cx (ppQIdentWithKind qcls k) (ppIdent clsvar) <+>
       lbrace $$
       vcat (punctuate semi $ map (indent . pPrint) ms) $$
       rbrace <+> ppHiding hs
-  pPrint (IInstanceDecl _ cx qcls inst impls m) =
+  pPrint (IInstanceDecl ps _ cx qcls inst impls m) =
+    vcat (map pPrint ps) $$
     ppClassInstHead "instance" cx (ppQIdent qcls) (ppInstanceType inst) <+>
       lbrace $$
       vcat (punctuate semi $ map (indent . ppIMethodImpl) impls) $$
@@ -238,6 +251,12 @@ instance Pretty IDecl where
 ppITypeDeclLhs :: String -> QualIdent -> Maybe KindExpr -> [Ident] -> Doc
 ppITypeDeclLhs kw tc k tvs =
   text kw <+> ppQIdentWithKind tc k <+> hsep (map ppIdent tvs)
+
+instance Pretty IDeclPragma where
+  pPrint (OriginPragma _ spi) = case spi of
+    SpanInfo (Span f (Position _ l1 c1) (Position _ l2 c2)) _
+      -> ppPragma "ORIGIN" $ (hsep . map pPrint) (show f : map show [l1, c1, l2, c2])
+    _ -> empty
 
 instance Pretty IMethodDecl where
   pPrint (IMethodDecl _ f a qty) =

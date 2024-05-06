@@ -162,10 +162,10 @@ importClasses :: ModuleIdent -> [IDecl] -> ClassEnv -> ClassEnv
 importClasses m = flip $ foldr (bindClass m)
 
 bindClass :: ModuleIdent -> IDecl -> ClassEnv -> ClassEnv
-bindClass m (HidingClassDecl p cx cls k tv) =
-  bindClass m (IClassDecl p cx cls k tv [] [])
-bindClass m (IClassDecl _ cx cls _ _ ds ids) =
-  bindClassInfo (qualQualify m cls) (sclss, ms)
+bindClass m (HidingClassDecl ps p cx cls k tv) =
+  bindClass m (IClassDecl ps p cx cls k tv [] [])
+bindClass m (IClassDecl ps _ cx cls _ _ ds ids) =
+  bindClassInfo (applyIDeclPragmas ps (qualQualify m cls)) (sclss, ms)
   where sclss = map (\(Constraint _ scls _) -> qualQualify m scls) cx
         ms = map (\d -> (imethod d, isJust $ imethodArity d)) $ filter isVis ds
         isVis (IMethodDecl _ idt _ _ ) = idt `notElem` ids
@@ -175,8 +175,8 @@ importInstances :: ModuleIdent -> [IDecl] -> InstEnv -> InstEnv
 importInstances m = flip $ foldr (bindInstance m)
 
 bindInstance :: ModuleIdent -> IDecl -> InstEnv -> InstEnv
-bindInstance m (IInstanceDecl _ cx qcls ty is mm) = bindInstInfo
-  (qualQualify m qcls, qualifyTC m $ typeConstr ty) (fromMaybe m mm, ps, is)
+bindInstance m (IInstanceDecl pgs _ cx qcls ty is mm) = bindInstInfo
+  (applyIDeclPragmas pgs (qualQualify m qcls), qualifyTC m $ typeConstr ty) (fromMaybe m mm, ps, is)
   where PredType ps _ = toQualPredType m [] $ QualTypeExpr NoSpanInfo cx ty
 bindInstance _ _ = id
 
@@ -189,18 +189,18 @@ bindInstance _ _ = id
 
 -- operator precedences
 precs :: ModuleIdent -> IDecl -> [PrecInfo]
-precs m (IInfixDecl _ fix prec op) = [PrecInfo (qualQualify m op) (OpPrec fix prec)]
+precs m (IInfixDecl ps _ fix prec op) = [PrecInfo (applyIDeclPragmas ps (qualQualify m op)) (OpPrec fix prec)]
 precs _ _                          = []
 
 hiddenTypes :: ModuleIdent -> IDecl -> [TypeInfo]
-hiddenTypes m (HidingDataDecl     _ tc k tvs) = [typeCon DataType m tc k tvs []]
-hiddenTypes m (HidingClassDecl  _ _ qcls k _) = [typeCls m qcls k []]
-hiddenTypes m d                               = types m d
+hiddenTypes m (HidingDataDecl  ps   _ tc   k tvs) = [typeCon DataType m (applyIDeclPragmas ps tc) k tvs []]
+hiddenTypes m (HidingClassDecl ps _ _ qcls k _  ) = [typeCls m (applyIDeclPragmas ps qcls) k []]
+hiddenTypes m d                                   = types m d
 
 -- type constructors and type classes
 types :: ModuleIdent -> IDecl -> [TypeInfo]
-types m (IDataDecl _ tc k tvs cs _) =
-  [typeCon DataType m tc k tvs (map mkData cs)]
+types m (IDataDecl ps _ tc k tvs cs _) =
+  [typeCon DataType m (applyIDeclPragmas ps tc) k tvs (map mkData cs)]
   where
     mkData (ConstrDecl _ c tys) =
       DataConstr c (toQualTypes m tvs tys)
@@ -209,19 +209,19 @@ types m (IDataDecl _ tc k tvs cs _) =
     mkData (RecordDecl _ c fs) =
       RecordConstr c labels (toQualTypes m tvs tys)
       where (labels, tys) = unzip [(l, ty) | FieldDecl _ ls ty <- fs, l <- ls]
-types m (INewtypeDecl _ tc k tvs nc _) =
-  [typeCon RenamingType m tc k tvs (mkData nc)]
+types m (INewtypeDecl ps _ tc k tvs nc _) =
+  [typeCon RenamingType m (applyIDeclPragmas ps tc) k tvs (mkData nc)]
   where
     mkData (NewConstrDecl _ c ty) =
       DataConstr c [toQualType m tvs ty]
     mkData (NewRecordDecl _ c (l, ty)) =
       RecordConstr c [l] [toQualType m tvs ty]
-types m (ITypeDecl _ tc k tvs ty) =
-  [typeCon aliasType m tc k tvs (toQualType m tvs ty)]
+types m (ITypeDecl ps _ tc k tvs ty) =
+  [typeCon aliasType m (applyIDeclPragmas ps tc) k tvs (toQualType m tvs ty)]
   where
     aliasType tc' k' = AliasType tc' k' (length tvs)
-types m (IClassDecl _ _ qcls k tv ds ids) =
-  [typeCls m qcls k (map mkMethod $ filter isVis ds)]
+types m (IClassDecl ps _ _ qcls k tv ds ids) =
+  [typeCls m (applyIDeclPragmas ps qcls) k (map mkMethod $ filter isVis ds)]
   where
     isVis (IMethodDecl _ f _ _ ) = f `notElem` ids
     mkMethod (IMethodDecl _ f a qty) = ClassMethod f a $
@@ -240,12 +240,12 @@ typeCls m qcls k ms = TypeClass (qualQualify m qcls) (toKind' k 0) ms
 
 -- data constructors, record labels, functions and class methods
 values :: ModuleIdent -> IDecl -> [ValueInfo]
-values m (IDataDecl _ tc _ tvs cs hs) =
+values m (IDataDecl ps _ tc _ tvs cs hs) =
   map (dataConstr m tc' tvs)
       (filter ((\con -> con `notElem` hs || isHiddenButNeeded con)
               . constrId) cs) ++
   map (recLabel m tc' tvs ty') (nubBy sameLabel clabels)
-  where tc' = qualQualify m tc
+  where tc' = applyIDeclPragmas ps $ qualQualify m tc
         ty' = constrType tc' tvs
         labels   = [ (l, lty) | RecordDecl _ _ fs <- cs
                    , FieldDecl _ ls lty <- fs, l <- ls, l `notElem` hs
@@ -256,27 +256,27 @@ values m (IDataDecl _ tc _ tvs cs hs) =
         hiddenCs = [c | (l, _) <- labels, c <- constr l, c `elem` hs]
         isHiddenButNeeded = flip elem hiddenCs
         sameLabel (l1,_,_) (l2,_,_) = l1 == l2
-values m (INewtypeDecl _ tc _ tvs nc hs) =
+values m (INewtypeDecl ps _ tc _ tvs nc hs) =
   map (newConstr m tc' tvs) [nc | nconstrId nc `notElem` hs] ++
   case nc of
     NewConstrDecl _ _ _        -> []
     NewRecordDecl _ c (l, lty) ->
       [recLabel m tc' tvs ty' (l, [c], lty) | l `notElem` hs]
-  where tc' = qualQualify m tc
+  where tc' = applyIDeclPragmas ps $ qualQualify m tc
         ty' = constrType tc' tvs
-values m (IFunctionDecl _ f Nothing a qty) =
-  [Value (qualQualify m f) Nothing a (typeScheme (toQualPredType m [] qty))]
-values m (IFunctionDecl _ f (Just tv) _ qty) =
+values m (IFunctionDecl ps _ f Nothing a qty) =
+  [Value (applyIDeclPragmas ps (qualQualify m f)) Nothing a (typeScheme (toQualPredType m [] qty))]
+values m (IFunctionDecl ps _ f (Just tv) _ qty) =
   let mcls = case qty of
         QualTypeExpr _ ctx _ -> fmap (\(Constraint _ qcls _) -> qcls) $
                                 find (\(Constraint _ _ ty) -> isVar ty) ctx
-  in [Value (qualQualify m f) mcls 0 (typeScheme (toQualPredType m [tv] qty))]
+  in [Value (applyIDeclPragmas ps (qualQualify m f)) mcls 0 (typeScheme (toQualPredType m [tv] qty))]
   where
     isVar (VariableType _ i) = i == tv
     isVar _                  = False
-values m (IClassDecl _ _ qcls _ tv ds hs) =
+values m (IClassDecl ps _ _ qcls _ tv ds hs) =
   map (classMethod m qcls' tv hs) ds
-  where qcls' = qualQualify m qcls
+  where qcls' = applyIDeclPragmas ps $ qualQualify m qcls
 values _ _                        = []
 
 dataConstr :: ModuleIdent -> QualIdent -> [Ident] -> ConstrDecl -> ValueInfo
@@ -328,6 +328,7 @@ classMethod m qcls tv hs (IMethodDecl _ f _ qty) =
     typeScheme $ qualifyPredType m $ toMethodType qcls tv qty
   where
     mcls = if f `elem` hs then Nothing else Just qcls
+
 
 -- ---------------------------------------------------------------------------
 

@@ -34,6 +34,7 @@ module Curry.Syntax.Utils
   , recordLabels, nrecordLabels
   , methods, impls, imethod, imethodArity
   , shortenModuleAST
+  , applyIDeclPragma, applyIDeclPragmas, originPragma
   ) where
 
 import Control.Monad.State
@@ -254,6 +255,14 @@ imethod (IMethodDecl _ f _ _) = f
 imethodArity :: IMethodDecl -> Maybe Int
 imethodArity (IMethodDecl _ _ a _) = a
 
+-- | Applies the given pragmas.
+applyIDeclPragmas :: HasSpanInfo a => [IDeclPragma] -> a -> a
+applyIDeclPragmas = flip (foldr applyIDeclPragma)
+
+-- | Applies the given pragma.
+applyIDeclPragma :: HasSpanInfo a => IDeclPragma -> a -> a
+applyIDeclPragma (OriginPragma _ spi') = setSpanInfo spi'
+
 --------------------------------------------------------
 -- constructing elements of the abstract syntax tree
 --------------------------------------------------------
@@ -298,6 +307,9 @@ apply = foldl (Apply NoSpanInfo)
 unapply :: Expression a -> [Expression a] -> (Expression a, [Expression a])
 unapply (Apply _ e1 e2) es = unapply e1 (e2 : es)
 unapply e               es = (e, es)
+
+originPragma :: HasSpanInfo a => a -> IDeclPragma
+originPragma = OriginPragma NoSpanInfo . getSpanInfo
 
 
 --------------------------------------------------------
