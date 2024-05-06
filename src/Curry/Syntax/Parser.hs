@@ -199,42 +199,43 @@ iImportDecl = IImportDecl <$> tokenPos KW_import <*> modIdent
 
 -- |Parser for a single interface declaration
 intfDecl :: Parser a Token IDecl
-intfDecl = flip ($) <$> iDeclPragmas <*> choice [ iInfixDecl, iHidingDecl, iDataDecl, iNewtypeDecl
-                                                , iTypeDecl , iFunctionDecl <\> token Id_hiding
-                                                , iClassDecl, iInstanceDecl ]
+intfDecl = flip ($) <$> option originPragma
+                    <*> choice [ iInfixDecl, iHidingDecl, iDataDecl, iNewtypeDecl
+                               , iTypeDecl , iFunctionDecl <\> token Id_hiding
+                               , iClassDecl, iInstanceDecl ]
 
 -- |Parser for an interface infix declaration
-iInfixDecl :: Parser a Token ([IDeclPragma] -> IDecl)
-iInfixDecl =  (\(s, i) p q ps -> IInfixDecl ps (span2Pos s) i p q)
+iInfixDecl :: Parser a Token (Maybe OriginPragma -> IDecl)
+iInfixDecl =  (\(s, i) p q o -> IInfixDecl o (span2Pos s) i p q)
              <$> infixDeclLhs (,)
              <*> integer
              <*> qfunop
 
 -- |Parser for an interface hiding declaration
-iHidingDecl :: Parser a Token ([IDeclPragma] -> IDecl)
+iHidingDecl :: Parser a Token (Maybe OriginPragma -> IDecl)
 iHidingDecl = tokenPos Id_hiding <**> (hDataDecl <|> hClassDecl)
   where
   hDataDecl = hiddenData <$> token KW_data <*> withKind qtycon <*> many tyvar
   hClassDecl = hiddenClass <$> classInstHead KW_class (withKind qtycls) clsvar
-  hiddenData _ (tc, k) tvs p ps = HidingDataDecl ps p tc k tvs
-  hiddenClass (_, _, cx, (qcls, k), tv) p ps = HidingClassDecl ps p cx qcls k tv
+  hiddenData _ (tc, k) tvs p o = HidingDataDecl o p tc k tvs
+  hiddenClass (_, _, cx, (qcls, k), tv) p o = HidingClassDecl o p cx qcls k tv
 
 -- |Parser for an interface data declaration
-iDataDecl :: Parser a Token ([IDeclPragma] -> IDecl)
-iDataDecl = (\(p, tc, k, tvs) cs hs ps -> IDataDecl ps p tc k tvs cs hs)
+iDataDecl :: Parser a Token (Maybe OriginPragma -> IDecl)
+iDataDecl = (\(p, tc, k, tvs) cs hs o -> IDataDecl o p tc k tvs cs hs)
          <$> iTypeDeclLhs (,,,) KW_data
          <*> constrs <*> iHiddenPragma
   where constrs = equals <-*> constrDecl `sepBy1` bar `opt` []
 
 -- |Parser for an interface newtype declaration
-iNewtypeDecl :: Parser a Token ([IDeclPragma] -> IDecl)
-iNewtypeDecl = (\(p, tc, k, tvs) nc hs ps -> INewtypeDecl ps p tc k tvs nc hs)
+iNewtypeDecl :: Parser a Token (Maybe OriginPragma -> IDecl)
+iNewtypeDecl = (\(p, tc, k, tvs) nc hs o -> INewtypeDecl o p tc k tvs nc hs)
             <$> iTypeDeclLhs (,,,) KW_newtype
             <*-> equals <*> newConstrDecl <*> iHiddenPragma
 
 -- |Parser for an interface type synonym declaration
-iTypeDecl :: Parser a Token ([IDeclPragma] -> IDecl)
-iTypeDecl = (\(p, tc, k, tvs) ty ps -> ITypeDecl ps p tc k tvs ty)
+iTypeDecl :: Parser a Token (Maybe OriginPragma -> IDecl)
+iTypeDecl = (\(p, tc, k, tvs) ty o -> ITypeDecl o p tc k tvs ty)
             <$> iTypeDeclLhs (,,,) KW_type
             <*-> equals <*> type0
 
@@ -246,8 +247,8 @@ iHiddenPragma = token PragmaHiding
                 `opt` []
 
 -- |Parser for an interface function declaration
-iFunctionDecl :: Parser a Token ([IDeclPragma] -> IDecl)
-iFunctionDecl = (\p f cm n qty ps -> IFunctionDecl ps p f cm n qty)
+iFunctionDecl :: Parser a Token (Maybe OriginPragma -> IDecl)
+iFunctionDecl = (\p f cm n qty o -> IFunctionDecl o p f cm n qty)
                 <$> position <*> qfun <*> option iMethodPragma
                 <*> arity <*-> token DoubleColon <*> qualType
 
@@ -265,9 +266,9 @@ iTypeDeclLhs f kw = f' <$> tokenPos kw <*> withKind qtycon <*> many tyvar
   where f' p (tc, k) = f p tc k
 
 -- |Parser for an interface class declaration
-iClassDecl :: Parser a Token ([IDeclPragma] -> IDecl)
-iClassDecl = (\(sp, _, cx, (qcls, k), tv) ms hs ps ->
-              IClassDecl ps (span2Pos sp) cx qcls k tv ms hs)
+iClassDecl :: Parser a Token (Maybe OriginPragma -> IDecl)
+iClassDecl = (\(sp, _, cx, (qcls, k), tv) ms hs o ->
+              IClassDecl o (span2Pos sp) cx qcls k tv ms hs)
            <$> classInstHead KW_class (withKind qtycls) clsvar
            <*> braces (iMethod `sepBy` semicolon)
            <*> iClassHidden
@@ -285,9 +286,9 @@ iClassHidden = token PragmaHiding
           `opt` []
 
 -- |Parser for an interface instance declaration
-iInstanceDecl :: Parser a Token ([IDeclPragma] -> IDecl)
-iInstanceDecl = (\(sp, _, cx, qcls, inst) is m ps ->
-                 IInstanceDecl ps (span2Pos sp) cx qcls inst is m)
+iInstanceDecl :: Parser a Token (Maybe OriginPragma -> IDecl)
+iInstanceDecl = (\(sp, _, cx, qcls, inst) is m o ->
+                 IInstanceDecl o (span2Pos sp) cx qcls inst is m)
               <$> classInstHead KW_instance qtycls type2
               <*> braces (iImpl `sepBy` semicolon)
               <*> option iModulePragma
@@ -299,16 +300,8 @@ iImpl = (,) <$> fun <*> arity
 iModulePragma :: Parser a Token ModuleIdent
 iModulePragma = token PragmaModule <-*> modIdent <*-> token PragmaEnd
 
--- |Parser for multiple interface declaration pragmas
-iDeclPragmas :: Parser a Token [IDeclPragma]
-iDeclPragmas = many iDeclPragma
-
--- |Parser for an interface declaration pragma
-iDeclPragma :: Parser a Token IDeclPragma
-iDeclPragma = originPragma
-
 -- |Parser for an origin pragma
-originPragma :: Parser a Token IDeclPragma
+originPragma :: Parser a Token OriginPragma
 originPragma =  originPragma'
             <$> tokenSpan PragmaOrigin
             <*> string <*> int <*> int <*> int <*> int

@@ -74,25 +74,25 @@ intfEnv idents ds = foldr bindId Map.empty (concatMap idents ds)
   where bindId x = Map.insert (unqualify (origName x)) x
 
 types :: IDecl -> [ITypeInfo]
-types (IDataDecl     ps _ tc _ _ cs hs) = [Data (applyIDeclPragmas ps tc) (filter (`notElem` hs) xs)]
+types (IDataDecl     o _ tc _ _ cs hs) = [Data (maybe id applyOriginPragma o tc) (filter (`notElem` hs) xs)]
   where xs = map constrId cs ++ nub (concatMap recordLabels cs)
-types (INewtypeDecl  ps _ tc _ _ nc hs) = [Data (applyIDeclPragmas ps tc) (filter (`notElem` hs) xs)]
+types (INewtypeDecl  o _ tc _ _ nc hs) = [Data (maybe id applyOriginPragma o tc) (filter (`notElem` hs) xs)]
   where xs = nconstrId nc : nrecordLabels nc
-types (ITypeDecl         ps _ tc _ _ _) = [Alias (applyIDeclPragmas ps tc)]
-types (IClassDecl ps _ _ cls _ _ ms hs) = [Class (applyIDeclPragmas ps cls) (filter (`notElem` hs) xs)]
+types (ITypeDecl         o _ tc _ _ _) = [Alias (maybe id applyOriginPragma o tc)]
+types (IClassDecl o _ _ cls _ _ ms hs) = [Class (maybe id applyOriginPragma o cls) (filter (`notElem` hs) xs)]
   where xs = map imethod ms
 types _                              = []
 
 values :: IDecl -> [IValueInfo]
-values (IDataDecl     ps _ tc _ _ cs hs) =
-  cidents (applyIDeclPragmas ps tc) (map constrId cs) hs ++
-  lidents (applyIDeclPragmas ps tc) [(l, lconstrs cs l) | l <- nub (concatMap recordLabels cs)] hs
+values (IDataDecl     o _ tc _ _ cs hs) =
+  cidents (maybe id applyOriginPragma o tc) (map constrId cs) hs ++
+  lidents (maybe id applyOriginPragma o tc) [(l, lconstrs cs l) | l <- nub (concatMap recordLabels cs)] hs
   where lconstrs cons l = [constrId c | c <- cons, l `elem` recordLabels c]
-values (INewtypeDecl  ps _ tc _ _ nc hs) =
-  cidents (applyIDeclPragmas ps tc) [nconstrId nc] hs ++
-  lidents (applyIDeclPragmas ps tc) [(l, [c]) | NewRecordDecl _ c (l, _) <- [nc]] hs
-values (IFunctionDecl      ps _ f _ _ _) = [Var (applyIDeclPragmas ps f) []]
-values (IClassDecl ps _ _ cls _ _ ms hs) = midents (applyIDeclPragmas ps cls) (map imethod ms) hs
+values (INewtypeDecl  o _ tc _ _ nc hs) =
+  cidents (maybe id applyOriginPragma o tc) [nconstrId nc] hs ++
+  lidents (maybe id applyOriginPragma o tc) [(l, [c]) | NewRecordDecl _ c (l, _) <- [nc]] hs
+values (IFunctionDecl      o _ f _ _ _) = [Var (maybe id applyOriginPragma o f) []]
+values (IClassDecl o _ _ cls _ _ ms hs) = midents (maybe id applyOriginPragma o cls) (map imethod ms) hs
 values _                                = []
 
 cidents :: QualIdent -> [Ident] -> [Ident] -> [IValueInfo]

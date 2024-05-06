@@ -67,70 +67,70 @@ intfSyntaxCheck (Interface n is ds) = (Interface n is ds', reverse $ errors s')
 
 bindType :: IDecl -> TypeEnv -> TypeEnv
 bindType (IInfixDecl            _ _ _ _ _) = id
-bindType (HidingDataDecl      ps _ tc _ _) = qualBindTopEnv tc' (Data tc' [])
-  where tc' = applyIDeclPragmas ps tc
-bindType (IDataDecl      ps _ tc _ _ cs _) =
+bindType (HidingDataDecl      o _ tc _ _) = qualBindTopEnv tc' (Data tc' [])
+  where tc' = maybe id applyOriginPragma o tc
+bindType (IDataDecl      o _ tc _ _ cs _) =
   qualBindTopEnv tc' (Data tc' (map constrId cs))
-  where tc' = applyIDeclPragmas ps tc
-bindType (INewtypeDecl   ps _ tc _ _ nc _) =
+  where tc' = maybe id applyOriginPragma o tc
+bindType (INewtypeDecl   o _ tc _ _ nc _) =
   qualBindTopEnv tc' (Data tc' [nconstrId nc])
-  where tc' = applyIDeclPragmas ps tc
-bindType (ITypeDecl         ps _ tc _ _ _) = qualBindTopEnv tc' (Alias tc')
-  where tc' = applyIDeclPragmas ps tc
+  where tc' = maybe id applyOriginPragma o tc
+bindType (ITypeDecl         o _ tc _ _ _) = qualBindTopEnv tc' (Alias tc')
+  where tc' = maybe id applyOriginPragma o tc
 bindType (IFunctionDecl       _ _ _ _ _ _) = id
-bindType (HidingClassDecl  ps _ _ cls _ _) = qualBindTopEnv cls' (Class cls' [])
-  where cls' = applyIDeclPragmas ps cls
-bindType (IClassDecl ps _ _ cls _ _ ms hs) =
+bindType (HidingClassDecl  o _ _ cls _ _) = qualBindTopEnv cls' (Class cls' [])
+  where cls' = maybe id applyOriginPragma o cls
+bindType (IClassDecl o _ _ cls _ _ ms hs) =
   qualBindTopEnv cls' (Class cls' (filter (`notElem` hs) (map imethod ms)))
-  where cls' = applyIDeclPragmas ps cls
+  where cls' = maybe id applyOriginPragma o cls
 bindType (IInstanceDecl     _ _ _ _ _ _ _) = id
 
 -- The checks applied to the interface are similar to those performed
 -- during syntax checking of type expressions.
 
 checkIDecl :: IDecl -> ISC IDecl
-checkIDecl (IInfixDecl  ps p fix pr op) = return (IInfixDecl ps p fix pr op)
-checkIDecl (HidingDataDecl ps p tc k tvs) = do
+checkIDecl (IInfixDecl  o p fix pr op) = return (IInfixDecl o p fix pr op)
+checkIDecl (HidingDataDecl o p tc k tvs) = do
   checkTypeLhs tvs
-  return (HidingDataDecl ps p tc k tvs)
-checkIDecl (IDataDecl ps p tc k tvs cs hs) = do
+  return (HidingDataDecl o p tc k tvs)
+checkIDecl (IDataDecl o p tc k tvs cs hs) = do
   checkTypeLhs tvs
   checkHiddenType tc (cons ++ labels) hs
   cs' <- mapM (checkConstrDecl tvs) cs
-  return $ IDataDecl ps p tc k tvs cs' hs
+  return $ IDataDecl o p tc k tvs cs' hs
   where cons   = map constrId cs
         labels = nub $ concatMap recordLabels cs
-checkIDecl (INewtypeDecl ps p tc k tvs nc hs) = do
+checkIDecl (INewtypeDecl o p tc k tvs nc hs) = do
   checkTypeLhs tvs
   checkHiddenType tc (con : labels) hs
   nc' <- checkNewConstrDecl tvs nc
-  return $ INewtypeDecl ps p tc k tvs nc' hs
+  return $ INewtypeDecl o p tc k tvs nc' hs
   where con    = nconstrId nc
         labels = nrecordLabels nc
-checkIDecl (ITypeDecl ps p tc k tvs ty) = do
+checkIDecl (ITypeDecl o p tc k tvs ty) = do
   checkTypeLhs tvs
-  liftM (ITypeDecl ps p tc k tvs) (checkClosedType tvs ty)
-checkIDecl (IFunctionDecl ps p f cm n qty) =
-  liftM (IFunctionDecl ps p f cm n) (checkQualType qty)
-checkIDecl (HidingClassDecl ps p cx qcls k clsvar) = do
+  liftM (ITypeDecl o p tc k tvs) (checkClosedType tvs ty)
+checkIDecl (IFunctionDecl o p f cm n qty) =
+  liftM (IFunctionDecl o p f cm n) (checkQualType qty)
+checkIDecl (HidingClassDecl o p cx qcls k clsvar) = do
   checkTypeVars "hiding class declaration" [clsvar]
   cx' <- checkClosedContext [clsvar] cx
   checkSimpleContext cx'
-  return $ HidingClassDecl ps p cx' qcls k clsvar
-checkIDecl (IClassDecl ps p cx qcls k clsvar ms hs) = do
+  return $ HidingClassDecl o p cx' qcls k clsvar
+checkIDecl (IClassDecl o p cx qcls k clsvar ms hs) = do
   checkTypeVars "class declaration" [clsvar]
   cx' <- checkClosedContext [clsvar] cx
   checkSimpleContext cx'
   ms' <- mapM (checkIMethodDecl clsvar) ms
   checkHidden (errNoElement "method" "class") qcls (map imethod ms') hs
-  return $ IClassDecl ps p cx' qcls k clsvar ms' hs
-checkIDecl (IInstanceDecl ps p cx qcls inst is m) = do
+  return $ IClassDecl o p cx' qcls k clsvar ms' hs
+checkIDecl (IInstanceDecl o p cx qcls inst is m) = do
   checkClass qcls
   QualTypeExpr _ cx' inst' <- checkQualType $ QualTypeExpr NoSpanInfo cx inst
   checkSimpleContext cx'
   checkInstanceType inst'
   mapM_ (report . errMultipleImplementation . head) $ findMultiples $ map fst is
-  return $ IInstanceDecl ps p cx' qcls inst' is m
+  return $ IInstanceDecl o p cx' qcls inst' is m
 
 checkHiddenType :: QualIdent -> [Ident] -> [Ident] -> ISC ()
 checkHiddenType = checkHidden $ errNoElement "constructor or label" "type"

@@ -28,7 +28,7 @@ module Curry.Syntax.Type
   , ImportDecl (..), ImportSpec (..), Import (..), Qualified
     -- * Interface
   , Interface (..), IImportDecl (..), Arity, IDecl (..), KindExpr (..)
-  , IDeclPragma (..), IMethodDecl (..), IMethodImpl
+  , OriginPragma (..), IMethodDecl (..), IMethodImpl
     -- * Declarations
   , Decl (..), Precedence, Infix (..), ConstrDecl (..), NewConstrDecl (..)
   , FieldDecl (..)
@@ -125,20 +125,19 @@ type Arity = Int
 
 -- |Interface declaration
 data IDecl
-  = IInfixDecl      [IDeclPragma] Position Infix Precedence QualIdent
-  | HidingDataDecl  [IDeclPragma] Position QualIdent (Maybe KindExpr) [Ident]
-  | IDataDecl       [IDeclPragma] Position QualIdent (Maybe KindExpr) [Ident] [ConstrDecl]  [Ident]
-  | INewtypeDecl    [IDeclPragma] Position QualIdent (Maybe KindExpr) [Ident] NewConstrDecl [Ident]
-  | ITypeDecl       [IDeclPragma] Position QualIdent (Maybe KindExpr) [Ident] TypeExpr
-  | IFunctionDecl   [IDeclPragma] Position QualIdent (Maybe Ident) Arity QualTypeExpr
-  | HidingClassDecl [IDeclPragma] Position Context QualIdent (Maybe KindExpr) Ident
-  | IClassDecl      [IDeclPragma] Position Context QualIdent (Maybe KindExpr) Ident [IMethodDecl] [Ident]
-  | IInstanceDecl   [IDeclPragma] Position Context QualIdent InstanceType [IMethodImpl] (Maybe ModuleIdent)
+  = IInfixDecl      (Maybe OriginPragma) Position Infix Precedence QualIdent
+  | HidingDataDecl  (Maybe OriginPragma) Position QualIdent (Maybe KindExpr) [Ident]
+  | IDataDecl       (Maybe OriginPragma) Position QualIdent (Maybe KindExpr) [Ident] [ConstrDecl]  [Ident]
+  | INewtypeDecl    (Maybe OriginPragma) Position QualIdent (Maybe KindExpr) [Ident] NewConstrDecl [Ident]
+  | ITypeDecl       (Maybe OriginPragma) Position QualIdent (Maybe KindExpr) [Ident] TypeExpr
+  | IFunctionDecl   (Maybe OriginPragma) Position QualIdent (Maybe Ident) Arity QualTypeExpr
+  | HidingClassDecl (Maybe OriginPragma) Position Context QualIdent (Maybe KindExpr) Ident
+  | IClassDecl      (Maybe OriginPragma) Position Context QualIdent (Maybe KindExpr) Ident [IMethodDecl] [Ident]
+  | IInstanceDecl   (Maybe OriginPragma) Position Context QualIdent InstanceType [IMethodImpl] (Maybe ModuleIdent)
     deriving (Eq, Read, Show, Generic, Binary)
 
--- |Interface declaration pragma.
-data IDeclPragma
-  = OriginPragma SpanInfo SpanInfo -- ^ origin pragma
+-- |Interface origin pragma.
+data OriginPragma = OriginPragma SpanInfo SpanInfo -- ^ origin pragma
     deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Class methods
