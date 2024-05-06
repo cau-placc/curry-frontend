@@ -193,14 +193,14 @@ precs m (IInfixDecl ps _ fix prec op) = [PrecInfo (applyIDeclPragmas ps (qualQua
 precs _ _                          = []
 
 hiddenTypes :: ModuleIdent -> IDecl -> [TypeInfo]
-hiddenTypes m (HidingDataDecl  ps   _ tc   k tvs) = [typeCon DataType m (applyIDeclPragmas ps tc) k tvs []]
-hiddenTypes m (HidingClassDecl ps _ _ qcls k _  ) = [typeCls m (applyIDeclPragmas ps qcls) k []]
+hiddenTypes m (HidingDataDecl  ps   _ tc   k tvs) = [typeCon DataType ps m tc k tvs []]
+hiddenTypes m (HidingClassDecl ps _ _ qcls k _  ) = [typeCls ps m qcls k []]
 hiddenTypes m d                                   = types m d
 
 -- type constructors and type classes
 types :: ModuleIdent -> IDecl -> [TypeInfo]
 types m (IDataDecl ps _ tc k tvs cs _) =
-  [typeCon DataType m (applyIDeclPragmas ps tc) k tvs (map mkData cs)]
+  [typeCon DataType ps m tc k tvs (map mkData cs)]
   where
     mkData (ConstrDecl _ c tys) =
       DataConstr c (toQualTypes m tvs tys)
@@ -210,18 +210,18 @@ types m (IDataDecl ps _ tc k tvs cs _) =
       RecordConstr c labels (toQualTypes m tvs tys)
       where (labels, tys) = unzip [(l, ty) | FieldDecl _ ls ty <- fs, l <- ls]
 types m (INewtypeDecl ps _ tc k tvs nc _) =
-  [typeCon RenamingType m (applyIDeclPragmas ps tc) k tvs (mkData nc)]
+  [typeCon RenamingType ps m tc k tvs (mkData nc)]
   where
     mkData (NewConstrDecl _ c ty) =
       DataConstr c [toQualType m tvs ty]
     mkData (NewRecordDecl _ c (l, ty)) =
       RecordConstr c [l] [toQualType m tvs ty]
 types m (ITypeDecl ps _ tc k tvs ty) =
-  [typeCon aliasType m (applyIDeclPragmas ps tc) k tvs (toQualType m tvs ty)]
+  [typeCon aliasType ps m tc k tvs (toQualType m tvs ty)]
   where
     aliasType tc' k' = AliasType tc' k' (length tvs)
 types m (IClassDecl ps _ _ qcls k tv ds ids) =
-  [typeCls m (applyIDeclPragmas ps qcls) k (map mkMethod $ filter isVis ds)]
+  [typeCls ps m qcls k (map mkMethod $ filter isVis ds)]
   where
     isVis (IMethodDecl _ f _ _ ) = f `notElem` ids
     mkMethod (IMethodDecl _ f a qty) = ClassMethod f a $
@@ -229,14 +229,14 @@ types m (IClassDecl ps _ _ qcls k tv ds ids) =
 types _ _ = []
 
 -- type constructors
-typeCon :: (QualIdent -> Kind -> a) -> ModuleIdent -> QualIdent
+typeCon :: (QualIdent -> Kind -> a) -> [IDeclPragma] -> ModuleIdent -> QualIdent
         -> Maybe KindExpr -> [Ident] -> a
-typeCon f m tc k tvs = f (qualQualify m tc) (toKind' k (length tvs))
+typeCon f ps m tc k tvs = f (applyIDeclPragmas ps (qualQualify m tc)) (toKind' k (length tvs))
 
 -- type classes
-typeCls :: ModuleIdent -> QualIdent -> Maybe KindExpr -> [ClassMethod]
+typeCls :: [IDeclPragma] -> ModuleIdent -> QualIdent -> Maybe KindExpr -> [ClassMethod]
         -> TypeInfo
-typeCls m qcls k ms = TypeClass (qualQualify m qcls) (toKind' k 0) ms
+typeCls ps m qcls k ms = TypeClass (applyIDeclPragmas ps (qualQualify m qcls)) (toKind' k 0) ms
 
 -- data constructors, record labels, functions and class methods
 values :: ModuleIdent -> IDecl -> [ValueInfo]
