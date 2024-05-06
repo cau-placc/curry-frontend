@@ -71,11 +71,11 @@ exportInterface _   (Module _ _ _ _ Nothing                 _ _) =
 
 exportInterface' :: ModuleIdent -> [Export] -> OpPrecEnv -> TCEnv -> ValueEnv
                  -> ClassEnv -> InstEnv -> Interface
-exportInterface' m es pEnv tcEnv vEnv clsEnv inEnv = Interface (Just (originPragma m)) m imports decls'
+exportInterface' m es pEnv tcEnv vEnv clsEnv inEnv = Interface m imports decls' (Just (originPragma m))
   where
   tvs     = filter (`notElem` tcs) identSupply
   tcs     = mapMaybe (localIdent m) $ definedTypes decls'
-  imports = (\m' -> IImportDecl (Just (originPragma m')) NoPos m') <$> usedModules decls'
+  imports = (\m' -> IImportDecl NoPos m' (Just (originPragma m'))) <$> usedModules decls'
   precs   = foldr (infixDecl m pEnv) [] es
   types   = foldr (typeDecl m tcEnv clsEnv tvs) [] es
   values  = foldr (valueDecl m vEnv tvs) [] es

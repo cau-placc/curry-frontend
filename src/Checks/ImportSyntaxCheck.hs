@@ -29,7 +29,7 @@ import Base.Messages
 import Base.TopEnv
 
 importCheck :: Interface -> Maybe ImportSpec -> (Maybe ImportSpec, [Message])
-importCheck (Interface o m _ ds) is = runExpand (expandSpecs is) m' mTCEnv mTyEnv
+importCheck (Interface m _ ds o) is = runExpand (expandSpecs is) m' mTCEnv mTyEnv
   where
   m' = maybe id applyOriginPragma o m
   mTCEnv = intfEnv types  ds

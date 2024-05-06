@@ -116,13 +116,13 @@ compileInterface ctxt m fn = do
     Nothing  -> report [errInterfaceNotFound m]
     Just src -> case runCYMIgnWarn (parseInterface fn src) of
       Left err -> report err
-      Right intf@(Interface _ n is _) ->
+      Right intf@(Interface n is _ _) ->
         if m /= n
           then report [errWrongInterface m n]
           else do
             let (intf', intfErrs) = intfSyntaxCheck intf
             mapM_ report [intfErrs]
-            mapM_ (loadInterface (m : ctxt)) [ (q, i) | IImportDecl _ q i <- is ]
+            mapM_ (loadInterface (m : ctxt)) [ (q, i) | IImportDecl q i _ <- is ]
             addInterface m intf'
 
 -- Error message for required interface that could not be found.

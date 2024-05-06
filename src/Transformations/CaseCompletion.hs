@@ -430,7 +430,7 @@ getCCFromDecls cs ds = complementary cs cinfos
 -- Find complementary constructors within the module environment
 getCCFromIDecls :: ModuleIdent -> [QualIdent] -> TCEnv -> CS.Interface
                 -> [(QualIdent, [Type])]
-getCCFromIDecls mid cs tcEnv (CS.Interface _ _ _ ds) = complementary cs cinfos
+getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds _) = complementary cs cinfos
   where
   cinfos = map (uncurry constrInfo)
          $ maybe [] extractConstrDecls (find (`declares` head cs) ds)

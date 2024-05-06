@@ -66,12 +66,12 @@ importModules mdl@(Module _ _ _ mid _ _ _) iEnv expImps
 -- |The function 'importInterfaces' brings the declarations of all
 -- imported interfaces into scope for the current 'Interface'.
 importInterfaces :: Interface -> InterfaceEnv -> CompilerEnv
-importInterfaces (Interface o m is _) iEnv
+importInterfaces (Interface m is _ o) iEnv
   = importUnifyData $ foldl importModule initEnv is
   where
     m' = maybe id applyOriginPragma o m
     initEnv = (initCompilerEnv m') { aliasEnv = initAliasEnv, interfaceEnv = iEnv }
-    importModule env (IImportDecl _ _ i) = case Map.lookup i iEnv of
+    importModule env (IImportDecl _ i _) = case Map.lookup i iEnv of
       Just intf -> importInterfaceIntf intf env
       Nothing   -> internalError $ "Imports.importInterfaces: no interface for "
                                    ++ show m
@@ -102,7 +102,7 @@ importInterfaces (Interface o m is _) iEnv
 
 importInterface :: ModuleIdent -> Bool -> Maybe ImportSpec -> Interface
                 -> CompilerEnv -> CompilerEnv
-importInterface m q is (Interface o mid _ ds) env = env'
+importInterface m q is (Interface mid _ ds o) env = env'
   where
   mid' = maybe id applyOriginPragma o mid
   env' = env
@@ -390,7 +390,7 @@ qualifyLocal currentEnv initEnv = currentEnv
 -- an interface.
 
 importInterfaceIntf :: Interface -> CompilerEnv -> CompilerEnv
-importInterfaceIntf (Interface o m _ ds) env = env
+importInterfaceIntf (Interface m _ ds o) env = env
   { opPrecEnv = importEntitiesIntf m' (precs  m')       ds $ opPrecEnv env
   , tyConsEnv = importEntitiesIntf m' (hiddenTypes  m') ds $ tyConsEnv env
   , valueEnv  = importEntitiesIntf m' (values m')       ds $ valueEnv  env

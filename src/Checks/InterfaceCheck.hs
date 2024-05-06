@@ -109,7 +109,7 @@ ok = return ()
 
 interfaceCheck :: OpPrecEnv -> TCEnv -> ClassEnv -> InstEnv -> ValueEnv
                -> Interface -> [Message]
-interfaceCheck pEnv tcEnv clsEnv inEnv tyEnv (Interface o m _ ds) =
+interfaceCheck pEnv tcEnv clsEnv inEnv tyEnv (Interface m _ ds o) =
   reverse (errors s)
   where s = S.execState (mapM_ checkImport ds) initState
         m' = maybe id applyOriginPragma o m

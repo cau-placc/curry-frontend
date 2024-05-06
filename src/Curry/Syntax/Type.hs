@@ -113,11 +113,11 @@ data Import
 -- Note that an interface function declaration additionaly contains the
 -- function arity (= number of parameters) in order to generate
 -- correct FlatCurry function applications.
-data Interface = Interface (Maybe OriginPragma) ModuleIdent [IImportDecl] [IDecl]
+data Interface = Interface ModuleIdent [IImportDecl] [IDecl] (Maybe OriginPragma)
     deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Interface import declaration
-data IImportDecl = IImportDecl (Maybe OriginPragma) Position ModuleIdent
+data IImportDecl = IImportDecl Position ModuleIdent (Maybe OriginPragma)
     deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Arity of a function
