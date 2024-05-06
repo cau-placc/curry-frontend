@@ -255,7 +255,7 @@ ppITypeDeclLhs kw tc k tvs =
 instance Pretty IDeclPragma where
   pPrint (OriginPragma _ spi) = case spi of
     SpanInfo (Span f (Position _ l1 c1) (Position _ l2 c2)) _
-      -> ppPragma "ORIGIN" $ (hsep . map pPrint) (show f : map show [l1, c1, l2, c2])
+      -> ppPragma "ORIGIN" $ hsep (pPrint f : map pPrint [l1, c1, l2, c2])
     _ -> empty
 
 instance Pretty IMethodDecl where
