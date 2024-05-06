@@ -66,11 +66,12 @@ importModules mdl@(Module _ _ _ mid _ _ _) iEnv expImps
 -- |The function 'importInterfaces' brings the declarations of all
 -- imported interfaces into scope for the current 'Interface'.
 importInterfaces :: Interface -> InterfaceEnv -> CompilerEnv
-importInterfaces (Interface m is _) iEnv
+importInterfaces (Interface o m is _) iEnv
   = importUnifyData $ foldl importModule initEnv is
   where
-    initEnv = (initCompilerEnv m) { aliasEnv = initAliasEnv, interfaceEnv = iEnv }
-    importModule env (IImportDecl _ i) = case Map.lookup i iEnv of
+    m' = maybe id applyOriginPragma o m
+    initEnv = (initCompilerEnv m') { aliasEnv = initAliasEnv, interfaceEnv = iEnv }
+    importModule env (IImportDecl _ _ i) = case Map.lookup i iEnv of
       Just intf -> importInterfaceIntf intf env
       Nothing   -> internalError $ "Imports.importInterfaces: no interface for "
                                    ++ show m
@@ -101,14 +102,15 @@ importInterfaces (Interface m is _) iEnv
 
 importInterface :: ModuleIdent -> Bool -> Maybe ImportSpec -> Interface
                 -> CompilerEnv -> CompilerEnv
-importInterface m q is (Interface mid _ ds) env = env'
+importInterface m q is (Interface o mid _ ds) env = env'
   where
+  mid' = maybe id applyOriginPragma o mid
   env' = env
-    { opPrecEnv = importEntities (precs  mid) m q vs id              ds $ opPrecEnv env
-    , tyConsEnv = importEntities (types  mid) m q ts (importData vs) ds $ tyConsEnv env
-    , valueEnv  = importEntities (values mid) m q vs id              ds $ valueEnv  env
-    , classEnv  = importClasses   mid                                ds $ classEnv  env
-    , instEnv   = importInstances mid                                ds $ instEnv   env
+    { opPrecEnv = importEntities (precs  mid') m q vs id              ds $ opPrecEnv env
+    , tyConsEnv = importEntities (types  mid') m q ts (importData vs) ds $ tyConsEnv env
+    , valueEnv  = importEntities (values mid') m q vs id              ds $ valueEnv  env
+    , classEnv  = importClasses   mid'                                ds $ classEnv  env
+    , instEnv   = importInstances mid'                                ds $ instEnv   env
     }
   ts = isVisible addType  is
   vs = isVisible addValue is
@@ -388,13 +390,14 @@ qualifyLocal currentEnv initEnv = currentEnv
 -- an interface.
 
 importInterfaceIntf :: Interface -> CompilerEnv -> CompilerEnv
-importInterfaceIntf (Interface m _ ds) env = env
-  { opPrecEnv = importEntitiesIntf m (precs  m)       ds $ opPrecEnv env
-  , tyConsEnv = importEntitiesIntf m (hiddenTypes  m) ds $ tyConsEnv env
-  , valueEnv  = importEntitiesIntf m (values m)       ds $ valueEnv  env
-  , classEnv  = importClasses      m                  ds $ classEnv  env
-  , instEnv   = importInstances    m                  ds $ instEnv   env
+importInterfaceIntf (Interface o m _ ds) env = env
+  { opPrecEnv = importEntitiesIntf m' (precs  m')       ds $ opPrecEnv env
+  , tyConsEnv = importEntitiesIntf m' (hiddenTypes  m') ds $ tyConsEnv env
+  , valueEnv  = importEntitiesIntf m' (values m')       ds $ valueEnv  env
+  , classEnv  = importClasses      m'                   ds $ classEnv  env
+  , instEnv   = importInstances    m'                   ds $ instEnv   env
   }
+  where m' = maybe id applyOriginPragma o m
 
 importEntitiesIntf :: Entity a => ModuleIdent -> (IDecl -> [a]) -> [IDecl]
                     -> TopEnv a -> TopEnv a

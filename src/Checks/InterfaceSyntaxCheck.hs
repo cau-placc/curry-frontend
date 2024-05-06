@@ -56,7 +56,7 @@ report :: Message -> ISC ()
 report msg = S.modify $ \ s -> s { errors = msg : errors s }
 
 intfSyntaxCheck :: Interface -> (Interface, [Message])
-intfSyntaxCheck (Interface n is ds) = (Interface n is ds', reverse $ errors s')
+intfSyntaxCheck (Interface o n is ds) = (Interface o n is ds', reverse $ errors s')
   where (ds', s') = S.runState (mapM checkIDecl ds) (ISCState env [])
         env = foldr bindType (fmap toTypeKind initTCEnv) ds
 

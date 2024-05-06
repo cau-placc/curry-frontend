@@ -927,8 +927,8 @@ dictTransInterfaces :: ValueEnv -> ClassEnv -> InterfaceEnv -> InterfaceEnv
 dictTransInterfaces vEnv clsEnv = fmap $ dictTransInterface vEnv clsEnv
 
 dictTransInterface :: ValueEnv -> ClassEnv -> Interface -> Interface
-dictTransInterface vEnv clsEnv (Interface m is ds) =
-  Interface m is $ concatMap (dictTransIDecl m vEnv clsEnv) ds
+dictTransInterface vEnv clsEnv (Interface o m is ds) =
+  Interface o m is $ concatMap (dictTransIDecl m vEnv clsEnv) ds
 
 dictTransIDecl :: ModuleIdent -> ValueEnv -> ClassEnv -> IDecl -> [IDecl]
 dictTransIDecl m vEnv _      d@(IInfixDecl          _ _ _ _ op)

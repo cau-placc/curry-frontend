@@ -199,13 +199,16 @@ ppLocalDefs ds
 -- ---------------------------------------------------------------------------
 
 instance Pretty Interface where
-  pPrint (Interface m is ds) =
+  pPrint (Interface o m is ds) =
+    maybe empty pPrint o $$
     text "interface" <+> ppMIdent m <+> text "where" <+> lbrace
       $$ vcat (punctuate semi $ map pPrint is ++ map pPrint ds)
       $$ rbrace
 
 instance Pretty IImportDecl where
-  pPrint (IImportDecl _ m) = text "import" <+> ppMIdent m
+  pPrint (IImportDecl o _ m) =
+    maybe empty pPrint o $$
+    text "import" <+> ppMIdent m
 
 instance Pretty IDecl where
   pPrint (IInfixDecl o _ fix p op) =

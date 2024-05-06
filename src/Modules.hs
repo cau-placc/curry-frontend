@@ -329,7 +329,7 @@ writeHtml opts (env, mdl) = when htmlTarget $
   where htmlTarget = Html `elem` optTargetTypes opts
 
 writeInterface :: Options -> CompilerEnv -> CS.Interface -> CYIO ()
-writeInterface opts env intf@(CS.Interface m _ _)
+writeInterface opts env intf@(CS.Interface _ m _ _)
   | optForce opts = outputInterface
   | otherwise     = do
       equal <- liftIO $ C.catch (matchInterface interfaceFile intf)

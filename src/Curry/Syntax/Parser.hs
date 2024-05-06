@@ -185,7 +185,7 @@ interface :: Parser a Token Interface
 interface = uncurry <$> intfHeader <*> braces intfDecls
 
 intfHeader :: Parser a Token ([IImportDecl] -> [IDecl] -> Interface)
-intfHeader = Interface <$-> token Id_interface <*> modIdent <*-> expectWhere
+intfHeader = Interface <$> option originPragma <*-> token Id_interface <*> modIdent <*-> expectWhere
 
 intfDecls :: Parser a Token ([IImportDecl], [IDecl])
 intfDecls = impDecl <$> iImportDecl
@@ -195,7 +195,7 @@ intfDecls = impDecl <$> iImportDecl
 
 -- |Parser for a single interface import declaration
 iImportDecl :: Parser a Token IImportDecl
-iImportDecl = IImportDecl <$> tokenPos KW_import <*> modIdent
+iImportDecl = IImportDecl <$> option originPragma <*> tokenPos KW_import <*> modIdent
 
 -- |Parser for a single interface declaration
 intfDecl :: Parser a Token IDecl

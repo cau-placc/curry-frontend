@@ -51,11 +51,11 @@ xs `eqvList` ys = length xs == length ys && and (zipWith (=~=) xs ys)
 xs `eqvSet` ys = null (deleteFirstsBy (=~=) xs ys ++ deleteFirstsBy (=~=) ys xs)
 
 instance Equiv Interface where
-  Interface m1 is1 ds1 =~= Interface m2 is2 ds2
-    = m1 == m2 && is1 `eqvSet` is2 && ds1 `eqvSet` ds2
+  Interface o1 m1 is1 ds1 =~= Interface o2 m2 is2 ds2
+    = o1 == o2 && m1 == m2 && is1 `eqvSet` is2 && ds1 `eqvSet` ds2
 
 instance Equiv IImportDecl where
-  IImportDecl _ m1 =~= IImportDecl _ m2 = m1 == m2
+  IImportDecl o1 _ m1 =~= IImportDecl o2 _ m2 = o1 == o2 && m1 == m2
 
 -- Since the kind of type constructors or type classes can be omitted
 -- in the interface when the kind is simple, i.e., it is either * or of
@@ -129,7 +129,7 @@ instance Equiv Ident where
 
 -- |Disambiguate nullary type constructors and type variables.
 fixInterface :: Interface -> Interface
-fixInterface (Interface m is ds) = Interface m is $
+fixInterface (Interface o m is ds) = Interface o m is $
   fix (Set.fromList (typeConstructors ds)) ds
 
 class FixInterface a where
