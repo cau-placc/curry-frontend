@@ -35,7 +35,7 @@ module Curry.Syntax.Utils
   , recordLabels, nrecordLabels
   , methods, impls, imethod, imethodArity
   , shortenModuleAST
-  , applyOriginPragma, MkOriginPragma (..)
+  , ApplyOriginPragma (..), MkOriginPragma (..)
   ) where
 
 import Control.Monad.State
