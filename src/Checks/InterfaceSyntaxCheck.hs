@@ -68,21 +68,21 @@ intfSyntaxCheck (Interface n is ds o) = (Interface n is ds' o, reverse $ errors 
 bindType :: IDecl -> TypeEnv -> TypeEnv
 bindType (IInfixDecl            _ _ _ _ _) = id
 bindType (HidingDataDecl      o _ tc _ _) = qualBindTopEnv tc' (Data tc' [])
-  where tc' = maybe id applyOriginPragma o tc
+  where tc' = applyOriginPragma o tc
 bindType (IDataDecl      o _ tc _ _ cs _) =
   qualBindTopEnv tc' (Data tc' (map constrId cs))
-  where tc' = maybe id applyOriginPragma o tc
+  where tc' = applyOriginPragma o tc
 bindType (INewtypeDecl   o _ tc _ _ nc _) =
   qualBindTopEnv tc' (Data tc' [nconstrId nc])
-  where tc' = maybe id applyOriginPragma o tc
+  where tc' = applyOriginPragma o tc
 bindType (ITypeDecl         o _ tc _ _ _) = qualBindTopEnv tc' (Alias tc')
-  where tc' = maybe id applyOriginPragma o tc
+  where tc' = applyOriginPragma o tc
 bindType (IFunctionDecl       _ _ _ _ _ _) = id
 bindType (HidingClassDecl  o _ _ cls _ _) = qualBindTopEnv cls' (Class cls' [])
-  where cls' = maybe id applyOriginPragma o cls
+  where cls' = applyOriginPragma o cls
 bindType (IClassDecl o _ _ cls _ _ ms hs) =
   qualBindTopEnv cls' (Class cls' (filter (`notElem` hs) (map imethod ms)))
-  where cls' = maybe id applyOriginPragma o cls
+  where cls' = applyOriginPragma o cls
 bindType (IInstanceDecl     _ _ _ _ _ _ _) = id
 
 -- The checks applied to the interface are similar to those performed

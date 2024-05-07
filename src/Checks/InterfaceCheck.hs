@@ -112,7 +112,7 @@ interfaceCheck :: OpPrecEnv -> TCEnv -> ClassEnv -> InstEnv -> ValueEnv
 interfaceCheck pEnv tcEnv clsEnv inEnv tyEnv (Interface m _ ds o) =
   reverse (errors s)
   where s = S.execState (mapM_ checkImport ds) initState
-        m' = maybe id applyOriginPragma o m
+        m' = applyOriginPragma o m
         initState = ICState m' pEnv tcEnv clsEnv inEnv tyEnv []
 
 checkImport :: IDecl -> IC ()

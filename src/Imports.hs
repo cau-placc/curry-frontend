@@ -69,7 +69,7 @@ importInterfaces :: Interface -> InterfaceEnv -> CompilerEnv
 importInterfaces (Interface m is _ o) iEnv
   = importUnifyData $ foldl importModule initEnv is
   where
-    m' = maybe id applyOriginPragma o m
+    m' = applyOriginPragma o m
     initEnv = (initCompilerEnv m') { aliasEnv = initAliasEnv, interfaceEnv = iEnv }
     importModule env (IImportDecl _ i _) = case Map.lookup i iEnv of
       Just intf -> importInterfaceIntf intf env
@@ -104,7 +104,7 @@ importInterface :: ModuleIdent -> Bool -> Maybe ImportSpec -> Interface
                 -> CompilerEnv -> CompilerEnv
 importInterface m q is (Interface mid _ ds o) env = env'
   where
-  mid' = maybe id applyOriginPragma o mid
+  mid' = applyOriginPragma o mid
   env' = env
     { opPrecEnv = importEntities (precs  mid') m q vs id              ds $ opPrecEnv env
     , tyConsEnv = importEntities (types  mid') m q ts (importData vs) ds $ tyConsEnv env
@@ -167,7 +167,7 @@ bindClass :: ModuleIdent -> IDecl -> ClassEnv -> ClassEnv
 bindClass m (HidingClassDecl o p cx cls k tv) =
   bindClass m (IClassDecl o p cx cls k tv [] [])
 bindClass m (IClassDecl o _ cx cls _ _ ds ids) =
-  bindClassInfo (maybe id applyOriginPragma o (qualQualify m cls)) (sclss, ms)
+  bindClassInfo (applyOriginPragma o (qualQualify m cls)) (sclss, ms)
   where sclss = map (\(Constraint _ scls _) -> qualQualify m scls) cx
         ms = map (\d -> (imethod d, isJust $ imethodArity d)) $ filter isVis ds
         isVis (IMethodDecl _ idt _ _ ) = idt `notElem` ids
@@ -178,7 +178,7 @@ importInstances m = flip $ foldr (bindInstance m)
 
 bindInstance :: ModuleIdent -> IDecl -> InstEnv -> InstEnv
 bindInstance m (IInstanceDecl o _ cx qcls ty is mm) = bindInstInfo
-  (maybe id applyOriginPragma o (qualQualify m qcls), qualifyTC m $ typeConstr ty) (fromMaybe m mm, ps, is)
+  (applyOriginPragma o (qualQualify m qcls), qualifyTC m $ typeConstr ty) (fromMaybe m mm, ps, is)
   where PredType ps _ = toQualPredType m [] $ QualTypeExpr NoSpanInfo cx ty
 bindInstance _ _ = id
 
@@ -191,7 +191,7 @@ bindInstance _ _ = id
 
 -- operator precedences
 precs :: ModuleIdent -> IDecl -> [PrecInfo]
-precs m (IInfixDecl o _ fix prec op) = [PrecInfo (maybe id applyOriginPragma o (qualQualify m op)) (OpPrec fix prec)]
+precs m (IInfixDecl o _ fix prec op) = [PrecInfo (applyOriginPragma o (qualQualify m op)) (OpPrec fix prec)]
 precs _ _                          = []
 
 hiddenTypes :: ModuleIdent -> IDecl -> [TypeInfo]
@@ -233,12 +233,12 @@ types _ _ = []
 -- type constructors
 typeCon :: (QualIdent -> Kind -> a) -> Maybe OriginPragma -> ModuleIdent -> QualIdent
         -> Maybe KindExpr -> [Ident] -> a
-typeCon f o m tc k tvs = f (maybe id applyOriginPragma o (qualQualify m tc)) (toKind' k (length tvs))
+typeCon f o m tc k tvs = f (applyOriginPragma o (qualQualify m tc)) (toKind' k (length tvs))
 
 -- type classes
 typeCls :: Maybe OriginPragma -> ModuleIdent -> QualIdent -> Maybe KindExpr -> [ClassMethod]
         -> TypeInfo
-typeCls o m qcls k ms = TypeClass (maybe id applyOriginPragma o (qualQualify m qcls)) (toKind' k 0) ms
+typeCls o m qcls k ms = TypeClass (applyOriginPragma o (qualQualify m qcls)) (toKind' k 0) ms
 
 -- data constructors, record labels, functions and class methods
 values :: ModuleIdent -> IDecl -> [ValueInfo]
@@ -247,7 +247,7 @@ values m (IDataDecl o _ tc _ tvs cs hs) =
       (filter ((\con -> con `notElem` hs || isHiddenButNeeded con)
               . constrId) cs) ++
   map (recLabel m tc' tvs ty') (nubBy sameLabel clabels)
-  where tc' = maybe id applyOriginPragma o $ qualQualify m tc
+  where tc' = applyOriginPragma o $ qualQualify m tc
         ty' = constrType tc' tvs
         labels   = [ (l, lty) | RecordDecl _ _ fs <- cs
                    , FieldDecl _ ls lty <- fs, l <- ls, l `notElem` hs
@@ -264,21 +264,21 @@ values m (INewtypeDecl o _ tc _ tvs nc hs) =
     NewConstrDecl _ _ _        -> []
     NewRecordDecl _ c (l, lty) ->
       [recLabel m tc' tvs ty' (l, [c], lty) | l `notElem` hs]
-  where tc' = maybe id applyOriginPragma o $ qualQualify m tc
+  where tc' = applyOriginPragma o $ qualQualify m tc
         ty' = constrType tc' tvs
 values m (IFunctionDecl o _ f Nothing a qty) =
-  [Value (maybe id applyOriginPragma o (qualQualify m f)) Nothing a (typeScheme (toQualPredType m [] qty))]
+  [Value (applyOriginPragma o (qualQualify m f)) Nothing a (typeScheme (toQualPredType m [] qty))]
 values m (IFunctionDecl o _ f (Just tv) _ qty) =
   let mcls = case qty of
         QualTypeExpr _ ctx _ -> fmap (\(Constraint _ qcls _) -> qcls) $
                                 find (\(Constraint _ _ ty) -> isVar ty) ctx
-  in [Value (maybe id applyOriginPragma o (qualQualify m f)) mcls 0 (typeScheme (toQualPredType m [tv] qty))]
+  in [Value (applyOriginPragma o (qualQualify m f)) mcls 0 (typeScheme (toQualPredType m [tv] qty))]
   where
     isVar (VariableType _ i) = i == tv
     isVar _                  = False
 values m (IClassDecl o _ _ qcls _ tv ds hs) =
   map (classMethod m qcls' tv hs) ds
-  where qcls' = maybe id applyOriginPragma o $ qualQualify m qcls
+  where qcls' = applyOriginPragma o $ qualQualify m qcls
 values _ _                        = []
 
 dataConstr :: ModuleIdent -> QualIdent -> [Ident] -> ConstrDecl -> ValueInfo
@@ -397,7 +397,7 @@ importInterfaceIntf (Interface m _ ds o) env = env
   , classEnv  = importClasses      m'                   ds $ classEnv  env
   , instEnv   = importInstances    m'                   ds $ instEnv   env
   }
-  where m' = maybe id applyOriginPragma o m
+  where m' = applyOriginPragma o m
 
 importEntitiesIntf :: Entity a => ModuleIdent -> (IDecl -> [a]) -> [IDecl]
                     -> TopEnv a -> TopEnv a

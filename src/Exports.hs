@@ -71,11 +71,11 @@ exportInterface _   (Module _ _ _ _ Nothing                 _ _) =
 
 exportInterface' :: ModuleIdent -> [Export] -> OpPrecEnv -> TCEnv -> ValueEnv
                  -> ClassEnv -> InstEnv -> Interface
-exportInterface' m es pEnv tcEnv vEnv clsEnv inEnv = Interface m imports decls' (Just (originPragma m))
+exportInterface' m es pEnv tcEnv vEnv clsEnv inEnv = Interface m imports decls' (Just (mkOriginPragma m))
   where
   tvs     = filter (`notElem` tcs) identSupply
   tcs     = mapMaybe (localIdent m) $ definedTypes decls'
-  imports = (\m' -> IImportDecl NoPos m' (Just (originPragma m'))) <$> usedModules decls'
+  imports = (\m' -> IImportDecl NoPos m' (Just (mkOriginPragma m'))) <$> usedModules decls'
   precs   = foldr (infixDecl m pEnv) [] es
   types   = foldr (typeDecl m tcEnv clsEnv tvs) [] es
   values  = foldr (valueDecl m vEnv tvs) [] es
@@ -92,7 +92,7 @@ infixDecl _ _ _ _ = internalError "Exports.infixDecl: no pattern match"
 iInfixDecl :: ModuleIdent -> OpPrecEnv -> QualIdent -> [IDecl] -> [IDecl]
 iInfixDecl m pEnv op ds = case qualLookupP op pEnv of
   []                        -> ds
-  [PrecInfo _ (OpPrec f p)] -> IInfixDecl (Just (originPragma op)) NoPos f p (qualUnqualify m op) : ds
+  [PrecInfo _ (OpPrec f p)] -> IInfixDecl (Just (mkOriginPragma op)) NoPos f p (qualUnqualify m op) : ds
   _                         -> internalError "Exports.infixDecl"
 
 -- Data types and renaming types whose constructors and field labels are
@@ -122,12 +122,12 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
             nc  = newConstrDecl m tvs c
             ls  = nrecordLabels nc
             cId = constrIdent c
-    [AliasType tc' k n ty] -> ITypeDecl (Just (originPragma tc')) NoPos tc'' k' tvs' ty' : ds
+    [AliasType tc' k n ty] -> ITypeDecl (Just (mkOriginPragma tc')) NoPos tc'' k' tvs' ty' : ds
       where tc'' = qualUnqualify m tc'
             k'   = fromKind' k n
             tvs' = take n tvs
             ty'  = fromQualType m tvs' ty
-    [TypeClass qcls k ms] -> IClassDecl (Just (originPragma qcls)) NoPos cx qcls' k' tv ms' hs : ds
+    [TypeClass qcls k ms] -> IClassDecl (Just (mkOriginPragma qcls)) NoPos cx qcls' k' tv ms' hs : ds
       where qcls' = qualUnqualify m qcls
             cx    = [ Constraint NoSpanInfo (qualUnqualify m scls)
                         (VariableType NoSpanInfo tv)
@@ -142,7 +142,7 @@ typeDecl _ _ _ _ _ _ = internalError "Exports.typeDecl: no pattern match"
 iTypeDecl
   :: (Maybe OriginPragma -> Position -> QualIdent -> Maybe KindExpr -> [Ident] -> a -> [Ident] -> IDecl)
   -> ModuleIdent -> [Ident] -> QualIdent -> Kind -> a -> [Ident] -> IDecl
-iTypeDecl f m tvs tc k x hs = f (Just (originPragma tc)) NoPos (qualUnqualify m tc) k' (take n tvs) x hs
+iTypeDecl f m tvs tc k x hs = f (Just (mkOriginPragma tc)) NoPos (qualUnqualify m tc) k' (take n tvs) x hs
   where n  = kindArity k
         k' = fromKind' k n
 
@@ -178,7 +178,7 @@ methodDecl m tvs (ClassMethod f a (PredType ps ty)) = IMethodDecl NoPos f a $
 valueDecl :: ModuleIdent -> ValueEnv -> [Ident] -> Export -> [IDecl] -> [IDecl]
 valueDecl m vEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
   [Value _ cm a (ForAll _ pty)] ->
-    IFunctionDecl (Just (originPragma f)) NoPos (qualUnqualify m f)
+    IFunctionDecl (Just (mkOriginPragma f)) NoPos (qualUnqualify m f)
       (fmap (const (head tvs)) cm) a (fromQualPredType m tvs pty) : ds
   [Label _ _ _ ] -> ds -- Record labels are collected somewhere else.
   _ -> internalError $ "Exports.valueDecl: " ++ show f
@@ -194,7 +194,7 @@ instDecl m tcEnv tvs ident@(cls, tc) info@(m', _, _) ds
 
 iInstDecl :: ModuleIdent -> TCEnv -> [Ident] -> InstIdent -> InstInfo -> IDecl
 iInstDecl m tcEnv tvs (cls, tc) (m', ps, is) =
-  IInstanceDecl (Just (originPragma cls)) NoPos cx (qualUnqualify m cls) ty is mm
+  IInstanceDecl (Just (mkOriginPragma cls)) NoPos cx (qualUnqualify m cls) ty is mm
   where pty = PredType ps $ applyType (TypeConstructor tc) $
                 map TypeVariable [0 .. n-1]
         QualTypeExpr _ cx ty = fromQualPredType m tvs pty
@@ -332,14 +332,14 @@ hiddenTypes m tcEnv clsEnv tvs d =
           where hidingDataDecl k =
                   let n = kindArity k
                       k' = fromKind' k n
-                  in  HidingDataDecl (Just (originPragma tc)) NoPos tc k' $ take n tvs
+                  in  HidingDataDecl (Just (mkOriginPragma tc)) NoPos tc k' $ take n tvs
                 hidingClassDecl k sclss =
                   let cx = [ Constraint NoSpanInfo (qualUnqualify m scls)
                                (VariableType NoSpanInfo tv)
                            | scls <- sclss ]
                       tv = head tvs
                       k' = fromKind' k 0
-                  in  HidingClassDecl (Just (originPragma tc)) NoPos cx tc k' tv
+                  in  HidingClassDecl (Just (mkOriginPragma tc)) NoPos cx tc k' tv
 
 instances :: ModuleIdent -> TCEnv -> InstEnv -> [Ident] -> Set.Set IInfo
           -> IInfo -> [IDecl]

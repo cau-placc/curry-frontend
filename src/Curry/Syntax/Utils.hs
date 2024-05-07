@@ -15,6 +15,7 @@
     This module provides some utility functions for working with the
     abstract syntax tree of Curry.
 -}
+{-# LANGUAGE FlexibleInstances, MultiParamTypeClasses #-}
 
 module Curry.Syntax.Utils
   ( hasLanguageExtension, knownExtensions
@@ -34,7 +35,7 @@ module Curry.Syntax.Utils
   , recordLabels, nrecordLabels
   , methods, impls, imethod, imethodArity
   , shortenModuleAST
-  , applyOriginPragma, originPragma
+  , applyOriginPragma, MkOriginPragma (..)
   ) where
 
 import Control.Monad.State
@@ -255,9 +256,20 @@ imethod (IMethodDecl _ f _ _) = f
 imethodArity :: IMethodDecl -> Maybe Int
 imethodArity (IMethodDecl _ _ a _) = a
 
--- | Applies the given origin pragma.
-applyOriginPragma :: HasSpanInfo a => OriginPragma -> a -> a
-applyOriginPragma (OriginPragma _ spi') = setSpanInfo spi'
+class ApplyOriginPragma o a where
+  applyOriginPragma :: o -> a -> a
+
+instance ApplyOriginPragma OriginPragma Ident where
+  applyOriginPragma (OriginPragma _ spi') = setSpanInfo spi'
+
+instance ApplyOriginPragma OriginPragma ModuleIdent where
+  applyOriginPragma (OriginPragma _ spi') = setSpanInfo spi'
+
+instance ApplyOriginPragma OriginPragma QualIdent where
+  applyOriginPragma o q = q { qidIdent = applyOriginPragma o (qidIdent q) }
+
+instance ApplyOriginPragma o a => ApplyOriginPragma (Maybe o) a where
+  applyOriginPragma = maybe id applyOriginPragma
 
 --------------------------------------------------------
 -- constructing elements of the abstract syntax tree
@@ -304,8 +316,17 @@ unapply :: Expression a -> [Expression a] -> (Expression a, [Expression a])
 unapply (Apply _ e1 e2) es = unapply e1 (e2 : es)
 unapply e               es = (e, es)
 
-originPragma :: HasSpanInfo a => a -> OriginPragma
-originPragma = OriginPragma NoSpanInfo . getSpanInfo
+class MkOriginPragma a where
+  mkOriginPragma :: a -> OriginPragma
+
+instance MkOriginPragma Ident where
+  mkOriginPragma = OriginPragma NoSpanInfo . getSpanInfo
+
+instance MkOriginPragma ModuleIdent where
+  mkOriginPragma = OriginPragma NoSpanInfo . getSpanInfo
+
+instance MkOriginPragma QualIdent where
+  mkOriginPragma = mkOriginPragma . qidIdent
 
 
 --------------------------------------------------------
