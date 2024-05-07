@@ -27,13 +27,13 @@ import Curry.Base.Pretty   (text)
 import CompilerOpts (WarnOpts (..))
 
 -- |Curry compiler monad transformer
-type CYT m a = WriterT [Message] (ExceptT [Message] m) a
+type CYT m = WriterT [Message] (ExceptT [Message] m)
 
 -- |Curry compiler monad based on the `IO` monad
-type CYIO a = CYT IO a
+type CYIO = CYT IO
 
 -- |Pure Curry compiler monad
-type CYM a = CYT Identity a
+type CYM = CYT Identity
 
 -- |Run an `IO`-based Curry compiler action in the `IO` monad,
 -- yielding either a list of errors or a result in case of success
