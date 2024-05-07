@@ -235,8 +235,9 @@ instance Pretty IDecl where
     maybe empty pPrint o $$
     sep [ ppQIdent f, maybePP (ppPragma "METHOD" . ppIdent) cm
         , int a, text "::", pPrintPrec 0 ty ]
-  pPrint (HidingClassDecl o _ cx qcls k clsvar) = text "hiding" <+>
+  pPrint (HidingClassDecl o _ cx qcls k clsvar) =
     maybe empty pPrint o $$
+    text "hiding" <+>
     ppClassInstHead "class" cx (ppQIdentWithKind qcls k) (ppIdent clsvar)
   pPrint (IClassDecl o _ cx qcls k clsvar ms hs) =
     maybe empty pPrint o $$
