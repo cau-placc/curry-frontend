@@ -41,10 +41,12 @@ module Curry.Syntax.Utils
 import Control.Monad.State
 
 import Curry.Base.Ident
+import Curry.Base.Span (Span(..))
 import Curry.Base.SpanInfo
 import Curry.Files.Filenames (takeBaseName)
 import Curry.Syntax.Extension
 import Curry.Syntax.Type
+import System.Directory (canonicalizePath)
 
 -- |Check whether a 'Module' has a specific 'KnownExtension' enabled by a pragma
 hasLanguageExtension :: Module a -> KnownExtension -> Bool
@@ -317,17 +319,22 @@ unapply (Apply _ e1 e2) es = unapply e1 (e2 : es)
 unapply e               es = (e, es)
 
 class MkOriginPragma a where
-  mkOriginPragma :: a -> OriginPragma
+  mkOriginPragma :: MonadIO m => a -> m OriginPragma
 
 instance MkOriginPragma Ident where
-  mkOriginPragma = OriginPragma NoSpanInfo . getSpanInfo
+  mkOriginPragma = fmap (OriginPragma NoSpanInfo) . canonicalSpanInfo
 
 instance MkOriginPragma ModuleIdent where
-  mkOriginPragma = OriginPragma NoSpanInfo . getSpanInfo
+  mkOriginPragma = fmap (OriginPragma NoSpanInfo) . canonicalSpanInfo
 
 instance MkOriginPragma QualIdent where
   mkOriginPragma = mkOriginPragma . qidIdent
 
+canonicalSpanInfo :: (MonadIO m, HasSpanInfo a) => a -> m SpanInfo
+canonicalSpanInfo x = case getSpanInfo x of
+  SpanInfo (Span f s e) sps -> do f' <- liftIO $ canonicalizePath f
+                                  return $ SpanInfo (Span f' s e) sps
+  spi                       -> return spi
 
 --------------------------------------------------------
 -- Shorten Module
