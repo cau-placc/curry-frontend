@@ -122,7 +122,7 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
             nc  = newConstrDecl m tvs c
             ls  = nrecordLabels nc
             cId = constrIdent c
-    [AliasType tc' k n ty] -> ITypeDecl (Just (originPragma tc)) NoPos tc'' k' tvs' ty' : ds
+    [AliasType tc' k n ty] -> ITypeDecl (Just (originPragma tc')) NoPos tc'' k' tvs' ty' : ds
       where tc'' = qualUnqualify m tc'
             k'   = fromKind' k n
             tvs' = take n tvs
@@ -142,7 +142,7 @@ typeDecl _ _ _ _ _ _ = internalError "Exports.typeDecl: no pattern match"
 iTypeDecl
   :: (Maybe OriginPragma -> Position -> QualIdent -> Maybe KindExpr -> [Ident] -> a -> [Ident] -> IDecl)
   -> ModuleIdent -> [Ident] -> QualIdent -> Kind -> a -> [Ident] -> IDecl
-iTypeDecl f m tvs tc k x hs = f (Just (originPragma m)) NoPos (qualUnqualify m tc) k' (take n tvs) x hs
+iTypeDecl f m tvs tc k x hs = f (Just (originPragma tc)) NoPos (qualUnqualify m tc) k' (take n tvs) x hs
   where n  = kindArity k
         k' = fromKind' k n
 
@@ -178,7 +178,7 @@ methodDecl m tvs (ClassMethod f a (PredType ps ty)) = IMethodDecl NoPos f a $
 valueDecl :: ModuleIdent -> ValueEnv -> [Ident] -> Export -> [IDecl] -> [IDecl]
 valueDecl m vEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
   [Value _ cm a (ForAll _ pty)] ->
-    IFunctionDecl (Just (originPragma m)) NoPos (qualUnqualify m f)
+    IFunctionDecl (Just (originPragma f)) NoPos (qualUnqualify m f)
       (fmap (const (head tvs)) cm) a (fromQualPredType m tvs pty) : ds
   [Label _ _ _ ] -> ds -- Record labels are collected somewhere else.
   _ -> internalError $ "Exports.valueDecl: " ++ show f
@@ -194,7 +194,7 @@ instDecl m tcEnv tvs ident@(cls, tc) info@(m', _, _) ds
 
 iInstDecl :: ModuleIdent -> TCEnv -> [Ident] -> InstIdent -> InstInfo -> IDecl
 iInstDecl m tcEnv tvs (cls, tc) (m', ps, is) =
-  IInstanceDecl (Just (originPragma m)) NoPos cx (qualUnqualify m cls) ty is mm
+  IInstanceDecl (Just (originPragma cls)) NoPos cx (qualUnqualify m cls) ty is mm
   where pty = PredType ps $ applyType (TypeConstructor tc) $
                 map TypeVariable [0 .. n-1]
         QualTypeExpr _ cx ty = fromQualPredType m tvs pty
