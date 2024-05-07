@@ -101,7 +101,7 @@ iInfixDecl :: ModuleIdent -> OpPrecEnv -> QualIdent -> [IDecl] -> CYIO [IDecl]
 iInfixDecl m pEnv op ds = case qualLookupP op pEnv of
   []                        -> return ds
   [PrecInfo _ (OpPrec f p)] -> do o <- mkOriginPragma op
-                                  return $ IInfixDecl (Just o) NoPos f p (qualUnqualify m op) : ds
+                                  return $ IInfixDecl NoPos f p (qualUnqualify m op) (Just o) : ds
   _                         -> internalError "Exports.infixDecl"
 
 -- Data types and renaming types whose constructors and field labels are
@@ -132,13 +132,13 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
             ls  = nrecordLabels nc
             cId = constrIdent c
     [AliasType tc' k n ty] -> do o <- mkOriginPragma tc'
-                                 return $ ITypeDecl (Just o) NoPos tc'' k' tvs' ty' : ds
+                                 return $ ITypeDecl NoPos tc'' k' tvs' ty' (Just o) : ds
       where tc'' = qualUnqualify m tc'
             k'   = fromKind' k n
             tvs' = take n tvs
             ty'  = fromQualType m tvs' ty
     [TypeClass qcls k ms] -> do o <- mkOriginPragma qcls
-                                return $ IClassDecl (Just o) NoPos cx qcls' k' tv ms' hs : ds
+                                return $ IClassDecl NoPos cx qcls' k' tv ms' hs (Just o) : ds
       where qcls' = qualUnqualify m qcls
             cx    = [ Constraint NoSpanInfo (qualUnqualify m scls)
                         (VariableType NoSpanInfo tv)
@@ -151,11 +151,11 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
 typeDecl _ _ _ _ _ _ = internalError "Exports.typeDecl: no pattern match"
 
 iTypeDecl
-  :: (Maybe OriginPragma -> Position -> QualIdent -> Maybe KindExpr -> [Ident] -> a -> [Ident] -> IDecl)
+  :: (Position -> QualIdent -> Maybe KindExpr -> [Ident] -> a -> [Ident] -> Maybe OriginPragma -> IDecl)
   -> ModuleIdent -> [Ident] -> QualIdent -> Kind -> a -> [Ident] -> CYIO IDecl
 iTypeDecl f m tvs tc k x hs = do
   o <- mkOriginPragma tc
-  return $ f (Just o) NoPos (qualUnqualify m tc) k' (take n tvs) x hs
+  return $ f NoPos (qualUnqualify m tc) k' (take n tvs) x hs (Just o)
   where n  = kindArity k
         k' = fromKind' k n
 
@@ -192,8 +192,8 @@ valueDecl :: ModuleIdent -> ValueEnv -> [Ident] -> Export -> [IDecl] -> CYIO [ID
 valueDecl m vEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
   [Value _ cm a (ForAll _ pty)] -> do
     o <- mkOriginPragma f
-    return $ IFunctionDecl (Just o) NoPos (qualUnqualify m f)
-      (fmap (const (head tvs)) cm) a (fromQualPredType m tvs pty) : ds
+    return $ IFunctionDecl NoPos (qualUnqualify m f)
+      (fmap (const (head tvs)) cm) a (fromQualPredType m tvs pty) (Just o) : ds
   [Label _ _ _ ] -> return ds -- Record labels are collected somewhere else.
   _ -> internalError $ "Exports.valueDecl: " ++ show f
 valueDecl _ _ _ (ExportTypeWith _ _ _) ds = return ds
@@ -209,7 +209,7 @@ instDecl m tcEnv tvs ident@(cls, tc) info@(m', _, _) ds
 iInstDecl :: ModuleIdent -> TCEnv -> [Ident] -> InstIdent -> InstInfo -> CYIO IDecl
 iInstDecl m tcEnv tvs (cls, tc) (m', ps, is) = do
   o <- mkOriginPragma cls
-  return $ IInstanceDecl (Just o) NoPos cx (qualUnqualify m cls) ty is mm
+  return $ IInstanceDecl NoPos cx (qualUnqualify m cls) ty is mm (Just o)
   where pty = PredType ps $ applyType (TypeConstructor tc) $
                 map TypeVariable [0 .. n-1]
         QualTypeExpr _ cx ty = fromQualPredType m tvs pty
@@ -248,16 +248,16 @@ instance HasModule a => HasModule [a] where
   modules xs ms = foldr modules ms xs
 
 instance HasModule IDecl where
-  modules (IInfixDecl            _ _ _ _ op) = modules op
-  modules (HidingDataDecl        _ _ tc _ _) = modules tc
-  modules (IDataDecl        _ _ tc _ _ cs _) = modules tc . modules cs
-  modules (INewtypeDecl     _ _ tc _ _ nc _) = modules tc . modules nc
-  modules (ITypeDecl          _ _ tc _ _ ty) = modules tc . modules ty
-  modules (IFunctionDecl      _ _ f _ _ qty) = modules f . modules qty
-  modules (HidingClassDecl   _ _ cx cls _ _) = modules cx . modules cls
-  modules (IClassDecl   _ _ cx cls _ _ ms _) =
+  modules (IInfixDecl            _ _ _ op _) = modules op
+  modules (HidingDataDecl        _ tc _ _ _) = modules tc
+  modules (IDataDecl        _ tc _ _ cs _ _) = modules tc . modules cs
+  modules (INewtypeDecl     _ tc _ _ nc _ _) = modules tc . modules nc
+  modules (ITypeDecl          _ tc _ _ ty _) = modules tc . modules ty
+  modules (IFunctionDecl      _ f _ _ qty _) = modules f . modules qty
+  modules (HidingClassDecl   _ cx cls _ _ _) = modules cx . modules cls
+  modules (IClassDecl   _ cx cls _ _ ms _ _) =
     modules cx . modules cls . modules ms
-  modules (IInstanceDecl _ _ cx cls ty _ mm) =
+  modules (IInstanceDecl _ cx cls ty _ mm _) =
     modules cx . modules cls . modules ty . modules mm
 
 instance HasModule ConstrDecl where
@@ -313,13 +313,13 @@ data IInfo = IOther | IType QualIdent | IClass QualIdent | IInst InstIdent
 
 iInfo :: IDecl -> IInfo
 iInfo (IInfixDecl           _ _ _ _ _) = IOther
-iInfo (HidingDataDecl      _ _ tc _ _) = IType tc
-iInfo (IDataDecl       _ _ tc _ _ _ _) = IType tc
-iInfo (INewtypeDecl    _ _ tc _ _ _ _) = IType tc
+iInfo (HidingDataDecl      _ tc _ _ _) = IType tc
+iInfo (IDataDecl       _ tc _ _ _ _ _) = IType tc
+iInfo (INewtypeDecl    _ tc _ _ _ _ _) = IType tc
 iInfo (ITypeDecl          _ _ _ _ _ _) = IOther
-iInfo (HidingClassDecl  _ _ _ cls _ _) = IClass cls
-iInfo (IClassDecl   _ _ _ cls _ _ _ _) = IClass cls
-iInfo (IInstanceDecl _ _ _ cls ty _ _) = IInst (cls, typeConstr ty)
+iInfo (HidingClassDecl  _ _ cls _ _ _) = IClass cls
+iInfo (IClassDecl   _ _ cls _ _ _ _ _) = IClass cls
+iInfo (IInstanceDecl _ _ cls ty _ _ _) = IInst (cls, typeConstr ty)
 iInfo (IFunctionDecl      _ _ _ _ _ _) = IOther
 
 closeInterface :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Ident]
@@ -348,7 +348,7 @@ hiddenTypes m tcEnv clsEnv tvs d =
                   let n = kindArity k
                       k' = fromKind' k n
                   in  do o <- mkOriginPragma tc
-                         return $ HidingDataDecl (Just o) NoPos tc k' $ take n tvs
+                         return $ HidingDataDecl NoPos tc k' (take n tvs) (Just o)
                 hidingClassDecl k sclss =
                   let cx = [ Constraint NoSpanInfo (qualUnqualify m scls)
                                (VariableType NoSpanInfo tv)
@@ -356,7 +356,7 @@ hiddenTypes m tcEnv clsEnv tvs d =
                       tv = head tvs
                       k' = fromKind' k 0
                   in  do o <- mkOriginPragma tc
-                         return $ HidingClassDecl (Just o) NoPos cx tc k' tv
+                         return $ HidingClassDecl NoPos cx tc k' tv (Just o)
 
 instances :: ModuleIdent -> TCEnv -> InstEnv -> [Ident] -> Set.Set IInfo
           -> IInfo -> CYIO [IDecl]
@@ -381,12 +381,12 @@ definedTypes :: [IDecl] -> [QualIdent]
 definedTypes ds = foldr definedType [] ds
   where
   definedType :: IDecl -> [QualIdent] -> [QualIdent]
-  definedType (HidingDataDecl     _ _ tc _ _) tcs = tc : tcs
-  definedType (IDataDecl      _ _ tc _ _ _ _) tcs = tc : tcs
-  definedType (INewtypeDecl   _ _ tc _ _ _ _) tcs = tc : tcs
-  definedType (ITypeDecl      _ _ tc _ _ _  ) tcs = tc : tcs
-  definedType (HidingClassDecl _ _ _ cls _ _) tcs = cls : tcs
-  definedType (IClassDecl  _ _ _ cls _ _ _ _) tcs = cls : tcs
+  definedType (HidingDataDecl     _ tc _ _ _) tcs = tc : tcs
+  definedType (IDataDecl      _ tc _ _ _ _ _) tcs = tc : tcs
+  definedType (INewtypeDecl   _ tc _ _ _ _ _) tcs = tc : tcs
+  definedType (ITypeDecl      _ tc _ _ _   _) tcs = tc : tcs
+  definedType (HidingClassDecl _ _ cls _ _ _) tcs = cls : tcs
+  definedType (IClassDecl  _ _ cls _ _ _ _ _) tcs = cls : tcs
   definedType _                               tcs = tcs
 
 class HasType a where
@@ -401,13 +401,13 @@ instance HasType a => HasType [a] where
 instance HasType IDecl where
   usedTypes (IInfixDecl            _ _ _ _ _) = id
   usedTypes (HidingDataDecl        _ _ _ _ _) = id
-  usedTypes (IDataDecl        _ _ _ _ _ cs _) = usedTypes cs
-  usedTypes (INewtypeDecl     _ _ _ _ _ nc _) = usedTypes nc
-  usedTypes (ITypeDecl         _ _ _ _ _ ty) = usedTypes ty
-  usedTypes (IFunctionDecl     _ _ _ _ _ qty) = usedTypes qty
-  usedTypes (HidingClassDecl    _ _ cx _ _ _) = usedTypes cx
-  usedTypes (IClassDecl    _ _ cx _ _ _ ms _) = usedTypes cx . usedTypes ms
-  usedTypes (IInstanceDecl _ _ cx cls ty _ _) =
+  usedTypes (IDataDecl        _ _ _ _ cs _ _) = usedTypes cs
+  usedTypes (INewtypeDecl     _ _ _ _ nc _ _) = usedTypes nc
+  usedTypes (ITypeDecl         _ _ _ _ ty _) = usedTypes ty
+  usedTypes (IFunctionDecl     _ _ _ _ qty _) = usedTypes qty
+  usedTypes (HidingClassDecl    _ cx _ _ _ _) = usedTypes cx
+  usedTypes (IClassDecl    _ cx _ _ _ ms _ _) = usedTypes cx . usedTypes ms
+  usedTypes (IInstanceDecl _ cx cls ty _ _ _) =
     usedTypes cx . (cls :) . usedTypes ty
 
 instance HasType ConstrDecl where

@@ -125,15 +125,15 @@ type Arity = Int
 
 -- |Interface declaration
 data IDecl
-  = IInfixDecl      (Maybe OriginPragma) Position Infix Precedence QualIdent
-  | HidingDataDecl  (Maybe OriginPragma) Position QualIdent (Maybe KindExpr) [Ident]
-  | IDataDecl       (Maybe OriginPragma) Position QualIdent (Maybe KindExpr) [Ident] [ConstrDecl]  [Ident]
-  | INewtypeDecl    (Maybe OriginPragma) Position QualIdent (Maybe KindExpr) [Ident] NewConstrDecl [Ident]
-  | ITypeDecl       (Maybe OriginPragma) Position QualIdent (Maybe KindExpr) [Ident] TypeExpr
-  | IFunctionDecl   (Maybe OriginPragma) Position QualIdent (Maybe Ident) Arity QualTypeExpr
-  | HidingClassDecl (Maybe OriginPragma) Position Context QualIdent (Maybe KindExpr) Ident
-  | IClassDecl      (Maybe OriginPragma) Position Context QualIdent (Maybe KindExpr) Ident [IMethodDecl] [Ident]
-  | IInstanceDecl   (Maybe OriginPragma) Position Context QualIdent InstanceType [IMethodImpl] (Maybe ModuleIdent)
+  = IInfixDecl      Position Infix Precedence QualIdent (Maybe OriginPragma)
+  | HidingDataDecl  Position QualIdent (Maybe KindExpr) [Ident] (Maybe OriginPragma)
+  | IDataDecl       Position QualIdent (Maybe KindExpr) [Ident] [ConstrDecl]  [Ident] (Maybe OriginPragma)
+  | INewtypeDecl    Position QualIdent (Maybe KindExpr) [Ident] NewConstrDecl [Ident] (Maybe OriginPragma)
+  | ITypeDecl       Position QualIdent (Maybe KindExpr) [Ident] TypeExpr (Maybe OriginPragma)
+  | IFunctionDecl   Position QualIdent (Maybe Ident) Arity QualTypeExpr (Maybe OriginPragma)
+  | HidingClassDecl Position Context QualIdent (Maybe KindExpr) Ident (Maybe OriginPragma)
+  | IClassDecl      Position Context QualIdent (Maybe KindExpr) Ident [IMethodDecl] [Ident] (Maybe OriginPragma)
+  | IInstanceDecl   Position Context QualIdent InstanceType [IMethodImpl] (Maybe ModuleIdent) (Maybe OriginPragma)
     deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Interface origin pragma.

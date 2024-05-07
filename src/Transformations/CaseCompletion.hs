@@ -436,8 +436,8 @@ getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds _) = complementary cs cinfos
          $ maybe [] extractConstrDecls (find (`declares` head cs) ds)
 
   decl `declares` qid = case decl of
-    CS.IDataDecl    _ _ _ _ _ cs' _ -> any (`declaresConstr` qid) cs'
-    CS.INewtypeDecl _ _ _ _ _ nc  _ -> isNewConstrDecl qid nc
+    CS.IDataDecl    _ _ _ _ cs' _ _ -> any (`declaresConstr` qid) cs'
+    CS.INewtypeDecl _ _ _ _ nc  _ _ -> isNewConstrDecl qid nc
     _                             -> False
 
   declaresConstr (CS.ConstrDecl   _ cid _) qid = unqualify qid == cid
@@ -447,7 +447,7 @@ getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds _) = complementary cs cinfos
   isNewConstrDecl qid (CS.NewConstrDecl _ cid _) = unqualify qid == cid
   isNewConstrDecl qid (CS.NewRecordDecl _ cid _) = unqualify qid == cid
 
-  extractConstrDecls (CS.IDataDecl _ _ _ _ vs cs' _) = map (vs,) cs'
+  extractConstrDecls (CS.IDataDecl _ _ _ vs cs' _ _) = map (vs,) cs'
   extractConstrDecls _                               = []
 
   constrInfo vs (CS.ConstrDecl _ cid tys)     =
