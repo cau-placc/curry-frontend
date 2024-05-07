@@ -103,7 +103,7 @@ compileModule opts m fn = do
   qmdl' <- dumpWith opts CS.showModule pPrint DumpQualified $ qual mdl'
   writeAbstractCurry opts qmdl'
   -- generate interface file
-  intf <- uncurry exportInterface qmdl'
+  intf <- uncurry (exportInterface opts) qmdl'
   writeInterface opts (fst mdl') intf
   when withFlat $ do
     ((env, il), mdl'') <- transModule opts qmdl'

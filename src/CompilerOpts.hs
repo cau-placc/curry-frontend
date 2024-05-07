@@ -56,6 +56,7 @@ data Options = Options
   , optHtmlDir       :: Maybe FilePath      -- ^ output directory for HTML
   , optUseOutDir     :: Bool                -- ^ use subdir for output?
   , optInterface     :: Bool                -- ^ create a FlatCurry interface file?
+  , optOriginPragmas :: Bool                -- ^ emit origin pragmas in interfaces
   , optPrepOpts      :: PrepOpts            -- ^ preprocessor options
   , optWarnOpts      :: WarnOpts            -- ^ warning options
   , optTargetTypes   :: [TargetType]        -- ^ what to generate
@@ -122,6 +123,7 @@ defaultOptions = Options
   , optHtmlDir       = Nothing
   , optUseOutDir     = True
   , optInterface     = True
+  , optOriginPragmas = False
   , optPrepOpts      = defaultPrepOpts
   , optWarnOpts      = defaultWarnOpts
   , optTargetTypes   = []
@@ -461,6 +463,10 @@ options =
       (NoArg (onWarnOpts $ \ opts -> opts {wnWarnFlags =
         addFlag WarnOverlapping (wnWarnFlags opts) }))
       "do not print warnings for overlapping rules"
+  -- interfaces
+  , Option ""   ["origin-pragmas"]
+      (NoArg (onOpts $ \ opts -> opts { optOriginPragmas = True }))
+      "emit origin pragmas in interfaces"
   -- target types
   , targetOption Tokens                 "tokens"
       "generate token stream"
