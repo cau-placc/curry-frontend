@@ -430,25 +430,25 @@ getCCFromDecls cs ds = complementary cs cinfos
 -- Find complementary constructors within the module environment
 getCCFromIDecls :: ModuleIdent -> [QualIdent] -> TCEnv -> CS.Interface
                 -> [(QualIdent, [Type])]
-getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds) = complementary cs cinfos
+getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds _) = complementary cs cinfos
   where
   cinfos = map (uncurry constrInfo)
          $ maybe [] extractConstrDecls (find (`declares` head cs) ds)
 
   decl `declares` qid = case decl of
-    CS.IDataDecl    _ _ _ _ cs' _ -> any (`declaresConstr` qid) cs'
-    CS.INewtypeDecl _ _ _ _ nc  _ -> isNewConstrDecl qid nc
+    CS.IDataDecl    _ _ _ _ cs' _ _ -> any (`declaresConstr` qid) cs'
+    CS.INewtypeDecl _ _ _ _ nc  _ _ -> isNewConstrDecl qid nc
     _                             -> False
 
   declaresConstr (CS.ConstrDecl   _ cid _) qid = unqualify qid == cid
-  declaresConstr (CS.ConOpDecl _ _ oid _) qid = unqualify qid == oid
-  declaresConstr (CS.RecordDecl  _ cid _) qid = unqualify qid == cid
+  declaresConstr (CS.ConOpDecl  _ _ oid _) qid = unqualify qid == oid
+  declaresConstr (CS.RecordDecl   _ cid _) qid = unqualify qid == cid
 
   isNewConstrDecl qid (CS.NewConstrDecl _ cid _) = unqualify qid == cid
   isNewConstrDecl qid (CS.NewRecordDecl _ cid _) = unqualify qid == cid
 
-  extractConstrDecls (CS.IDataDecl _ _ _ vs cs' _) = map (vs,) cs'
-  extractConstrDecls _                             = []
+  extractConstrDecls (CS.IDataDecl _ _ _ vs cs' _ _) = map (vs,) cs'
+  extractConstrDecls _                               = []
 
   constrInfo vs (CS.ConstrDecl _ cid tys)     =
     (qualifyWith mid cid, map (transType' vs) tys)

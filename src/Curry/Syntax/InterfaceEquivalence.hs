@@ -51,11 +51,11 @@ xs `eqvList` ys = length xs == length ys && and (zipWith (=~=) xs ys)
 xs `eqvSet` ys = null (deleteFirstsBy (=~=) xs ys ++ deleteFirstsBy (=~=) ys xs)
 
 instance Equiv Interface where
-  Interface m1 is1 ds1 =~= Interface m2 is2 ds2
-    = m1 == m2 && is1 `eqvSet` is2 && ds1 `eqvSet` ds2
+  Interface m1 is1 ds1 o1 =~= Interface m2 is2 ds2 o2
+    = m1 == m2 && is1 `eqvSet` is2 && ds1 `eqvSet` ds2 && o1 == o2
 
 instance Equiv IImportDecl where
-  IImportDecl _ m1 =~= IImportDecl _ m2 = m1 == m2
+  IImportDecl _ m1 o1 =~= IImportDecl _ m2 o2 = m1 == m2 && o1 == o2
 
 -- Since the kind of type constructors or type classes can be omitted
 -- in the interface when the kind is simple, i.e., it is either * or of
@@ -74,28 +74,28 @@ isSimpleKindExpr _                  = False
 
 
 instance Equiv IDecl where
-  IInfixDecl _ fix1 p1 op1 =~= IInfixDecl _ fix2 p2 op2
-    = fix1 == fix2 && p1 == p2 && op1 == op2
-  HidingDataDecl _ tc1 k1 tvs1 =~= HidingDataDecl _ tc2 k2 tvs2
-    = tc1 == tc2 && k1 `eqvKindExpr` k2 && tvs1 == tvs2
-  IDataDecl _ tc1 k1 tvs1 cs1 hs1 =~= IDataDecl _ tc2 k2 tvs2 cs2 hs2
+  IInfixDecl _ fix1 p1 op1 o1 =~= IInfixDecl _ fix2 p2 op2 o2
+    = fix1 == fix2 && p1 == p2 && op1 == op2 && o1 == o2
+  HidingDataDecl _ tc1 k1 tvs1 o1 =~= HidingDataDecl _ tc2 k2 tvs2 o2
+    = tc1 == tc2 && k1 `eqvKindExpr` k2 && tvs1 == tvs2 && o1 == o2
+  IDataDecl _ tc1 k1 tvs1 cs1 hs1 o1 =~= IDataDecl _ tc2 k2 tvs2 cs2 hs2 o2
     = tc1 == tc2 && k1 `eqvKindExpr` k2 && tvs1 == tvs2 && cs1 =~= cs2 &&
-      hs1 `eqvSet` hs2
-  INewtypeDecl _ tc1 k1 tvs1 nc1 hs1 =~= INewtypeDecl _ tc2 k2 tvs2 nc2 hs2
+      hs1 `eqvSet` hs2 && o1 == o2
+  INewtypeDecl _ tc1 k1 tvs1 nc1 hs1 o1 =~= INewtypeDecl _ tc2 k2 tvs2 nc2 hs2 o2
     = tc1 == tc2 && k1 `eqvKindExpr` k2 && tvs1 == tvs2 && nc1 =~= nc2 &&
-      hs1 `eqvSet` hs2
-  ITypeDecl _ tc1 k1 tvs1 ty1 =~= ITypeDecl _ tc2 k2 tvs2 ty2
-    = tc1 == tc2 && k1 `eqvKindExpr` k2 && tvs1 == tvs2 && ty1 == ty2
-  IFunctionDecl _ f1 cm1 n1 qty1 =~= IFunctionDecl _ f2 cm2 n2 qty2
-    = f1 == f2 && cm1 == cm2 && n1 == n2 && qty1 == qty2
-  HidingClassDecl _ cx1 cls1 k1 _ =~= HidingClassDecl _ cx2 cls2 k2 _
-    = cx1 == cx2 && cls1 == cls2 && k1 `eqvKindExpr` k2
-  IClassDecl _ cx1 cls1 k1 _ ms1 hs1 =~= IClassDecl _ cx2 cls2 k2 _ ms2 hs2
+      hs1 `eqvSet` hs2 && o1 == o2
+  ITypeDecl _ tc1 k1 tvs1 ty1 o1 =~= ITypeDecl _ tc2 k2 tvs2 ty2 o2
+    = tc1 == tc2 && k1 `eqvKindExpr` k2 && tvs1 == tvs2 && ty1 == ty2 && o1 == o2
+  IFunctionDecl _ f1 cm1 n1 qty1 o1 =~= IFunctionDecl _ f2 cm2 n2 qty2 o2
+    = f1 == f2 && cm1 == cm2 && n1 == n2 && qty1 == qty2 && o1 == o2
+  HidingClassDecl _ cx1 cls1 k1 _ o1 =~= HidingClassDecl _ cx2 cls2 k2 _ o2
+    = cx1 == cx2 && cls1 == cls2 && k1 `eqvKindExpr` k2 && o1 == o2
+  IClassDecl _ cx1 cls1 k1 _ ms1 hs1 o1 =~= IClassDecl _ cx2 cls2 k2 _ ms2 hs2 o2
     = cx1 == cx2 && cls1 == cls2 && k1 `eqvKindExpr` k2 &&
-      ms1 `eqvList` ms2 && hs1 `eqvSet` hs2
-  IInstanceDecl _ cx1 cls1 ty1 is1 m1 =~= IInstanceDecl _ cx2 cls2 ty2 is2 m2
+      ms1 `eqvList` ms2 && hs1 `eqvSet` hs2 && o1 == o2
+  IInstanceDecl _ cx1 cls1 ty1 is1 m1 o1 =~= IInstanceDecl _ cx2 cls2 ty2 is2 m2 o2
     = cx1 == cx2 && cls1 == cls2 && ty1 == ty2 && sort is1 == sort is2 &&
-      m1 == m2
+      m1 == m2 && o1 == o2
   _ =~= _ = False
 
 instance Equiv ConstrDecl where
@@ -129,8 +129,7 @@ instance Equiv Ident where
 
 -- |Disambiguate nullary type constructors and type variables.
 fixInterface :: Interface -> Interface
-fixInterface (Interface m is ds) = Interface m is $
-  fix (Set.fromList (typeConstructors ds)) ds
+fixInterface (Interface m is ds o) = Interface m is (fix (Set.fromList (typeConstructors ds)) ds) o
 
 class FixInterface a where
   fix :: Set.Set Ident -> a -> a
@@ -142,20 +141,20 @@ instance FixInterface a => FixInterface [a] where
   fix tcs = map (fix tcs)
 
 instance FixInterface IDecl where
-  fix tcs (IDataDecl p tc k vs cs hs) =
-    IDataDecl p tc k vs (fix tcs cs) hs
-  fix tcs (INewtypeDecl p tc k vs nc hs) =
-    INewtypeDecl p tc k vs (fix tcs nc) hs
-  fix tcs (ITypeDecl p tc k vs ty) =
-    ITypeDecl p tc k vs (fix tcs ty)
-  fix tcs (IFunctionDecl p f cm n qty) =
-    IFunctionDecl p f cm n (fix tcs qty)
-  fix tcs (HidingClassDecl p cx cls k tv) =
-    HidingClassDecl p (fix tcs cx) cls k tv
-  fix tcs (IClassDecl p cx cls k tv ms hs) =
-    IClassDecl p (fix tcs cx) cls k tv (fix tcs ms) hs
-  fix tcs (IInstanceDecl p cx cls inst is m) =
-    IInstanceDecl p (fix tcs cx) cls (fix tcs inst) is m
+  fix tcs (IDataDecl p tc k vs cs hs o) =
+    IDataDecl p tc k vs (fix tcs cs) hs o
+  fix tcs (INewtypeDecl p tc k vs nc hs o) =
+    INewtypeDecl p tc k vs (fix tcs nc) hs o
+  fix tcs (ITypeDecl p tc k vs ty o) =
+    ITypeDecl p tc k vs (fix tcs ty) o
+  fix tcs (IFunctionDecl p f cm n qty o) =
+    IFunctionDecl p f cm n (fix tcs qty) o
+  fix tcs (HidingClassDecl p cx cls k tv o) =
+    HidingClassDecl p (fix tcs cx) cls k tv o
+  fix tcs (IClassDecl p cx cls k tv ms hs o) =
+    IClassDecl p (fix tcs cx) cls k tv (fix tcs ms) hs o
+  fix tcs (IInstanceDecl p cx cls inst is m o) =
+    IInstanceDecl p (fix tcs cx) cls (fix tcs inst) is m o
   fix _ d = d
 
 instance FixInterface ConstrDecl where
@@ -198,12 +197,12 @@ instance FixInterface TypeExpr where
 
 typeConstructors :: [IDecl] -> [Ident]
 typeConstructors ds = [tc | (QualIdent _ Nothing tc) <- foldr tyCons [] ds]
-  where tyCons (IInfixDecl          _ _ _ _) tcs = tcs
-        tyCons (HidingDataDecl     _ tc _ _) tcs = tc : tcs
-        tyCons (IDataDecl      _ tc _ _ _ _) tcs = tc : tcs
-        tyCons (INewtypeDecl   _ tc _ _ _ _) tcs = tc : tcs
-        tyCons (ITypeDecl        _ tc _ _ _) tcs = tc : tcs
-        tyCons (IFunctionDecl     _ _ _ _ _) tcs = tcs
-        tyCons (HidingClassDecl   _ _ _ _ _) tcs = tcs
-        tyCons (IClassDecl    _ _ _ _ _ _ _) tcs = tcs
-        tyCons (IInstanceDecl   _ _ _ _ _ _) tcs = tcs
+  where tyCons (IInfixDecl         _ _ _ _ _) tcs = tcs
+        tyCons (HidingDataDecl    _ tc _ _ o) tcs = applyOriginPragma o tc : tcs
+        tyCons (IDataDecl     _ tc _ _ _ _ o) tcs = applyOriginPragma o tc : tcs
+        tyCons (INewtypeDecl  _ tc _ _ _ _ o) tcs = applyOriginPragma o tc : tcs
+        tyCons (ITypeDecl       _ tc _ _ _ o) tcs = applyOriginPragma o tc : tcs
+        tyCons (IFunctionDecl    _ _ _ _ _ _) tcs = tcs
+        tyCons (HidingClassDecl  _ _ _ _ _ _) tcs = tcs
+        tyCons (IClassDecl   _ _ _ _ _ _ _ _) tcs = tcs
+        tyCons (IInstanceDecl  _ _ _ _ _ _ _) tcs = tcs

@@ -28,7 +28,7 @@ module Curry.Syntax.Type
   , ImportDecl (..), ImportSpec (..), Import (..), Qualified
     -- * Interface
   , Interface (..), IImportDecl (..), Arity, IDecl (..), KindExpr (..)
-  , IMethodDecl (..), IMethodImpl
+  , OriginPragma (..), IMethodDecl (..), IMethodImpl
     -- * Declarations
   , Decl (..), Precedence, Infix (..), ConstrDecl (..), NewConstrDecl (..)
   , FieldDecl (..)
@@ -113,11 +113,11 @@ data Import
 -- Note that an interface function declaration additionaly contains the
 -- function arity (= number of parameters) in order to generate
 -- correct FlatCurry function applications.
-data Interface = Interface ModuleIdent [IImportDecl] [IDecl]
+data Interface = Interface ModuleIdent [IImportDecl] [IDecl] (Maybe OriginPragma)
     deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Interface import declaration
-data IImportDecl = IImportDecl Position ModuleIdent
+data IImportDecl = IImportDecl Position ModuleIdent (Maybe OriginPragma)
     deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Arity of a function
@@ -125,15 +125,19 @@ type Arity = Int
 
 -- |Interface declaration
 data IDecl
-  = IInfixDecl      Position Infix Precedence QualIdent
-  | HidingDataDecl  Position QualIdent (Maybe KindExpr) [Ident]
-  | IDataDecl       Position QualIdent (Maybe KindExpr) [Ident] [ConstrDecl]  [Ident]
-  | INewtypeDecl    Position QualIdent (Maybe KindExpr) [Ident] NewConstrDecl [Ident]
-  | ITypeDecl       Position QualIdent (Maybe KindExpr) [Ident] TypeExpr
-  | IFunctionDecl   Position QualIdent (Maybe Ident) Arity QualTypeExpr
-  | HidingClassDecl Position Context QualIdent (Maybe KindExpr) Ident
-  | IClassDecl      Position Context QualIdent (Maybe KindExpr) Ident [IMethodDecl] [Ident]
-  | IInstanceDecl   Position Context QualIdent InstanceType [IMethodImpl] (Maybe ModuleIdent)
+  = IInfixDecl      Position Infix Precedence QualIdent (Maybe OriginPragma)
+  | HidingDataDecl  Position QualIdent (Maybe KindExpr) [Ident] (Maybe OriginPragma)
+  | IDataDecl       Position QualIdent (Maybe KindExpr) [Ident] [ConstrDecl]  [Ident] (Maybe OriginPragma)
+  | INewtypeDecl    Position QualIdent (Maybe KindExpr) [Ident] NewConstrDecl [Ident] (Maybe OriginPragma)
+  | ITypeDecl       Position QualIdent (Maybe KindExpr) [Ident] TypeExpr (Maybe OriginPragma)
+  | IFunctionDecl   Position QualIdent (Maybe Ident) Arity QualTypeExpr (Maybe OriginPragma)
+  | HidingClassDecl Position Context QualIdent (Maybe KindExpr) Ident (Maybe OriginPragma)
+  | IClassDecl      Position Context QualIdent (Maybe KindExpr) Ident [IMethodDecl] [Ident] (Maybe OriginPragma)
+  | IInstanceDecl   Position Context QualIdent InstanceType [IMethodImpl] (Maybe ModuleIdent) (Maybe OriginPragma)
+    deriving (Eq, Read, Show, Generic, Binary)
+
+-- |Interface origin pragma.
+data OriginPragma = OriginPragma SpanInfo SpanInfo -- ^ origin pragma
     deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Class methods

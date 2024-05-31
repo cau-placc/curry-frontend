@@ -24,7 +24,10 @@ module Curry.Syntax.Pretty
 import Prelude hiding ((<>))
 
 import Curry.Base.Ident
+import Curry.Base.Position (Position (..))
 import Curry.Base.Pretty
+import Curry.Base.Span (Span (..))
+import Curry.Base.SpanInfo (SpanInfo (..))
 
 import Curry.Syntax.Type
 import Curry.Syntax.Utils (opName)
@@ -196,48 +199,68 @@ ppLocalDefs ds
 -- ---------------------------------------------------------------------------
 
 instance Pretty Interface where
-  pPrint (Interface m is ds) =
+  pPrint (Interface m is ds o) =
     text "interface" <+> ppMIdent m <+> text "where" <+> lbrace
       $$ vcat (punctuate semi $ map pPrint is ++ map pPrint ds)
       $$ rbrace
+      $$ maybe empty pPrint o
 
 instance Pretty IImportDecl where
-  pPrint (IImportDecl _ m) = text "import" <+> ppMIdent m
+  pPrint (IImportDecl _ m o) =
+    text "import" <+> ppMIdent m
+      $$ maybe empty pPrint o
 
 instance Pretty IDecl where
-  pPrint (IInfixDecl   _ fix p op) = ppPrec fix (Just p) <+> ppQInfixOp op
-  pPrint (HidingDataDecl _ tc k tvs) =
-    text "hiding" <+> ppITypeDeclLhs "data" tc k tvs
-  pPrint (IDataDecl   _ tc k tvs cs hs) =
+  pPrint (IInfixDecl _ fix p op o) =
+    ppPrec fix (Just p) <+> ppQInfixOp op $$
+    maybe empty pPrint o
+  pPrint (HidingDataDecl _ tc k tvs o) =
+    text "hiding" <+> ppITypeDeclLhs "data" tc k tvs $$
+    maybe empty pPrint o
+  pPrint (IDataDecl _ tc k tvs cs hs o) =
     sep (ppITypeDeclLhs "data" tc k tvs :
       map indent (zipWith (<+>) (equals : repeat vbar) (map pPrint cs)) ++
-      [indent (ppHiding hs)])
-  pPrint (INewtypeDecl _ tc k tvs nc hs) =
+      [indent (ppHiding hs)]) $$
+    maybe empty pPrint o
+  pPrint (INewtypeDecl _ tc k tvs nc hs o) =
     sep [ ppITypeDeclLhs "newtype" tc k tvs <+> equals
         , indent (pPrint nc)
         , indent (ppHiding hs)
-        ]
-  pPrint (ITypeDecl _ tc k tvs ty) =
-    sep [ppITypeDeclLhs "type" tc k tvs <+> equals,indent (pPrintPrec 0 ty)]
-  pPrint (IFunctionDecl _ f cm a ty) =
+        ] $$
+    maybe empty pPrint o
+  pPrint (ITypeDecl _ tc k tvs ty o) =
+    sep [ppITypeDeclLhs "type" tc k tvs <+> equals,indent (pPrintPrec 0 ty)] $$
+    maybe empty pPrint o
+  pPrint (IFunctionDecl _ f cm a ty o) =
     sep [ ppQIdent f, maybePP (ppPragma "METHOD" . ppIdent) cm
-        , int a, text "::", pPrintPrec 0 ty ]
-  pPrint (HidingClassDecl _ cx qcls k clsvar) = text "hiding" <+>
-    ppClassInstHead "class" cx (ppQIdentWithKind qcls k) (ppIdent clsvar)
-  pPrint (IClassDecl _ cx qcls k clsvar ms hs) =
+        , int a, text "::", pPrintPrec 0 ty ] $$
+    maybe empty pPrint o
+  pPrint (HidingClassDecl _ cx qcls k clsvar o) =
+    text "hiding" <+>
+    ppClassInstHead "class" cx (ppQIdentWithKind qcls k) (ppIdent clsvar) $$
+    maybe empty pPrint o
+  pPrint (IClassDecl _ cx qcls k clsvar ms hs o) =
     ppClassInstHead "class" cx (ppQIdentWithKind qcls k) (ppIdent clsvar) <+>
       lbrace $$
       vcat (punctuate semi $ map (indent . pPrint) ms) $$
-      rbrace <+> ppHiding hs
-  pPrint (IInstanceDecl _ cx qcls inst impls m) =
+      rbrace <+> ppHiding hs $$
+    maybe empty pPrint o
+  pPrint (IInstanceDecl _ cx qcls inst impls m o) =
     ppClassInstHead "instance" cx (ppQIdent qcls) (ppInstanceType inst) <+>
       lbrace $$
       vcat (punctuate semi $ map (indent . ppIMethodImpl) impls) $$
-      rbrace <+> maybePP (ppPragma "MODULE" . ppMIdent) m
+      rbrace <+> maybePP (ppPragma "MODULE" . ppMIdent) m $$
+    maybe empty pPrint o
 
 ppITypeDeclLhs :: String -> QualIdent -> Maybe KindExpr -> [Ident] -> Doc
 ppITypeDeclLhs kw tc k tvs =
   text kw <+> ppQIdentWithKind tc k <+> hsep (map ppIdent tvs)
+
+instance Pretty OriginPragma where
+  pPrint (OriginPragma _ spi) = case spi of
+    SpanInfo (Span f (Position _ l1 c1) (Position _ l2 c2)) _
+      -> ppPragma "ORIGIN" $ hsep (pPrint f : map pPrint [l1, c1, l2, c2])
+    _ -> empty
 
 instance Pretty IMethodDecl where
   pPrint (IMethodDecl _ f a qty) =

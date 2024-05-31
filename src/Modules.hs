@@ -103,7 +103,7 @@ compileModule opts m fn = do
   qmdl' <- dumpWith opts CS.showModule pPrint DumpQualified $ qual mdl'
   writeAbstractCurry opts qmdl'
   -- generate interface file
-  let intf = uncurry exportInterface qmdl'
+  intf <- uncurry (exportInterface opts) qmdl'
   writeInterface opts (fst mdl') intf
   when withFlat $ do
     ((env, il), mdl'') <- transModule opts qmdl'
@@ -329,7 +329,7 @@ writeHtml opts (env, mdl) = when htmlTarget $
   where htmlTarget = Html `elem` optTargetTypes opts
 
 writeInterface :: Options -> CompilerEnv -> CS.Interface -> CYIO ()
-writeInterface opts env intf@(CS.Interface m _ _)
+writeInterface opts env intf@(CS.Interface m _ _ _)
   | optForce opts = outputInterface
   | otherwise     = do
       equal <- liftIO $ C.catch (matchInterface interfaceFile intf)

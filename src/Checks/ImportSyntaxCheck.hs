@@ -29,8 +29,9 @@ import Base.Messages
 import Base.TopEnv
 
 importCheck :: Interface -> Maybe ImportSpec -> (Maybe ImportSpec, [Message])
-importCheck (Interface m _ ds) is = runExpand (expandSpecs is) m mTCEnv mTyEnv
+importCheck (Interface m _ ds o) is = runExpand (expandSpecs is) m' mTCEnv mTyEnv
   where
+  m' = applyOriginPragma o m
   mTCEnv = intfEnv types  ds
   mTyEnv = intfEnv values ds
 
@@ -74,26 +75,26 @@ intfEnv idents ds = foldr bindId Map.empty (concatMap idents ds)
   where bindId x = Map.insert (unqualify (origName x)) x
 
 types :: IDecl -> [ITypeInfo]
-types (IDataDecl     _ tc _ _ cs hs) = [Data tc (filter (`notElem` hs) xs)]
+types (IDataDecl     _ tc _ _ cs hs o) = [Data (applyOriginPragma o tc) (filter (`notElem` hs) xs)]
   where xs = map constrId cs ++ nub (concatMap recordLabels cs)
-types (INewtypeDecl  _ tc _ _ nc hs) = [Data tc (filter (`notElem` hs) xs)]
+types (INewtypeDecl  _ tc _ _ nc hs o) = [Data (applyOriginPragma o tc) (filter (`notElem` hs) xs)]
   where xs = nconstrId nc : nrecordLabels nc
-types (ITypeDecl         _ tc _ _ _) = [Alias tc]
-types (IClassDecl _ _ cls _ _ ms hs) = [Class cls (filter (`notElem` hs) xs)]
+types (ITypeDecl         _ tc _ _ _ o) = [Alias (applyOriginPragma o tc)]
+types (IClassDecl _ _ cls _ _ ms hs o) = [Class (applyOriginPragma o cls) (filter (`notElem` hs) xs)]
   where xs = map imethod ms
 types _                              = []
 
 values :: IDecl -> [IValueInfo]
-values (IDataDecl     _ tc _ _ cs hs) =
-  cidents tc (map constrId cs) hs ++
-  lidents tc [(l, lconstrs cs l) | l <- nub (concatMap recordLabels cs)] hs
+values (IDataDecl     _ tc _ _ cs hs o) =
+  cidents (applyOriginPragma o tc) (map constrId cs) hs ++
+  lidents (applyOriginPragma o tc) [(l, lconstrs cs l) | l <- nub (concatMap recordLabels cs)] hs
   where lconstrs cons l = [constrId c | c <- cons, l `elem` recordLabels c]
-values (INewtypeDecl  _ tc _ _ nc hs) =
-  cidents tc [nconstrId nc] hs ++
-  lidents tc [(l, [c]) | NewRecordDecl _ c (l, _) <- [nc]] hs
-values (IFunctionDecl      _ f _ _ _) = [Var f []]
-values (IClassDecl _ _ cls _ _ ms hs) = midents cls (map imethod ms) hs
-values _                              = []
+values (INewtypeDecl  _ tc _ _ nc hs o) =
+  cidents (applyOriginPragma o tc) [nconstrId nc] hs ++
+  lidents (applyOriginPragma o tc) [(l, [c]) | NewRecordDecl _ c (l, _) <- [nc]] hs
+values (IFunctionDecl      _ f _ _ _ o) = [Var (applyOriginPragma o f) []]
+values (IClassDecl _ _ cls _ _ ms hs o) = midents (applyOriginPragma o cls) (map imethod ms) hs
+values _                                = []
 
 cidents :: QualIdent -> [Ident] -> [Ident] -> [IValueInfo]
 cidents tc cs hs = [Constr (qualifyLike tc c) | c <- cs, c `notElem` hs]

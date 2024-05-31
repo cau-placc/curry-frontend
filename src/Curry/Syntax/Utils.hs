@@ -15,6 +15,7 @@
     This module provides some utility functions for working with the
     abstract syntax tree of Curry.
 -}
+{-# LANGUAGE FlexibleInstances, MultiParamTypeClasses #-}
 
 module Curry.Syntax.Utils
   ( hasLanguageExtension, knownExtensions
@@ -34,15 +35,18 @@ module Curry.Syntax.Utils
   , recordLabels, nrecordLabels
   , methods, impls, imethod, imethodArity
   , shortenModuleAST
+  , ApplyOriginPragma (..), MkOriginPragma (..)
   ) where
 
 import Control.Monad.State
 
 import Curry.Base.Ident
+import Curry.Base.Span (Span(..))
 import Curry.Base.SpanInfo
 import Curry.Files.Filenames (takeBaseName)
 import Curry.Syntax.Extension
 import Curry.Syntax.Type
+import System.Directory (canonicalizePath)
 
 -- |Check whether a 'Module' has a specific 'KnownExtension' enabled by a pragma
 hasLanguageExtension :: Module a -> KnownExtension -> Bool
@@ -254,6 +258,21 @@ imethod (IMethodDecl _ f _ _) = f
 imethodArity :: IMethodDecl -> Maybe Int
 imethodArity (IMethodDecl _ _ a _) = a
 
+class ApplyOriginPragma o a where
+  applyOriginPragma :: o -> a -> a
+
+instance ApplyOriginPragma OriginPragma Ident where
+  applyOriginPragma (OriginPragma _ spi') = setSpanInfo spi'
+
+instance ApplyOriginPragma OriginPragma ModuleIdent where
+  applyOriginPragma (OriginPragma _ spi') = setSpanInfo spi'
+
+instance ApplyOriginPragma OriginPragma QualIdent where
+  applyOriginPragma o q = q { qidIdent = applyOriginPragma o (qidIdent q) }
+
+instance ApplyOriginPragma o a => ApplyOriginPragma (Maybe o) a where
+  applyOriginPragma = maybe id applyOriginPragma
+
 --------------------------------------------------------
 -- constructing elements of the abstract syntax tree
 --------------------------------------------------------
@@ -299,6 +318,23 @@ unapply :: Expression a -> [Expression a] -> (Expression a, [Expression a])
 unapply (Apply _ e1 e2) es = unapply e1 (e2 : es)
 unapply e               es = (e, es)
 
+class MkOriginPragma a where
+  mkOriginPragma :: MonadIO m => a -> m OriginPragma
+
+instance MkOriginPragma Ident where
+  mkOriginPragma = fmap (OriginPragma NoSpanInfo) . canonicalSpanInfo
+
+instance MkOriginPragma ModuleIdent where
+  mkOriginPragma = fmap (OriginPragma NoSpanInfo) . canonicalSpanInfo
+
+instance MkOriginPragma QualIdent where
+  mkOriginPragma = mkOriginPragma . qidIdent
+
+canonicalSpanInfo :: (MonadIO m, HasSpanInfo a) => a -> m SpanInfo
+canonicalSpanInfo x = case getSpanInfo x of
+  SpanInfo (Span f s e) sps -> do f' <- liftIO $ canonicalizePath f
+                                  return $ SpanInfo (Span f' s e) sps
+  spi                       -> return spi
 
 --------------------------------------------------------
 -- Shorten Module
