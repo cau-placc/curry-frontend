@@ -226,7 +226,7 @@ types m (IClassDecl _ _ qcls k tv ds ids o) =
   [typeCls o m qcls k (map mkMethod $ filter isVis ds)]
   where
     isVis (IMethodDecl _ f _ _ _) = f `notElem` ids
-    mkMethod (IMethodDecl _ f a qty _) = ClassMethod f a $ -- TODO: Apply origin pragma here
+    mkMethod (IMethodDecl _ f a qty om) = ClassMethod (applyOriginPragma om f) a $ -- TODO: Apply origin pragma here
       qualifyPredType m $ normalize 1 $ toMethodType qcls tv qty
 types _ _ = []
 

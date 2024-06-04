@@ -145,7 +145,8 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
             k'   = fromKind' k n
             tvs' = take n tvs
             ty'  = fromQualType m tvs' ty
-    [TypeClass qcls k ms] -> do o <- originPragma qcls
+    [TypeClass qcls k ms] -> do o   <- originPragma qcls
+                                ms' <- mapM (methodDecl m tvs) ms
                                 return $ IClassDecl NoPos cx qcls' k' tv ms' hs o : ds
       where qcls' = qualUnqualify m qcls
             cx    = [ Constraint NoSpanInfo (qualUnqualify m scls)
@@ -153,7 +154,6 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
                     | scls <- superClasses qcls clsEnv ]
             k'    = fromKind' k 0
             tv    = head tvs
-            ms'   = map (methodDecl m tvs) ms
             hs    = filter (`notElem` xs) (map methodName ms)
     _ -> internalError "Exports.typeDecl"
 typeDecl _ _ _ _ _ _ = internalError "Exports.typeDecl: no pattern match"
@@ -192,10 +192,10 @@ newConstrDecl m tvs (RecordConstr c ls tys)
 -- implicit class context is always the minimum element as the class variable
 -- is assigned the index 0 and no other constraints on it are allowed.
 
-methodDecl :: ModuleIdent -> [Ident] -> ClassMethod -> IMethodDecl
+methodDecl :: ModuleIdent -> [Ident] -> ClassMethod -> EXPM IMethodDecl
 methodDecl m tvs (ClassMethod f a (PredType ps ty)) = IMethodDecl NoPos f a
   (fromQualPredType m tvs $ PredType (Set.deleteMin ps) ty)
-  Nothing -- TODO: Generate origin pragma here
+  <$> originPragma f
 
 valueDecl :: ModuleIdent -> ValueEnv -> [Ident] -> Export -> [IDecl] -> EXPM [IDecl]
 valueDecl m vEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
