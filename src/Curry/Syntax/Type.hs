@@ -141,7 +141,7 @@ data OriginPragma = OriginPragma SpanInfo SpanInfo -- ^ origin pragma
     deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Class methods
-data IMethodDecl = IMethodDecl Position Ident (Maybe Arity) QualTypeExpr
+data IMethodDecl = IMethodDecl Position Ident (Maybe Arity) QualTypeExpr (Maybe OriginPragma)
   deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Class method implementations

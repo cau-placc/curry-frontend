@@ -170,7 +170,7 @@ bindClass m (IClassDecl _ cx cls _ _ ds ids o) =
   bindClassInfo (applyOriginPragma o (qualQualify m cls)) (sclss, ms)
   where sclss = map (\(Constraint _ scls _) -> qualQualify m scls) cx
         ms = map (\d -> (imethod d, isJust $ imethodArity d)) $ filter isVis ds
-        isVis (IMethodDecl _ idt _ _ ) = idt `notElem` ids
+        isVis (IMethodDecl _ idt _ _ _) = idt `notElem` ids
 bindClass _ _ = id
 
 importInstances :: ModuleIdent -> [IDecl] -> InstEnv -> InstEnv
@@ -225,8 +225,8 @@ types m (ITypeDecl _ tc k tvs ty o) =
 types m (IClassDecl _ _ qcls k tv ds ids o) =
   [typeCls o m qcls k (map mkMethod $ filter isVis ds)]
   where
-    isVis (IMethodDecl _ f _ _ ) = f `notElem` ids
-    mkMethod (IMethodDecl _ f a qty) = ClassMethod f a $
+    isVis (IMethodDecl _ f _ _ _) = f `notElem` ids
+    mkMethod (IMethodDecl _ f a qty _) = ClassMethod f a $ -- TODO: Apply origin pragma here
       qualifyPredType m $ normalize 1 $ toMethodType qcls tv qty
 types _ _ = []
 
@@ -325,7 +325,7 @@ constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)
 
 classMethod :: ModuleIdent -> QualIdent -> Ident -> [Ident] -> IMethodDecl
             -> ValueInfo
-classMethod m qcls tv hs (IMethodDecl _ f _ qty) =
+classMethod m qcls tv hs (IMethodDecl _ f _ qty _) =
   Value (qualifyLike qcls f) mcls 0 $
     typeScheme $ qualifyPredType m $ toMethodType qcls tv qty
   where

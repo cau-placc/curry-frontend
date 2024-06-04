@@ -252,11 +252,11 @@ impls _                      = []
 
 -- | Get the declared method identifier of an interface method declaration
 imethod :: IMethodDecl -> Ident
-imethod (IMethodDecl _ f _ _) = f
+imethod (IMethodDecl _ f _ _ _) = f
 
 -- | Get the arity of an interface method declaration
 imethodArity :: IMethodDecl -> Maybe Int
-imethodArity (IMethodDecl _ _ a _) = a
+imethodArity (IMethodDecl _ _ a _ _) = a
 
 class ApplyOriginPragma o a where
   applyOriginPragma :: o -> a -> a

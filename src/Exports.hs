@@ -193,8 +193,9 @@ newConstrDecl m tvs (RecordConstr c ls tys)
 -- is assigned the index 0 and no other constraints on it are allowed.
 
 methodDecl :: ModuleIdent -> [Ident] -> ClassMethod -> IMethodDecl
-methodDecl m tvs (ClassMethod f a (PredType ps ty)) = IMethodDecl NoPos f a $
-  fromQualPredType m tvs $ PredType (Set.deleteMin ps) ty
+methodDecl m tvs (ClassMethod f a (PredType ps ty)) = IMethodDecl NoPos f a
+  (fromQualPredType m tvs $ PredType (Set.deleteMin ps) ty)
+  Nothing -- TODO: Generate origin pragma here
 
 valueDecl :: ModuleIdent -> ValueEnv -> [Ident] -> Export -> [IDecl] -> EXPM [IDecl]
 valueDecl m vEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
@@ -288,7 +289,7 @@ instance HasModule NewConstrDecl where
   modules (NewRecordDecl _ _ (_, ty)) = modules ty
 
 instance HasModule IMethodDecl where
-  modules (IMethodDecl _ _ _ qty) = modules qty
+  modules (IMethodDecl _ _ _ qty _) = modules qty
 
 instance HasModule Constraint where
   modules (Constraint _ cls ty) = modules cls . modules ty
@@ -439,7 +440,7 @@ instance HasType NewConstrDecl where
   usedTypes (NewRecordDecl _ _ (_, ty)) = usedTypes ty
 
 instance HasType IMethodDecl where
-  usedTypes (IMethodDecl _ _ _ qty) = usedTypes qty
+  usedTypes (IMethodDecl _ _ _ qty _) = usedTypes qty
 
 instance HasType Constraint where
   usedTypes (Constraint _ cls ty) = (cls :) . usedTypes ty

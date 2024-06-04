@@ -180,12 +180,12 @@ checkSimpleConstraint c@(Constraint _ _ ty) =
   unless (isVariableType ty) $ report $ errIllegalSimpleConstraint c
 
 checkIMethodDecl :: Ident -> IMethodDecl -> ISC IMethodDecl
-checkIMethodDecl tv (IMethodDecl p f a qty) = do
+checkIMethodDecl tv (IMethodDecl p f a qty o) = do
   qty' <- checkQualType qty
   unless (tv `elem` fv qty') $ report $ errAmbiguousType f tv
   let QualTypeExpr _ cx _ = qty'
   when (tv `elem` fv cx) $ report $ errConstrainedClassVariable f tv
-  return $ IMethodDecl p f a qty'
+  return $ IMethodDecl p f a qty' o
 
 checkInstanceType :: InstanceType -> ISC ()
 checkInstanceType inst = do

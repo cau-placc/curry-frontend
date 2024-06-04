@@ -263,8 +263,9 @@ instance Pretty OriginPragma where
     _ -> empty
 
 instance Pretty IMethodDecl where
-  pPrint (IMethodDecl _ f a qty) =
-    ppIdent f <+> maybePP int a <+> text "::" <+> pPrintPrec 0 qty
+  pPrint (IMethodDecl _ f a qty o) =
+    ppIdent f <+> maybePP int a <+> text "::" <+> pPrintPrec 0 qty $$
+    maybe empty pPrint o
 
 ppIMethodImpl :: IMethodImpl -> Doc
 ppIMethodImpl (f, a) = ppIdent f <+> int a

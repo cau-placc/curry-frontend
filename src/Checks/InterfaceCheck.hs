@@ -231,7 +231,7 @@ checkNewConstrImport tc tvs (NewRecordDecl _ c (l, ty)) = do
   checkValueInfo "newtype constructor" check c qc
 
 checkMethodImport :: QualIdent -> Ident -> IMethodDecl -> IC ()
-checkMethodImport qcls clsvar (IMethodDecl _ f _ qty) =
+checkMethodImport qcls clsvar (IMethodDecl _ f _ qty _) =
   checkValueInfo "method" check f qf
   where qf = qualifyLike qcls f
         check (Value f' cm' _ (ForAll _ pty)) =

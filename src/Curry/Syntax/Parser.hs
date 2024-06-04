@@ -274,6 +274,7 @@ iClassDecl = (\(sp, _, cx, (qcls, k), tv) ->
 iMethod :: Parser a Token IMethodDecl
 iMethod = IMethodDecl <$> position
                       <*> fun <*> option int <*-> token DoubleColon <*> qualType
+                      <*> option originPragma
 
 -- |Parser for an interface hiding pragma
 iClassHidden :: Parser a Token [Ident]
