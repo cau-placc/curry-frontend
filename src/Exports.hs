@@ -130,7 +130,7 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
       where hs    = filter (`notElem` xs) (csIds ++ ls)
             cs'   = map (constrDecl m n tvs) cs
             ls    = nub (concatMap recordLabels cs')
-            csIds = map constrIdent cs
+            csIds = map (unqualify . constrIdent) cs
             n = kindArity k
     [RenamingType tc' k c]
       | null xs   -> (:ds) <$> iTypeDecl IDataDecl    m tvs tc' k [] []
@@ -138,7 +138,7 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
       where hs  = filter (`notElem` xs) (cId : ls)
             nc  = newConstrDecl m tvs c
             ls  = nrecordLabels nc
-            cId = constrIdent c
+            cId = unqualify $ constrIdent c
     [AliasType tc' k n ty] -> do o <- originPragma tc'
                                  return $ ITypeDecl NoPos tc'' k' tvs' ty' o : ds
       where tc'' = qualUnqualify m tc'
@@ -154,7 +154,7 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
                     | scls <- superClasses qcls clsEnv ]
             k'    = fromKind' k 0
             tv    = head tvs
-            hs    = filter (`notElem` xs) (map methodName ms)
+            hs    = filter (`notElem` xs) (map (unqualify . methodName) ms)
     _ -> internalError "Exports.typeDecl"
 typeDecl _ _ _ _ _ _ = internalError "Exports.typeDecl: no pattern match"
 
@@ -169,23 +169,23 @@ iTypeDecl f m tvs tc k x hs = do
 
 constrDecl :: ModuleIdent -> Int -> [Ident] -> DataConstr -> ConstrDecl
 constrDecl m _ tvs (DataConstr c [ty1, ty2])
-  | isInfixOp c = ConOpDecl NoSpanInfo ty1' c ty2'
+  | isInfixOp (unqualify c) = ConOpDecl NoSpanInfo ty1' (unqualify c) ty2'
   where ty1' = fromQualType m tvs ty1
         ty2' = fromQualType m tvs ty2
 constrDecl m _ tvs (DataConstr c tys) =
-  ConstrDecl NoSpanInfo c tys'
+  ConstrDecl NoSpanInfo (unqualify c) tys'
   where tys' = map (fromQualType m tvs) tys
 constrDecl m _ tvs (RecordConstr c ls tys) =
-  RecordDecl NoSpanInfo c fs
+  RecordDecl NoSpanInfo (unqualify c) fs
   where
     tys' = map (fromQualType m tvs) tys
-    fs   = zipWith (FieldDecl NoSpanInfo . return) ls tys'
+    fs   = zipWith (FieldDecl NoSpanInfo . return) (unqualify <$> ls) tys'
 
 newConstrDecl :: ModuleIdent -> [Ident] -> DataConstr -> NewConstrDecl
 newConstrDecl m tvs (DataConstr c tys)
-  = NewConstrDecl NoSpanInfo c (fromQualType m tvs (head tys))
+  = NewConstrDecl NoSpanInfo (unqualify c) (fromQualType m tvs (head tys))
 newConstrDecl m tvs (RecordConstr c ls tys)
-  = NewRecordDecl NoSpanInfo c (head ls, fromQualType m tvs (head tys))
+  = NewRecordDecl NoSpanInfo (unqualify c) (unqualify (head ls), fromQualType m tvs (head tys))
 
 -- When exporting a class method, we have to remove the implicit class context.
 -- Due to the sorting of the predicate set, this is fortunatly very easy. The
@@ -193,7 +193,7 @@ newConstrDecl m tvs (RecordConstr c ls tys)
 -- is assigned the index 0 and no other constraints on it are allowed.
 
 methodDecl :: ModuleIdent -> [Ident] -> ClassMethod -> EXPM IMethodDecl
-methodDecl m tvs (ClassMethod f a (PredType ps ty)) = IMethodDecl NoPos f a
+methodDecl m tvs (ClassMethod f a (PredType ps ty)) = IMethodDecl NoPos (unqualify f) a
   (fromQualPredType m tvs $ PredType (Set.deleteMin ps) ty)
   <$> originPragma f
 

@@ -182,11 +182,11 @@ checkTypeWith tc xs = do
   case qualLookupTypeInfoUnique m tc tcEnv of
     []                   -> report (errUndefinedTypeOrClass tc)
     [DataType _ _ cs]    ->
-      mapM_ (checkElement errUndefinedElement (visibleElems cs )) xs'
+      mapM_ (checkElement errUndefinedElement (unqualify <$> visibleElems cs )) xs'
     [RenamingType _ _ c] ->
-      mapM_ (checkElement errUndefinedElement (visibleElems [c])) xs'
+      mapM_ (checkElement errUndefinedElement (unqualify <$> visibleElems [c])) xs'
     [TypeClass   _ _ ms] ->
-      mapM_ (checkElement errUndefinedMethod (visibleMethods ms)) xs'
+      mapM_ (checkElement errUndefinedMethod (unqualify <$> visibleMethods ms)) xs'
     [_]                  -> report (errNonDataTypeOrTypeClass tc)
     ts                   -> report (errAmbiguousType tc ts)
   where
@@ -343,7 +343,7 @@ expandImportedModule m = do
         ++ [Export NoSpanInfo f | (_, Value f _ _ _) <- moduleImports m tyEnv]
 
 exportType :: TypeInfo -> Export
-exportType t = ExportTypeWith NoSpanInfo tc xs
+exportType t = ExportTypeWith NoSpanInfo tc (unqualify <$> xs)
   where tc = origName t
         xs = elements t
 
@@ -386,7 +386,8 @@ canonLabels tcEnv es = foldr bindLabels Map.empty (allEntities tcEnv)
       where
         tc'            = origName t
         bindLabel tc x =
-          Map.insert (qualifyLike tc x) (ExportTypeWith NoSpanInfo tc [x])
+          -- TODO: Is this fine or do we have to requalify x (now a QualIdent) like tc?
+          Map.insert x (ExportTypeWith NoSpanInfo tc [unqualify x])
 
 -- The expanded list of exported entities may contain duplicates. These
 -- are removed by the function joinExports. In particular, this
@@ -415,7 +416,7 @@ joinFun export                  _ = internalError $
 -- Auxiliary definitions
 -- ---------------------------------------------------------------------------
 
-elements :: TypeInfo -> [Ident]
+elements :: TypeInfo -> [QualIdent]
 elements (DataType      _ _ cs) = visibleElems cs
 elements (RenamingType   _ _ c) = visibleElems [c]
 elements (AliasType    _ _ _ _) = []
@@ -424,11 +425,11 @@ elements (TypeVar            _) =
   error "Checks.ExportCheck.elements: type variable"
 
 -- get visible constructor and label identifiers for given constructor
-visibleElems :: [DataConstr] -> [Ident]
+visibleElems :: [DataConstr] -> [QualIdent]
 visibleElems cs = map constrIdent cs ++ (nub (concatMap recLabels cs))
 
 -- get class method names
-visibleMethods :: [ClassMethod] -> [Ident]
+visibleMethods :: [ClassMethod] -> [QualIdent]
 visibleMethods = map methodName
 
 -- ---------------------------------------------------------------------------

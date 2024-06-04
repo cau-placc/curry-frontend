@@ -117,7 +117,7 @@ deriveInstances (DataDecl    _ tc tvs _ clss) = do
   m <- getModuleIdent
   tcEnv <- getTyConsEnv
   let otc = qualifyWith m tc
-      cis = constructors m otc tcEnv
+      cis = constructors otc tcEnv
   mapM (deriveInstance otc tvs cis) clss
 deriveInstances (NewtypeDecl p tc tvs _ clss) =
   deriveInstances $ DataDecl p tc tvs [] clss
@@ -563,18 +563,18 @@ freshVar name ty =
 -- Auxiliary functions
 -- -----------------------------------------------------------------------------
 
-constructors :: ModuleIdent -> QualIdent -> TCEnv -> [ConstrInfo]
-constructors m tc tcEnv =  zipWith (mkConstrInfo m) [1 ..] $
+constructors :: QualIdent -> TCEnv -> [ConstrInfo]
+constructors tc tcEnv =  zipWith mkConstrInfo [1 ..] $
   case qualLookupTypeInfo tc tcEnv of
     [DataType     _ _ cs] -> cs
     [RenamingType _ _ nc] -> [nc]
     _                     -> internalError $ "Derive.constructors: " ++ show tc
 
-mkConstrInfo :: ModuleIdent -> Int -> DataConstr -> ConstrInfo
-mkConstrInfo m i (DataConstr   c    tys) =
-  (i, qualifyWith m c, Nothing, tys)
-mkConstrInfo m i (RecordConstr c ls tys) =
-  (i, qualifyWith m c, Just ls, tys)
+mkConstrInfo :: Int -> DataConstr -> ConstrInfo
+mkConstrInfo i (DataConstr   c    tys) =
+  (i, c, Nothing, tys)
+mkConstrInfo i (RecordConstr c ls tys) =
+  (i, c, Just (unqualify <$> ls), tys)
 
 showsConstr :: Ident -> ShowS
 showsConstr c = showParen (isInfixOp c) $ showString $ idName c

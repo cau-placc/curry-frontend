@@ -70,10 +70,10 @@ bindType (IInfixDecl            _ _ _ _ _) = id
 bindType (HidingDataDecl      _ tc _ _ o) = qualBindTopEnv tc' (Data tc' [])
   where tc' = applyOriginPragma o tc
 bindType (IDataDecl      _ tc _ _ cs _ o) =
-  qualBindTopEnv tc' (Data tc' (map constrId cs))
+  qualBindTopEnv tc' (Data tc' (map (qualifyLike tc' . constrId) cs))
   where tc' = applyOriginPragma o tc
 bindType (INewtypeDecl   _ tc _ _ nc _ o) =
-  qualBindTopEnv tc' (Data tc' [nconstrId nc])
+  qualBindTopEnv tc' (Data tc' [qualifyLike tc' . nconstrId $ nc])
   where tc' = applyOriginPragma o tc
 bindType (ITypeDecl         _ tc _ _ _ o) = qualBindTopEnv tc' (Alias tc')
   where tc' = applyOriginPragma o tc
@@ -81,7 +81,7 @@ bindType (IFunctionDecl       _ _ _ _ _ _) = id
 bindType (HidingClassDecl  _ _ cls _ _ o) = qualBindTopEnv cls' (Class cls' [])
   where cls' = applyOriginPragma o cls
 bindType (IClassDecl _ _ cls _ _ ms hs o) =
-  qualBindTopEnv cls' (Class cls' (filter (`notElem` hs) (map imethod ms)))
+  qualBindTopEnv cls' (Class cls' (filter ((`notElem` hs) . unqualify) (map (qualifyLike cls' . imethod) ms)))
   where cls' = applyOriginPragma o cls
 bindType (IInstanceDecl     _ _ _ _ _ _ _) = id
 

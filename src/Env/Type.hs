@@ -30,9 +30,9 @@ import Env.TypeConstructor (TypeInfo (..))
 import Data.List (union)
 
 data TypeKind
-  = Data  QualIdent [Ident]
+  = Data  QualIdent [QualIdent]
   | Alias QualIdent
-  | Class QualIdent [Ident]
+  | Class QualIdent [QualIdent]
   deriving (Eq, Show)
 
 instance Entity TypeKind where

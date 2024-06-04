@@ -101,24 +101,27 @@ ok :: TSCM ()
 ok = return ()
 
 bindType :: ModuleIdent -> Decl a -> TypeEnv -> TypeEnv
-bindType m (DataDecl _ tc _ cs _) = bindTypeKind m tc (Data qtc ids)
+bindType m (DataDecl _ tc _ cs _) = bindTypeKind m tc (Data qtc qids)
   where
-    qtc = qualifyWith m tc
-    ids = map constrId cs ++ nub (concatMap recordLabels cs)
+    qtc  = qualifyWith m tc
+    ids  = map constrId cs ++ nub (concatMap recordLabels cs)
+    qids = qualifyWith m <$> ids
 bindType m (ExternalDataDecl _ tc _) = bindTypeKind m tc (Data qtc [])
   where
     qtc = qualifyWith m tc
-bindType m (NewtypeDecl _ tc _ nc _) = bindTypeKind m tc (Data qtc ids)
+bindType m (NewtypeDecl _ tc _ nc _) = bindTypeKind m tc (Data qtc qids)
   where
-    qtc = qualifyWith m tc
-    ids = nconstrId nc : nrecordLabels nc
+    qtc  = qualifyWith m tc
+    ids  = nconstrId nc : nrecordLabels nc
+    qids = qualifyWith m <$> ids
 bindType m (TypeDecl _ tc _ _) = bindTypeKind m tc (Alias qtc)
   where
     qtc = qualifyWith m tc
-bindType m (ClassDecl _ _ _ cls _ ds)  = bindTypeKind m cls (Class qcls ms)
+bindType m (ClassDecl _ _ _ cls _ ds)  = bindTypeKind m cls (Class qcls qms)
   where
     qcls = qualifyWith m cls
-    ms = concatMap methods ds
+    ms   = concatMap methods ds
+    qms  = qualifyWith m <$> ms
 bindType _ _ = id
 
 -- When type declarations are checked, the compiler will allow anonymous

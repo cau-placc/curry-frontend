@@ -368,7 +368,7 @@ bindDictType :: ModuleIdent -> ClassEnv -> TypeInfo -> TCEnv -> TCEnv
 bindDictType m clsEnv (TypeClass cls k ms) = bindEntity m tc ti
   where ti    = DataType tc (KindArrow k KindStar) [c]
         tc    = qDictTypeId cls
-        c     = DataConstr (dictConstrId cls) (map rtDictType (Set.toAscList ps) ++ tys)
+        c     = DataConstr (qualifyLike tc (dictConstrId cls)) (map rtDictType (Set.toAscList ps) ++ tys)
         sclss = superClasses cls clsEnv
         ps    = Set.fromList [Pred scls (TypeVariable 0) | scls <- sclss]
         tys   = map (generalizeMethodType . transformMethodPredType . methodType) ms
@@ -388,14 +388,14 @@ bindClassEntities :: ModuleIdent -> ClassEnv -> TypeInfo -> ValueEnv -> ValueEnv
 bindClassEntities m clsEnv (TypeClass cls _ ms) =
   bindClassDict m clsEnv cls . bindSuperStubs m cls sclss .
     bindDefaultMethods m cls fs
-  where fs    = zip (map methodName ms) (map (fromMaybe 0 . methodArity) ms)
+  where fs    = zip (map (unqualify . methodName) ms) (map (fromMaybe 0 . methodArity) ms)
         sclss = superClasses cls clsEnv
 bindClassEntities _ _ _ = id
 
 bindClassDict :: ModuleIdent -> ClassEnv -> QualIdent -> ValueEnv -> ValueEnv
 bindClassDict m clsEnv cls vEnv = bindEntity m c dc vEnv
   where c  = qDictConstrId cls
-        dc = DataConstructor c a (replicate a anonId) tySc
+        dc = DataConstructor c a (replicate a (qualifyLike c anonId)) tySc
         a  = Set.size ps + arrowArity ty
         pty@(PredType ps ty) = classDictConstrPredType vEnv clsEnv cls
         tySc = ForAll 1 pty
@@ -502,7 +502,7 @@ dictTransValueInfo :: ValueInfo -> ValueInfo
 dictTransValueInfo (DataConstructor c a ls (ForAll n pty)) =
   DataConstructor c a' ls' $ ForAll n $ predType ty
   where a'  = arrowArity ty
-        ls' = replicate (a' - a) anonId ++ ls
+        ls' = replicate (a' - a) (qualifyLike c anonId) ++ ls
         ty  = transformPredType pty
 dictTransValueInfo (NewtypeConstructor c l (ForAll n pty)) =
   NewtypeConstructor c l (ForAll n (predType (unpredType pty)))

@@ -503,7 +503,7 @@ checkInstanceDecl (InstanceDecl p li cx qcls ty ds) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   tcEnv <- getTyConsEnv
-  let clsMthds = clsMethods m qcls tcEnv
+  let clsMthds = unqualify <$> clsMethods m qcls tcEnv
   let orig = getOrigName m qcls tcEnv
   let mthds =
         if isLocalIdent m orig

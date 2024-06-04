@@ -152,13 +152,13 @@ importData _ (TypeVar _) = internalError "Imports.importData: type variable"
 
 importConstr :: (Ident -> Bool) -> DataConstr -> Maybe DataConstr
 importConstr isVisible' dc
-  | isVisible' (constrIdent dc) = Just dc
-  | otherwise                   = Nothing
+  | isVisible' (unqualify (constrIdent dc)) = Just dc
+  | otherwise                               = Nothing
 
 importMethod :: (Ident -> Bool) -> ClassMethod -> Maybe ClassMethod
 importMethod isVisible' mthd
-  | isVisible' (methodName mthd) = Just mthd
-  | otherwise                    = Nothing
+  | isVisible' (unqualify (methodName mthd)) = Just mthd
+  | otherwise                                = Nothing
 
 importClasses :: ModuleIdent -> [IDecl] -> ClassEnv -> ClassEnv
 importClasses m = flip $ foldr (bindClass m)
@@ -205,19 +205,19 @@ types m (IDataDecl _ tc k tvs cs _ o) =
   [typeCon DataType o m tc k tvs (map mkData cs)]
   where
     mkData (ConstrDecl _ c tys) =
-      DataConstr c (toQualTypes m tvs tys)
+      DataConstr (applyOriginPragma o (qualifyWith m c)) (toQualTypes m tvs tys)
     mkData (ConOpDecl _  ty1 c ty2) =
-      DataConstr c (toQualTypes m tvs [ty1, ty2])
+      DataConstr (applyOriginPragma o (qualifyWith m c)) (toQualTypes m tvs [ty1, ty2])
     mkData (RecordDecl _ c fs) =
-      RecordConstr c labels (toQualTypes m tvs tys)
+      RecordConstr (applyOriginPragma o (qualifyWith m c)) (applyOriginPragma o . qualifyWith m <$> labels) (toQualTypes m tvs tys)
       where (labels, tys) = unzip [(l, ty) | FieldDecl _ ls ty <- fs, l <- ls]
 types m (INewtypeDecl _ tc k tvs nc _ o) =
   [typeCon RenamingType o m tc k tvs (mkData nc)]
   where
     mkData (NewConstrDecl _ c ty) =
-      DataConstr c [toQualType m tvs ty]
+      DataConstr (applyOriginPragma o (qualifyWith m c)) [toQualType m tvs ty]
     mkData (NewRecordDecl _ c (l, ty)) =
-      RecordConstr c [l] [toQualType m tvs ty]
+      RecordConstr (applyOriginPragma o (qualifyWith m c)) [applyOriginPragma o . qualifyWith m $ l] [toQualType m tvs ty]
 types m (ITypeDecl _ tc k tvs ty o) =
   [typeCon aliasType o m tc k tvs (toQualType m tvs ty)]
   where
@@ -226,7 +226,7 @@ types m (IClassDecl _ _ qcls k tv ds ids o) =
   [typeCls o m qcls k (map mkMethod $ filter isVis ds)]
   where
     isVis (IMethodDecl _ f _ _ _) = f `notElem` ids
-    mkMethod (IMethodDecl _ f a qty om) = ClassMethod (applyOriginPragma om f) a $ -- TODO: Apply origin pragma here
+    mkMethod (IMethodDecl _ f a qty om) = ClassMethod (applyOriginPragma om (qualifyWith m f)) a $ -- TODO: Apply origin pragma here
       qualifyPredType m $ normalize 1 $ toMethodType qcls tv qty
 types _ _ = []
 
@@ -286,12 +286,12 @@ dataConstr m tc tvs (ConstrDecl _ c tys) =
   DataConstructor (qualifyLike tc c) a labels $
     constrType' m tc tvs tys
   where a      = length tys
-        labels = replicate a anonId
+        labels = replicate a (qualifyLike tc anonId)
 dataConstr m tc tvs (ConOpDecl _ ty1 op ty2) =
-  DataConstructor (qualifyLike tc op) 2 [anonId, anonId] $
+  DataConstructor (qualifyLike tc op) 2 (qualifyLike tc <$> [anonId, anonId]) $
     constrType' m tc tvs [ty1, ty2]
 dataConstr m tc tvs (RecordDecl _ c fs) =
-  DataConstructor (qualifyLike tc c) a labels $
+  DataConstructor (qualifyLike tc c) a (qualifyLike tc <$> labels) $
     constrType' m tc tvs tys
   where fields        = [(l, ty) | FieldDecl _ ls ty <- fs, l <- ls]
         (labels, tys) = unzip fields
@@ -299,10 +299,10 @@ dataConstr m tc tvs (RecordDecl _ c fs) =
 
 newConstr :: ModuleIdent -> QualIdent -> [Ident] -> NewConstrDecl -> ValueInfo
 newConstr m tc tvs (NewConstrDecl _ c ty1) =
-  NewtypeConstructor (qualifyLike tc c) anonId $
+  NewtypeConstructor (qualifyLike tc c) (qualifyLike tc anonId) $
   constrType' m tc tvs [ty1]
 newConstr m tc tvs (NewRecordDecl _ c (l, ty1)) =
-  NewtypeConstructor (qualifyLike tc c) l $
+  NewtypeConstructor (qualifyLike tc c) (qualifyLike tc l) $
   constrType' m tc tvs [ty1]
 
 recLabel :: ModuleIdent -> QualIdent -> [Ident] -> TypeExpr

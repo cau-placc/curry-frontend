@@ -241,7 +241,7 @@ genSelEqn p l qc = do
   vEnv <- getValueEnv
   let (ls, ty) = conType qc vEnv
       (tys, ty0) = arrowUnapply (instType ty)
-  case elemIndex l ls of
+  case elemIndex l (unqualify <$> ls) of
     Just n  -> do
       vs <- mapM (freshVar "_#rec") tys
       let pat = constrPattern (predType ty0) qc vs
@@ -716,9 +716,8 @@ dsExpr p (RecordUpdate _ e fs) = do
   where ty = typeOf e
         pty = predType ty
         tc = rootOfType (arrowBase ty)
-        updateAlt (RecordConstr c ls _)
+        updateAlt (RecordConstr qc qls2 _)
           | all ((`elem` qls2) . fieldLabel) fs= do
-            let qc = qualifyLike tc c
             vEnv <- getValueEnv
             let (qls, tys) = argumentTypes ty qc vEnv
             vs <- mapM (freshVar "_#rec") tys
@@ -728,7 +727,6 @@ dsExpr p (RecordUpdate _ e fs) = do
                 maybeEs = map (`lookup` esMap) qls
                 es = zipWith fromMaybe originalEs maybeEs
             return [(pat, applyConstr pty qc tys es)]
-          where qls2 = map (qualifyLike tc) ls
         updateAlt _ = return []
 dsExpr p (Tuple      _ es) =
   apply (Constructor NoSpanInfo pty $ qTupleId $ length es)
@@ -1120,7 +1118,7 @@ falsePat = ConstructorPattern NoSpanInfo predBoolType qFalseId []
 -- Auxiliary definitions
 -- ---------------------------------------------------------------------------
 
-conType :: QualIdent -> ValueEnv -> ([Ident], TypeScheme)
+conType :: QualIdent -> ValueEnv -> ([QualIdent], TypeScheme)
 conType c vEnv = case qualLookupValue c vEnv of
   [DataConstructor _ _ ls ty] -> (ls , ty)
   [NewtypeConstructor _ l ty] -> ([l], ty)
@@ -1171,6 +1169,6 @@ constructors tc = getTyConsEnv >>= \tcEnv -> return $
 
 argumentTypes :: Type -> QualIdent -> ValueEnv -> ([QualIdent], [Type])
 argumentTypes ty c vEnv =
-  (map (qualifyLike c) ls, map (subst (matchType ty0 ty idSubst)) tys)
+  (ls, map (subst (matchType ty0 ty idSubst)) tys)
   where (ls, ForAll _ (PredType _ ty')) = conType c vEnv
         (tys, ty0) = arrowUnapply ty'

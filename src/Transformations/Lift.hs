@@ -249,7 +249,7 @@ absFunDecl pre fvs lvs (FunctionDecl p ty f eqs) = do
   case d of
     FunctionDecl _ _ _ eqs'' -> do
       modifyValueEnv $ bindGlobalInfo
-        (\qf tySc -> Value qf Nothing (eqnArity $ head eqs') tySc) m f' $
+        (\qf tySc -> Value qf Nothing (eqnArity $ head eqs') tySc) (qualifyWith m f') $
                     polyType ty''
       return $ FunctionDecl p ty'' f' eqs''
     _ -> internalError "Lift.absFunDecl: not a function declaration"
@@ -274,7 +274,7 @@ absVar :: String -> Var Type -> LiftM (Var Type)
 absVar pre (Var ty f) = do
   m <- getModuleIdent
   modifyValueEnv $ bindGlobalInfo
-    (\qf tySc -> Value qf Nothing (arrowArity ty) tySc) m f' $ polyType ty
+    (\qf tySc -> Value qf Nothing (arrowArity ty) tySc) (qualifyWith m f') $ polyType ty
   return $ Var ty f'
   where f' = liftIdent pre f
 

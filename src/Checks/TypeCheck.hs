@@ -258,22 +258,22 @@ bindConstrs' m tcEnv vEnv = foldr (bindData . snd) vEnv $ localBindings tcEnv
 
 bindConstr :: ModuleIdent -> Int -> Type -> DataConstr -> ValueEnv -> ValueEnv
 bindConstr m n ty (DataConstr c tys) =
-  bindGlobalInfo (\qc tyScheme -> DataConstructor qc arity ls tyScheme) m c
+  bindGlobalInfo (\qc tyScheme -> DataConstructor qc arity ls tyScheme) c
                  (ForAll n (PredType emptyPredSet (foldr TypeArrow ty tys)))
   where arity = length tys
-        ls    = replicate arity anonId
-bindConstr m n ty (RecordConstr c ls tys) =
-  bindGlobalInfo (\qc tyScheme -> DataConstructor qc arity ls tyScheme) m c
+        ls    = qualifyWith m <$> replicate arity anonId
+bindConstr _ n ty (RecordConstr c ls tys) =
+  bindGlobalInfo (\qc tyScheme -> DataConstructor qc arity ls tyScheme) c
                  (ForAll n (PredType emptyPredSet (foldr TypeArrow ty tys)))
   where arity = length tys
 
 bindNewConstr :: ModuleIdent -> Int -> Type -> DataConstr -> ValueEnv
               -> ValueEnv
-bindNewConstr m n cty (DataConstr c [lty]) =
-  bindGlobalInfo (\qc tyScheme -> NewtypeConstructor qc anonId tyScheme) m c
+bindNewConstr _ n cty (DataConstr c [lty]) =
+  bindGlobalInfo (\qc tyScheme -> NewtypeConstructor qc (qualifyLike qc anonId) tyScheme) c
                  (ForAll n (predType (TypeArrow lty cty)))
-bindNewConstr m n cty (RecordConstr c [l] [lty]) =
-  bindGlobalInfo (\qc tyScheme -> NewtypeConstructor qc l tyScheme) m c
+bindNewConstr _ n cty (RecordConstr c [l] [lty]) =
+  bindGlobalInfo (\qc tyScheme -> NewtypeConstructor qc l tyScheme) c
                  (ForAll n (predType (TypeArrow lty cty)))
 bindNewConstr _ _ _ _ = internalError
   "TypeCheck.bindConstrs'.bindNewConstr: newtype with illegal constructors"
@@ -339,15 +339,14 @@ bindLabels' m tcEnv vEnv = foldr (bindData . snd) vEnv $ localBindings tcEnv
       where
         n = kindArity k
         labels = zip (concatMap recLabels cs) (concatMap recLabelTypes cs)
-        clabels = [(l, constr l, ty) | (l, ty) <- labels]
-        constr l = [qualifyLike tc (constrIdent c)
+        clabels = [(unqualify l, constr l, ty) | (l, ty) <- labels]
+        constr l = [constrIdent c
                      | c <- cs, l `elem` recLabels c]
         sameLabel (l1, _, _) (l2, _, _) = l1 == l2
-    bindData (RenamingType tc k (RecordConstr c [l] [lty])) vEnv'
-      = bindLabel m n (constrType' tc n) (l, [qc], lty) vEnv'
+    bindData (RenamingType tc k (RecordConstr qc [l] [lty])) vEnv'
+      = bindLabel m n (constrType' tc n) (unqualify l, [qc], lty) vEnv'
       where
         n = kindArity k
-        qc = qualifyLike tc c
     bindData (RenamingType _ _ (RecordConstr _ _ _)) _ =
       internalError $ "Checks.TypeCheck.bindLabels'.bindData: " ++
         "RenamingType with more than one record label"
@@ -356,7 +355,7 @@ bindLabels' m tcEnv vEnv = foldr (bindData . snd) vEnv $ localBindings tcEnv
 bindLabel :: ModuleIdent -> Int -> Type -> (Ident, [QualIdent], Type)
           -> ValueEnv -> ValueEnv
 bindLabel m n ty (l, lcs, lty) =
-  bindGlobalInfo (\qc tyScheme -> Label qc lcs tyScheme) m l
+  bindGlobalInfo (\qc tyScheme -> Label qc lcs tyScheme) (qualifyWith m l)
                  (ForAll n (predType (TypeArrow ty lty)))
 
 -- Defining class methods:
@@ -364,26 +363,25 @@ bindLabel m n ty (l, lcs, lty) =
 
 bindClassMethods :: TCM ()
 bindClassMethods = do
-  m <- getModuleIdent
   tcEnv <- getTyConsEnv
-  modifyValueEnv $ bindClassMethods' m tcEnv
+  modifyValueEnv $ bindClassMethods' tcEnv
 
-bindClassMethods' :: ModuleIdent -> TCEnv -> ValueEnv -> ValueEnv
-bindClassMethods' m tcEnv vEnv =
+bindClassMethods' :: TCEnv -> ValueEnv -> ValueEnv
+bindClassMethods' tcEnv vEnv =
   foldr (bindMethods . snd) vEnv $ localBindings tcEnv
   where
     bindMethods (TypeClass cls _ ms) vEnv' =
-      foldr (bindClassMethod m cls) vEnv' ms
+      foldr (bindClassMethod cls) vEnv' ms
     bindMethods _                    vEnv' =
       vEnv'
 
 -- Since the implementations of class methods can differ in their arity,
 -- we assume an arity of 0 when we enter one into the value environment.
 
-bindClassMethod :: ModuleIdent -> QualIdent -> ClassMethod -> ValueEnv
+bindClassMethod :: QualIdent -> ClassMethod -> ValueEnv
                 -> ValueEnv
-bindClassMethod m cls (ClassMethod f _ ty) =
-  bindGlobalInfo (\qc tySc -> Value qc (Just cls) 0 tySc) m f (typeScheme ty)
+bindClassMethod cls (ClassMethod f _ ty) =
+  bindGlobalInfo (\qc tySc -> Value qc (Just cls) 0 tySc) f (typeScheme ty)
 
 -- -----------------------------------------------------------------------------
 -- Default Types
@@ -1177,7 +1175,7 @@ tcExpr e@(Record spi _ c fs) = do
   (ps, ty) <- fmap arrowBase <$> inst (constrType m c vEnv)
   (ps', fs') <- mapAccumM (tcField (const tcExpr) "construction"
     (\e' -> pPrintPrec 0 e $-$ text "Term:" <+> pPrintPrec 0 e') ty) ps fs
-  let missing = map (qualifyLike c) (constrLabels m c vEnv)
+  let missing = constrLabels m c vEnv
                   \\ map (\(Field _ qid _) -> qid) fs'
   pss <- mapM (tcMissingField spi ty) missing
   return (Set.unions (ps':pss), ty, Record spi (predType ty) c fs')
@@ -1724,7 +1722,7 @@ constrType m c vEnv = case qualLookupValue c vEnv of
     [NewtypeConstructor _ _ tySc] -> tySc
     _ -> internalError $ "TypeCheck.constrType: " ++ show c
 
-constrLabels :: ModuleIdent -> QualIdent -> ValueEnv -> [Ident]
+constrLabels :: ModuleIdent -> QualIdent -> ValueEnv -> [QualIdent]
 constrLabels m c vEnv = case qualLookupValue c vEnv of
   [DataConstructor _ _ ls _] -> ls
   [NewtypeConstructor _ l _] -> [l]

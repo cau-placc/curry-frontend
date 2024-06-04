@@ -45,13 +45,14 @@ import Base.Types
 import Base.Utils ((++!))
 
 import Text.PrettyPrint
+import Control.Monad (zipWithM)
 
 data ValueInfo
   -- |Data constructor with original name, arity, list of record labels and type
-  = DataConstructor    QualIdent                   Int [Ident] TypeScheme
+  = DataConstructor    QualIdent                   Int [QualIdent] TypeScheme
   -- |Newtype constructor with original name, record label and type
   -- (arity is always 1)
-  | NewtypeConstructor QualIdent                       Ident   TypeScheme
+  | NewtypeConstructor QualIdent                       QualIdent   TypeScheme
   -- |Value with original name, class method name, arity and type
   | Value              QualIdent (Maybe QualIdent) Int         TypeScheme
   -- |Record label with original name, list of constructors for which label
@@ -67,7 +68,7 @@ instance Entity ValueInfo where
 
   merge (DataConstructor c1 ar1 ls1 ty1) (DataConstructor c2 ar2 ls2 ty2)
     | c1 == c2 && ar1 == ar2 && ty1 == ty2 = do
-      ls' <- sequence (zipWith mergeLabel ls1 ls2)
+      ls' <- zipWithM mergeLabel ls1 ls2
       Just (DataConstructor c1 ar1 ls' ty1)
   merge (NewtypeConstructor c1 l1 ty1) (NewtypeConstructor c2 l2 ty2)
     | c1 == c2 && ty1 == ty2 = do
@@ -92,12 +93,12 @@ instance Pretty ValueInfo where
   pPrint (Label qid _ tySc)              =     text "label" <+> pPrint qid
                                            <+> equals <+> pPrint tySc
 
-mergeLabel :: Ident -> Ident -> Maybe Ident
+mergeLabel :: QualIdent -> QualIdent -> Maybe QualIdent
 mergeLabel l1 l2
-  | l1 == anonId = Just l2
-  | l2 == anonId = Just l1
-  | l1 == l2     = Just l1
-  | otherwise    = Nothing
+  | unqualify l1 == anonId = Just l2
+  | unqualify l2 == anonId = Just l1
+  | l1 == l2               = Just l1
+  | otherwise              = Nothing
 
 -- Even though value declarations may be nested, the compiler uses only
 -- flat environments for saving type information. This is possible
@@ -109,11 +110,10 @@ mergeLabel l1 l2
 
 type ValueEnv = TopEnv ValueInfo
 
-bindGlobalInfo :: (QualIdent -> a -> ValueInfo) -> ModuleIdent -> Ident -> a
+bindGlobalInfo :: (QualIdent -> a -> ValueInfo) -> QualIdent -> a
                -> ValueEnv -> ValueEnv
-bindGlobalInfo f m c ty = bindTopEnv c v . qualBindTopEnv qc v
-  where qc = qualifyWith m c
-        v  = f qc ty
+bindGlobalInfo f qc ty = bindTopEnv (unqualify qc) v . qualBindTopEnv qc v
+  where v = f qc ty
 
 bindFun :: ModuleIdent -> Ident -> Maybe QualIdent -> Int -> TypeScheme
         -> ValueEnv -> ValueEnv
@@ -163,7 +163,7 @@ tupleDCs :: [ValueInfo]
 tupleDCs = map dataInfo tupleData
   where dataInfo (DataConstr _ tys) =
           let n = length tys
-          in  DataConstructor (qTupleId n) n (replicate n anonId) $
+          in  DataConstructor (qTupleId n) n (replicate n (qualify anonId)) $
                 ForAll n $ predType $ foldr TypeArrow (tupleType tys) tys
         dataInfo (RecordConstr _ _ _) =
           internalError $ "Env.Value.tupleDCs: " ++ show tupleDCs
@@ -176,9 +176,8 @@ initDCEnv :: ValueEnv
 initDCEnv = foldr predefDC emptyTopEnv
   [ (c, length tys, constrType (polyType ty) tys)
   | (ty, cs) <- predefTypes, DataConstr c tys <- cs ]
-  where predefDC (c, a, ty) = predefTopEnv c' (DataConstructor c' a ls ty)
-          where ls = replicate a anonId
-                c' = qualify c
+  where predefDC (c, a, ty) = predefTopEnv c (DataConstructor c a ls ty)
+          where ls = replicate a (qualifyLike c anonId)
         constrType (ForAll n (PredType ps ty)) =
           ForAll n . PredType ps . foldr TypeArrow ty
 

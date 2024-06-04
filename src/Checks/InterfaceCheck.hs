@@ -129,7 +129,7 @@ checkImport (HidingDataDecl _ tc k tvs _) =
 checkImport (IDataDecl _ tc k tvs cs _ _) = checkTypeInfo "data type" check tc tc
   where check (DataType     tc' k' cs')
           | tc == tc' && toKind' k (length tvs) == k' &&
-            (null cs || map constrId cs == map constrIdent cs')
+            (null cs || map constrId cs == map (unqualify . constrIdent) cs')
           = Just (mapM_ (checkConstrImport tc tvs) cs)
         check (RenamingType tc' k'   _)
           | tc == tc' && toKind' k (length tvs) == k' && null cs
@@ -138,7 +138,7 @@ checkImport (IDataDecl _ tc k tvs cs _ _) = checkTypeInfo "data type" check tc t
 checkImport (INewtypeDecl _ tc k tvs nc _ _) = checkTypeInfo "newtype" check tc tc
   where check (RenamingType tc' k' nc')
           | tc == tc' && toKind' k (length tvs) == k' &&
-            nconstrId nc == constrIdent nc'
+            nconstrId nc == unqualify (constrIdent nc')
           = Just (checkNewConstrImport tc tvs nc)
         check _ = Nothing
 checkImport (ITypeDecl _ tc k tvs ty _) = do
@@ -177,7 +177,7 @@ checkImport (IClassDecl _ cx cls k clsvar ms _ _) = do
         | cls == cls' && toKind' k 0 == k' &&
           [cls'' | Constraint _ cls'' _ <- cx] == superClasses cls' clsEnv &&
           map (\m -> (imethod m, imethodArity m)) ms ==
-            map (\f -> (methodName f, methodArity f)) fs
+            map (\f -> (unqualify $ methodName f, methodArity f)) fs
         = Just $ mapM_ (checkMethodImport cls clsvar) ms
       check _ = Nothing
   checkTypeInfo "type class" check cls cls
@@ -208,7 +208,7 @@ checkConstrImport tc tvs (RecordDecl _ c fs) = do
   let qc = qualifyLike tc c
       (ls, tys) = unzip [(l, ty) | FieldDecl _ labels ty <- fs, l <- labels]
       check (DataConstructor c' _ ls' (ForAll uqvs pty)) =
-        qc == c' && length tvs == uqvs && ls == ls' &&
+        qc == c' && length tvs == uqvs && ls == (unqualify <$> ls') &&
         qualifyPredType m (toConstrType tc tvs tys) == pty
       check _ = False
   checkValueInfo "data constructor" check c qc
@@ -225,7 +225,7 @@ checkNewConstrImport tc tvs (NewRecordDecl _ c (l, ty)) = do
   m <- getModuleIdent
   let qc = qualifyLike tc c
       check (NewtypeConstructor c' l' (ForAll uqvs (PredType _ ty'))) =
-        qc == c' && length tvs == uqvs && l == l' &&
+        qc == c' && length tvs == uqvs && l == unqualify l' &&
         toQualType m tvs ty == head (arrowArgs ty')
       check _ = False
   checkValueInfo "newtype constructor" check c qc

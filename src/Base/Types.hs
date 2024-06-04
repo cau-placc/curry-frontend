@@ -324,11 +324,11 @@ unqualifyPredType m (PredType ps ty) =
 -- The type 'DataConstr' is used to represent value or record constructors
 -- introduced by data or newtype declarations.
 
-data DataConstr = DataConstr   Ident [Type]
-                | RecordConstr Ident [Ident] [Type]
+data DataConstr = DataConstr   QualIdent [Type]
+                | RecordConstr QualIdent [QualIdent] [Type]
   deriving (Eq, Show)
 
-constrIdent :: DataConstr -> Ident
+constrIdent :: DataConstr -> QualIdent
 constrIdent (DataConstr     c _) = c
 constrIdent (RecordConstr c _ _) = c
 
@@ -336,7 +336,7 @@ constrTypes :: DataConstr -> [Type]
 constrTypes (DataConstr     _ tys) = tys
 constrTypes (RecordConstr _ _ tys) = tys
 
-recLabels :: DataConstr -> [Ident]
+recLabels :: DataConstr -> [QualIdent]
 recLabels (DataConstr      _ _) = []
 recLabels (RecordConstr _ ls _) = ls
 
@@ -345,7 +345,7 @@ recLabelTypes (DataConstr       _ _) = []
 recLabelTypes (RecordConstr _ _ tys) = tys
 
 tupleData :: [DataConstr]
-tupleData = [DataConstr (tupleId n) (take n tvs) | n <- [2 ..]]
+tupleData = [DataConstr (qualify (tupleId n)) (take n tvs) | n <- [2 ..]]
   where tvs = map TypeVariable [0 ..]
 
 -- ---------------------------------------------------------------------------
@@ -356,10 +356,10 @@ tupleData = [DataConstr (tupleId n) (take n tvs) | n <- [2 ..]]
 -- by class declarations. The 'Maybe Int' denotes the arity of the provided
 -- default implementation.
 
-data ClassMethod = ClassMethod Ident (Maybe Int) PredType
+data ClassMethod = ClassMethod QualIdent (Maybe Int) PredType
   deriving (Eq, Show)
 
-methodName :: ClassMethod -> Ident
+methodName :: ClassMethod -> QualIdent
 methodName (ClassMethod f _ _) = f
 
 methodArity :: ClassMethod -> Maybe Int
@@ -469,9 +469,9 @@ fractionalTypes = drop 1 numTypes
 predefTypes :: [(Type, [DataConstr])]
 predefTypes =
   [ (arrowType a b, [])
-  , (unitType     , [ DataConstr unitId [] ])
-  , (listType a   , [ DataConstr nilId  []
-                    , DataConstr consId [a, listType a]
+  , (unitType     , [ DataConstr qUnitId [] ])
+  , (listType a   , [ DataConstr qNilId  []
+                    , DataConstr qConsId [a, listType a]
                     ])
   ]
   where a = TypeVariable 0

@@ -624,7 +624,7 @@ simplifyPat (InfixPattern    spi a p1 c p2) =
 simplifyPat (ParenPattern              _ p) = simplifyPat p
 simplifyPat (RecordPattern        _ _ c fs) = do
   (_, ls) <- getAllLabels c
-  let ps = map (getPattern (map field2Tuple fs)) ls
+  let ps = map (getPattern (map field2Tuple fs)) (unqualify <$> ls)
   simplifyPat (ConstructorPattern NoSpanInfo () c ps)
   where
     getPattern fs' l' =
@@ -639,7 +639,7 @@ simplifyPat (LazyPattern             _ _) = return wildPat
 simplifyPat (FunctionPattern     _ _ _ _) = return wildPat
 simplifyPat (InfixFuncPattern  _ _ _ _ _) = return wildPat
 
-getAllLabels :: QualIdent -> WCM (QualIdent, [Ident])
+getAllLabels :: QualIdent -> WCM (QualIdent, [QualIdent])
 getAllLabels c = do
   tyEnv <- gets valueEnv
   case qualLookupValue c tyEnv of
@@ -765,7 +765,7 @@ processCons qs@(q:_) = do
   -- Pattern for a non-matched constructors
   defaultPat c = (mkPattern c : replicate (length (snd3 q) - 1) wildPat, [])
   mkPattern  c = ConstructorPattern NoSpanInfo ()
-                  (qualifyLike (fst $ head used_cons) (constrIdent c))
+                  (constrIdent c)
                   (replicate (length $ constrTypes c) wildPat)
 
 -- |Construct exhaustive patterns starting with the used constructors
@@ -804,7 +804,7 @@ getUnusedCons :: [QualIdent] -> WCM [DataConstr]
 getUnusedCons []       = internalError "Checks.WarnCheck.getUnusedCons"
 getUnusedCons qs@(q:_) = do
   allCons <- getConTy q >>= getTyCons . rootOfType . arrowBase
-  return [c | c <- allCons, (constrIdent c) `notElem` map unqualify qs]
+  return [c | c <- allCons, unqualify (constrIdent c) `notElem` map unqualify qs]
 
 -- |Retrieve the type of a given constructor.
 getConTy :: QualIdent -> WCM Type

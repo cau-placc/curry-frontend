@@ -147,7 +147,7 @@ varKind tv tcEnv
     [TypeVar k] -> k
     _ -> internalError "Env.TypeConstructor.varKind: no type variable"
 
-clsMethods :: ModuleIdent -> QualIdent -> TCEnv -> [Ident]
+clsMethods :: ModuleIdent -> QualIdent -> TCEnv -> [QualIdent]
 clsMethods m cls tcEnv = case qualLookupTypeInfo cls tcEnv of
   [TypeClass _ _ ms] -> map methodName ms
   _ -> case qualLookupTypeInfo (qualQualify m cls) tcEnv of

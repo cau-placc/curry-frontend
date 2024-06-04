@@ -316,11 +316,11 @@ bindKind :: ModuleIdent -> TCEnv -> ClassEnv -> TCEnv -> Decl a -> KCM TCEnv
 bindKind m tcEnv' clsEnv tcEnv (DataDecl _ tc tvs cs _) =
   bindTypeConstructor DataType tc tvs (Just KindStar) (map mkData cs) tcEnv
   where
-    mkData (ConstrDecl _     c  tys) = mkData' c  tys
-    mkData (ConOpDecl  _ ty1 op ty2) = mkData' op [ty1, ty2]
+    mkData (ConstrDecl _     c  tys) = mkData' (qualifyWith m c)  tys
+    mkData (ConOpDecl  _ ty1 op ty2) = mkData' (qualifyWith m op) [ty1, ty2]
     mkData (RecordDecl _     c   fs) =
       let (labels, tys) = unzip [(l, ty) | FieldDecl _ ls ty <- fs, l <- ls]
-      in  mkRec c labels tys
+      in  mkRec (qualifyWith m c) (qualifyWith m <$> labels) tys
     mkData' c tys = DataConstr c tys'
       where qtc = qualifyWith m tc
             PredType _ ty = expandConstrType m tcEnv' clsEnv qtc tvs tys
@@ -335,9 +335,9 @@ bindKind _ _     _       tcEnv (ExternalDataDecl _ tc tvs) =
 bindKind m tcEnv' _      tcEnv (NewtypeDecl _ tc tvs nc _) =
   bindTypeConstructor RenamingType tc tvs (Just KindStar) (mkData nc) tcEnv
   where
-    mkData (NewConstrDecl _ c      ty) = DataConstr c [ty']
+    mkData (NewConstrDecl _ c      ty) = DataConstr (qualifyWith m c) [ty']
       where ty'  = expandMonoType m tcEnv' tvs ty
-    mkData (NewRecordDecl _ c (l, ty)) = RecordConstr c [l] [ty']
+    mkData (NewRecordDecl _ c (l, ty)) = RecordConstr (qualifyWith m c) [qualifyWith m l] [ty']
       where ty'  = expandMonoType m tcEnv' tvs ty
 bindKind m tcEnv' _      tcEnv (TypeDecl _ tc tvs ty) =
   bindTypeConstructor aliasType tc tvs Nothing ty' tcEnv
@@ -349,7 +349,7 @@ bindKind m tcEnv' clsEnv tcEnv (ClassDecl _ _ _ cls tv ds) =
   where
     mkMethods (TypeSig _ fs qty) = map (mkMethod qty) fs
     mkMethods _                  = []
-    mkMethod qty f = ClassMethod f (findArity f ds) $
+    mkMethod qty f = ClassMethod (qualifyWith m f) (findArity f ds) $
                        expandMethodType m tcEnv' clsEnv (qualify cls) tv qty
     findArity _ []                                    = Nothing
     findArity f (FunctionDecl _ _ f' eqs:_) | f == f' =
