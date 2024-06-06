@@ -48,7 +48,7 @@ import Base.Types                           ( charType, floatType
 import qualified Base.Types as CS
 import Base.Subst
 
-import Env.TypeConstructor
+import Env.TypeConstructor                  (TCEnv)
 import Env.Interface                        (InterfaceEnv, lookupInterface)
 
 import Transformations.CurryToIL            (transType)
@@ -58,9 +58,9 @@ import IL
 
 -- Completes case expressions by adding branches for missing constructors.
 -- The interface environment 'iEnv' is needed to compute these constructors.
-completeCase :: InterfaceEnv -> TCEnv -> Module -> Module
-completeCase iEnv tcEnv mdl@(Module mid is ds) = Module mid is ds'
- where ds'= S.evalState (mapM ccDecl ds) (CCState mdl iEnv 0 tcEnv )
+completeCase :: Bool -> InterfaceEnv -> TCEnv -> Module -> Module
+completeCase addF iEnv tcEnv mdl@(Module mid is ds) = Module mid is ds'
+ where ds'= S.evalState (mapM ccDecl ds) (CCState mdl iEnv 0 tcEnv addF)
 
 -- -----------------------------------------------------------------------------
 -- Internally used state monad
@@ -71,6 +71,7 @@ data CCState = CCState
   , interfaceEnv :: InterfaceEnv
   , nextId       :: Int
   , tyconEnv     :: TCEnv
+  , addFailed    :: Bool
   }
 
 type CCM a = S.State CCState a
@@ -128,14 +129,19 @@ ccBinding (Binding v e) = Binding v <$> ccExpr e
 -- Functions for completing case alternatives
 -- ---------------------------------------------------------------------------
 ccCase :: Eval -> Expression -> [Alt] -> CCM Expression
--- flexible cases are not completed
-ccCase Flex  e alts     = return $ Case Flex e alts
+-- catch-all pattern in flexible cases are not completed,
+-- but failing branches are still added.
+ccCase Flex  e alts     = do
+  f <- S.gets addFailed
+  completeConsAlts f Flex e alts
 ccCase Rigid _ []       = internalError $ "CaseCompletion.ccCase: "
                                        ++ "empty alternative list"
-ccCase Rigid e as@(Alt p _:_) = case p of
-  VariablePattern    _ _   -> completeVarAlts        e as
-  _ | any isLitPat as -> completeLitAlts Rigid e as
-    | otherwise       -> completeConsAlts Rigid e (map emptyStringPatToListPat as)
+ccCase Rigid e as@(Alt p _:_) = do
+  f <- S.gets addFailed
+  case p of
+    VariablePattern _ _ -> completeVarAlts          e as
+    _ | any isLitPat as -> completeLitAlts    Rigid e as
+      | otherwise       -> completeConsAlts f Rigid e (map emptyStringPatToListPat as)
   where
     emptyStringPatToListPat (Alt (LiteralPattern _ (String "")) e')
       = Alt (ConstructorPattern stringType' qNilId []) e'
@@ -172,8 +178,8 @@ ccCase Rigid e as@(Alt p _:_) = case p of
 --     the binding for @y@ is avoided (see @bindDefVar@).
 --   - If the variable @<var>@ does not occur in the default expression,
 --     the binding for @x@ is avoided (see @mkCase@).
-completeConsAlts :: Eval -> Expression -> [Alt] -> CCM Expression
-completeConsAlts ea ce alts = do
+completeConsAlts :: Bool -> Eval -> Expression -> [Alt] -> CCM Expression
+completeConsAlts addFail ea ce alts = do
   mdl       <- getModule
   menv      <- getInterfaceEnv
   tcEnv     <- getTCEnv
@@ -182,12 +188,16 @@ completeConsAlts ea ce alts = do
                [ c | (Alt (ConstructorPattern _ c _) _) <- consAlts ]
   v <- freshIdent
   w <- freshIdent
-  return $ case (complPats, defaultAlt v) of
-            (_:_, Just e') -> bindDefVar v ce w e' complPats
+  return $ case (complPats, defaultAlt v, ea) of
+            (_:_, Just e', Rigid) -> bindDefVar v ce w e' complPats
+            (_:_, Nothing, _)
+              | addFail    -> Case ea ce (consAlts ++ map (`Alt` mkFailed) complPats)
+            (_, _, Flex)   -> Case ea ce alts
             _              -> Case ea ce consAlts
   where
+  mkFailed = Function (typeOf (Case ea ce alts)) qFailedId 0
   -- existing contructor pattern alternatives
-  consAlts = [ a | a@(Alt (ConstructorPattern _ _ _) _) <- alts ]
+  consAlts = [ a | a@(Alt ConstructorPattern {} _) <- alts ]
 
   -- unifier for data type and concrete pattern type
   dataTy  = case patTy of

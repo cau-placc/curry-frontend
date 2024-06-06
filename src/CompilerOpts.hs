@@ -109,6 +109,7 @@ data OptimizationOpts = OptimizationOpts
   { optDesugarNewtypes     :: Bool -- ^ Desugar newtypes
   , optInlineDictionaries  :: Bool -- ^ Inline type class dictionaries
   , optRemoveUnusedImports :: Bool -- ^ Remove unused imports in IL
+  , optAddFailed           :: Bool -- ^ add failed match for missing constructors in cases
   } deriving Show
 
 -- | Default compiler options
@@ -172,6 +173,7 @@ defaultOptimizationOpts = OptimizationOpts
   { optDesugarNewtypes     = False
   , optInlineDictionaries  = True
   , optRemoveUnusedImports = True
+  , optAddFailed           = False
   }
 
 -- |Modus operandi of the program
@@ -616,12 +618,16 @@ optimizeDescriptions =
     , \ opts -> opts { optInlineDictionaries  = True    })
   , ( "remove-unused-imports"   , "removes unused imports"
     , \ opts -> opts { optRemoveUnusedImports = True    })
+  , ( "add-failed-case"         , "extends incomplete cases with explicit 'failed' in missing branches"
+    , \ opts -> opts { optAddFailed           = True    })
   , ( "no-desugar-newtypes"     , "prevents desugaring of newtypes in FlatCurry"
     , \ opts -> opts { optDesugarNewtypes     = False   })
   , ( "no-inline-dictionaries"  , "prevents inlining of type class dictionaries"
     , \ opts -> opts { optInlineDictionaries  = False   })
   , ( "no-remove-unused-imports", "prevents removing of unused imports"
     , \ opts -> opts { optRemoveUnusedImports = False   })
+  , ( "add-failed-case"         , "prevents extending incomplete cases with explicit 'failed' in missing branches"
+    , \ opts -> opts { optAddFailed           = False    })
   ]
 
 addFlag :: Eq a => a -> [a] -> [a]

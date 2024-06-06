@@ -84,6 +84,6 @@ transType :: TCEnv -> Type -> IL.Type
 transType = IL.transType
 
 -- |Add missing case branches
-completeCase :: CompEnv IL.Module -> CompEnv IL.Module
-completeCase (env, mdl) =
-  (env, CC.completeCase (interfaceEnv env) (tyConsEnv env) mdl)
+completeCase :: Bool -> CompEnv IL.Module -> CompEnv IL.Module
+completeCase addFailed (env, mdl) =
+  (env, CC.completeCase addFailed (interfaceEnv env) (tyConsEnv env) mdl)
