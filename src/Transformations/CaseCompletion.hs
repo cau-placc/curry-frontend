@@ -131,9 +131,11 @@ ccBinding (Binding v e) = Binding v <$> ccExpr e
 ccCase :: Eval -> Expression -> [Alt] -> CCM Expression
 -- catch-all pattern in flexible cases are not completed,
 -- but failing branches are still added.
-ccCase Flex  e alts     = do
-  f <- S.gets addFailed
-  completeConsAlts f Flex e alts
+ccCase Flex  e as
+  | any isLitPat as = return $ Case Flex e as
+  | otherwise = do
+    f <- S.gets addFailed
+    completeConsAlts f Flex e as
 ccCase Rigid _ []       = internalError $ "CaseCompletion.ccCase: "
                                        ++ "empty alternative list"
 ccCase Rigid e as@(Alt p _:_) = do
@@ -146,9 +148,11 @@ ccCase Rigid e as@(Alt p _:_) = do
     emptyStringPatToListPat (Alt (LiteralPattern _ (String "")) e')
       = Alt (ConstructorPattern stringType' qNilId []) e'
     emptyStringPatToListPat a = a
-    isLitPat (Alt (LiteralPattern _ (String "")) _) = False
-    isLitPat (Alt (LiteralPattern _ _) _) = True
-    isLitPat _                            = False
+
+isLitPat :: Alt -> Bool
+isLitPat (Alt (LiteralPattern _ (String "")) _) = False
+isLitPat (Alt (LiteralPattern _ _) _) = True
+isLitPat _                            = False
 
 -- Completes a case alternative list which branches via constructor patterns
 -- by adding alternatives. Thus, case expressions of the form

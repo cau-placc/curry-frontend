@@ -626,7 +626,7 @@ optimizeDescriptions =
     , \ opts -> opts { optInlineDictionaries  = False   })
   , ( "no-remove-unused-imports", "prevents removing of unused imports"
     , \ opts -> opts { optRemoveUnusedImports = False   })
-  , ( "add-failed-case"         , "prevents extending incomplete cases with explicit 'failed' in missing branches"
+  , ( "no-add-failed-case"         , "prevents extending incomplete cases with explicit 'failed' in missing branches"
     , \ opts -> opts { optAddFailed           = False    })
   ]
 
