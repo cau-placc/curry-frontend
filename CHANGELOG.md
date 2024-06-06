@@ -1,6 +1,15 @@
 Change log for curry-frontend
 =============================
 
+Version 2.1.1
+=============
+
+  Improvements for downstream tools
+  ---------------------------------
+
+  * Generated interface files now optionally include a pragma that indicates the source code origin of identifiers. This improves the language server.
+  * Added the option `-Oadd-failed`. If on, the front-end inserts explicit branches for failing pattern matches in each case and rule.
+
 Version 2.1.0
 =============
 
