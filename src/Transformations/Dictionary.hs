@@ -20,10 +20,6 @@ module Transformations.Dictionary
   , instFunId, qInstFunId, implMethodId, qImplMethodId
   ) where
 
-
-
-
-
 import           Control.Monad.Extra      (concatMapM, maybeM, when)
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 

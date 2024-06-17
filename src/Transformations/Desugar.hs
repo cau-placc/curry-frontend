@@ -391,7 +391,7 @@ dsFunctionalPatterns p ts = do
   (bss1, ts1) <- mapAndUnzipM funPats ts
   -- Get all pattern variables in functional patterns
   let funPatVars = nub $ concatMap (patternVars . snd) (concat bss1)
-  -- Replace all pattern variables in ts' that are in funPatVars with fresh variables to account for the non-linearity
+  -- Replace all pattern variables in ts1 that are in funPatVars with fresh variables to account for the non-linearity
   (bss2, ts2) <- mapAndUnzipM (dsFunctionalPatternsNonLinear (map fst3 funPatVars)) ts1
   -- Convert patterns of lazy binds to expressions
   let (vs, ts') = unzip $ concat $ bss1 ++ bss2
@@ -399,7 +399,7 @@ dsFunctionalPatterns p ts = do
   -- Create (desugared) functional pattern expression
   let cs = [mkTuple es =:<= mkTuple (map (uncurry mkVar) vs) | not $ null vs]
   -- Create free variable declarations for non-anonymous funPatVars
-  let ds = map (\ (v, _, pty) -> FreeDecl p [Var pty v]) $
+  let ds = map (\ (v, _, (PredType _ ty)) -> FreeDecl p [Var (PredType [] ty) v]) $
              filter (not . isAnonId . fst3) funPatVars
   -- Return (declarations, constraints, desugared patterns)
   return (ds, concat (cs : css), ts2)
