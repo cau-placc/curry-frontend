@@ -8,7 +8,7 @@ Version 2.1.1
   ---------------------------------
 
   * Generated interface files now optionally include a pragma that indicates the source code origin of identifiers. This improves the language server.
-  * Added the option `-Oadd-failed-case`. If on, the front-end inserts explicit branches for failing pattern matches in each case and rule.
+  * Added the option `-Oadd-failed-case`. If on, the front-end inserts explicit branches for failing pattern matches in each case and rule. It is on by default. The old behavior can be restored with `-Ono-add-failed-case`.
 
 Version 2.1.0
 =============
