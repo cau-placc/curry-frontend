@@ -173,7 +173,7 @@ defaultOptimizationOpts = OptimizationOpts
   { optDesugarNewtypes     = False
   , optInlineDictionaries  = True
   , optRemoveUnusedImports = True
-  , optAddFailed           = False
+  , optAddFailed           = True
   }
 
 -- |Modus operandi of the program
