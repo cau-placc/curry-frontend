@@ -97,7 +97,7 @@ isClassDecl _                       = False
 
 -- |Is the declaration a type or a class declaration?
 isTypeOrClassDecl :: Decl a -> Bool
-isTypeOrClassDecl = liftA2 (||) isTypeDecl isClassDecl
+isTypeOrClassDecl d = isTypeDecl d || isClassDecl d
 
 -- |Is the declaration an instance declaration?
 isInstanceDecl :: Decl a -> Bool
