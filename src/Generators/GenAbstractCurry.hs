@@ -22,7 +22,7 @@ import           Control.Applicative          ((<$>), (<*>), pure)
 #endif
 import           Control.Monad.Extra
 import qualified Control.Monad.State as S     (State, evalState, get, gets
-                                              , modify, put, when)
+                                              , modify, put)
 import qualified Data.Map            as Map   (Map, empty, fromList, lookup
                                               , union)
 import qualified Data.Maybe          as Maybe (fromJust, fromMaybe, listToMaybe)
@@ -251,7 +251,7 @@ insertDeclLhs   (PatternDecl      _ p _) = mapM_ genVarIndex (bv p)
 insertDeclLhs   (FreeDecl          _ vs) = mapM_ genVarIndex (map varIdent vs)
 insertDeclLhs s@(TypeSig          _ _ _) = do
   uacy <- S.gets untypedAcy
-  S.when uacy (insertSig s)
+  when uacy (insertSig s)
 insertDeclLhs _                          = return ()
 
 trLocalDecl :: Decl PredType -> GAC [CLocalDecl]

@@ -17,12 +17,7 @@
 {-# LANGUAGE CPP #-}
 module Checks.WarnCheck (warnCheck) where
 
-#if __GLASGOW_HASKELL__ >= 804
-import Prelude hiding ((<>))
-#endif
-
-import           Control.Applicative
-  ((<|>))
+import           Prelude hiding ((<>))
 import           Control.Monad
   (filterM, foldM_, guard, liftM, liftM2, when, unless, void)
 import           Control.Monad.State.Strict    (State, execState, gets, modify)
@@ -834,6 +829,9 @@ getTyCons tc = do
   case csResult of
     Right cs -> return cs
     Left err -> internalError err
+  where
+    Right a <|> _ = Right a
+    _ <|> b = b
 
 -- |Resugar the exhaustive patterns previously desugared at 'simplifyPat'.
 tidyExhaustivePats :: ExhaustivePats -> WCM ExhaustivePats
