@@ -103,7 +103,7 @@ compileModule opts m fn = do
   qmdl' <- dumpWith opts CS.showModule pPrint DumpQualified $ qual mdl'
   writeAbstractCurry opts qmdl'
   -- generate interface file
-  let intf = uncurry exportInterface qmdl'
+  intf <- uncurry (exportInterface opts) qmdl'
   writeInterface opts (fst mdl') intf
   when withFlat $ do
     ((env, il), mdl'') <- transModule opts qmdl'
@@ -119,7 +119,7 @@ loadAndCheckModule :: Options -> ModuleIdent -> FilePath
                    -> CYIO (CompEnv (CS.Module PredType))
 loadAndCheckModule opts m fn = do
   ce <- loadModule opts m fn >>= checkModule opts
-  warnMessages $ uncurry (warnCheck opts) ce
+  warnOrFailMessages (optWarnOpts opts) $ uncurry (warnCheck opts) ce
   return ce
 
 -- ---------------------------------------------------------------------------
@@ -256,7 +256,8 @@ checkModule opts mdl = do
   inc <- instanceCheck   opts dc  >>= dumpCS DumpInstanceChecked
   tc  <- typeCheck       opts inc >>= dumpCS DumpTypeChecked
   ec  <- exportCheck     opts tc  >>= dumpCS DumpExportChecked
-  return ec
+  cmc <- caseModeCheck   opts ec  >>= dumpCS DumpCaseModeChecked
+  return cmc
   where
   dumpCS :: (MonadIO m, Show a) => DumpLevel -> CompEnv (CS.Module a)
          -> m (CompEnv (CS.Module a))
@@ -275,14 +276,14 @@ transModule opts mdl = do
   newtypes   <- dumpCS DumpNewtypes      $ removeNewtypes remNT dicts
   simplified <- dumpCS DumpSimplified    $ simplify             newtypes
   lifted     <- dumpCS DumpLifted        $ lift                 simplified
-  il         <- dumpIL DumpTranslated    $ ilTrans        remIm lifted
-  ilCaseComp <- dumpIL DumpCaseCompleted $ completeCase         il
+  il         <- dumpIL DumpTranslated    $ ilTrans              lifted
+  ilCaseComp <- dumpIL DumpCaseCompleted $ completeCase   addF  il
   return (ilCaseComp, newtypes)
   where
   optOpts = optOptimizations opts
   inlDi = optInlineDictionaries  optOpts
-  remIm = optRemoveUnusedImports optOpts
   remNT = optDesugarNewtypes     optOpts
+  addF  = optAddFailed           optOpts
   dumpCS :: Show a => DumpLevel -> CompEnv (CS.Module a)
          -> CYIO (CompEnv (CS.Module a))
   dumpCS = dumpWith opts CS.showModule pPrint
@@ -329,7 +330,7 @@ writeHtml opts (env, mdl) = when htmlTarget $
   where htmlTarget = Html `elem` optTargetTypes opts
 
 writeInterface :: Options -> CompilerEnv -> CS.Interface -> CYIO ()
-writeInterface opts env intf@(CS.Interface m _ _)
+writeInterface opts env intf@(CS.Interface m _ _ _)
   | optForce opts = outputInterface
   | otherwise     = do
       equal <- liftIO $ C.catch (matchInterface interfaceFile intf)
@@ -363,7 +364,8 @@ writeFlat opts env mdl il = do
     liftIO $ FC.writeFlatCurry (useSubDir fcyName) fcy
   writeFlatIntf opts env fcy
   where
-  afcy        = genAnnotatedFlatCurry env mdl il
+  remIm       = optRemoveUnusedImports (optOptimizations opts)
+  afcy        = genAnnotatedFlatCurry remIm env mdl il
   afcyName    = annotatedFlatName (filePath env)
   afcyTarget  = AnnotatedFlatCurry `elem` optTargetTypes opts
   tfcy        = genTypedFlatCurry afcy

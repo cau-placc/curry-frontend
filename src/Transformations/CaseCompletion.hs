@@ -48,7 +48,7 @@ import Base.Types                           ( charType, floatType
 import qualified Base.Types as CS
 import Base.Subst
 
-import Env.TypeConstructor
+import Env.TypeConstructor                  (TCEnv)
 import Env.Interface                        (InterfaceEnv, lookupInterface)
 
 import Transformations.CurryToIL            (transType)
@@ -58,9 +58,9 @@ import IL
 
 -- Completes case expressions by adding branches for missing constructors.
 -- The interface environment 'iEnv' is needed to compute these constructors.
-completeCase :: InterfaceEnv -> TCEnv -> Module -> Module
-completeCase iEnv tcEnv mdl@(Module mid is ds) = Module mid is ds'
- where ds'= S.evalState (mapM ccDecl ds) (CCState mdl iEnv 0 tcEnv )
+completeCase :: Bool -> InterfaceEnv -> TCEnv -> Module -> Module
+completeCase addF iEnv tcEnv mdl@(Module mid is ds) = Module mid is ds'
+ where ds'= S.evalState (mapM ccDecl ds) (CCState mdl iEnv 0 tcEnv addF)
 
 -- -----------------------------------------------------------------------------
 -- Internally used state monad
@@ -71,6 +71,7 @@ data CCState = CCState
   , interfaceEnv :: InterfaceEnv
   , nextId       :: Int
   , tyconEnv     :: TCEnv
+  , addFailed    :: Bool
   }
 
 type CCM a = S.State CCState a
@@ -128,17 +129,30 @@ ccBinding (Binding v e) = Binding v <$> ccExpr e
 -- Functions for completing case alternatives
 -- ---------------------------------------------------------------------------
 ccCase :: Eval -> Expression -> [Alt] -> CCM Expression
--- flexible cases are not completed, but literal string pats are transformed.
-ccCase Flex  e alts     = return $ Case Flex e alts
+-- catch-all pattern in flexible cases are not completed,
+-- but failing branches are still added.
+ccCase Flex  e as
+  | any isLitPat as = return $ Case Flex e as
+  | otherwise = do
+    f <- S.gets addFailed
+    completeConsAlts f Flex e as
 ccCase Rigid _ []       = internalError $ "CaseCompletion.ccCase: "
                                        ++ "empty alternative list"
-ccCase Rigid e as@(Alt p _:_) = case p of
-  VariablePattern    _ _   -> completeVarAlts        e as
-  _ | any isLitPat as -> completeLitAlts Rigid e as
-    | otherwise       -> completeConsAlts Rigid e as
+ccCase Rigid e as@(Alt p _:_) = do
+  f <- S.gets addFailed
+  case p of
+    VariablePattern _ _ -> completeVarAlts          e as
+    _ | any isLitPat as -> completeLitAlts    Rigid e as
+      | otherwise       -> completeConsAlts f Rigid e (map emptyStringPatToListPat as)
   where
-    isLitPat (Alt (LiteralPattern _ _) _) = True
-    isLitPat _                            = False
+    emptyStringPatToListPat (Alt (LiteralPattern _ (String "")) e')
+      = Alt (ConstructorPattern stringType' qNilId []) e'
+    emptyStringPatToListPat a = a
+
+isLitPat :: Alt -> Bool
+isLitPat (Alt (LiteralPattern _ (String "")) _) = False
+isLitPat (Alt (LiteralPattern _ _) _) = True
+isLitPat _                            = False
 
 -- Completes a case alternative list which branches via constructor patterns
 -- by adding alternatives. Thus, case expressions of the form
@@ -168,8 +182,8 @@ ccCase Rigid e as@(Alt p _:_) = case p of
 --     the binding for @y@ is avoided (see @bindDefVar@).
 --   - If the variable @<var>@ does not occur in the default expression,
 --     the binding for @x@ is avoided (see @mkCase@).
-completeConsAlts :: Eval -> Expression -> [Alt] -> CCM Expression
-completeConsAlts ea ce alts = do
+completeConsAlts :: Bool -> Eval -> Expression -> [Alt] -> CCM Expression
+completeConsAlts addFail ea ce alts = do
   mdl       <- getModule
   menv      <- getInterfaceEnv
   tcEnv     <- getTCEnv
@@ -178,10 +192,14 @@ completeConsAlts ea ce alts = do
                [ c | (Alt (ConstructorPattern _ c _) _) <- consAlts ]
   v <- freshIdent
   w <- freshIdent
-  return $ case (complPats, defaultAlt v) of
-            (_:_, Just e') -> bindDefVar v ce w e' complPats
+  return $ case (complPats, defaultAlt v, ea) of
+            (_:_, Just e', Rigid) -> bindDefVar v ce w e' complPats
+            (_:_, Nothing, _)
+              | addFail    -> Case ea ce (consAlts ++ map (`Alt` mkFailed) complPats)
+            (_, _, Flex)   -> Case ea ce alts
             _              -> Case ea ce consAlts
   where
+  mkFailed = Function (typeOf (Case ea ce alts)) qFailedId 0
   -- existing contructor pattern alternatives
   consAlts = [ a | a@(Alt ConstructorPattern {} _) <- alts ]
 
@@ -381,6 +399,9 @@ boolType' = IL.TypeConstructor qBoolId []
 charType' :: Type
 charType' = IL.TypeConstructor qCharId []
 
+stringType' :: Type
+stringType' = IL.TypeConstructor qListId [charType']
+
 unitType' :: Type
 unitType' = IL.TypeConstructor qUnitId []
 
@@ -432,25 +453,25 @@ getCCFromDecls cs ds = complementary cs cinfos
 -- Find complementary constructors within the module environment
 getCCFromIDecls :: ModuleIdent -> [QualIdent] -> TCEnv -> CS.Interface
                 -> [(QualIdent, [Type])]
-getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds) = complementary cs cinfos
+getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds _) = complementary cs cinfos
   where
   cinfos = map (uncurry constrInfo)
          $ maybe [] extractConstrDecls (find (`declares` head cs) ds)
 
   decl `declares` qid = case decl of
-    CS.IDataDecl    _ _ _ _ cs' _ -> any (`declaresConstr` qid) cs'
-    CS.INewtypeDecl _ _ _ _ nc  _ -> isNewConstrDecl qid nc
+    CS.IDataDecl    _ _ _ _ cs' _ _ -> any (`declaresConstr` qid) cs'
+    CS.INewtypeDecl _ _ _ _ nc  _ _ -> isNewConstrDecl qid nc
     _                             -> False
 
   declaresConstr (CS.ConstrDecl   _ cid _) qid = unqualify qid == cid
-  declaresConstr (CS.ConOpDecl _ _ oid _) qid = unqualify qid == oid
-  declaresConstr (CS.RecordDecl  _ cid _) qid = unqualify qid == cid
+  declaresConstr (CS.ConOpDecl  _ _ oid _) qid = unqualify qid == oid
+  declaresConstr (CS.RecordDecl   _ cid _) qid = unqualify qid == cid
 
   isNewConstrDecl qid (CS.NewConstrDecl _ cid _) = unqualify qid == cid
   isNewConstrDecl qid (CS.NewRecordDecl _ cid _) = unqualify qid == cid
 
-  extractConstrDecls (CS.IDataDecl _ _ _ vs cs' _) = map (vs,) cs'
-  extractConstrDecls _                             = []
+  extractConstrDecls (CS.IDataDecl _ _ _ vs cs' _ _) = map (vs,) cs'
+  extractConstrDecls _                               = []
 
   constrInfo vs (CS.ConstrDecl _ cid tys)     =
     (qualifyWith mid cid, map (transType' vs) tys)

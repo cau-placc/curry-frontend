@@ -28,7 +28,6 @@ import Control.Monad.State                   (State, put, get, execState)
 import           Data.List                   (nub, partition)
 import           Data.Maybe                  (fromJust)
 import qualified Data.Map             as Map
-import qualified Data.Set             as Set (Set, empty, insert, delete, toList)
 
 import Curry.Base.Ident
 import Curry.Syntax hiding (caseAlt)
@@ -45,58 +44,10 @@ import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 
 import qualified IL
 
-ilTrans :: Bool -> ValueEnv -> TCEnv -> Module Type -> IL.Module
-ilTrans remIm vEnv tcEnv (Module _ _ _ m _ im ds) = IL.Module m im' ds'
+ilTrans :: ValueEnv -> TCEnv -> Module Type -> IL.Module
+ilTrans vEnv tcEnv (Module _ _ _ m _ im ds) = IL.Module m (map moduleImport im) ds'
   where ds' = runReader (concatMapM trDecl ds) (TransEnv m vEnv tcEnv)
-        im' = preludeMIdent : if remIm then imports m ds' else map moduleImport im
         moduleImport (ImportDecl _ mdl _ _ _) = mdl
-
-
--- -----------------------------------------------------------------------------
--- Computation of necessary imports
--- -----------------------------------------------------------------------------
-
--- The list of import declarations in the intermediate language code is
--- determined by collecting all module qualifiers used in the current module.
-
-imports :: ModuleIdent -> [IL.Decl] -> [ModuleIdent]
-imports m = Set.toList . Set.delete m . foldr mdlsDecl Set.empty
-
-mdlsDecl :: IL.Decl -> Set.Set ModuleIdent -> Set.Set ModuleIdent
-mdlsDecl (IL.DataDecl       _ _ cs) ms = foldr mdlsConstrsDecl ms cs
-  where mdlsConstrsDecl (IL.ConstrDecl _ tys) ms' = foldr mdlsType ms' tys
-mdlsDecl (IL.NewtypeDecl    _ _ nc) ms = mdlsNewConstrDecl nc
-  where mdlsNewConstrDecl (IL.NewConstrDecl _ ty) = mdlsType ty ms
-mdlsDecl (IL.ExternalDataDecl  _ _) ms = ms
-mdlsDecl (IL.FunctionDecl _ _ ty e) ms = mdlsType ty (mdlsExpr e ms)
-mdlsDecl (IL.ExternalDecl   _ _ ty) ms = mdlsType ty ms
-
-mdlsType :: IL.Type -> Set.Set ModuleIdent -> Set.Set ModuleIdent
-mdlsType (IL.TypeConstructor tc tys) ms = modules tc (foldr mdlsType ms tys)
-mdlsType (IL.TypeVariable         _) ms = ms
-mdlsType (IL.TypeArrow      ty1 ty2) ms = mdlsType ty1 (mdlsType ty2 ms)
-mdlsType (IL.TypeForall        _ ty) ms = mdlsType ty ms
-
-mdlsExpr :: IL.Expression -> Set.Set ModuleIdent -> Set.Set ModuleIdent
-mdlsExpr (IL.Function    _ f _) ms = modules f ms
-mdlsExpr (IL.Constructor _ c _) ms = modules c ms
-mdlsExpr (IL.Apply       e1 e2) ms = mdlsExpr e1 (mdlsExpr e2 ms)
-mdlsExpr (IL.Case       _ e as) ms = mdlsExpr e (foldr mdlsAlt ms as)
-  where
-  mdlsAlt     (IL.Alt                 t e') = mdlsPattern t . mdlsExpr e'
-  mdlsPattern (IL.ConstructorPattern _ c _) = modules c
-  mdlsPattern _                             = id
-mdlsExpr (IL.Or          e1 e2) ms = mdlsExpr e1 (mdlsExpr e2 ms)
-mdlsExpr (IL.Exist       _ _ e) ms = mdlsExpr e ms
-mdlsExpr (IL.Let           b e) ms = mdlsBinding b (mdlsExpr e ms)
-mdlsExpr (IL.Letrec       bs e) ms = foldr mdlsBinding (mdlsExpr e ms) bs
-mdlsExpr _                      ms = ms
-
-mdlsBinding :: IL.Binding -> Set.Set ModuleIdent -> Set.Set ModuleIdent
-mdlsBinding (IL.Binding _ e) = mdlsExpr e
-
-modules :: QualIdent -> Set.Set ModuleIdent -> Set.Set ModuleIdent
-modules x ms = maybe ms (`Set.insert` ms) (qidModule x)
 
 -- -----------------------------------------------------------------------------
 -- Internal reader monad
@@ -399,7 +350,7 @@ bindRenameEnv _ _                           _
 
 trRhs :: [Ident] -> RenameEnv -> Rhs Type -> TransM IL.Expression
 trRhs vs env (SimpleRhs _ _ e _) = trExpr vs env e
-trRhs _  _   (GuardedRhs _ _ _ _) = internalError "CurryToIL.trRhs: GuardedRhs"
+trRhs _  _   (GuardedRhs {})     = internalError "CurryToIL.trRhs: GuardedRhs"
 
 -- Note that the case matching algorithm assumes that the matched
 -- expression is accessible through a variable. The translation of case
@@ -714,8 +665,8 @@ isLiteralPattern (IL.LiteralPattern _ _) = True
 isLiteralPattern _                       = False
 
 isConstructorPattern :: IL.ConstrTerm -> Bool
-isConstructorPattern (IL.ConstructorPattern _ _ _) = True
-isConstructorPattern _                             = False
+isConstructorPattern (IL.ConstructorPattern {}) = True
+isConstructorPattern _                          = False
 
 isVarMatch :: (IL.ConstrTerm, a) -> Bool
 isVarMatch = isVarPattern . fst

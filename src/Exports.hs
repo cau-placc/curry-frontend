@@ -17,11 +17,14 @@
     specifications and the corresponding environments in order to compute
     the interface of the module.
 -}
+{-# LANGUAGE MultiWayIf, RecursiveDo #-}
 module Exports (exportInterface) where
 
+import           Control.Monad.Trans.Reader (ReaderT (runReaderT), ask)
+import           Data.Foldable     (foldrM)
 import           Data.List         (nub)
 import qualified Data.Map   as Map ( Map, delete, fromListWith, lookup
-                                   , mapKeysWith )
+                                   , mapKeysWith, toList, toAscList )
 import           Data.Maybe        (mapMaybe)
 import qualified Data.Set   as Set ( Set, delete, empty, insert, fromList
                                    , member, toList )
@@ -29,6 +32,7 @@ import qualified Data.Set   as Set ( Set, delete, empty, insert, fromList
 import Curry.Base.Position
 import Curry.Base.SpanInfo
 import Curry.Base.Ident
+import Curry.Base.Monad (CYIO)
 import Curry.Syntax
 
 import Base.CurryKinds (fromKind', fromClassKind)
@@ -44,6 +48,7 @@ import Env.TypeConstructor (TCEnv, TypeInfo (..), clsKind, qualLookupTypeInfo)
 import Env.Value           (ValueEnv, ValueInfo (..), qualLookupValue)
 
 import CompilerEnv
+import CompilerOpts (Options (optOriginPragmas))
 
 import Base.Kinds
 
@@ -63,37 +68,45 @@ import Base.Kinds
 -- the name of the module where it is defined. The same applies to an
 -- exported function.
 
-exportInterface :: CompilerEnv -> Module a -> Interface
-exportInterface env (Module _ _ _ m (Just (Exporting _ es)) _ _) =
-  exportInterface' m es (opPrecEnv env) (tyConsEnv env) (valueEnv env)
-    (classEnv env) (instEnv env)
-exportInterface _   (Module _ _ _ _ Nothing                 _ _) =
+exportInterface :: Options -> CompilerEnv -> Module a -> CYIO Interface
+exportInterface opts env (Module _ _ _ m (Just (Exporting _ es)) _ _) =
+  flip runEXPM opts $
+    exportInterface' m es (opPrecEnv env) (tyConsEnv env) (valueEnv env)
+      (classEnv env) (instEnv env)
+exportInterface _    _   (Module _ _ _ _ Nothing                 _ _) =
   internalError "Exports.exportInterface: no export specification"
 
-exportInterface' :: ModuleIdent -> [Export] -> OpPrecEnv -> TCEnv -> ValueEnv
-                 -> ClassEnv -> InstEnv -> Interface
-exportInterface' m es pEnv tcEnv vEnv clsEnv inEnv = Interface m imports decls'
-  where
-  tvs     = filter (`notElem` tcs) identSupply
-  tcs     = mapMaybe (localIdent m) $ definedTypes decls'
-  imports = map (IImportDecl NoPos) $ usedModules decls'
-  precs   = foldr (infixDecl m pEnv) [] es
-  types   = foldr (typeDecl m tcEnv clsEnv tvs) [] es
-  values  = foldr (valueDecl m tcEnv vEnv tvs) [] es
-  (inExps, insts) = getExportedInsts (initInstExports m clsEnv inEnv)
-  decls   = map ID (precs ++ types ++ values) ++ insts
-  decls'  = closeInterface m tcEnv clsEnv inEnv tvs Set.empty inExps decls
+type EXPM = ReaderT Options CYIO
 
-infixDecl :: ModuleIdent -> OpPrecEnv -> Export -> [IDecl] -> [IDecl]
+runEXPM :: EXPM a -> Options -> CYIO a
+runEXPM = runReaderT
+
+exportInterface' :: ModuleIdent -> [Export] -> OpPrecEnv -> TCEnv -> ValueEnv
+                 -> ClassEnv -> InstEnv -> EXPM Interface
+exportInterface' m es pEnv tcEnv vEnv clsEnv inEnv = mdo
+  o       <- originPragma m
+  precs   <- foldrM (infixDecl m pEnv) [] es
+  let tcs = mapMaybe (localIdent m) $ definedTypes decls'
+      tvs = filter (`notElem` tcs) identSupply
+  types   <- foldrM (typeDecl m tcEnv clsEnv tvs) [] es
+  values  <- foldrM (valueDecl m tcEnv vEnv tvs) [] es
+  let (inExps, insts) = getExportedInsts (initInstExports m clsEnv inEnv)
+      decls           = map ID (precs ++ types ++ values) ++ insts
+  decls'  <- closeInterface m tcEnv clsEnv inEnv tvs Set.empty inExps decls
+  imports <- mapM (\m' -> IImportDecl NoPos m' <$> originPragma m') $ usedModules decls'
+  return $ Interface m imports decls' o
+
+infixDecl :: ModuleIdent -> OpPrecEnv -> Export -> [IDecl] -> EXPM [IDecl]
 infixDecl m pEnv (Export             _ f) ds = iInfixDecl m pEnv f ds
 infixDecl m pEnv (ExportTypeWith _ tc cs) ds =
-  foldr (iInfixDecl m pEnv . qualifyLike tc) ds cs
+  foldrM (iInfixDecl m pEnv . qualifyLike tc) ds cs
 infixDecl _ _ _ _ = internalError "Exports.infixDecl: no pattern match"
 
-iInfixDecl :: ModuleIdent -> OpPrecEnv -> QualIdent -> [IDecl] -> [IDecl]
+iInfixDecl :: ModuleIdent -> OpPrecEnv -> QualIdent -> [IDecl] -> EXPM [IDecl]
 iInfixDecl m pEnv op ds = case qualLookupP op pEnv of
-  []                        -> ds
-  [PrecInfo _ (OpPrec f p)] -> IInfixDecl NoPos f p (qualUnqualify m op) : ds
+  []                        -> return ds
+  [PrecInfo _ (OpPrec f p)] -> do o <- originPragma op
+                                  return $ IInfixDecl NoPos f p (qualUnqualify m op) o : ds
   _                         -> internalError "Exports.infixDecl"
 
 -- Data types and renaming types whose constructors and field labels are
@@ -104,32 +117,33 @@ iInfixDecl m pEnv op ds = case qualLookupP op pEnv of
 -- are not exported as hidden to prevent their use in user code.
 
 typeDecl :: ModuleIdent -> TCEnv -> ClassEnv -> [Ident] -> Export -> [IDecl]
-         -> [IDecl]
-typeDecl _ _     _      _   (Export             _ _) ds = ds
+         -> EXPM [IDecl]
+typeDecl _ _     _      _   (Export             _ _) ds = return ds
 typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
   case qualLookupTypeInfo tc tcEnv of
     [DataType tc' k cs]
-      | null xs   -> iTypeDecl IDataDecl m tvs tc' k []  [] : ds
-      | otherwise -> iTypeDecl IDataDecl m tvs tc' k cs' hs : ds
+      | null xs   -> (:ds) <$> iTypeDecl IDataDecl m tvs tc' k []  []
+      | otherwise -> (:ds) <$> iTypeDecl IDataDecl m tvs tc' k cs' hs
       where hs    = filter (`notElem` xs) (csIds ++ ls)
             cs'   = map (constrDecl m n tvs) cs
             ls    = nub (concatMap recordLabels cs')
             csIds = map constrIdent cs
             n = kindArity k
     [RenamingType tc' k c]
-      | null xs   -> iTypeDecl IDataDecl    m tvs tc' k [] [] : ds
-      | otherwise -> iTypeDecl INewtypeDecl m tvs tc' k nc hs : ds
+      | null xs   -> (:ds) <$> iTypeDecl IDataDecl    m tvs tc' k [] []
+      | otherwise -> (:ds) <$> iTypeDecl INewtypeDecl m tvs tc' k nc hs
       where hs  = filter (`notElem` xs) (cId : ls)
             nc  = newConstrDecl m tvs c
             ls  = nrecordLabels nc
             cId = constrIdent c
-    [AliasType tc' k n ty] -> ITypeDecl NoPos tc'' k' tvs' ty' : ds
+    [AliasType tc' k n ty] -> do o <- originPragma tc'
+                                 return $ ITypeDecl NoPos tc'' k' tvs' ty' o : ds
       where tc'' = qualUnqualify m tc'
             k'   = fromKind' k n
             tvs' = take n tvs
             ty'  = fromQualType m tvs' ty
-    [TypeClass qcls k ms] ->
-      IClassDecl NoPos cx qcls' k' clsvars funDeps ms' hs : ds
+    [TypeClass qcls k ms] -> do o <- originPragma qcls
+                                return $ IClassDecl NoPos cx qcls' k' clsvars funDeps ms' hs o : ds
       where qcls'   = qualUnqualify m qcls
             cx      = fromQualPredList m clsvars (superClasses qcls clsEnv)
             n       = kindArity k
@@ -142,9 +156,11 @@ typeDecl m tcEnv clsEnv tvs (ExportTypeWith _ tc xs) ds =
 typeDecl _ _ _ _ _ _ = internalError "Exports.typeDecl: no pattern match"
 
 iTypeDecl
-  :: (Position -> QualIdent -> Maybe KindExpr -> [Ident] -> a -> [Ident] -> IDecl)
-  -> ModuleIdent -> [Ident] -> QualIdent -> Kind -> a -> [Ident] -> IDecl
-iTypeDecl f m tvs tc k x hs = f NoPos (qualUnqualify m tc) k' (take n tvs) x hs
+  :: (Position -> QualIdent -> Maybe KindExpr -> [Ident] -> a -> [Ident] -> Maybe OriginPragma -> IDecl)
+  -> ModuleIdent -> [Ident] -> QualIdent -> Kind -> a -> [Ident] -> EXPM IDecl
+iTypeDecl f m tvs tc k x hs = do
+  o <- originPragma tc
+  return $ f NoPos (qualUnqualify m tc) k' (take n tvs) x hs o
   where n  = kindArity k
         k' = fromKind' k n
 
@@ -178,15 +194,16 @@ methodDecl m tvs (ClassMethod f a (PredType pls ty)) = IMethodDecl NoPos f a $
   fromQualPredType m tvs $ PredType (plDeleteMin pls) ty
 
 valueDecl
-  :: ModuleIdent -> TCEnv -> ValueEnv -> [Ident] -> Export -> [IDecl] -> [IDecl]
+  :: ModuleIdent -> TCEnv -> ValueEnv -> [Ident] -> Export -> [IDecl] -> EXPM [IDecl]
 valueDecl m tcEnv vEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
-  [Value _ cm a (ForAll _ pty)] ->
-    IFunctionDecl NoPos (qualUnqualify m f)
+  [Value _ cm a (ForAll _ pty)] -> do
+    o <- originPragma f
+    return $ IFunctionDecl NoPos (qualUnqualify m f)
       (fmap (flip take tvs . kindArity . flip (clsKind m) tcEnv) cm) a
-      (fromQualPredType m tvs pty) : ds
-  [Label _ _ _ ] -> ds -- Record labels are collected somewhere else.
+      (fromQualPredType m tvs pty) o : ds
+  [Label _ _ _ ] -> return ds -- Record labels are collected somewhere else.
   _ -> internalError $ "Exports.valueDecl: " ++ show f
-valueDecl _ _ _ _ (ExportTypeWith _ _ _) ds = ds
+valueDecl _ _ _ _ (ExportTypeWith _ _ _) ds = return ds
 valueDecl _ _ _ _ _ _ = internalError "Exports.valueDecl: no pattern match"
 
 -- The instance export map maps sets of class and type names to the instance
@@ -252,9 +269,10 @@ getExportedInsts inExps =
 
 -- Transforms an entry of the instance environment into an interface instance
 -- declaration.
-iInstDecl :: ModuleIdent -> InstEnv -> [Ident] -> InstIdent -> IDecl
-iInstDecl m inEnv tvs instId@(cls, tys) =
-  IInstanceDecl NoPos cx (qualUnqualify m cls) tys' is mm
+iInstDecl :: ModuleIdent -> InstEnv -> [Ident] -> InstIdent -> EXPM IDecl
+iInstDecl m inEnv tvs instId@(cls, tys) = do
+  o <- originPragma cls
+  return $ IInstanceDecl NoPos cx (qualUnqualify m cls) tys' is mm o
  where
   (m', ps, is) = case lookupInstExact instId inEnv of
                    Just instInfo -> instInfo
@@ -262,6 +280,13 @@ iInstDecl m inEnv tvs instId@(cls, tys) =
                                 "find instance information for " ++ show instId
   (cx, tys') = fromQualPredTypes m tvs $ PredTypes ps tys
   mm  = if m == m' then Nothing else Just m'
+
+originPragma :: MkOriginPragma a => a -> EXPM (Maybe OriginPragma)
+originPragma x = do
+  opts <- ask
+  if optOriginPragmas opts
+    then Just <$> mkOriginPragma x
+    else return Nothing
 
 -- The compiler determines the list of imported modules from the set of
 -- module qualifiers that are used in the interface. Careful readers
@@ -295,16 +320,16 @@ instance HasModule a => HasModule [a] where
   modules xs ms = foldr modules ms xs
 
 instance HasModule IDecl where
-  modules (IInfixDecl             _ _ _ op) = modules op
-  modules (HidingDataDecl         _ tc _ _) = modules tc
-  modules (IDataDecl         _ tc _ _ cs _) = modules tc . modules cs
-  modules (INewtypeDecl      _ tc _ _ nc _) = modules tc . modules nc
-  modules (ITypeDecl           _ tc _ _ ty) = modules tc . modules ty
-  modules (IFunctionDecl       _ f _ _ qty) = modules f . modules qty
-  modules (HidingClassDecl  _ cx cls _ _ _) = modules cx . modules cls
-  modules (IClassDecl  _ cx cls _ _ _ ms _) =
+  modules (IInfixDecl             _ _ _ op _) = modules op
+  modules (HidingDataDecl         _ tc _ _ _) = modules tc
+  modules (IDataDecl         _ tc _ _ cs _ _) = modules tc . modules cs
+  modules (INewtypeDecl      _ tc _ _ nc _ _) = modules tc . modules nc
+  modules (ITypeDecl           _ tc _ _ ty _) = modules tc . modules ty
+  modules (IFunctionDecl       _ f _ _ qty _) = modules f . modules qty
+  modules (HidingClassDecl  _ cx cls _ _ _ _) = modules cx . modules cls
+  modules (IClassDecl  _ cx cls _ _ _ ms _ _) =
     modules cx . modules cls . modules ms
-  modules (IInstanceDecl _ cx cls tys _ mm) =
+  modules (IInstanceDecl _ cx cls tys _ mm _) =
     modules cx . modules cls . modules tys . modules mm
 
 instance HasModule ConstrDecl where
@@ -371,35 +396,36 @@ data IInfo = IOther | IType QualIdent | IClass QualIdent | IInst InstIdent
   deriving (Eq, Ord)
 
 iInfo :: ExpInfo -> IInfo
-iInfo (ID (IInfixDecl            _ _ _ _)) = IOther
-iInfo (ID (HidingDataDecl       _ tc _ _)) = IType tc
-iInfo (ID (IDataDecl        _ tc _ _ _ _)) = IType tc
-iInfo (ID (INewtypeDecl     _ tc _ _ _ _)) = IType tc
-iInfo (ID (ITypeDecl           _ _ _ _ _)) = IOther
-iInfo (ID (HidingClassDecl _ _ cls _ _ _)) = IClass cls
-iInfo (ID (IClassDecl  _ _ cls _ _ _ _ _)) = IClass cls
-iInfo (ID (IInstanceDecl     _ _ _ _ _ _)) = internalError "Exports.iInfo"
-iInfo (ID (IFunctionDecl       _ _ _ _ _)) = IOther
-iInfo (II                          instId) = IInst instId
+iInfo (ID (IInfixDecl            _ _ _ _ _)) = IOther
+iInfo (ID (HidingDataDecl       _ tc _ _ _)) = IType tc
+iInfo (ID (IDataDecl        _ tc _ _ _ _ _)) = IType tc
+iInfo (ID (INewtypeDecl     _ tc _ _ _ _ _)) = IType tc
+iInfo (ID (ITypeDecl           _ _ _ _ _ _)) = IOther
+iInfo (ID (HidingClassDecl _ _ cls _ _ _ _)) = IClass cls
+iInfo (ID (IClassDecl  _ _ cls _ _ _ _ _ _)) = IClass cls
+iInfo (ID (IInstanceDecl     _ _ _ _ _ _ _)) = internalError "Exports.iInfo"
+iInfo (ID (IFunctionDecl       _ _ _ _ _ _)) = IOther
+iInfo (II                            instId) = IInst instId
 
 closeInterface :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Ident]
-               -> Set.Set IInfo -> InstExportMap -> [ExpInfo] -> [IDecl]
-closeInterface _ _ _ _ _ _ _ [] = []
-closeInterface m tcEnv clsEnv inEnv tvs is inExps (d:ds)
-  | i == IOther       =
-    d' : closeInterface m tcEnv clsEnv inEnv tvs is inExps ds'
-  | i `Set.member` is = closeInterface m tcEnv clsEnv inEnv tvs is inExps ds
-  | otherwise         =
-    d' : closeInterface m tcEnv clsEnv inEnv tvs (Set.insert i is) inExps' ds'
+               -> Set.Set IInfo -> InstExportMap -> [ExpInfo] -> EXPM [IDecl]
+closeInterface _ _ _ _ _ _ _ [] = return []
+closeInterface m tcEnv clsEnv inEnv tvs is inExps (d:ds) = do
+  d' <- case d of ID d''    -> return d''
+                  II instId -> iInstDecl m inEnv tvs instId
+  hs <- hiddenTypes m tcEnv clsEnv tvs d'
+  let es             = getExportedInsts (updateInstExports m i inExps)
+      (inExps', ds') = (ds ++) <$> ((hs ++) <$> es)
+  if | i == IOther       ->
+       (d':) <$> closeInterface m tcEnv clsEnv inEnv tvs is inExps ds'
+     | i `Set.member` is -> closeInterface m tcEnv clsEnv inEnv tvs is inExps ds
+     | otherwise         ->
+       (d':) <$> closeInterface m tcEnv clsEnv inEnv tvs (Set.insert i is) inExps' ds'
   where i = iInfo d
-        (inExps', ds') = (ds ++) <$> ((hiddenTypes m tcEnv clsEnv tvs d' ++) <$>
-           getExportedInsts (updateInstExports m i inExps))
-        d' = case d of ID d''    -> d''
-                       II instId -> iInstDecl m inEnv tvs instId
 
-hiddenTypes :: ModuleIdent -> TCEnv -> ClassEnv -> [Ident] -> IDecl -> [ExpInfo]
+hiddenTypes :: ModuleIdent -> TCEnv -> ClassEnv -> [Ident] -> IDecl -> EXPM [ExpInfo]
 hiddenTypes m tcEnv clsEnv tvs d =
-  map (ID . hiddenTypeDecl) $ filter (not . isPrimTypeId) (usedTypes d [])
+  map ID <$> mapM hiddenTypeDecl (filter (not . isPrimTypeId) (usedTypes d []))
  where
   hiddenTypeDecl tc = case qualLookupTypeInfo (qualQualify m tc) tcEnv of
     [DataType     _ k _] -> hidingDataDecl k
@@ -411,7 +437,8 @@ hiddenTypes m tcEnv clsEnv tvs d =
    where
     hidingDataDecl k = let n  = kindArity k
                            k' = fromKind' k n
-                       in  HidingDataDecl NoPos tc k' $ take n tvs
+                       in  do o <- originPragma tc
+                              return $ HidingDataDecl NoPos tc k' (take n tvs) o
     -- taken from Leif Erik Krueger
     hidingClassDecl qcls k sclss =
       let cx      = fromQualPredList m clsvars sclss
@@ -419,7 +446,8 @@ hiddenTypes m tcEnv clsEnv tvs d =
           k'      = fromClassKind k n
           clsvars = take n tvs
           funDeps = map (fromFunDep clsvars) (classFunDeps qcls clsEnv)
-      in  HidingClassDecl NoPos cx tc k' clsvars funDeps
+      in  do o <- originPragma tc
+             return $ HidingClassDecl NoPos cx tc k' clsvars funDeps o
 
 -- Updates the instance export map by removing the given interface entry from
 -- the sets of class and type names that have to be exported before the
@@ -432,16 +460,16 @@ updateInstExports m (IClass cls) =
 updateInstExports _ _            = id
 
 definedTypes :: [IDecl] -> [QualIdent]
-definedTypes ds = foldr definedType [] ds
+definedTypes = foldr definedType []
   where
   definedType :: IDecl -> [QualIdent] -> [QualIdent]
-  definedType (HidingDataDecl       _ tc _ _) tcs = tc : tcs
-  definedType (IDataDecl        _ tc _ _ _ _) tcs = tc : tcs
-  definedType (INewtypeDecl     _ tc _ _ _ _) tcs = tc : tcs
-  definedType (ITypeDecl          _ tc _ _ _) tcs = tc : tcs
-  definedType (HidingClassDecl _ _ cls _ _ _) tcs = cls : tcs
-  definedType (IClassDecl  _ _ cls _ _ _ _ _) tcs = cls : tcs
-  definedType _                               tcs = tcs
+  definedType (HidingDataDecl       _ tc _ _ _) tcs = tc : tcs
+  definedType (IDataDecl        _ tc _ _ _ _ _) tcs = tc : tcs
+  definedType (INewtypeDecl     _ tc _ _ _ _ _) tcs = tc : tcs
+  definedType (ITypeDecl          _ tc _ _ _ _) tcs = tc : tcs
+  definedType (HidingClassDecl _ _ cls _ _ _ _) tcs = cls : tcs
+  definedType (IClassDecl  _ _ cls _ _ _ _ _ _) tcs = cls : tcs
+  definedType _                                 tcs = tcs
 
 class HasType a where
   usedTypes :: a -> [QualIdent] -> [QualIdent]
@@ -453,15 +481,15 @@ instance HasType a => HasType [a] where
   usedTypes xs tcs = foldr usedTypes tcs xs
 
 instance HasType IDecl where
-  usedTypes (IInfixDecl             _ _ _ _) = id
-  usedTypes (HidingDataDecl         _ _ _ _) = id
-  usedTypes (IDataDecl         _ _ _ _ cs _) = usedTypes cs
-  usedTypes (INewtypeDecl      _ _ _ _ nc _) = usedTypes nc
-  usedTypes (ITypeDecl           _ _ _ _ ty) = usedTypes ty
-  usedTypes (IFunctionDecl      _ _ _ _ qty) = usedTypes qty
-  usedTypes (HidingClassDecl   _ cx _ _ _ _) = usedTypes cx
-  usedTypes (IClassDecl   _ cx _ _ _ _ ms _) = usedTypes cx . usedTypes ms
-  usedTypes (IInstanceDecl _ cx cls tys _ _) =
+  usedTypes (IInfixDecl             _ _ _ _ _) = id
+  usedTypes (HidingDataDecl         _ _ _ _ _) = id
+  usedTypes (IDataDecl         _ _ _ _ cs _ _) = usedTypes cs
+  usedTypes (INewtypeDecl      _ _ _ _ nc _ _) = usedTypes nc
+  usedTypes (ITypeDecl           _ _ _ _ ty _) = usedTypes ty
+  usedTypes (IFunctionDecl      _ _ _ _ qty _) = usedTypes qty
+  usedTypes (HidingClassDecl   _ cx _ _ _ _ _) = usedTypes cx
+  usedTypes (IClassDecl   _ cx _ _ _ _ ms _ _) = usedTypes cx . usedTypes ms
+  usedTypes (IInstanceDecl _ cx cls tys _ _ _) =
     usedTypes cx . (cls :) . usedTypes tys
 
 instance HasType ConstrDecl where

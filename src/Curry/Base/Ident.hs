@@ -59,7 +59,7 @@ module Curry.Base.Ident
   , maxBoundId, minBoundId
   , lexId, readsPrecId, readParenId
   , showsPrecId, showParenId, showStringId
-  , andOpId, eqOpId, leqOpId, ltOpId, orOpId, appendOpId, dotOpId
+  , andOpId, eqOpId, leqOpId, ltOpId, orOpId, appendOpId, eqStringId, dotOpId
   , aValueId, dataEqId
   , anonId, isAnonId
 
@@ -81,7 +81,7 @@ module Curry.Base.Ident
   , qMaxBoundId, qMinBoundId
   , qLexId, qReadsPrecId, qReadParenId
   , qShowsPrecId, qShowParenId, qShowStringId
-  , qAndOpId, qEqOpId, qLeqOpId, qLtOpId, qOrOpId, qAppendOpId, qDotOpId
+  , qAndOpId, qEqOpId, qLeqOpId, qLtOpId, qOrOpId, qAppendOpId, qEqStringId, qDotOpId
   , qAValueId, qDataEqId
 
     -- * Extended functionality
@@ -694,6 +694,10 @@ orOpId = mkIdent "||"
 appendOpId :: Ident
 appendOpId = mkIdent "++"
 
+-- | 'Ident' for the 'eqString' function
+eqStringId :: Ident
+eqStringId = mkIdent "eqString"
+
 -- | 'Ident' for the '.' operator
 dotOpId :: Ident
 dotOpId = mkIdent "."
@@ -979,6 +983,9 @@ qDataEqId = qPreludeIdent dataEqId
 -- | 'QualIdent' for the '++' operator
 qAppendOpId :: QualIdent
 qAppendOpId = qPreludeIdent appendOpId
+
+qEqStringId :: QualIdent
+qEqStringId = qPreludeIdent eqStringId
 
 -- ---------------------------------------------------------------------------
 -- Micellaneous functions for generating and testing extended identifiers

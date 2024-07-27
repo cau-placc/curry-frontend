@@ -549,6 +549,7 @@ showToken (Token EOF                _) = ""
 showToken (Token PragmaHiding       _) = "{-# HIDING"
 showToken (Token PragmaLanguage     _) = "{-# LANGUAGE"
 showToken (Token PragmaOptions      a) = "{-# OPTIONS" ++ showAttr a
+showToken (Token PragmaOrigin       _) = "{-# ORIGIN"
 showToken (Token PragmaMethod       _) = "{-# METHOD"
 showToken (Token PragmaModule       _) = "{-# MODULE"
 showToken (Token PragmaEnd          _) = "#-}"

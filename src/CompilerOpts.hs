@@ -56,6 +56,7 @@ data Options = Options
   , optHtmlDir       :: Maybe FilePath      -- ^ output directory for HTML
   , optUseOutDir     :: Bool                -- ^ use subdir for output?
   , optInterface     :: Bool                -- ^ create a FlatCurry interface file?
+  , optOriginPragmas :: Bool                -- ^ emit origin pragmas in interfaces
   , optPrepOpts      :: PrepOpts            -- ^ preprocessor options
   , optWarnOpts      :: WarnOpts            -- ^ warning options
   , optTargetTypes   :: [TargetType]        -- ^ what to generate
@@ -80,7 +81,8 @@ data PrepOpts = PrepOpts
   } deriving Show
 
 data CaseMode
-  = CaseModeFree
+  = CaseModeCurry
+  | CaseModeFree
   | CaseModeHaskell
   | CaseModeProlog
   | CaseModeGoedel
@@ -107,6 +109,7 @@ data OptimizationOpts = OptimizationOpts
   { optDesugarNewtypes     :: Bool -- ^ Desugar newtypes
   , optInlineDictionaries  :: Bool -- ^ Inline type class dictionaries
   , optRemoveUnusedImports :: Bool -- ^ Remove unused imports in IL
+  , optAddFailed           :: Bool -- ^ add failed match for missing constructors in cases
   } deriving Show
 
 -- | Default compiler options
@@ -121,12 +124,13 @@ defaultOptions = Options
   , optHtmlDir       = Nothing
   , optUseOutDir     = True
   , optInterface     = True
+  , optOriginPragmas = False
   , optPrepOpts      = defaultPrepOpts
   , optWarnOpts      = defaultWarnOpts
   , optTargetTypes   = []
   , optExtensions    = kielExtensions
   , optDebugOpts     = defaultDebugOpts
-  , optCaseMode      = CaseModeFree
+  , optCaseMode      = CaseModeCurry
   , optCppOpts       = defaultCppOpts
   , optOptimizations = defaultOptimizationOpts
   }
@@ -169,6 +173,7 @@ defaultOptimizationOpts = OptimizationOpts
   { optDesugarNewtypes     = False
   , optInlineDictionaries  = True
   , optRemoveUnusedImports = True
+  , optAddFailed           = True
   }
 
 -- |Modus operandi of the program
@@ -220,7 +225,6 @@ data WarnFlag
   | WarnMissingSignatures    -- ^ Warn for missing type signatures
   | WarnMissingMethods       -- ^ Warn for missing method implementations
   | WarnOrphanInstances      -- ^ Warn for orphan instances
-  | WarnIrregularCaseMode    -- ^ Warn for irregular case mode
   | WarnRedundantContext     -- ^ Warn for redundant context in type signatures
     deriving (Eq, Bounded, Enum, Show)
 
@@ -230,7 +234,7 @@ stdWarnFlags =
   [ WarnMultipleImports   , WarnDisjoinedRules   --, WarnUnusedGlobalBindings
   , WarnUnusedBindings    , WarnNameShadowing    , WarnOverlapping
   , WarnIncompletePatterns, WarnMissingSignatures, WarnMissingMethods
-  , WarnIrregularCaseMode , WarnRedundantContext
+  , WarnRedundantContext
   ]
 
 -- |Description and flag of warnings flags
@@ -258,8 +262,6 @@ warnFlags =
     , "missing method implementations" )
   , ( WarnOrphanInstances     , "orphan-instances"
     , "orphan instances"               )
-  , ( WarnIrregularCaseMode   , "irregular-case-mode"
-    , "irregular case mode")
   , ( WarnRedundantContext    , "redundant-context"
     , "redundant context")
   ]
@@ -269,6 +271,7 @@ data DumpLevel
   = DumpCondCompiled      -- ^ dump source code after conditional compiling
   | DumpParsed            -- ^ dump source code after parsing
   | DumpExtensionChecked  -- ^ dump source code after extension checking
+  | DumpCaseModeChecked   -- ^ dump source code after case mode checking
   | DumpTypeSyntaxChecked -- ^ dump source code after type syntax checking
   | DumpKindChecked       -- ^ dump source code after kind checking
   | DumpSyntaxChecked     -- ^ dump source code after syntax checking
@@ -295,6 +298,7 @@ dumpLevel :: [(DumpLevel, String, String)]
 dumpLevel = [ (DumpCondCompiled     , "dump-cond" , "conditional compiling"           )
             , (DumpParsed           , "dump-parse", "parsing"                         )
             , (DumpExtensionChecked , "dump-exc"  , "extension checking"              )
+            , (DumpCaseModeChecked  , "dump-cmc"  , "case mode checking"              )
             , (DumpTypeSyntaxChecked, "dump-tsc"  , "type syntax checking"            )
             , (DumpKindChecked      , "dump-kc"   , "kind checking"                   )
             , (DumpSyntaxChecked    , "dump-sc"   , "syntax checking"                 )
@@ -469,6 +473,10 @@ options =
       (NoArg (onWarnOpts $ \ opts -> opts {wnWarnFlags =
         addFlag WarnOverlapping (wnWarnFlags opts) }))
       "do not print warnings for overlapping rules"
+  -- interfaces
+  , Option ""   ["origin-pragmas"]
+      (NoArg (onOpts $ \ opts -> opts { optOriginPragmas = True }))
+      "emit origin pragmas in interfaces"
   -- target types
   , targetOption Tokens                 "tokens"
       "generate token stream"
@@ -560,7 +568,9 @@ extDescriptions = map toDescr extensions
 
 caseModeDescriptions :: OptErrTable Options
 caseModeDescriptions
-  = [ ( "free"   , "use free case mode"
+  = [ ( "curry"  , "use default curry case mode"
+        , \ opts -> opts { optCaseMode = CaseModeCurry   } )
+    , ( "free"   , "use free case mode"
         , \ opts -> opts { optCaseMode = CaseModeFree    } )
     , ( "haskell", "use haskell style case mode"
         , \ opts -> opts { optCaseMode = CaseModeHaskell } )
@@ -616,12 +626,16 @@ optimizeDescriptions =
     , \ opts -> opts { optInlineDictionaries  = True    })
   , ( "remove-unused-imports"   , "removes unused imports"
     , \ opts -> opts { optRemoveUnusedImports = True    })
+  , ( "add-failed-case"         , "extends incomplete cases with explicit 'failed' in missing branches"
+    , \ opts -> opts { optAddFailed           = True    })
   , ( "no-desugar-newtypes"     , "prevents desugaring of newtypes in FlatCurry"
     , \ opts -> opts { optDesugarNewtypes     = False   })
   , ( "no-inline-dictionaries"  , "prevents inlining of type class dictionaries"
     , \ opts -> opts { optInlineDictionaries  = False   })
   , ( "no-remove-unused-imports", "prevents removing of unused imports"
     , \ opts -> opts { optRemoveUnusedImports = False   })
+  , ( "no-add-failed-case"         , "prevents extending incomplete cases with explicit 'failed' in missing branches"
+    , \ opts -> opts { optAddFailed           = False    })
   ]
 
 addFlag :: Eq a => a -> [a] -> [a]

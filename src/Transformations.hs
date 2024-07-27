@@ -76,14 +76,14 @@ lift (env, mdl) = (env { valueEnv = tyEnv' }, mdl')
   where (mdl', tyEnv') = L.lift (valueEnv env) mdl
 
 -- |Translate into the intermediate language
-ilTrans :: Bool -> CompEnv (Module Type) -> CompEnv IL.Module
-ilTrans remIm (env, mdl) = (env, il)
-  where il = IL.ilTrans remIm (valueEnv env) (tyConsEnv env) mdl
+ilTrans :: CompEnv (Module Type) -> CompEnv IL.Module
+ilTrans (env, mdl) = (env, il)
+  where il = IL.ilTrans (valueEnv env) (tyConsEnv env) mdl
 
 transType :: TCEnv -> Type -> IL.Type
 transType = IL.transType
 
 -- |Add missing case branches
-completeCase :: CompEnv IL.Module -> CompEnv IL.Module
-completeCase (env, mdl) =
-  (env, CC.completeCase (interfaceEnv env) (tyConsEnv env) mdl)
+completeCase :: Bool -> CompEnv IL.Module -> CompEnv IL.Module
+completeCase addFailed (env, mdl) =
+  (env, CC.completeCase addFailed (interfaceEnv env) (tyConsEnv env) mdl)

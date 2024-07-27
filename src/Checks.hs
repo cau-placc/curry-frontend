@@ -14,6 +14,7 @@
 -}
 module Checks where
 
+import qualified Checks.CaseModeCheck     as CMC (caseModeCheck)
 import qualified Checks.InstanceCheck     as INC (instanceCheck)
 import qualified Checks.InterfaceCheck    as IC  (interfaceCheck)
 import qualified Checks.ImportSyntaxCheck as ISC (importCheck)
@@ -37,6 +38,12 @@ import CompilerEnv
 import CompilerOpts
 
 type Check m a = Options -> CompEnv a -> CYT m (CompEnv a)
+
+caseModeCheck :: Monad m => Check m (Module a)
+caseModeCheck opts (env, mdl) = warnOrFailMessages (optWarnOpts opts) warns >> result
+  where (warns, errs) = CMC.caseModeCheck (optCaseMode opts) mdl
+        result | null errs = ok (env, mdl)
+               | otherwise = failMessages errs
 
 interfaceCheck :: Monad m => Check m Interface
 interfaceCheck _ (env, intf)
@@ -71,7 +78,7 @@ typeSyntaxCheck :: Monad m => Check m (Module a)
 typeSyntaxCheck _ (env, mdl)
   | null msgs = ok (env, mdl')
   | otherwise = failMessages msgs
-  where (mdl', msgs) = TSC.typeSyntaxCheck (extensions env) (tyConsEnv env) 
+  where (mdl', msgs) = TSC.typeSyntaxCheck (extensions env) (tyConsEnv env)
                                            (classEnv env) mdl
 
 -- |Check the kinds of type definitions and signatures.
@@ -138,8 +145,8 @@ typeCheck :: Monad m => Options -> CompEnv (Module a)
 typeCheck _ (env, Module spi li ps m es is ds)
   | null msgs = ok (env { valueEnv = vEnv' }, Module spi li ps m es is ds')
   | otherwise = failMessages msgs
-  where (ds', vEnv', msgs) = TC.typeCheck (extensions env) (moduleIdent env) 
-                                          (tyConsEnv env) (valueEnv env) 
+  where (ds', vEnv', msgs) = TC.typeCheck (extensions env) (moduleIdent env)
+                                          (tyConsEnv env) (valueEnv env)
                                           (classEnv env) (instEnv env) ds
 
 -- |Check the export specification
@@ -159,5 +166,5 @@ expandExports _ (env, Module spi li ps m es is ds)
 
 -- |Check for warnings.
 warnCheck :: Options -> CompilerEnv -> Module a -> [Message]
-warnCheck opts env mdl = WC.warnCheck (optWarnOpts opts) (optCaseMode opts)
-  (aliasEnv env) (valueEnv env) (tyConsEnv env) (classEnv env) mdl
+warnCheck opts env = WC.warnCheck (optWarnOpts opts)
+  (aliasEnv env) (valueEnv env) (tyConsEnv env) (classEnv env)

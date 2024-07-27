@@ -53,7 +53,7 @@ genTypedBinaryFlatCurry :: AFC.AProg FC.TypeExpr -> ByteString
 genTypedBinaryFlatCurry = encode . GTFC.genTypedFlatCurry
 
 -- |Generate type-annotated FlatCurry
-genAnnotatedFlatCurry :: CompilerEnv -> CS.Module Type -> IL.Module
+genAnnotatedFlatCurry :: Bool -> CompilerEnv -> CS.Module Type -> IL.Module
                       -> AFC.AProg FC.TypeExpr
 genAnnotatedFlatCurry = GAFC.genAnnotatedFlatCurry
 

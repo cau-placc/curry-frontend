@@ -69,7 +69,7 @@ report :: Message -> ISC ()
 report msg = S.modify $ \ s -> s { errors = msg : errors s }
 
 intfSyntaxCheck :: Interface -> (Interface, [Message])
-intfSyntaxCheck (Interface n is ds) = (Interface n is ds', reverse $ errors s')
+intfSyntaxCheck (Interface n is ds o) = (Interface n is ds' o, reverse $ errors s')
   where (ds', s') = S.runState (mapM checkIDecl ds) (ISCState env simpleClsEnv [])
         env = foldr bindType (fmap toTypeKind initTCEnv) ds
         simpleClsEnv = foldr bindClass Map.empty ds
@@ -80,71 +80,74 @@ intfSyntaxCheck (Interface n is ds) = (Interface n is ds', reverse $ errors s')
 -- The latter must not occur in type expressions in interfaces.
 
 bindType :: IDecl -> TypeEnv -> TypeEnv
-bindType (IInfixDecl             _ _ _ _) = id
-bindType (HidingDataDecl        _ tc _ _) = qualBindTopEnv tc (Data tc [])
-bindType (IDataDecl        _ tc _ _ cs _) = qualBindTopEnv tc $
-  Data tc (map constrId cs)
-bindType (INewtypeDecl     _ tc _ _ nc _) = qualBindTopEnv tc $
-  Data tc [nconstrId nc]
-bindType (ITypeDecl           _ tc _ _ _) = qualBindTopEnv tc (Alias tc)
-bindType (IFunctionDecl        _ _ _ _ _) = id
-bindType (HidingClassDecl  _ _ cls _ _ _) = qualBindTopEnv cls $ Class cls []
-bindType (IClassDecl _ _ cls _ _ _ ms hs) = qualBindTopEnv cls $
-  Class cls (filter (`notElem` hs) (map imethod ms))
-bindType (IInstanceDecl      _ _ _ _ _ _) = id
+bindType (IInfixDecl              _ _ _ _ _) = id
+bindType (HidingDataDecl        _ tc _ _ o) = qualBindTopEnv tc' (Data tc' [])
+  where tc' = applyOriginPragma o tc
+bindType (IDataDecl        _ tc _ _ cs _ o) = qualBindTopEnv tc' $ Data tc' (map constrId cs)
+  where tc' = applyOriginPragma o tc
+bindType (INewtypeDecl     _ tc _ _ nc _ o) = qualBindTopEnv tc' $ Data tc' [nconstrId nc]
+  where tc' = applyOriginPragma o tc
+bindType (ITypeDecl           _ tc _ _ _ o) = qualBindTopEnv tc' (Alias tc')
+  where tc' = applyOriginPragma o tc
+bindType (IFunctionDecl         _ _ _ _ _ _) = id
+bindType (HidingClassDecl  _ _ cls _ _ _ o) = qualBindTopEnv cls' $ Class cls' []
+  where cls' = applyOriginPragma o cls
+bindType (IClassDecl _ _ cls _ _ _ ms hs o) = qualBindTopEnv cls' $ Class cls' (filter (`notElem` hs) (map imethod ms))
+  where cls' = applyOriginPragma o cls
+bindType (IInstanceDecl      _ _ _ _ _ _ _) = id
 
 -- Adds all information regarding functional dependencies to the simple
 -- class env
 bindClass :: IDecl -> SimpleClassEnv -> SimpleClassEnv
-bindClass (IClassDecl _ _ cls _ tvs fds _ _) = let fds' = map (CE.toFunDep tvs) fds
-                                               in  Map.insert cls fds'
-bindClass _                                  = id
+bindClass (IClassDecl _ _ cls _ tvs fds _ _ _) = let fds' = map (CE.toFunDep tvs) fds
+                                                 in  Map.insert cls fds'
+bindClass _                                    = id
 
 -- The checks applied to the interface are similar to those performed
 -- during syntax checking of type expressions.
 
 checkIDecl :: IDecl -> ISC IDecl
-checkIDecl (IInfixDecl  p fix pr op) = return (IInfixDecl p fix pr op)
-checkIDecl (HidingDataDecl p tc k tvs) = do
+checkIDecl (IInfixDecl  p fix pr op o) = return (IInfixDecl p fix pr op o)
+checkIDecl (HidingDataDecl p tc k tvs o) = do
   checkTypeLhs tvs
-  return (HidingDataDecl p tc k tvs)
-checkIDecl (IDataDecl p tc k tvs cs hs) = do
+  return (HidingDataDecl p tc k tvs o)
+checkIDecl (IDataDecl p tc k tvs cs hs o) = do
   checkTypeLhs tvs
   checkHiddenType tc (cons ++ labels) hs
   cs' <- mapM (checkConstrDecl tvs) cs
-  return $ IDataDecl p tc k tvs cs' hs
+  return $ IDataDecl p tc k tvs cs' hs o
   where cons   = map constrId cs
         labels = nub $ concatMap recordLabels cs
-checkIDecl (INewtypeDecl p tc k tvs nc hs) = do
+checkIDecl (INewtypeDecl p tc k tvs nc hs o) = do
   checkTypeLhs tvs
   checkHiddenType tc (con : labels) hs
   nc' <- checkNewConstrDecl tvs nc
-  return $ INewtypeDecl p tc k tvs nc' hs
+  return $ INewtypeDecl p tc k tvs nc' hs o
   where con    = nconstrId nc
         labels = nrecordLabels nc
-checkIDecl (ITypeDecl p tc k tvs ty) = do
+checkIDecl (ITypeDecl p tc k tvs ty o) = do
   checkTypeLhs tvs
-  liftM (ITypeDecl p tc k tvs) (checkClosedType tvs ty)
-checkIDecl (IFunctionDecl p f cm n qty) =
-  liftM (IFunctionDecl p f cm n) (checkQualType qty)
-checkIDecl (HidingClassDecl p cx qcls k clsvars funDeps) = do
+  (\ty' -> ITypeDecl p tc k tvs ty' o) <$> checkClosedType tvs ty
+checkIDecl (IFunctionDecl p f cm n qty o) =
+  (\qty' -> IFunctionDecl p f cm n qty' o) <$> checkQualType qty
+checkIDecl (HidingClassDecl p cx qcls k clsvars funDeps o) = do
   checkTypeVars "hiding class declaration" clsvars
   cx' <- checkClosedContext clsvars cx
   funDeps' <- filterM (checkClosedFunDep clsvars) funDeps
-  return $ HidingClassDecl p cx' qcls k clsvars funDeps'
-checkIDecl (IClassDecl p cx qcls k clsvars funDeps ms hs) = do
+  return $ HidingClassDecl p cx' qcls k clsvars funDeps' o
+checkIDecl (IClassDecl p cx qcls k clsvars funDeps ms hs o) = do
   checkTypeVars "class declaration" clsvars
   cx' <- checkClosedContext clsvars cx
   funDeps' <- filterM (checkClosedFunDep clsvars) funDeps
   ms' <- mapM checkIMethodDecl ms
   checkHidden (errNoElement "method" "class") qcls (map imethod ms') hs
-  return $ IClassDecl p cx' qcls k clsvars funDeps' ms' hs
-checkIDecl (IInstanceDecl p cx qcls inst is m) = do
+  return $ IClassDecl p cx' qcls k clsvars funDeps' ms' hs o
+checkIDecl (IInstanceDecl p cx qcls inst is m o) = do
   checkClass qcls
   (cx', inst') <- checkQualTypes cx inst
   mapM_ checkInstanceType inst'
   mapM_ (report . errMultipleImplementation . head) $ findMultiples $ map fst is
-  return $ IInstanceDecl p cx' qcls inst' is m
+  return $ IInstanceDecl p cx' qcls inst' is m o
 
 checkHiddenType :: QualIdent -> [Ident] -> [Ident] -> ISC ()
 checkHiddenType = checkHidden $ errNoElement "constructor or label" "type"

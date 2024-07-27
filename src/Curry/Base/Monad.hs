@@ -13,7 +13,7 @@
 -}
 
 module Curry.Base.Monad
-  ( CYIO, CYM, CYT, failMessages, failMessageAt, warnMessages, warnMessageAt
+  ( CYIO, CYM, CYT, failMessages, failMessageAt, warnMessages, warnMessageAt, warnOrFailMessages
   , ok, runCYIO, runCYM, runCYIOIgnWarn, runCYMIgnWarn, liftCYM, silent
   ) where
 
@@ -21,18 +21,19 @@ import Control.Monad.Identity
 import Control.Monad.Trans.Except (ExceptT, mapExceptT, runExceptT, throwE)
 import Control.Monad.Writer
 
-import Curry.Base.Message  (Message, spanMessage)
+import Curry.Base.Message  (Message, spanMessage, message)
 import Curry.Base.Span (Span)
 import Curry.Base.Pretty   (text)
+import CompilerOpts (WarnOpts (..))
 
 -- |Curry compiler monad transformer
-type CYT m a = WriterT [Message] (ExceptT [Message] m) a
+type CYT m = WriterT [Message] (ExceptT [Message] m)
 
 -- |Curry compiler monad based on the `IO` monad
-type CYIO a = CYT IO a
+type CYIO = CYT IO
 
 -- |Pure Curry compiler monad
-type CYM a = CYT Identity a
+type CYM = CYT Identity
 
 -- |Run an `IO`-based Curry compiler action in the `IO` monad,
 -- yielding either a list of errors or a result in case of success
@@ -76,6 +77,12 @@ warnMessage msg = warnMessages [msg]
 -- |Warning with a list of messages describing the cause(s) of the warnings.
 warnMessages :: Monad m => [Message] -> CYT m ()
 warnMessages msgs = tell msgs
+
+-- |Warnings or failures, depending on whether -Werror is set.
+warnOrFailMessages :: Monad m => WarnOpts -> [Message] -> CYT m ()
+warnOrFailMessages opts msgs | null msgs          = return ()
+                             | wnWarnAsError opts = failMessages (msgs ++ [message $ text "Failed due to -Werror"])
+                             | otherwise          = warnMessages msgs
 
 -- |Execute a monadic action, but ignore any warnings it issues
 silent :: Monad m => CYT m a -> CYT m a

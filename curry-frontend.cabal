@@ -1,5 +1,5 @@
 name:          curry-frontend
-version:       2.1.0
+version:       2.1.1
 cabal-version: 2.0
 synopsis:      Compile the functional logic language Curry to several
                intermediate formats
@@ -76,6 +76,7 @@ library
     , Base.Typing
     , Base.Utils
     , Checks
+    , Checks.CaseModeCheck
     , Checks.DeriveCheck
     , Checks.ExportCheck
     , Checks.ExtensionCheck
