@@ -522,6 +522,10 @@ warnInfos = map (uncurry mkFailTest)
       , "Orphan instance: instance E"
       ]
     )
+  , ("MPTCUniqelyButNoInstance",
+      [ "Top-level binding with no type signature:"
+      , "  test :: Coerce Prelude.Char a => a"
+      ])
   , ("NonExhaustivePattern",
       [ "Pattern matches are non-exhaustive", "In a case alternative"
       , "In an equation for `test2'", "In an equation for `and'"
