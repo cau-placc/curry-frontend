@@ -22,7 +22,6 @@
     information. On import two values are considered equal if their original
     names match.
 -}
-{-# LANGUAGE CPP #-}
 module Env.Value
   ( ValueEnv, ValueInfo (..)
   , bindGlobalInfo, bindFun, qualBindFun, rebindFun, unbindFun
@@ -31,15 +30,13 @@ module Env.Value
   , ValueType (..), bindLocalVars, bindLocalVar
   ) where
 
-#if __GLASGOW_HASKELL__ >= 804
 import Prelude hiding ((<>))
-#endif
+import Control.Monad (zipWithM)
 
 import Curry.Base.Ident
 import Curry.Base.Pretty (Pretty(..))
 
 import Base.Messages (internalError)
-import Base.PrettyTypes ()
 import Base.TopEnv
 import Base.Types
 import Base.Utils ((++!))
@@ -67,7 +64,7 @@ instance Entity ValueInfo where
 
   merge (DataConstructor c1 ar1 ls1 ty1) (DataConstructor c2 ar2 ls2 ty2)
     | c1 == c2 && ar1 == ar2 && ty1 == ty2 = do
-      ls' <- sequence (zipWith mergeLabel ls1 ls2)
+      ls' <- zipWithM mergeLabel ls1 ls2
       Just (DataConstructor c1 ar1 ls' ty1)
   merge (NewtypeConstructor c1 l1 ty1) (NewtypeConstructor c2 l2 ty2)
     | c1 == c2 && ty1 == ty2 = do
@@ -165,7 +162,7 @@ tupleDCs = map dataInfo tupleData
           let n = length tys
           in  DataConstructor (qTupleId n) n (replicate n anonId) $
                 ForAll n $ predType $ foldr TypeArrow (tupleType tys) tys
-        dataInfo (RecordConstr _ _ _) =
+        dataInfo RecordConstr {}    =
           internalError $ "Env.Value.tupleDCs: " ++ show tupleDCs
 
 -- Since all predefined types are free of existentially quantified type

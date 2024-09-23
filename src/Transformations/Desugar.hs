@@ -68,7 +68,6 @@ import Curry.Base.SpanInfo
 import Curry.Syntax
 
 import Base.Expr
-import Base.CurryTypes
 import Base.Messages (internalError)
 import Base.TypeExpansion
 import Base.Types
@@ -399,7 +398,7 @@ dsFunctionalPatterns p ts = do
   -- Create (desugared) functional pattern expression
   let cs = [mkTuple es =:<= mkTuple (map (uncurry mkVar) vs) | not $ null vs]
   -- Create free variable declarations for non-anonymous funPatVars
-  let ds = map (\ (v, _, (PredType _ ty)) -> FreeDecl p [Var (PredType [] ty) v]) $
+  let ds = map (\ (v, _, PredType _ ty) -> FreeDecl p [Var (PredType [] ty) v]) $
              filter (not . isAnonId . fst3) funPatVars
   -- Return (declarations, constraints, desugared patterns)
   return (ds, concat (cs : css), ts2)

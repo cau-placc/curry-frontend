@@ -17,9 +17,9 @@
 {-# LANGUAGE TupleSections #-}
 module Checks.KindCheck (kindCheck) where
 
-#if __GLASGOW_HASKELL__ >= 804
+
 import Prelude hiding ((<>))
-#endif
+
 
 import           Control.Monad              (when, foldM, replicateM)
 import           Control.Monad.Fix          (mfix)
@@ -35,8 +35,6 @@ import Curry.Base.Pretty
 import Curry.Syntax
 import Curry.Syntax.Pretty
 
-import Base.CurryKinds
-import Base.CurryTypes (toPredType)
 import Base.Expr
 import Base.Kinds
 import Base.KindSubst
@@ -140,9 +138,9 @@ instance HasType a => HasType (Maybe a) where
   fts m = maybe id $ fts m
 
 instance HasType (Decl a) where
-  fts _ (InfixDecl               _ _ _ _) = id
+  fts _ InfixDecl {}                      = id
+  fts _ ExternalDataDecl {}               = id
   fts m (DataDecl          _ _ _ cs clss) = fts m cs . fts m clss
-  fts _ (ExternalDataDecl          _ _ _) = id
   fts m (NewtypeDecl       _ _ _ nc clss) = fts m nc . fts m clss
   fts m (TypeDecl               _ _ _ ty) = fts m ty
   fts m (TypeSig                  _ _ ty) = fts m ty
@@ -195,9 +193,9 @@ instance HasType (CondExpr a) where
   fts m (CondExpr _ g e) = fts m g . fts m e
 
 instance HasType (Expression a) where
-  fts _ (Literal             _ _ _) = id
-  fts _ (Variable            _ _ _) = id
-  fts _ (Constructor         _ _ _) = id
+  fts _ Literal {}                  = id
+  fts _ Variable {}                 = id
+  fts _ Constructor {}              = id
   fts m (Paren                 _ e) = fts m e
   fts m (Typed              _ e ty) = fts m e . fts m ty
   fts m (Record           _ _ _ fs) = fts m fs
@@ -242,8 +240,8 @@ instance HasType QualIdent where
 -- newtypes, which is checked in the function 'checkNonRecursiveTypes' below.
 
 ft' :: ModuleIdent -> Decl a -> [Ident]
-ft' _ (DataDecl     _ _ _ _ _) = []
-ft' _ (ExternalDataDecl _ _ _) = []
+ft' _ DataDecl {}              = []
+ft' _ ExternalDataDecl {}      = []
 ft' m (NewtypeDecl _ _ _ nc _) = fts m nc []
 ft' m (TypeDecl      _ _ _ ty) = fts m ty []
 ft' _ _                        = []
@@ -256,8 +254,8 @@ checkNonRecursiveTypes ds = do
 checkTypeAndNewtypeDecls :: [Decl a] -> KCM ()
 checkTypeAndNewtypeDecls [] =
   internalError "Checks.KindCheck.checkTypeAndNewtypeDecls: empty list"
-checkTypeAndNewtypeDecls [DataDecl _ _ _ _ _] = ok
-checkTypeAndNewtypeDecls [ExternalDataDecl _ _ _] = ok
+checkTypeAndNewtypeDecls [DataDecl {}] = ok
+checkTypeAndNewtypeDecls [ExternalDataDecl {}] = ok
 checkTypeAndNewtypeDecls [d] | isTypeOrNewtypeDecl d = do
   m <- getModuleIdent
   let tc = typeConstructor d
@@ -443,11 +441,11 @@ kcDeclGroup tcEnv clsEnv ds = do
 -- fresh kind variables are added for the latter.
 
 kcDecl :: TCEnv -> ClassEnv -> Decl a -> KCM ()
-kcDecl _     _      (InfixDecl _ _ _ _) = ok
+kcDecl _     _      InfixDecl {}             = ok
+kcDecl _     _      ExternalDataDecl {}      = ok
 kcDecl tcEnv _      (DataDecl _ tc tvs cs _) = do
   (_, tcEnv') <- bindTypeVars tc tvs tcKind tcEnv
   mapM_ (kcConstrDecl tcEnv') cs
-kcDecl _     _      (ExternalDataDecl _ _ _) = ok
 kcDecl tcEnv _      (NewtypeDecl _ tc tvs nc _) = do
   (_, tcEnv') <- bindTypeVars tc tvs tcKind tcEnv
   kcNewConstrDecl tcEnv' nc
@@ -524,9 +522,9 @@ kcCondExpr tcEnv clsEnv (CondExpr _ g e) =
   kcExpr tcEnv clsEnv g >> kcExpr tcEnv clsEnv e
 
 kcExpr :: TCEnv -> ClassEnv -> Expression a -> KCM ()
-kcExpr _     _      (Literal _ _ _) = ok
-kcExpr _     _      (Variable _ _ _) = ok
-kcExpr _     _      (Constructor _ _ _) = ok
+kcExpr _     _      Literal {}     = ok
+kcExpr _     _      Variable {}    = ok
+kcExpr _     _      Constructor {} = ok
 kcExpr tcEnv clsEnv (Paren _ e) = kcExpr tcEnv clsEnv e
 kcExpr tcEnv clsEnv (Typed _ e qty) = do
   kcExpr tcEnv clsEnv e
@@ -762,9 +760,9 @@ typeConstructor _                         =
   internalError "Checks.KindCheck.typeConstructor: no type declaration"
 
 isTypeOrNewtypeDecl :: Decl a -> Bool
-isTypeOrNewtypeDecl (NewtypeDecl _ _ _ _ _) = True
-isTypeOrNewtypeDecl (TypeDecl      _ _ _ _) = True
-isTypeOrNewtypeDecl _                       = False
+isTypeOrNewtypeDecl NewtypeDecl {} = True
+isTypeOrNewtypeDecl TypeDecl {}    = True
+isTypeOrNewtypeDecl _              = False
 
 desugarContext :: Context -> Context
 desugarContext = map desugarConstraint

@@ -14,53 +14,48 @@
     This module searches for potentially irregular code and generates
     warning messages.
 -}
-{-# LANGUAGE CPP #-}
 module Checks.WarnCheck (warnCheck) where
 
-#if __GLASGOW_HASKELL__ >= 804
 import Prelude hiding ((<>))
-#endif
 
 import           Control.Applicative
   ((<|>))
 import           Control.Monad
-  (filterM, foldM_, guard, liftM, liftM2, when, unless, void)
+  (filterM, foldM_, guard, liftM2, when, unless, void)
 import           Control.Monad.State.Strict    (State, execState, gets, modify)
 import qualified Data.IntSet         as IntSet
   (IntSet, empty, insert, notMember, singleton, union, unions)
+import           Data.Bifunctor
+  (first)
 import qualified Data.Map            as Map    (empty, insert, lookup, (!))
 import           Data.Maybe
   (catMaybes, fromMaybe, listToMaybe, isJust)
 import           Data.List
   ((\\), intersect, intersectBy, nub, sort, unionBy)
-import           Data.Char 
-  (isLower, isUpper, toLower, toUpper, isAlpha)
-import qualified Data.Set.Extra as Set
 import           Data.Tuple.Extra
   (snd3)
 
 import Curry.Base.Ident
-import Curry.Base.Position
+import Curry.Base.Position ( Position, HasPosition(getPosition), ppPosition, ppLine, showLine)
 import Curry.Base.Pretty
 import Curry.Base.SpanInfo
 import Curry.Syntax
 
-import Base.CurryTypes (ppTypeScheme, fromPred, toPredList)
-import Base.Messages   (Message, spanInfoMessage, internalError)
+import Base.Messages   ( Message, spanInfoMessage, internalError )
 import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                        , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv
                        , qualModifyNestEnv)
-import Base.TopEnv     (allBoundQualIdents)
+import Base.TopEnv     ( allBoundQualIdents )
 
 import Base.Types
-import Base.Utils (findMultiples)
-import Env.ModuleAlias
-import Env.Class (ClassEnv, classMethods, hasDefaultImpl, minPredList)
+import Base.Utils ( findMultiples )
+import Env.ModuleAlias ( AliasEnv )
+import Env.Class ( ClassEnv, classMethods, hasDefaultImpl, minPredList )
 import Env.TypeConstructor ( TCEnv, TypeInfo (..), lookupTypeInfo
                            , qualLookupTypeInfo, getOrigName )
-import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
+import Env.Value ( ValueEnv, ValueInfo (..), qualLookupValue )
 
-import CompilerOpts
+import CompilerOpts ( WarnFlag(..), WarnOpts(..) )
 
 -- Find potentially incorrect code in a Curry program and generate warnings
 -- for the following issues:
@@ -81,7 +76,7 @@ warnCheck wOpts aEnv valEnv tcEnv clsEnv mdl
       checkMissingTypeSignatures ds
       checkModuleAlias is
       checkRedContext ds
-  where Module _ _ _ mid es is ds = fmap (const ()) mdl
+  where Module _ _ _ mid es is ds = void mdl
 
 type ScopeEnv = NestEnv IdInfo
 
@@ -177,14 +172,14 @@ checkImports = warnFor WarnMultipleImports . foldM_ checkImport Map.empty
         setImportSpec env mid (is', hs)
     | null iis  = setImportSpec env mid (is' ++ is, hs)
     | otherwise = do
-        mapM_ (report . (warnMultiplyImportedSymbol mid) . impName) iis
+        mapM_ (report . warnMultiplyImportedSymbol mid . impName) iis
         setImportSpec env mid (unionBy cmpImport is' is, hs)
     where iis = intersectBy cmpImport is' is
 
   checkImportSpec env _ mid (is, hs) (Just (Hiding _ hs'))
     | null ihs  = setImportSpec env mid (is, hs' ++ hs)
     | otherwise = do
-        mapM_ (report . (warnMultiplyHiddenSymbol mid) . impName) ihs
+        mapM_ (report . warnMultiplyHiddenSymbol mid . impName) ihs
         setImportSpec env mid (is, unionBy cmpImport hs' hs)
     where ihs = intersectBy cmpImport hs' hs
 
@@ -195,8 +190,8 @@ checkImports = warnFor WarnMultipleImports . foldM_ checkImport Map.empty
   setImportSpec env mid ishs = return $ Map.insert mid ishs env
 
   cmpImport (ImportTypeWith _ id1 cs1) (ImportTypeWith _ id2 cs2)
-    = id1 == id2 && null (intersect cs1 cs2)
-  cmpImport i1 i2 = (impName i1) == (impName i2)
+    = id1 == id2 && null (cs1 `intersect` cs2)
+  cmpImport i1 i2 = impName i1 == impName i2
 
   impName (Import           _ v) = v
   impName (ImportTypeAll    _ t) = t
@@ -566,8 +561,9 @@ checkCaseAlts spi ct alts = do
     Rigid -> do
       unless (null nonExhaustive) $ warnFor WarnIncompletePatterns $ report $
         warnMissingPattern spi "a case alternative" nonExhaustive
-      unless (null overlapped) $ void $ mapM (warnFor WarnOverlapping . report) $
-        map (\(i, pat) -> warnUnreachablePattern (spis !! i) pat) overlapped
+      unless (null overlapped) $ mapM_ (\(i, pat) -> warnFor WarnOverlapping $ report $
+                                                     warnUnreachablePattern (spis !! i) pat)
+                                       overlapped
   where alt2Guards :: Alt () -> [CondExpr ()]
         alt2Guards (Alt _ _ (GuardedRhs _ _ conds _)) = conds
         alt2Guards _ = []
@@ -617,11 +613,11 @@ simplifyPat (NegativePattern       spi a l) =
   negateLit (Int   n) = Int   (-n)
   negateLit (Float d) = Float (-d)
   negateLit x         = x
-simplifyPat v@(VariablePattern       _ _ _) = return v
+simplifyPat v@(VariablePattern {}) = return v
 simplifyPat (ConstructorPattern spi a c ps) =
-  ConstructorPattern spi a c `liftM` mapM simplifyPat ps
+  ConstructorPattern spi a c <$> mapM simplifyPat ps
 simplifyPat (InfixPattern    spi a p1 c p2) =
-  ConstructorPattern spi a c `liftM` mapM simplifyPat [p1, p2]
+  ConstructorPattern spi a c <$> mapM simplifyPat [p1, p2]
 simplifyPat (ParenPattern              _ p) = simplifyPat p
 simplifyPat (RecordPattern        _ _ c fs) = do
   (_, ls) <- getAllLabels c
@@ -632,13 +628,13 @@ simplifyPat (RecordPattern        _ _ c fs) = do
       fromMaybe wildPat (lookup l' [(unqualify l, p) | (l, p) <- fs'])
 simplifyPat (TuplePattern            _ ps) =
   ConstructorPattern NoSpanInfo () (qTupleId (length ps))
-    `liftM` mapM simplifyPat ps
+    <$> mapM simplifyPat ps
 simplifyPat (ListPattern           _ _ ps) =
-  simplifyListPattern `liftM` mapM simplifyPat ps
+  simplifyListPattern <$> mapM simplifyPat ps
 simplifyPat (AsPattern             _ _ p) = simplifyPat p
 simplifyPat (LazyPattern             _ _) = return wildPat
-simplifyPat (FunctionPattern     _ _ _ _) = return wildPat
-simplifyPat (InfixFuncPattern  _ _ _ _ _) = return wildPat
+simplifyPat FunctionPattern {}            = return wildPat
+simplifyPat InfixFuncPattern {}           = return wildPat
 
 getAllLabels :: QualIdent -> WCM (QualIdent, [Ident])
 getAllLabels c = do
@@ -693,7 +689,7 @@ processEqs eqs@((n, ps, gs):eqs')
           Variable    _ _ q -> qidAlwaysTrue q
           _ -> False
         qidAlwaysTrue :: QualIdent -> Bool
-        qidAlwaysTrue q = elem (idName $ qidIdent q) ["True", "success", "otherwise"]
+        qidAlwaysTrue q = idName (qidIdent q) `elem` ["True", "success", "otherwise"]
 
 
 -- |Literal patterns are checked by extracting the matched literals
@@ -704,7 +700,7 @@ processLits qs@(q:_) = do
   -- Check any patterns starting with the literals used
   (missing1, used1, nd1) <- processUsedLits usedLits qs
   if null defaults
-    then return $ (defaultPat : missing1, used1, nd1)
+    then return (defaultPat : missing1, used1, nd1)
     else do
       -- Missing patterns for the default alternatives
       (missing2, used2, nd2) <- processEqs defaults
@@ -726,14 +722,14 @@ processLits qs@(q:_) = do
 processUsedLits :: [Literal] -> [EqnInfo]
                 -> WCM ([ExhaustivePats], EqnSet, Bool)
 processUsedLits lits qs = do
-  (eps, idxs, nds) <- unzip3 `liftM` mapM process lits
+  (eps, idxs, nds) <- unzip3 <$> mapM process lits
   return (concat eps, IntSet.unions idxs, or nds)
   where
   process lit = do
     let qs' = [shiftPat q | q <- qs, isVarLit lit (firstPat q)]
         ovlp = length qs' > 1
     (missing, used, nd) <- processEqs qs'
-    return ( map (\(xs, ys) -> (LiteralPattern NoSpanInfo () lit : xs, ys))
+    return ( map (first (LiteralPattern NoSpanInfo () lit :))
                  missing
            , used
            , nd && ovlp
@@ -751,7 +747,7 @@ processCons qs@(q:_) = do
   if null unused
     then return (missing1, used1, nd)
     else if null defaults
-      then return $ (map defaultPat unused ++ missing1, used1, nd)
+      then return (map defaultPat unused ++ missing1, used1, nd)
       else do
         -- Missing patterns for the default alternatives
         (missing2, used2, nd2) <- processEqs defaults
@@ -773,14 +769,14 @@ processCons qs@(q:_) = do
 processUsedCons :: [(QualIdent, Int)] -> [EqnInfo]
                 -> WCM ([ExhaustivePats], EqnSet, Bool)
 processUsedCons cons qs = do
-  (eps, idxs, nds) <- unzip3 `liftM` mapM process cons
+  (eps, idxs, nds) <- unzip3 <$> mapM process cons
   return (concat eps, IntSet.unions idxs, or nds)
   where
   process (c, a) = do
     let qs' = [ removeFirstCon c a q | q <- qs , isVarCon c (firstPat q)]
         ovlp = length qs' > 1
     (missing, used, nd) <- processEqs qs'
-    return (map (\(xs, ys) -> (makeCon c a xs, ys)) missing, used, nd && ovlp)
+    return (map (first (makeCon c a)) missing, used, nd && ovlp)
 
   makeCon c a ps = let (args, rest) = splitAt a ps
                    in ConstructorPattern NoSpanInfo () c args : rest
@@ -797,7 +793,7 @@ processVars []               = error "WarnCheck.processVars"
 processVars eqs@((n, _, _) : _) = do
   let ovlp = length eqs > 1
   (missing, used, nd) <- processEqs (map shiftPat eqs)
-  return ( map (\(xs, ys) -> (wildPat : xs, ys)) missing
+  return ( map (first (wildPat :)) missing
          , IntSet.insert n used, nd && ovlp)
 
 -- |Return the constructors of a type not contained in the list of constructors.
@@ -805,7 +801,7 @@ getUnusedCons :: [QualIdent] -> WCM [DataConstr]
 getUnusedCons []       = internalError "Checks.WarnCheck.getUnusedCons"
 getUnusedCons qs@(q:_) = do
   allCons <- getConTy q >>= getTyCons . rootOfType . arrowBase
-  return [c | c <- allCons, (constrIdent c) `notElem` map unqualify qs]
+  return [c | c <- allCons, constrIdent c `notElem` map unqualify qs]
 
 -- |Retrieve the type of a given constructor.
 getConTy :: QualIdent -> WCM Type
@@ -827,7 +823,7 @@ getTyCons tc = do
   let getTyCons' :: [TypeInfo] -> Either String [DataConstr]
       getTyCons' ti = case ti of
         [DataType     _ _ cs] -> Right cs
-        [RenamingType _ _ nc] -> Right $ [nc]
+        [RenamingType _ _ nc] -> Right [nc]
         _                     -> Left $ "Checks.WarnCheck.getTyCons: " ++ show tc ++ ' ' : show ti ++ '\n' : show tcEnv
       csResult = getTyCons' (qualLookupTypeInfo tc tcEnv)
              <|> getTyCons' (qualLookupTypeInfo tc' tcEnv)
@@ -845,16 +841,16 @@ tidyExhaustivePats (xs, ys) = mapM tidyPat xs >>= \xs' -> return (xs', ys)
 --   * Convert a list constructor pattern representing a finite list
 --     into a list pattern
 tidyPat :: Pattern () -> WCM (Pattern ())
-tidyPat p@(LiteralPattern        _ _ _) = return p
-tidyPat p@(VariablePattern       _ _ _) = return p
+tidyPat p@(LiteralPattern {})         = return p
+tidyPat p@(VariablePattern {})        = return p
 tidyPat p@(ConstructorPattern _ _ c ps)
   | isQTupleId c                      =
-    TuplePattern NoSpanInfo `liftM` mapM tidyPat ps
+    TuplePattern NoSpanInfo <$> mapM tidyPat ps
   | c == qConsId && isFiniteList p    =
-    ListPattern NoSpanInfo () `liftM` mapM tidyPat (unwrapFinite p)
+    ListPattern NoSpanInfo () <$> mapM tidyPat (unwrapFinite p)
   | c == qConsId                      = unwrapInfinite p
   | otherwise                         =
-    ConstructorPattern NoSpanInfo () c `liftM` mapM tidyPat ps
+    ConstructorPattern NoSpanInfo () c <$> mapM tidyPat ps
   where
   isFiniteList (ConstructorPattern _ _ d []     ) = d == qNilId
   isFiniteList (ConstructorPattern _ _ d [_, e2])
@@ -874,13 +870,13 @@ tidyPat p = internalError $ "Checks.WarnCheck.tidyPat: " ++ show p
 
 -- |Get the first pattern of a list.
 firstPat :: EqnInfo -> Pattern ()
-firstPat (_, [],    _) = internalError "Checks.WarnCheck.firstPat: empty list"
-firstPat (_, (p:_), _) = p
+firstPat (_, [],  _) = internalError "Checks.WarnCheck.firstPat: empty list"
+firstPat (_, p:_, _) = p
 
 -- |Drop the first pattern of a list.
 shiftPat :: EqnInfo -> EqnInfo
-shiftPat (_, [],     _ ) = internalError "Checks.WarnCheck.shiftPat: empty list"
-shiftPat (n, (_:ps), gs) = (n, ps, gs)
+shiftPat (_, [],   _ ) = internalError "Checks.WarnCheck.shiftPat: empty list"
+shiftPat (n, _:ps, gs) = (n, ps, gs)
 
 -- |Wildcard pattern.
 wildPat :: Pattern ()
@@ -916,18 +912,18 @@ isLit _ _                      = False
 
 -- |Is a pattern a literal pattern?
 isLitPat :: Pattern a -> Bool
-isLitPat (LiteralPattern  _ _ _) = True
-isLitPat _                       = False
+isLitPat LiteralPattern {} = True
+isLitPat _                 = False
 
 -- |Is a pattern a variable pattern?
 isVarPat :: Pattern a -> Bool
-isVarPat (VariablePattern _ _ _) = True
-isVarPat _                       = False
+isVarPat VariablePattern {} = True
+isVarPat _                  = False
 
 -- |Is a pattern a constructor pattern?
 isConPat :: Pattern a -> Bool
-isConPat (ConstructorPattern _ _ _ _) = True
-isConPat _                            = False
+isConPat ConstructorPattern {} = True
+isConPat _                     = False
 
 -- |Retrieve the arguments of a pattern.
 patArgs :: Pattern a -> [Pattern a]
@@ -991,12 +987,12 @@ reportUnusedGlobalVars = reportAllUnusedVars WarnUnusedGlobalBindings
 reportAllUnusedVars :: WarnFlag -> WCM ()
 reportAllUnusedVars wFlag = warnFor wFlag $ do
   unused <- returnUnrefVars
-  unless (null unused) $ mapM_ report $ map warnUnrefVar unused
+  unless (null unused) $ mapM_ (report . warnUnrefVar) unused
 
 reportUnusedTypeVars :: [Ident] -> WCM ()
 reportUnusedTypeVars vs = warnFor WarnUnusedBindings $ do
   unused <- filterM isUnrefTypeVar vs
-  unless (null unused) $ mapM_ report $ map warnUnrefTypeVar unused
+  unless (null unused) $ mapM_ (report . warnUnrefTypeVar) unused
 
 -- ---------------------------------------------------------------------------
 -- For detecting unreferenced variables, the following functions update the
@@ -1054,7 +1050,7 @@ insertPattern fp (VariablePattern       _ _ v) = do
   cons <- isConsId v
   unless cons $ do
     var <- isVarId v
-    if and [fp, var, not (isAnonId v)] then visitId v else insertVar v
+    if fp && var && not (isAnonId v) then visitId v else insertVar v
 insertPattern fp (ConstructorPattern _ _ c ps) = do
   cons <- isQualConsId c
   mapM_ (insertPattern (not cons || fp)) ps
@@ -1200,7 +1196,7 @@ isKnown s qid = qualInLocalNestEnv qid (scope s)
 
 isUnref :: WcState -> QualIdent -> Bool
 isUnref s qid = let sc = scope s
-                in  any (not . variableVisited) (qualLookupNestEnv qid sc)
+                in  not (all variableVisited (qualLookupNestEnv qid sc))
                     && qualInLocalNestEnv qid sc
 
 isVar :: QualIdent -> WcState -> Bool
@@ -1213,9 +1209,9 @@ isCons qid s = maybe (isImportedCons s qid)
                       isConstructor
                       (listToMaybe (qualLookupNestEnv qid (scope s)))
  where isImportedCons s' qid' = case qualLookupValue qid' (valueEnv s') of
-          (DataConstructor  _ _ _ _) : _ -> True
-          (NewtypeConstructor _ _ _) : _ -> True
-          _                              -> False
+          DataConstructor {}    : _ -> True
+          NewtypeConstructor {} : _ -> True
+          _                         -> False
 
 -- Since type identifiers and normal identifiers (e.g. functions, variables
 -- or constructors) don't share the same namespace, it is necessary

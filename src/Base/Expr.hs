@@ -99,9 +99,9 @@ instance QualExpr (CondExpr a) where
   qfv m (CondExpr _ g e) = qfv m g ++ qfv m e
 
 instance QualExpr (Expression a) where
-  qfv _ (Literal             _ _ _) = []
+  qfv _ Literal {}                  = []
+  qfv _ Constructor {}              = []
   qfv m (Variable            _ _ v) = maybe [] return $ localIdent m v
-  qfv _ (Constructor         _ _ _) = []
   qfv m (Paren               _   e) = qfv m e
   qfv m (Typed               _ e _) = qfv m e
   qfv m (Record           _ _ _ fs) = qfv m fs
@@ -124,7 +124,7 @@ instance QualExpr (Expression a) where
   qfv m (IfThenElse     _ e1 e2 e3) = qfv m e1 ++ qfv m e2 ++ qfv m e3
   qfv m (Case         _ _ _ e alts) = qfv m e ++ qfv m alts
 
-qfvStmt :: ModuleIdent -> (Statement a) -> [Ident] -> [Ident]
+qfvStmt :: ModuleIdent -> Statement a -> [Ident] -> [Ident]
 qfvStmt m st fvs = qfv m st ++ filterBv st fvs
 
 instance QualExpr (Statement a) where
@@ -154,8 +154,8 @@ instance QualExpr (InfixOp a) where
   qfv _ (InfixConstr _ _ ) = []
 
 instance QuantExpr (Pattern a) where
-  bv (LiteralPattern         _ _ _) = []
-  bv (NegativePattern        _ _ _) = []
+  bv LiteralPattern {}              = []
+  bv NegativePattern {}             = []
   bv (VariablePattern        _ _ v) = [v]
   bv (ConstructorPattern  _ _ _ ts) = bv ts
   bv (InfixPattern     _ _ t1 _ t2) = bv t1 ++ bv t2
@@ -169,9 +169,9 @@ instance QuantExpr (Pattern a) where
   bv (InfixFuncPattern _ _ t1 _ t2) = nub $ bv t1 ++ bv t2
 
 instance QualExpr (Pattern a) where
-  qfv _ (LiteralPattern          _ _ _) = []
-  qfv _ (NegativePattern         _ _ _) = []
-  qfv _ (VariablePattern         _ _ _) = []
+  qfv _ LiteralPattern {}               = []
+  qfv _ NegativePattern {}              = []
+  qfv _ VariablePattern {}              = []
   qfv m (ConstructorPattern   _ _ _ ts) = qfv m ts
   qfv m (InfixPattern      _ _ t1 _ t2) = qfv m [t1, t2]
   qfv m (ParenPattern              _ t) = qfv m t

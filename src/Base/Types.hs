@@ -16,6 +16,7 @@
 -}
 
 -- TODO: Use MultiParamTypeClasses ?
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Base.Types
   ( -- * Representation of types
@@ -49,18 +50,30 @@ module Base.Types
   , listType, consType, ioType, tupleType
   , numTypes, fractionalTypes
   , predefTypes
+  , toType, toTypes, toQualType, toQualTypes
+  , toPred, toQualPred, toPredSet, toQualPredSet, toPredList, toQualPredList
+  , toPredType, toQualPredType, toPredTypes, toQualPredTypes, toConstrType
+  , toMethodType
+  , fromType, fromQualType
+  , fromPred, fromQualPred, fromPredSet, fromQualPredSet, fromPredList
+  , fromQualPredList, fromPredType, fromQualPredType, fromPredTypes
+  , fromQualPredTypes
+  , ppType, ppPred, ppPredType, ppTypeScheme
   ) where
 
+import           Prelude hiding ((<>))
 import           Data.Function (on)
 import           Data.List (nub, partition, (\\))
+import           Data.Maybe (fromMaybe)
 import qualified Data.Set.Extra as Set
+import qualified Data.Map as Map
 
-import Control.Monad ( liftM )
-
+import qualified Curry.Syntax as CS
 import Curry.Base.Ident
 import Curry.Base.Pretty
-import Curry.Base.SpanInfo
+import Curry.Base.SpanInfo (SpanInfo(..))
 
+import Base.Expr
 import Base.Messages (internalError)
 
 -- ---------------------------------------------------------------------------
@@ -101,6 +114,9 @@ data Type
   | TypeForall [Int] Type
   deriving (Eq, Ord, Show)
 
+instance Pretty Type where
+  pPrint = pPrintPrec 0 . fromType identSupply
+
 -- The function 'applyType' applies a type to a list of argument types,
 -- whereas applications of the function type constructor to two arguments
 -- are converted into an arrow type. The function 'unapplyType' decomposes
@@ -108,10 +124,12 @@ data Type
 
 applyType :: Type -> [Type] -> Type
 applyType (TypeConstructor tc) tys
-  | tc == qArrowId && length tys == 2 = TypeArrow (tys !! 0) (tys !! 1)
+  | tc == qArrowId,
+    [ty1, ty2] <- tys = TypeArrow ty1 ty2
 applyType (TypeApply (TypeConstructor tc) ty) tys
-  | tc == qArrowId && length tys == 1 = TypeArrow ty (head tys)
-applyType ty tys = foldl TypeApply ty tys
+  | tc == qArrowId,
+    [ty1] <- tys      = TypeArrow ty ty1
+applyType ty tys      = foldl TypeApply ty tys
 
 unapplyType :: Bool -> Type -> (Type, [Type])
 unapplyType dflt ty = unapply ty []
@@ -259,6 +277,9 @@ qualifyTC m tc | isPrimTypeId tc = tc
 data Pred = Pred PredIsICC QualIdent [Type]
   deriving (Eq, Ord, Show)
 
+instance Pretty Pred where
+  pPrint = pPrint . fromPred identSupply
+
 -- Short for: data PredicateIsImplicitClassConstraint = ImplicitClassConstraint
 --                                                    | OtherPredicate
 data PredIsICC = ICC | OPred
@@ -279,6 +300,9 @@ instance IsType a => IsType [a] where
 
 data LPred = LPred Pred SpanInfo String Doc
   deriving Show
+
+instance Pretty LPred where
+  pPrint (LPred pr _ _ _) = pPrint pr
 
 instance Eq LPred where
   (==) = (==) `on` getPred
@@ -331,6 +355,9 @@ unqualifyPred m = modifyPred $
 
 type PredSet = Set.Set Pred
 
+instance Pretty a => Pretty (Set.Set a) where
+  pPrint = parens . list . map pPrint . Set.toAscList
+
 type LPredSet = Set.Set LPred
 
 type PredList = [Pred]
@@ -374,7 +401,7 @@ removeICCFlag ps = case Set.lookupMin ps of
 removeICCFlagList :: IsPred a => [a] -> [a]
 removeICCFlagList []                            = []
 removeICCFlagList (p : ps)
-  | iccFlag == ICC = (modifyPred (\(Pred _ qcls tys) -> Pred OPred qcls tys) p) : ps
+  | iccFlag == ICC = modifyPred (\(Pred _ qcls tys) -> Pred OPred qcls tys) p : ps
   | otherwise      = p : removeICCFlagList ps
  where
   iccFlag = let Pred icc _ _ = getPred p in icc
@@ -399,7 +426,7 @@ removeICCFlagList (p : ps)
 
 -- taken from Leif-Erik Krueger
 partitionPredList :: IsPred a => [a] -> ([a],[a])
-partitionPredList = partition $ 
+partitionPredList = partition $
   (\(Pred _ _ tys) -> all isAppliedTypeVariable tys) . getPred
 
 -------------------------------------------------------------------------------
@@ -426,11 +453,11 @@ plUnions = foldr plUnion []
 
 -- concatMap for predicate lists
 plConcatMap :: Eq b => (a -> [b]) -> [a] -> [b]
-plConcatMap f = plUnions . map f 
+plConcatMap f = plUnions . map f
 
 -- concatMapM for predicate lists
 plConcatMapM :: (Eq b, Monad m) => (a -> m [b]) -> [a] -> m [b]
-plConcatMapM f = liftM plUnions . mapM f
+plConcatMapM f = fmap plUnions . mapM f
 
 -- lookup the minimum element of a predicate list. If the list contains a
 -- predicate that can be ordered
@@ -452,7 +479,7 @@ plDeleteMin pls = case minIndex pls of
     minIndex' []     _  i _ = i
     minIndex' (p:ps) p' i j | p < p'    = minIndex' ps p j (j+1)
                             | otherwise = minIndex' ps p' i (j+1)
-    
+
     deleteIndex _ []     = []
     deleteIndex 0 (_:xs) = xs
     deleteIndex n (x:xs) = x : deleteIndex (n-1) xs
@@ -480,6 +507,9 @@ unqualifyPredList m = map (unqualifyPred m)
 
 data PredType = PredType [Pred] Type
   deriving (Eq, Show)
+
+instance Pretty PredType where
+  pPrint = pPrint . fromPredType identSupply
 
 -- When enumarating the type variables and skolems of a predicated type, we
 -- consider the type variables occurring in the predicate set after the ones
@@ -529,6 +559,13 @@ data DataConstr = DataConstr   Ident [Type]
                 | RecordConstr Ident [Ident] [Type]
   deriving (Eq, Show)
 
+instance Pretty DataConstr where
+  pPrint (DataConstr i tys)      = pPrint i <+> hsep (map pPrint tys)
+  pPrint (RecordConstr i ls tys) =     pPrint i
+                                   <+> braces (hsep (punctuate comma pLs))
+    where
+      pLs = zipWith (\l ty -> pPrint l <+> colon <> colon <+> pPrint ty) ls tys
+
 constrIdent :: DataConstr -> Ident
 constrIdent (DataConstr     c _) = c
 constrIdent (RecordConstr c _ _) = c
@@ -560,6 +597,11 @@ tupleData = [DataConstr (tupleId n) (take n tvs) | n <- [2 ..]]
 data ClassMethod = ClassMethod Ident (Maybe Int) PredType
   deriving (Eq, Show)
 
+instance Pretty ClassMethod where
+  pPrint (ClassMethod f mar pty) =     pPrint f
+                                   <>  text "/" <> int (fromMaybe 0 mar)
+                                   <+> colon <> colon <+> pPrint pty
+
 methodName :: ClassMethod -> Ident
 methodName (ClassMethod f _ _) = f
 
@@ -579,6 +621,9 @@ methodType (ClassMethod _ _ pty) = pty
 -- numbers of quantified type variables in the 'ForAll' constructor.
 
 data TypeScheme = ForAll Int PredType deriving (Eq, Show)
+
+instance Pretty TypeScheme where
+  pPrint (ForAll _ ty) = pPrint ty
 
 instance IsType TypeScheme where
   typeVars (ForAll _ pty) = [tv | tv <- typeVars pty, tv < 0]
@@ -677,3 +722,209 @@ predefTypes =
   ]
   where a = TypeVariable 0
         b = TypeVariable 1
+
+-- ---------------------------------------------------------------------------
+-- Curry Types
+-- ---------------------------------------------------------------------------
+
+enumTypeVars :: (Expr a, QuantExpr a) => [Ident] -> a -> Map.Map Ident Int
+enumTypeVars tvs ty = Map.fromList $ zip (tvs ++ tvs') [0..]
+  where
+    tvs' = [tv | tv <- nub (fv ty), tv `notElem` tvs] ++
+             [tv | tv <- nub (bv ty), tv `notElem` tvs]
+
+toType :: [Ident] -> CS.TypeExpr -> Type
+toType tvs ty = toType' (enumTypeVars tvs ty) ty []
+
+toTypes :: [Ident] -> [CS.TypeExpr] -> [Type]
+toTypes tvs tys = map (flip (toType' (enumTypeVars tvs tys)) []) tys
+
+toType' :: Map.Map Ident Int -> CS.TypeExpr -> [Type] -> Type
+toType' _   (CS.ConstructorType _ tc) tys = applyType (TypeConstructor tc) tys
+toType' tvs (CS.ApplyType  _ ty1 ty2) tys =
+  toType' tvs ty1 (toType' tvs ty2 [] : tys)
+toType' tvs (CS.VariableType    _ tv) tys =
+  applyType (TypeVariable (toVar tvs tv)) tys
+toType' tvs (CS.TupleType      _ tys) tys'
+  | null tys  = internalError "Base.CurryTypes.toType': zero-element tuple"
+  | null tys' = tupleType $ map ((flip $ toType' tvs) []) tys
+  | otherwise = internalError "Base.CurryTypes.toType': tuple type application"
+toType' tvs (CS.ListType        _ ty) tys
+  | null tys  = listType $ toType' tvs ty []
+  | otherwise = internalError "Base.CurryTypes.toType': list type application"
+toType' tvs (CS.ArrowType  _ ty1 ty2) tys
+  | null tys = TypeArrow (toType' tvs ty1 []) (toType' tvs ty2 [])
+  | otherwise = internalError "Base.CurryTypes.toType': arrow type application"
+toType' tvs (CS.ParenType       _ ty) tys = toType' tvs ty tys
+toType' tvs (CS.ForallType _ tvs' ty) tys
+  | null tvs' = toType' tvs ty tys
+  | otherwise = applyType (TypeForall (map (toVar tvs) tvs')
+                                      (toType' tvs ty []))
+                          tys
+
+toVar :: Map.Map Ident Int -> Ident -> Int
+toVar tvs tv = case Map.lookup tv tvs of
+  Just tv' -> tv'
+  Nothing  -> internalError "Base.CurryTypes.toVar: unknown type variable"
+
+toQualType :: ModuleIdent -> [Ident] -> CS.TypeExpr -> Type
+toQualType m tvs = qualifyType m . toType tvs
+
+toQualTypes :: ModuleIdent -> [Ident] -> [CS.TypeExpr] -> [Type]
+toQualTypes m tvs = map (qualifyType m) . toTypes tvs
+
+toPred :: [Ident] -> PredIsICC -> CS.Constraint -> Pred
+toPred tvs isIcc c = toPred' (enumTypeVars tvs c) isIcc c
+
+toPred' :: Map.Map Ident Int -> PredIsICC -> CS.Constraint -> Pred
+toPred' tvs isIcc (CS.Constraint _ qcls tys) =
+  Pred isIcc qcls (map (flip (toType' tvs) []) tys)
+
+toQualPred :: ModuleIdent -> [Ident] -> PredIsICC -> CS.Constraint -> Pred
+toQualPred m tvs fstIcc = qualifyPred m . toPred tvs fstIcc
+
+toPredSet :: [Ident] -> PredIsICC -> CS.Context -> PredSet
+toPredSet tvs fstIcc cx = toPredSet' (enumTypeVars tvs cx) fstIcc cx
+
+toPredList :: [Ident] -> PredIsICC -> CS.Context -> PredList
+toPredList tvs fstIcc cx = toPredList' (enumTypeVars tvs cx) fstIcc cx
+
+toPredSet' :: Map.Map Ident Int -> PredIsICC -> CS.Context -> PredSet
+toPredSet' tvs fstIcc =
+  Set.fromList . zipWith (toPred' tvs) (fstIcc : repeat OPred)
+
+toPredList' :: Map.Map Ident Int -> PredIsICC -> CS.Context -> PredList
+toPredList' tvs fstIcc =
+  zipWith (toPred' tvs) (fstIcc : repeat OPred)
+
+toQualPredSet :: ModuleIdent -> [Ident] -> PredIsICC -> CS.Context -> PredSet
+toQualPredSet m tvs fstIcc = qualifyPredSet m . toPredSet tvs fstIcc
+
+toQualPredList :: ModuleIdent -> [Ident] -> PredIsICC -> CS.Context -> PredList
+toQualPredList m tvs fstIcc = qualifyPredList m . toPredList tvs fstIcc
+
+toPredType :: [Ident] -> PredIsICC -> CS.QualTypeExpr -> PredType
+toPredType tvs fstIcc qty = toPredType' (enumTypeVars tvs qty) fstIcc qty
+
+toPredType' :: Map.Map Ident Int -> PredIsICC -> CS.QualTypeExpr -> PredType
+toPredType' tvs fstIcc (CS.QualTypeExpr _ cx ty) =
+  PredType (toPredList' tvs fstIcc cx) (toType' tvs ty [])
+
+toQualPredType
+  :: ModuleIdent -> [Ident] -> PredIsICC -> CS.QualTypeExpr -> PredType
+toQualPredType m tvs fstIcc = qualifyPredType m . toPredType tvs fstIcc
+
+toPredTypes :: [Ident] -> PredIsICC -> CS.Context -> [CS.TypeExpr] -> PredTypes
+toPredTypes tvs fstIcc cx tys = flip PredTypes (toTypes tvs tys) $
+  toPredList' (enumTypeVars tvs (tys, cx)) fstIcc cx
+
+toQualPredTypes :: ModuleIdent -> [Ident] -> PredIsICC -> CS.Context
+                -> [CS.TypeExpr] -> PredTypes
+toQualPredTypes m tvs fstIcc cx = qualifyPredTypes m . toPredTypes tvs fstIcc cx
+
+-- The function 'toConstrType' returns the type of a data or newtype
+-- constructor. Hereby, it restricts the context to those type variables
+-- which are free in the argument types.
+
+toConstrType :: QualIdent -> [Ident] -> [CS.TypeExpr] -> PredType
+toConstrType tc tvs tys = toPredType tvs OPred $
+  CS.QualTypeExpr NoSpanInfo [] ty'
+  where ty'  = foldr (CS.ArrowType NoSpanInfo) ty0 tys
+        ty0  = foldl (CS.ApplyType NoSpanInfo)
+                     (CS.ConstructorType NoSpanInfo tc)
+                     (map (CS.VariableType NoSpanInfo) tvs)
+
+-- The function 'toMethodType' returns the type of a type class method.
+-- It adds the implicit type class constraint to the method's type signature and
+-- ensures that the class' n type variables are always assigned indices 0 to
+-- n-1.
+
+toMethodType :: QualIdent -> [Ident] -> CS.QualTypeExpr -> PredType
+toMethodType qcls clsvars (CS.QualTypeExpr spi cx ty) =
+  toPredType clsvars ICC (CS.QualTypeExpr spi cx' ty)
+  where cx' = CS.Constraint NoSpanInfo qcls
+                (map (CS.VariableType NoSpanInfo) clsvars) : cx
+
+fromType :: [Ident] -> Type -> CS.TypeExpr
+fromType tvs ty = fromType' tvs ty []
+
+fromType' :: [Ident] -> Type -> [CS.TypeExpr] -> CS.TypeExpr
+fromType' _   (TypeConstructor    tc) tys
+  | isQTupleId tc && qTupleArity tc == length tys
+    = CS.TupleType NoSpanInfo tys
+  | tc == qListId && length tys == 1
+    = CS.ListType NoSpanInfo (head tys)
+  | otherwise
+  = foldl (CS.ApplyType NoSpanInfo) (CS.ConstructorType NoSpanInfo tc) tys
+fromType' tvs (TypeApply     ty1 ty2) tys =
+  fromType' tvs ty1 (fromType tvs ty2 : tys)
+fromType' tvs (TypeVariable       tv) tys =
+  foldl (CS.ApplyType NoSpanInfo) (CS.VariableType NoSpanInfo (fromVar tvs tv))
+    tys
+fromType' tvs (TypeArrow     ty1 ty2) tys =
+  foldl (CS.ApplyType NoSpanInfo)
+    (CS.ArrowType NoSpanInfo (fromType tvs ty1) (fromType tvs ty2)) tys
+fromType' tvs (TypeConstrained tys _) tys' = fromType' tvs (head tys) tys'
+fromType' tvs (TypeForall    tvs' ty) tys
+  | null tvs' = fromType' tvs ty tys
+  | otherwise = foldl (CS.ApplyType NoSpanInfo)
+                      (CS.ForallType NoSpanInfo (map (fromVar tvs) tvs')
+                                                (fromType tvs ty))
+                      tys
+
+fromVar :: [Ident] -> Int -> Ident
+fromVar tvs tv = if tv >= 0 then tvs !! tv else mkIdent ('_' : show (-tv))
+
+fromQualType :: ModuleIdent -> [Ident] -> Type -> CS.TypeExpr
+fromQualType m tvs = fromType tvs . unqualifyType m
+
+fromPred :: [Ident] -> Pred -> CS.Constraint
+fromPred tvs (Pred _ qcls tys) =
+  CS.Constraint NoSpanInfo qcls (map (fromType tvs) tys)
+
+fromQualPred :: ModuleIdent -> [Ident] -> Pred -> CS.Constraint
+fromQualPred m tvs = fromPred tvs . unqualifyPred m
+
+-- Due to the sorting of the predicate set, the list of constraints is sorted
+-- as well.
+
+fromPredSet :: [Ident] -> PredSet -> CS.Context
+fromPredSet tvs = map (fromPred tvs) . Set.toAscList
+
+fromPredList :: [Ident] -> PredList -> CS.Context
+fromPredList tvs = map (fromPred tvs)
+
+fromQualPredSet :: ModuleIdent -> [Ident] -> PredSet -> CS.Context
+fromQualPredSet m tvs = fromPredSet tvs . unqualifyPredSet m
+
+fromQualPredList :: ModuleIdent -> [Ident] -> PredList -> CS.Context
+fromQualPredList m tvs = fromPredList tvs . unqualifyPredList m
+
+fromPredType :: [Ident] -> PredType -> CS.QualTypeExpr
+fromPredType tvs (PredType ps ty) =
+  CS.QualTypeExpr NoSpanInfo (fromPredList tvs ps) (fromType tvs ty)
+
+fromQualPredType :: ModuleIdent -> [Ident] -> PredType -> CS.QualTypeExpr
+fromQualPredType m tvs = fromPredType tvs . unqualifyPredType m
+
+fromPredTypes :: [Ident] -> PredTypes -> (CS.Context, [CS.TypeExpr])
+fromPredTypes tvs (PredTypes ps tys) =
+  (fromPredList tvs ps, map (fromType tvs) tys)
+
+fromQualPredTypes
+  :: ModuleIdent -> [Ident] -> PredTypes -> (CS.Context, [CS.TypeExpr])
+fromQualPredTypes m tvs = fromPredTypes tvs . unqualifyPredTypes m
+
+-- The following functions implement pretty-printing for types.
+
+ppType :: ModuleIdent -> Type -> Doc
+ppType m = pPrintPrec 0 . fromQualType m identSupply
+
+ppPred :: ModuleIdent -> Pred -> Doc
+ppPred m = pPrint . fromQualPred m identSupply
+
+ppPredType :: ModuleIdent -> PredType -> Doc
+ppPredType m = pPrint . fromQualPredType m identSupply
+
+ppTypeScheme :: ModuleIdent -> TypeScheme -> Doc
+ppTypeScheme m (ForAll _ pty) = ppPredType m pty

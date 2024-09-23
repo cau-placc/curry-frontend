@@ -33,12 +33,9 @@ import Curry.Base.SpanInfo
 import Curry.Syntax
 import Curry.Syntax.Pretty (ppQIdent)
 
-import Base.CurryKinds
-import Base.CurryTypes
 import Base.Expr
 import Base.Kinds
 import Base.Messages (internalError)
-import Base.PrettyTypes ()
 import Base.TopEnv
 import Base.Types
 import Base.TypeSubst
@@ -1021,7 +1018,7 @@ dictTransIDecl _ _    _      d@ITypeDecl {}                    = [d]
 dictTransIDecl m vEnv _      (IFunctionDecl         _ f _ _ _ o) =
   [iFunctionDeclFromValue m vEnv o (qualQualify m f)]
 dictTransIDecl _ _    _      (HidingClassDecl p _ cls k tvs _ o) =
-  [HidingDataDecl p (qDictTypeId cls) (fmap (flip ArrowKind Star) k) tvs o]
+  [HidingDataDecl p (qDictTypeId cls) (fmap (`ArrowKind` Star) k) tvs o]
 dictTransIDecl m vEnv clsEnv (IClassDecl p _ cls k tvs _ _ hs o) =
   dictDecl : defaults ++ methodStubs ++ superDictStubs
  where

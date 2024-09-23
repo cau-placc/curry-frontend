@@ -20,7 +20,6 @@ import Curry.Syntax
 
 import Data.List (nub)
 
-import Base.CurryTypes
 import Base.Messages
 import Base.Types
 import Base.TypeSubst

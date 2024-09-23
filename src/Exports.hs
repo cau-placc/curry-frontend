@@ -24,7 +24,7 @@ import           Control.Monad.Trans.Reader (ReaderT (runReaderT), ask)
 import           Data.Foldable     (foldrM)
 import           Data.List         (nub)
 import qualified Data.Map   as Map ( Map, delete, fromListWith, lookup
-                                   , mapKeysWith, toList, toAscList )
+                                   , mapKeysWith )
 import           Data.Maybe        (mapMaybe)
 import qualified Data.Set   as Set ( Set, delete, empty, insert, fromList
                                    , member, toList )
@@ -35,9 +35,6 @@ import Curry.Base.Ident
 import Curry.Base.Monad (CYIO)
 import Curry.Syntax
 
-import Base.CurryKinds (fromKind', fromClassKind)
-import Base.CurryTypes ( fromQualPredList, fromQualType, fromQualPredType
-                       , fromQualPredTypes )
 import Base.Messages
 import Base.Types
 
@@ -201,9 +198,9 @@ valueDecl m tcEnv vEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
     return $ IFunctionDecl NoPos (qualUnqualify m f)
       (fmap (flip take tvs . kindArity . flip (clsKind m) tcEnv) cm) a
       (fromQualPredType m tvs pty) o : ds
-  [Label _ _ _ ] -> return ds -- Record labels are collected somewhere else.
+  [Label {}] -> return ds -- Record labels are collected somewhere else.
   _ -> internalError $ "Exports.valueDecl: " ++ show f
-valueDecl _ _ _ _ (ExportTypeWith _ _ _) ds = return ds
+valueDecl _ _ _ _ ExportTypeWith {} ds = return ds
 valueDecl _ _ _ _ _ _ = internalError "Exports.valueDecl: no pattern match"
 
 -- The instance export map maps sets of class and type names to the instance
@@ -396,15 +393,15 @@ data IInfo = IOther | IType QualIdent | IClass QualIdent | IInst InstIdent
   deriving (Eq, Ord)
 
 iInfo :: ExpInfo -> IInfo
-iInfo (ID (IInfixDecl            _ _ _ _ _)) = IOther
+iInfo (ID IInstanceDecl {}                 ) = internalError "Exports.iInfo"
+iInfo (ID IInfixDecl {}                    ) = IOther
+iInfo (ID ITypeDecl {}                     ) = IOther
+iInfo (ID IFunctionDecl {}                 ) = IOther
 iInfo (ID (HidingDataDecl       _ tc _ _ _)) = IType tc
 iInfo (ID (IDataDecl        _ tc _ _ _ _ _)) = IType tc
 iInfo (ID (INewtypeDecl     _ tc _ _ _ _ _)) = IType tc
-iInfo (ID (ITypeDecl           _ _ _ _ _ _)) = IOther
 iInfo (ID (HidingClassDecl _ _ cls _ _ _ _)) = IClass cls
 iInfo (ID (IClassDecl  _ _ cls _ _ _ _ _ _)) = IClass cls
-iInfo (ID (IInstanceDecl     _ _ _ _ _ _ _)) = internalError "Exports.iInfo"
-iInfo (ID (IFunctionDecl       _ _ _ _ _ _)) = IOther
 iInfo (II                            instId) = IInst instId
 
 closeInterface :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Ident]
@@ -481,8 +478,8 @@ instance HasType a => HasType [a] where
   usedTypes xs tcs = foldr usedTypes tcs xs
 
 instance HasType IDecl where
-  usedTypes (IInfixDecl             _ _ _ _ _) = id
-  usedTypes (HidingDataDecl         _ _ _ _ _) = id
+  usedTypes IInfixDecl {}                      = id
+  usedTypes HidingDataDecl {}                  = id
   usedTypes (IDataDecl         _ _ _ _ cs _ _) = usedTypes cs
   usedTypes (INewtypeDecl      _ _ _ _ nc _ _) = usedTypes nc
   usedTypes (ITypeDecl           _ _ _ _ ty _) = usedTypes ty

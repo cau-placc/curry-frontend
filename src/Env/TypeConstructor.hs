@@ -64,8 +64,6 @@ import Curry.Base.Pretty (Pretty(..), blankLine)
 
 import Base.Kinds
 import Base.Messages (internalError)
-import Base.PrettyKinds ()
-import Base.PrettyTypes ()
 import Base.TopEnv
 import Base.Types
 import Base.Utils         ((++!))
@@ -120,7 +118,7 @@ instance Pretty TypeInfo where
                                    <+> equals
                                    <+> vcat (blankLine : map pPrint ms)
   pPrint (TypeVar _)             =
-    internalError $ "Env.TypeConstructor.Pretty.TypeInfo.pPrint: type variable"
+    internalError "Env.TypeConstructor.Pretty.TypeInfo.pPrint: type variable"
 
 tcKind :: ModuleIdent -> QualIdent -> TCEnv -> Kind
 tcKind m tc tcEnv = case qualLookupTypeInfo tc tcEnv of
@@ -219,5 +217,5 @@ tupleTCs = map typeInfo tupleData
   where
     typeInfo dc@(DataConstr _ tys) =
       let n = length tys in DataType (qTupleId n) (simpleKind n) [dc]
-    typeInfo (RecordConstr  _ _ _) =
+    typeInfo RecordConstr {} =
       internalError "Env.TypeConstructor.tupleTCs: record constructor"

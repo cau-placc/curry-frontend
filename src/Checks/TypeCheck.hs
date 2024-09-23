@@ -39,7 +39,6 @@ module Checks.TypeCheck (typeCheck) where
 
 import Prelude hiding ((<>))
 
-
 import           Control.Arrow       ( first )
 import           Control.Monad.Trans ( lift )
 import           Control.Monad.Extra ( allM, concatMapM, filterM, foldM
@@ -66,7 +65,6 @@ import Curry.Base.SpanInfo
 import Curry.Syntax
 import Curry.Syntax.Pretty
 
-import Base.CurryTypes
 import Base.Expr
 import Base.Kinds
 import Base.Messages (Message, spanInfoMessage, internalError)
