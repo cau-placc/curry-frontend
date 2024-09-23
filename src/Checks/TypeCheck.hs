@@ -57,7 +57,7 @@ import qualified Data.Map            as Map ( Map, empty, elems, insert
 import           Data.Maybe                 ( fromJust, fromMaybe, isJust, mapMaybe
                                             , isNothing, listToMaybe, catMaybes )
 import qualified Data.Set.Extra      as Set ( Set, empty, fromList, insert
-                                            , member, notMember, toList )
+                                            , member, notMember, toList, (\\), isSubsetOf, union )
 
 import Curry.Base.Ident
 import Curry.Base.Pretty
@@ -531,14 +531,24 @@ tcPDeclGroup pls pds = do
       -- reduced. The remaining predicates are passed on together with the
       -- predicates containing free type variables from the explicitly typed
       -- declarations.
-      (gpls, (mpls, lpls)) = fmap (splitPredListAny fvs) $
-                                splitPredListAll fvs $ subst theta plsImp
-  lpls' <- plUnion mpls <$> reducePredSet False lpls
-  lpls'' <- improvePreds lpls'
-  lpls3 <- foldM (uncurry . defaultPDecl fvs) lpls'' impPds'
+      (gpls', (mpls, lpls')) = splitPredListAny fvs <$>
+                                splitPredListAll fvs (subst theta plsImp)
+      -- The global predicates might contain predicates that are uniqiely determined already,
+      -- but where no matching instance exists. These predicates are added to the local
+      -- predicates so that they are added to the types of the declarations.
+      (detPls, gpls) = partition (\p -> fvs `Set.isSubsetOf`
+                                         (Set.fromList (typeVars p) Set.\\ Set.fromList tvs))
+                                 gpls'
+      lpls = plUnion detPls lpls'
+  lpls1 <- plUnion mpls <$> reducePredSet False lpls
+  lpls2 <- improvePreds lpls1
+  lpls3 <- foldM (uncurry . defaultPDecl fvs) lpls2 impPds'
   theta' <- getTypeSubst
+  -- The variables now constrained by the further predicates
+  -- should also be generalized and not treated as free variables.Q
+  let fvs' = fvs Set.\\ foldl (\s -> Set.union s . Set.fromList .typeVars) Set.empty detPls
   let impPds3 = map ( filterEqnType (map getPred lpls3)
-                    . uncurry (fixType . gen fvs lpls3 . subst theta')) impPds'
+                    . uncurry (fixType . gen fvs' lpls3 . subst theta')) impPds'
   unlessM (elem FlexibleContexts <$> getExtensions) $
     mapM_ (reportFlexibleContextDecl m) impPds3
   modifyValueEnv $ flip (rebindVars m) (concatMap (declVars . snd) impPds3)
@@ -760,17 +770,29 @@ tcCheckPDecl pls qty pd = withLocalInstEnv $ do
   plsImp <- improvePreds pls'
   theta <- getTypeSubst
   clsEnv <- getClassEnv
-  fvs <- funDepCoveragePredList clsEnv (subst theta plsImp) <$> computeFvEnv
-  let (gpls, lpls) = splitPredListAny fvs (subst theta plsImp)
+  tvs <- computeFvEnv
+  let fvs = funDepCoveragePredList clsEnv (subst theta plsImp) tvs
+      (gpls', lpls') = splitPredListAny fvs (subst theta plsImp)
+      -- Same as in tcPDeclGroup,
+      -- the global predicates might contain predicates that are uniqiely determined already,
+      -- but where no matching instance exists. These predicates are added to the local
+      -- predicates so that they are added to the types of the declarations.
+      (detPls, gpls) = partition (\p -> fvs `Set.isSubsetOf`
+                                         (Set.fromList (typeVars p) Set.\\ tvs))
+                                 gpls'
+      lpls = plUnion detPls lpls'
   poly <- isNonExpansive $ snd pd
-  lpls' <- reducePredSet True lpls
-  lpls'' <- defaultPDecl fvs lpls' ty pd
+  lpls1 <- reducePredSet True lpls
+  lpls2 <- defaultPDecl fvs lpls1 ty pd
   let ty' = subst theta ty
-      tySc = if poly then gen fvs lpls'' ty' else monoType ty'
+      -- Same again, the variables now constrained by the further predicates
+      -- should also be generalized and not treated as free variables.
+      fvs' = fvs Set.\\ foldl (\s -> Set.union s . Set.fromList .typeVars) Set.empty detPls
+      tySc = if poly then gen fvs' lpls2 ty' else monoType ty'
   (pls'',pd'') <- checkPDeclType qty gpls tySc pd'
   -- Because the constraints in the inferred context may be in
   -- the wrong order, we must make both contexts "equivalent"
-  makeContextEquivalent pls'' (map getPred lpls'') ty' pd''
+  makeContextEquivalent pls'' (map getPred lpls2) ty' pd''
 
 checkPDeclType :: QualTypeExpr -> LPredList -> TypeScheme -> PDecl PredType
                -> TCM (LPredList, PDecl PredType)
