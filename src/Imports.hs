@@ -19,18 +19,13 @@ module Imports (importInterfaces, importModules, qualifyEnv) where
 
 import           Data.List                  (nubBy)
 import qualified Data.Map            as Map
-import           Data.Maybe                 (catMaybes, fromMaybe, isJust)
+import           Data.Maybe                 (mapMaybe, fromMaybe, isJust)
 import qualified Data.Set            as Set
 
 import Curry.Base.Ident
 import Curry.Base.SpanInfo
 import Curry.Base.Monad
 import Curry.Syntax
-
-import Base.CurryKinds (toKind', toClassKind)
-import Base.CurryTypes ( toQualType, toQualTypes, toQualPredList
-                       , toQualPredType, toQualPredTypes, toConstrType
-                       , toMethodType )
 
 import Base.Kinds
 import Base.Messages
@@ -143,12 +138,12 @@ importEntities ents m q isVisible' f ds env =
 
 importData :: (Ident -> Bool) -> TypeInfo -> TypeInfo
 importData isVisible' (DataType tc k cs) =
-  DataType tc k $ catMaybes $ map (importConstr isVisible') cs
+  DataType tc k $ mapMaybe (importConstr isVisible') cs
 importData isVisible' (RenamingType tc k nc) =
   maybe (DataType tc k []) (RenamingType tc k) (importConstr isVisible' nc)
 importData _ (AliasType tc k n ty) = AliasType tc k n ty
 importData isVisible' (TypeClass qcls k ms) =
-  TypeClass qcls k $ catMaybes $ map (importMethod isVisible') ms
+  TypeClass qcls k $ mapMaybe (importMethod isVisible') ms
 importData _ (TypeVar _) = internalError "Imports.importData: type variable"
 
 importConstr :: (Ident -> Bool) -> DataConstr -> Maybe DataConstr
@@ -241,8 +236,8 @@ typeCon f o m tc k tvs = f (applyOriginPragma o (qualQualify m tc)) (toKind' k (
 -- type classes
 typeCls :: Maybe OriginPragma -> ModuleIdent -> QualIdent -> Maybe KindExpr -> [Ident]
         -> [ClassMethod] -> TypeInfo
-typeCls o m qcls k tvs ms =
-  TypeClass (applyOriginPragma o (qualQualify m qcls)) (toClassKind k (length tvs)) ms
+typeCls o m qcls k tvs =
+  TypeClass (applyOriginPragma o (qualQualify m qcls)) (toClassKind k (length tvs))
 
 -- data constructors, record labels, functions and class methods
 values :: ModuleIdent -> IDecl -> [ValueInfo]
@@ -263,9 +258,9 @@ values m (IDataDecl _ tc _ tvs cs hs o) =
         isHiddenButNeeded = flip elem hiddenCs
         sameLabel (l1,_,_) (l2,_,_) = l1 == l2
 values m (INewtypeDecl _ tc _ tvs nc hs o) =
-  map (newConstr m tc' tvs) [nc | nconstrId nc `notElem` hs] ++
+  [newConstr m tc' tvs nc | nconstrId nc `notElem` hs] ++
   case nc of
-    NewConstrDecl _ _ _        -> []
+    NewConstrDecl {}           -> []
     NewRecordDecl _ c (l, lty) ->
       [recLabel m tc' tvs ty' (l, [c], lty) | l `notElem` hs]
   where tc' = applyOriginPragma o $ qualQualify m tc
@@ -275,7 +270,7 @@ values m (IFunctionDecl _ f Nothing a qty o) =
 -- TODO: Previously, a function was used here to find the correct constraint by
 --         comparing the constraint type to the type variable of the pragma.
 --         Check if there is any possibility of the implicit class constraint
---         not being the first constraint of the context. 
+--         not being the first constraint of the context.
 values m (IFunctionDecl _ f (Just tvs) _ qty@(QualTypeExpr _ cx _) o) =
   let mcls = case cx of []                      -> Nothing
                         Constraint _ qcls _ : _ -> Just qcls

@@ -36,7 +36,6 @@ import Curry.Base.Ident
 import Curry.Base.Pretty
 import Curry.Syntax.Pretty
 
-import Base.CurryTypes
 import Base.Subst
 import Base.Types
 import Base.TypeSubst
@@ -197,4 +196,3 @@ unifyTypes (TypeArrow ty11 ty12) ty2@(TypeApply _ _) =
 unifyTypes (TypeArrow ty11 ty12) (TypeArrow ty21 ty22) =
   unifyTypeLists [ty11, ty12] [ty21, ty22]
 unifyTypes _ _ = Nothing
-

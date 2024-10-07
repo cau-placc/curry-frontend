@@ -497,7 +497,7 @@ qualClassIdent m qcls tEnv = case qualLookupTypeKind qcls tEnv of
   []              -> Nothing
   [Class qcls' _] -> Just qcls'
   [_]             -> Nothing
-  _               -> 
+  _               ->
     case qualLookupTypeKind (qualQualify m qcls) tEnv of
       []                -> Nothing
       [Class qcls'  _]  -> Just qcls'
@@ -513,23 +513,23 @@ funDepCoverage m cx tvs = do
   then return tvs
   else funDepCoverage m cx tvs'
   where
-   funDepCoverage' clsEnv tyEnv covVars =  
+   funDepCoverage' clsEnv tyEnv covVars =
     foldr (funDepCoverage'' clsEnv tyEnv) covVars cx
-  
+
    funDepCoverage'' clsEnv tyEnv c@(Constraint _ cls _) covVars =
     case qualClassIdent m cls tyEnv of
       Nothing   -> covVars
-      Just qcls -> 
-           let fds = lookupFunDeps qcls clsEnv  
+      Just qcls ->
+           let fds = lookupFunDeps qcls clsEnv
            in foldr (funDepCoverage''' c) covVars fds
 
    funDepCoverage''' (Constraint _ _ tys) (lixs,rixs) covVars =
     let lixs' = Set.toAscList lixs
         rixs' = Set.toAscList rixs
-    in if Set.fromList (fv (filterIndices tys lixs')) `Set.isSubsetOf` tvs 
+    in if Set.fromList (fv (filterIndices tys lixs')) `Set.isSubsetOf` tvs
        then covVars `Set.union` Set.fromList (fv (filterIndices tys rixs'))
        else covVars
-       
+
 
 lookupFunDeps :: QualIdent -> SimpleClassEnv -> [CE.FunDep]
 lookupFunDeps qcls simpleClsEnv = case Map.lookup qcls simpleClsEnv of
@@ -594,6 +594,7 @@ errIllegalConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
   , text "Constraints must be of the form C u_1 ... u_n,"
   , text "where C is a type class and u_1, ..., u_n are type variables"
   , text "or type variables applied to types."
+  , text "Use the FlexibleContexts extension if you want to allow this."
   ]
 
 errIllegalSimpleConstraint :: Constraint -> Message
@@ -602,6 +603,7 @@ errIllegalSimpleConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
   , text "Constraints in class and instance declarations must be of"
   , text "the form C u_1 ... u_n, where C is a type class"
   , text "and u_1, ..., u_n are type variables."
+  , text "Use the FlexibleContexts extension if you want to allow this."
   ]
 
 -- taken from Leif-Erik Krueger
@@ -618,7 +620,7 @@ errIllegalInstanceType spi inst = spanInfoMessage spi $ vcat
   , text "Each instance type must be of the form (T u_1 ... u_n),"
   , text "where T is not a type synonym and u_1, ..., u_n are"
   , text "mutually distinct, non-anonymous type variables."
-  , text "Use FlexibleInstances if you want to disable this."
+  , text "Use the FlexibleInstances extension if you want to allow this."
   ]
 
 -- taken from Leif-Erik Krueger
@@ -644,7 +646,7 @@ errMultiParamClassNoExt spi cls clsvars =
        <+> hsep (pPrint cls : map pPrint clsvars)
      , text "A type class must have exactly one type parameter."
      , text "Use the MultiParamTypeClasses extension to enable"
-     , text "nullary and multi-parameter type classes."]
+     , text "instance declarations with zero or multiple types."]
 
 errMultiParamInstanceNoExt :: SpanInfo -> QualIdent -> [InstanceType] -> Message
 errMultiParamInstanceNoExt spi qcls inst =

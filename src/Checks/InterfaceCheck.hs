@@ -58,11 +58,10 @@ import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
 
-import Base.CurryKinds (toKind', toClassKind)
-import Base.CurryTypes
 import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.TopEnv
 import Base.Types
+import Base.Kinds
 
 import Env.Class
 import Env.Instance

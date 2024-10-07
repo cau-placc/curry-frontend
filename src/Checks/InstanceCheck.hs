@@ -37,7 +37,6 @@ import Curry.Base.SpanInfo
 import Curry.Syntax hiding (impls)
 import Curry.Syntax.Pretty
 
-import Base.CurryTypes
 import Base.Expr (fv)
 import Base.Messages (Message, spanInfoMessage, message, internalError)
 import Base.SCC (scc)

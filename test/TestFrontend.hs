@@ -18,17 +18,13 @@
 --    group at the end of this file) with the required information (i.e. name of
 --    the Curry module to be tested and expected warning/failure message(s))
 -- 3) Run 'cabal test'
-
-{-# LANGUAGE CPP #-}
 module TestFrontend (tests) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative    ((<$>))
-#endif
 import qualified Control.Exception as E (SomeException, catch)
 
 import           Data.List              (isInfixOf, sort)
 import qualified Data.Map as Map        (insert)
+import           Data.Maybe             (fromMaybe)
 import           Distribution.TestSuite ( Test (..), TestInstance (..)
                                         , Progress (..), Result (..)
                                         , OptionDescr)
@@ -36,7 +32,7 @@ import           System.FilePath        ((</>), (<.>))
 
 import           Curry.Base.Message     (Message, message, ppMessages, ppError)
 import           Curry.Base.Monad       (CYIO, runCYIO)
-import           Curry.Base.Pretty      (text)
+import           Curry.Base.Pretty      (text, render)
 import qualified CompilerOpts as CO     ( Options (..), WarnOpts (..)
                                         , WarnFlag (..), Verbosity (VerbQuiet)
                                         , CppOpts (..)
@@ -85,7 +81,7 @@ runTest opts test errorMsgs =
         otherMsgs = filter (not . flip isInfixOf errorStr) errorMsgs
 
 showMessages :: [Message] -> String
-showMessages = show . ppMessages ppError . sort
+showMessages = render . ppMessages ppError . sort
 
 -- group of test which should fail yielding a specific error message
 failingTests :: Test
@@ -120,7 +116,7 @@ mkTest path (testName, testTags, testOpts, mSetOpts, errorMsgs) =
         , name      = testName
         , tags      = testTags
         , options   = testOpts
-        , setOption = maybe (\_ _ -> Right test) id mSetOpts
+        , setOption = fromMaybe (\_ _ -> Right test) mSetOpts
         }
   in Test test
 
@@ -140,7 +136,7 @@ type SetOption = String -> String -> Either String TestInstance
 
 -- generate a simple failing test
 mkFailTest :: String -> [String] -> TestInfo
-mkFailTest name errorMsgs = (name, [], [], Nothing, errorMsgs)
+mkFailTest nm errorMsgs = (nm, [], [], Nothing, errorMsgs)
 
 -- To add a failing test to the test suite simply add the module name of the
 -- test code and the expected error message(s) to the following list
@@ -258,10 +254,8 @@ failInfos = map (uncurry mkFailTest)
   , ("MPTCFlexibleContext",
       [ "Constraint with non-variable argument C Prelude.Bool" -- C Prelude.Bool a
       , "occurring in the context of the inferred type for function declaration `f1'"
-      , "occurring in the context of the inferred type for function declaration `f2a'"
       , "Type error in application", "f3a (1 :: Int)"
       , "Types Prelude.Bool and Prelude.Int are incompatible"
-      , "occurring in the context of the inferred type for function declaration `f4a'"
       ]
     )
   , ("MPTCInstanceOverlap",
@@ -436,6 +430,7 @@ passInfos = map mkPassTest
   , "FunctionalPatterns"
   , "FunDepExample"
   , "HaskellRecords"
+  , "FunDepImpliesMPTC"
   , "HaskellRecordsPass"
   , "Hierarchical"
   , "ImportRestricted"
@@ -459,6 +454,7 @@ passInfos = map mkPassTest
   , "Newtype2"
   , "NonLinearLHS"
   , "OperatorDefinition"
+  , "OverloadedLocal"
   , "PatDecl"
   , "Prelude"
   , "Pretty"
@@ -526,6 +522,10 @@ warnInfos = map (uncurry mkFailTest)
       , "Orphan instance: instance E"
       ]
     )
+  , ("MPTCUniqelyButNoInstance",
+      [ "Top-level binding with no type signature:"
+      , "  test :: Coerce Prelude.Char"
+      ])
   , ("NonExhaustivePattern",
       [ "Pattern matches are non-exhaustive", "In a case alternative"
       , "In an equation for `test2'", "In an equation for `and'"

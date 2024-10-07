@@ -39,11 +39,11 @@ import           Data.Maybe                 (fromMaybe, listToMaybe)
 import           Curry.Base.Ident
 import qualified Curry.Syntax        as CS
 
-import Base.CurryTypes                      (toType)
 import Base.Expr
 import Base.Messages                        (internalError)
 import Base.Types                           ( charType, floatType
                                             , intType, stringType
+                                            , toType
                                             )
 import qualified Base.Types as CS
 import Base.Subst

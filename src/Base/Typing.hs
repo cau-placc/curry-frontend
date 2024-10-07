@@ -35,7 +35,6 @@ import Curry.Syntax
 import GHC.Stack (HasCallStack)
 
 import Base.Messages (internalError)
-import Base.PrettyTypes ()
 import Base.Subst
 import Base.Types
 import Base.TypeSubst
