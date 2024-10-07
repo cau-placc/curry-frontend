@@ -254,10 +254,8 @@ failInfos = map (uncurry mkFailTest)
   , ("MPTCFlexibleContext",
       [ "Constraint with non-variable argument C Prelude.Bool" -- C Prelude.Bool a
       , "occurring in the context of the inferred type for function declaration `f1'"
-      , "occurring in the context of the inferred type for function declaration `f2a'"
       , "Type error in application", "f3a (1 :: Int)"
       , "Types Prelude.Bool and Prelude.Int are incompatible"
-      , "occurring in the context of the inferred type for function declaration `f4a'"
       ]
     )
   , ("MPTCInstanceOverlap",
@@ -455,6 +453,7 @@ passInfos = map mkPassTest
   , "Newtype2"
   , "NonLinearLHS"
   , "OperatorDefinition"
+  , "OverloadedLocal"
   , "PatDecl"
   , "Prelude"
   , "Pretty"
@@ -524,7 +523,7 @@ warnInfos = map (uncurry mkFailTest)
     )
   , ("MPTCUniqelyButNoInstance",
       [ "Top-level binding with no type signature:"
-      , "  test :: Coerce Prelude.Char a => a"
+      , "  test :: Coerce Prelude.Char"
       ])
   , ("NonExhaustivePattern",
       [ "Pattern matches are non-exhaustive", "In a case alternative"
