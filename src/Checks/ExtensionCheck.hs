@@ -84,8 +84,9 @@ applyImplicitExtensions = do
 
 -- |Extensions implied by the given extension.
 impliedExtensions :: KnownExtension -> Set.Set KnownExtension
-impliedExtensions NoImplicitPrelude = Set.singleton NoDataDeriving
-impliedExtensions _                 = Set.empty
+impliedExtensions NoImplicitPrelude      = Set.singleton NoDataDeriving
+impliedExtensions FunctionalDependencies = Set.singleton MultiParamTypeClasses
+impliedExtensions _                      = Set.empty
 
 -- |Extensions removed by the given extension.
 removedExtensions :: KnownExtension -> Set.Set KnownExtension
