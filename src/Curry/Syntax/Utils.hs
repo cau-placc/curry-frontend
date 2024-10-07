@@ -70,7 +70,7 @@ isTopDecl = not . isBlockDecl
 
 -- |Is the declaration a block declaration?
 isBlockDecl :: Decl a -> Bool
-isBlockDecl = liftM3 ((.) (||) . (||)) isInfixDecl isTypeSig isValueDecl
+isBlockDecl d = isInfixDecl d || isTypeSig d || isValueDecl d
 
 -- |Is the declaration an infix declaration?
 isInfixDecl :: Decl a -> Bool
@@ -97,7 +97,7 @@ isClassDecl _                         = False
 
 -- |Is the declaration a type or a class declaration?
 isTypeOrClassDecl :: Decl a -> Bool
-isTypeOrClassDecl = liftM2 (||) isTypeDecl isClassDecl
+isTypeOrClassDecl d = isTypeDecl d || isClassDecl d
 
 -- |Is the declaration an instance declaration?
 isInstanceDecl :: Decl a -> Bool
@@ -293,7 +293,7 @@ funDecl :: SpanInfo -> a -> Ident -> [Pattern a] -> Expression a -> Decl a
 funDecl spi a f ts e = FunctionDecl spi a f [mkEquation spi f ts e]
 
 mkEquation :: SpanInfo -> Ident -> [Pattern a] -> Expression a -> Equation a
-mkEquation spi f ts e = 
+mkEquation spi f ts e =
   Equation spi Nothing (FunLhs NoSpanInfo f ts) (simpleRhs NoSpanInfo e)
 
 simpleRhs :: SpanInfo -> Expression a -> Rhs a

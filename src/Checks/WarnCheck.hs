@@ -18,8 +18,6 @@ module Checks.WarnCheck (warnCheck) where
 
 import Prelude hiding ((<>))
 
-import           Control.Applicative
-  ((<|>))
 import           Control.Monad
   (filterM, foldM_, guard, liftM2, when, unless, void)
 import           Control.Monad.State.Strict    (State, execState, gets, modify)
@@ -826,11 +824,15 @@ getTyCons tc = do
         [RenamingType _ _ nc] -> Right [nc]
         _                     -> Left $ "Checks.WarnCheck.getTyCons: " ++ show tc ++ ' ' : show ti ++ '\n' : show tcEnv
       csResult = getTyCons' (qualLookupTypeInfo tc tcEnv)
-             <|> getTyCons' (qualLookupTypeInfo tc' tcEnv)
-             <|> getTyCons' (lookupTypeInfo (unqualify tc) tcEnv) -- Fall back on unqualified lookup if qualified doesn't work
+             <||> getTyCons' (qualLookupTypeInfo tc' tcEnv)
+             <||> getTyCons' (lookupTypeInfo (unqualify tc) tcEnv)
+            -- Fall back on unqualified lookup if qualified doesn't work
   case csResult of
     Right cs -> return cs
     Left err -> internalError err
+  where
+    Left _ <||> x = x
+    x <||> _ = x
 
 -- |Resugar the exhaustive patterns previously desugared at 'simplifyPat'.
 tidyExhaustivePats :: ExhaustivePats -> WCM ExhaustivePats

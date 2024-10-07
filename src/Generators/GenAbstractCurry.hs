@@ -17,9 +17,10 @@
 {-# LANGUAGE LambdaCase #-}
 module Generators.GenAbstractCurry (genAbstractCurry) where
 
-import Control.Monad.Extra ( liftM2, concatMapM )
+import Control.Monad                          ( when )
+import Control.Monad.Extra                    ( liftM2, concatMapM )
 import qualified Control.Monad.State as S     (State, evalState, get, gets
-                                              , modify, put, when)
+                                              , modify, put)
 import qualified Data.Map            as Map   (Map, empty, fromList, lookup
                                               , union)
 import           Data.Maybe          as Maybe (fromJust, fromMaybe, listToMaybe)
@@ -256,7 +257,7 @@ insertDeclLhs   (PatternDecl      _ p _) = mapM_ genVarIndex (bv p)
 insertDeclLhs   (FreeDecl          _ vs) = mapM_ (genVarIndex . varIdent) vs
 insertDeclLhs s@(TypeSig {})             = do
   uacy <- S.gets untypedAcy
-  S.when uacy (insertSig s)
+  when uacy (insertSig s)
 insertDeclLhs _                          = return ()
 
 trLocalDecl :: Decl PredType -> GAC [CLocalDecl]
