@@ -371,14 +371,13 @@ occursInBinding v (Binding w _) = v == w
 failedExpr :: Type -> Expression
 failedExpr ty = Function ty (qualifyWith preludeMIdent (mkIdent "failed")) 0
 
--- Arity 0 is used for the char/int/float (===) implementations,
--- because they are defined as (===) = (==)
+-- Arity 2 is used for the char/int/float (==) implementations, because both arguments are written at the source level.
 eqExpr :: CS.Type -> IL.Type -> Expression -> Expression -> Expression
 eqExpr _ ty' e1 | IL.TypeConstructor _ [_] <- ty'
   = Apply (Apply (Function (TypeArrow ty' (TypeArrow ty' boolType')) qEqStringId 2) e1)
 eqExpr ty ty' e1 =
-    Apply (Apply (Function eqTy eq 0) e1)
-  where eq   = qImplMethodId preludeMIdent qDataId ty $ mkIdent "==="
+    Apply (Apply (Function eqTy eq 2) e1)
+  where eq   = qImplMethodId preludeMIdent qEqId ty $ mkIdent "=="
         eqTy = TypeArrow ty' (TypeArrow ty' boolType')
 
 truePatt :: ConstrTerm
