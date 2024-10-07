@@ -5,15 +5,15 @@
 
 packages:
 - completed:
-    hackage: set-extra-1.4.1@sha256:c58aa620704f609f289953e7c1f9c1653fd1498f0984b0f03a3f8f38f7ed5a84,533
+    hackage: set-extra-1.4.2@sha256:a1a3899d7ae01cd72dfd4691ae77cf26e8867731dff70e61307f25ddc7fd875d,564
     pantry-tree:
-      sha256: 3b6f94160b9d868f341d841de0e3e9f354ae90b5817b171e2bb68fd67cf2790c
+      sha256: 439f8bd6732a4d250a9e565c5bbcf393f3374e8e346e634494efd62b388fe810
       size: 268
   original:
-    hackage: set-extra-1.4.1
+    hackage: set-extra-1.4.2
 snapshots:
 - completed:
-    sha256: 5a59b2a405b3aba3c00188453be172b85893cab8ebc352b1ef58b0eae5d248a2
-    size: 650475
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/20/26.yaml
-  original: lts-20.26
+    sha256: 795b7a893148a42f09956611a0fa1139293fe6ef934d053468d8e53e3e013390
+    size: 719577
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/22/30.yaml
+  original: lts-22.30
