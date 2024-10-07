@@ -430,6 +430,7 @@ passInfos = map mkPassTest
   , "FunctionalPatterns"
   , "FunDepExample"
   , "HaskellRecords"
+  , "FunDepImpliesMPTC"
   , "HaskellRecordsPass"
   , "Hierarchical"
   , "ImportRestricted"
