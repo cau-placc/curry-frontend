@@ -52,7 +52,7 @@ import Env.TypeConstructor                  (TCEnv)
 import Env.Interface                        (InterfaceEnv, lookupInterface)
 
 import Transformations.CurryToIL            (transType)
-import Transformations.Dictionary           (qImplMethodId, qDictTypeId, qInstFunId)
+import Transformations.Dictionary           (qImplMethodId)
 
 import IL
 
@@ -394,9 +394,6 @@ charType' = IL.TypeConstructor qCharId []
 
 stringType' :: Type
 stringType' = IL.TypeConstructor qListId [charType']
-
-unitType' :: Type
-unitType' = IL.TypeConstructor qUnitId []
 
 -- ---------------------------------------------------------------------------
 -- The following functions compute the missing constructors for generating
