@@ -175,7 +175,7 @@ preprocess opts fn src
         case ec of
           ExitFailure x -> return $ Left [message $ text $
               "Preprocessor exited with exit code " ++ show x]
-          ExitSuccess   -> Right `liftM` readFile outFn
+          ExitSuccess   -> Right <$> readFile outFn
     either failMessages ok res
 
 withTempFile :: (FilePath -> Handle -> IO a) -> IO a

@@ -33,17 +33,15 @@
    hold the particular instance at which a polymorphic function or
    variable is used.
 -}
-{-# LANGUAGE CPP, TupleSections #-}
+{-# LANGUAGE TupleSections #-}
 module Checks.TypeCheck (typeCheck) where
 
-
 import Prelude hiding ((<>))
-
 import           Control.Arrow       ( first )
 import           Control.Monad.Trans ( lift )
-import           Control.Monad.Extra ( allM, concatMapM, filterM, foldM
-                                     , (&&^), notM, replicateM, when, unless
-                                     , unlessM, mapAndUnzipM )
+import           Control.Monad.Extra ( allM, concatMapM, foldM, notM
+                                     , (&&^), replicateM, when, unless
+                                     , unlessM, mapAndUnzipM, filterM )
 import qualified Control.Monad.State as S
                                      ( State, StateT, get, gets, put, modify
                                      , runState, evalStateT )
@@ -57,7 +55,7 @@ import qualified Data.Map            as Map ( Map, empty, elems, insert
 import           Data.Maybe                 ( fromJust, fromMaybe, isJust, mapMaybe
                                             , isNothing, listToMaybe, catMaybes )
 import qualified Data.Set.Extra      as Set ( Set, empty, fromList, insert
-                                            , member, notMember, toList, (\\), isSubsetOf, union )
+                                            , member, notMember, toList, (\\))
 
 import Curry.Base.Ident
 import Curry.Base.Pretty
@@ -69,6 +67,7 @@ import Base.Expr
 import Base.Kinds
 import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.SCC
+import Base.Subst
 import Base.TopEnv
 import Base.TypeExpansion
 import Base.Types
@@ -101,7 +100,7 @@ checkDecls ds = do
   mapM_ checkFieldLabel (filter isTypeDecl ds) &&> bindLabels
   bindClassMethods
   mapM_ setDefaults $ filter isDefaultDecl ds
-  (_, bpds') <- tcPDecls bpds
+  (_, bpds') <- tcPDecls False bpds
   tpds' <- mapM tcTopPDecl tpds
   theta <- getTypeSubst
   return $ map (fmap $ subst theta) $ fromPDecls $ tpds' ++ bpds'
@@ -472,25 +471,25 @@ lookupTypeSig = Map.lookup
 -- cannot be generalized must not be generalized in the other declarations of
 -- that group as well.
 
-tcDecls :: [Decl a] -> TCM (LPredList, [Decl PredType])
-tcDecls = fmap (fmap fromPDecls) . tcPDecls . toPDecls
+tcDecls :: Bool -> [Decl a] -> TCM (LPredList, [Decl PredType])
+tcDecls lcl = fmap (fmap fromPDecls) . tcPDecls lcl . toPDecls
 
-tcPDecls :: [PDecl a] -> TCM (LPredList, [PDecl PredType])
-tcPDecls pds = withLocalSigEnv $ do
+tcPDecls :: Bool -> [PDecl a] -> TCM (LPredList, [PDecl PredType])
+tcPDecls lcl pds = withLocalSigEnv $ do
   let (vpds, opds) = partition (isValueDecl . snd) pds
   setSigEnv $ foldr (bindTypeSigs . snd) emptySigEnv opds
   m <- getModuleIdent
   (pls, vpdss') <-
-    mapAccumM tcPDeclGroup [] $ scc (bv . snd) (qfv m . snd) vpds
+    mapAccumM (tcPDeclGroup lcl) [] $ scc (bv . snd) (qfv m . snd) vpds
   return (pls, map untyped opds ++ concat (vpdss' :: [[PDecl PredType]]))
 
 -- TODO: This badly needs to be cleaned up due to a master thesis gone slightly wrong.
 -- Especially this filterEqnType is unclear and everything is uncommented.
-tcPDeclGroup :: LPredList -> [PDecl a] -> TCM (LPredList, [PDecl PredType])
-tcPDeclGroup pls [(i, ExternalDecl p fs)] = do
+tcPDeclGroup :: Bool -> LPredList -> [PDecl a] -> TCM (LPredList, [PDecl PredType])
+tcPDeclGroup _ pls [(i, ExternalDecl p fs)] = do
   tys <- mapM (tcExternal . varIdent) fs
   return (pls, [(i, ExternalDecl p (zipWith (fmap . const . predType) tys fs))])
-tcPDeclGroup pls [(i, FreeDecl p fvs)] = do
+tcPDeclGroup _ pls [(i, FreeDecl p fvs)] = do
   vs <- mapM (tcDeclVar False) (bv fvs)
   m <- getModuleIdent
   (vs', pls') <- mapAndUnzipM addDataPred vs
@@ -505,7 +504,7 @@ tcPDeclGroup pls [(i, FreeDecl p fvs)] = do
           pls2' = map (\pr -> LPred pr (getSpanInfo idt) what idtDoc) pls2
       pls' <- unify idt what idtDoc [] (unpredType ty1) pls2' ty2
       return ((idt, n, ForAll ids ty1), pls')
-tcPDeclGroup pls pds = do
+tcPDeclGroup lcl pls pds = do
   vEnv <- getValueEnv
   vss <- mapM (tcDeclVars . snd) pds
   m <- getModuleIdent
@@ -531,29 +530,23 @@ tcPDeclGroup pls pds = do
       -- reduced. The remaining predicates are passed on together with the
       -- predicates containing free type variables from the explicitly typed
       -- declarations.
-      (gpls', (mpls, lpls')) = splitPredListAny fvs <$>
-                                splitPredListAll fvs (subst theta plsImp)
-      -- The global predicates might contain predicates that are uniqiely determined already,
-      -- but where no matching instance exists. These predicates are added to the local
-      -- predicates so that they are added to the types of the declarations.
-      (detPls, gpls) = partition (\p -> fvs `Set.isSubsetOf`
-                                         (Set.fromList (typeVars p) Set.\\ Set.fromList tvs))
-                                 gpls'
-      lpls = plUnion detPls lpls'
+      (gpls', (mpls, lpls')) = fmap (splitPredListAny fvs) $
+                                  splitPredListAll fvs $ subst theta plsImp
+      (gpls, lpls)
+        | lcl = (gpls', lpls')
+        | otherwise = ([], lpls' ++ gpls')
   lpls1 <- plUnion mpls <$> reducePredSet False lpls
   lpls2 <- improvePreds lpls1
   lpls3 <- foldM (uncurry . defaultPDecl fvs) lpls2 impPds'
   theta' <- getTypeSubst
-  -- The variables now constrained by the further predicates
-  -- should also be generalized and not treated as free variables.Q
-  let fvs' = fvs Set.\\ foldl (\s -> Set.union s . Set.fromList .typeVars) Set.empty detPls
-  let impPds3 = map ( filterEqnType (map getPred lpls3)
-                    . uncurry (fixType . gen fvs' lpls3 . subst theta')) impPds'
+  let f (y, x) = case gen fvs lpls3 (subst theta' y) of
+                   (t, a) -> (filterEqnType (map getPred lpls3) (fixType t x), a)
+  let (impPds3, _) = unzip $ map f impPds'
   unlessM (elem FlexibleContexts <$> getExtensions) $
     mapM_ (reportFlexibleContextDecl m) impPds3
   modifyValueEnv $ flip (rebindVars m) (concatMap (declVars . snd) impPds3)
   impPds4 <- fixVarAnnots impPds3
-  (pls'', expPds') <- mapAccumM (uncurry . tcCheckPDecl) gpls expPds
+  (pls'', expPds') <- mapAccumM (uncurry . tcCheckPDecl lcl) gpls expPds
   pls3 <- improvePreds pls''
   -- We have to adapt the contexts of the annotations of equations so that it
   -- matches the corresponding entry in the value environment
@@ -762,53 +755,46 @@ declVars _ = internalError "TypeCheck.declVars"
 -- predicate set, which may contain only a subset of the declared context
 -- because the context of a function's type signature is ignored in the
 -- function 'tcFunctionPDecl' above.
-
-tcCheckPDecl :: LPredList -> QualTypeExpr -> PDecl a
+tcCheckPDecl :: Bool -> LPredList -> QualTypeExpr -> PDecl a
              -> TCM (LPredList, PDecl PredType)
-tcCheckPDecl pls qty pd = withLocalInstEnv $ do
+tcCheckPDecl lcl pls qty pd = withLocalInstEnv $ do
   (pls', (ty, pd')) <- tcPDecl pls pd
   plsImp <- improvePreds pls'
   theta <- getTypeSubst
   clsEnv <- getClassEnv
-  tvs <- computeFvEnv
-  let fvs = funDepCoveragePredList clsEnv (subst theta plsImp) tvs
-      (gpls', lpls') = splitPredListAny fvs (subst theta plsImp)
-      -- Same as in tcPDeclGroup,
-      -- the global predicates might contain predicates that are uniqiely determined already,
-      -- but where no matching instance exists. These predicates are added to the local
-      -- predicates so that they are added to the types of the declarations.
-      (detPls, gpls) = partition (\p -> fvs `Set.isSubsetOf`
-                                         (Set.fromList (typeVars p) Set.\\ tvs))
-                                 gpls'
-      lpls = plUnion detPls lpls'
+  let plsImp' = subst theta plsImp
+  fvs <- funDepCoveragePredList clsEnv plsImp' <$> computeFvEnv
+  let (gpls, lpls)
+        | lcl = splitPredListAny fvs plsImp'
+        | otherwise = ([], plsImp')
   poly <- isNonExpansive $ snd pd
-  lpls1 <- reducePredSet True lpls
-  lpls2 <- defaultPDecl fvs lpls1 ty pd
-  let ty' = subst theta ty
-      -- Same again, the variables now constrained by the further predicates
-      -- should also be generalized and not treated as free variables.
-      fvs' = fvs Set.\\ foldl (\s -> Set.union s . Set.fromList .typeVars) Set.empty detPls
-      tySc = if poly then gen fvs' lpls2 ty' else monoType ty'
-  (pls'',pd'') <- checkPDeclType qty gpls tySc pd'
+  lpls' <- reducePredSet True lpls
+  lpls'' <- defaultPDecl fvs lpls' ty pd
+  let fvs'
+       | lcl = fvs
+       | otherwise = fvs Set.\\ Set.fromList (typeVars plsImp')
+      ty' = subst theta ty
+      (tySc, _) = if poly then gen fvs' lpls'' ty' else (monoType ty', idSubst)
+  pd'' <- checkPDeclType qty tySc pd'
   -- Because the constraints in the inferred context may be in
   -- the wrong order, we must make both contexts "equivalent"
-  makeContextEquivalent pls'' (map getPred lpls2) ty' pd''
+  makeContextEquivalent gpls (map getPred lpls'') ty' pd''
 
-checkPDeclType :: QualTypeExpr -> LPredList -> TypeScheme -> PDecl PredType
-               -> TCM (LPredList, PDecl PredType)
-checkPDeclType qty pls tySc (i, FunctionDecl p _ f eqs) = do
+checkPDeclType :: QualTypeExpr -> TypeScheme -> PDecl PredType
+               -> TCM (PDecl PredType)
+checkPDeclType qty tySc (i, FunctionDecl p _ f eqs) = do
   pty <- expandPoly qty
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
     report $ errTypeSigTooGeneral m (text "Function:" <+> ppIdent f) qty tySc
-  return (pls, (i, FunctionDecl p pty f eqs))
-checkPDeclType qty pls tySc (i, PatternDecl p (VariablePattern spi _ v) rhs) = do
+  return (i, FunctionDecl p pty f eqs)
+checkPDeclType qty tySc (i, PatternDecl p (VariablePattern spi _ v) rhs) = do
   pty <- expandPoly qty
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
     report $ errTypeSigTooGeneral m (text "Variable:" <+> ppIdent v) qty tySc
-  return (pls, (i, PatternDecl p (VariablePattern spi pty v) rhs))
-checkPDeclType _ _ _ _ = internalError "TypeCheck.checkPDeclType"
+  return (i, PatternDecl p (VariablePattern spi pty v) rhs)
+checkPDeclType _ _ _ = internalError "TypeCheck.checkPDeclType"
 
 checkTypeSig :: PredType -> TypeScheme -> TCM Bool
 checkTypeSig (PredType sigPls sigTy) (ForAll _ (PredType pls ty)) = do
@@ -1122,8 +1108,8 @@ tcMethodPDecl qcls tySc (i, FunctionDecl p _ f eqs) = withLocalValueEnv $ do
   pls' <- reducePredSet True plsImp
   pls'' <- applyDefaultsDecl p what empty fvs pls' ty
   theta' <- getTypeSubst
-  return (PredType (map getPred pls'') ty
-         , gen Set.empty pls'' $ subst theta' ty, pd)
+  let (tySc', _) = gen Set.empty pls'' $ subst theta' ty
+  return (PredType (map getPred pls'') ty, tySc', pd)
 tcMethodPDecl _ _ _ = internalError "TypeCheck.tcMethodPDecl"
 
 checkClassMethodType :: QualTypeExpr -> TypeScheme -> PDecl PredType
@@ -1212,8 +1198,6 @@ tcLhs p (ApLhs spi lhs ts) = do
 
 -- We also keep track of already used variables,
 -- in order to add a Data constraint for non-linear patterns
-
-
 
 tcPattern :: HasSpanInfo p => p -> Pattern a
           -> TCM (LPredList, Type, Pattern PredType)
@@ -1361,13 +1345,13 @@ tcPatternArg p what doc pls ty t =
 tcRhs :: Rhs a -> TCM (LPredList, Type, Rhs PredType)
 tcRhs (SimpleRhs p li e ds) = do
   (pls, ds', pls', ty, e') <- withLocalValueEnv $ do
-    (pls, ds') <- tcDecls ds
+    (pls, ds') <- tcDecls True ds
     (pls', ty, e') <- tcExpr e
     return (pls, ds', pls', ty, e')
   pls'' <- improvePreds $ plUnion pls pls'
   return (pls'', ty, SimpleRhs p li e' ds')
 tcRhs (GuardedRhs spi li es ds) = withLocalValueEnv $ do
-  (pls, ds') <- tcDecls ds
+  (pls, ds') <- tcDecls True ds
   ty <- freshTypeVar
   (pls', es') <- mapAccumM (tcCondExpr ty) pls es
   return (pls', ty, GuardedRhs spi li es' ds')
@@ -1415,7 +1399,7 @@ tcExpr te@(Typed spi e qty) = withLocalInstEnv $ do
   let (gpls, lpls) = splitPredListAny fvs (subst theta plsImp)
   lpls' <- reducePredSet True lpls
   lpls'' <- applyDefaultsDecl spi what (pPrint te) fvs lpls' ty
-  let tySc = gen fvs lpls'' (subst theta ty)
+  let (tySc, _) = gen fvs lpls'' (subst theta ty)
   unlessM (checkTypeSig pty tySc) $ do
     m <- getModuleIdent
     report $
@@ -1522,7 +1506,7 @@ tcExpr (Lambda spi ts e) = do
   return (pls3, foldr TypeArrow ty tys, Lambda spi ts' e')
 tcExpr (Let spi li ds e) = do
   (pls, ds', pls', ty, e') <- withLocalValueEnv $ do
-    (pls, ds') <- tcDecls ds
+    (pls, ds') <- tcDecls True ds
     (pls', ty, e') <- tcExpr e
     return (pls, ds', pls', ty, e')
   let pls'' = plUnion pls pls'
@@ -1580,7 +1564,7 @@ tcQual p pls (StmtExpr spi e) = do
   (pls', e') <- tcExpr e >>- unify p "guard" (pPrintPrec 0 e) pls boolType
   return (pls', StmtExpr spi e')
 tcQual _ pls (StmtDecl spi li ds) = do
-  (pls', ds') <- tcDecls ds
+  (pls', ds') <- tcDecls True ds
   pls2 <- improvePreds $ plUnion pls pls'
   return (pls2, StmtDecl spi li ds')
 tcQual p pls q@(StmtBind spi t e) = do
@@ -1602,7 +1586,7 @@ tcStmt p pls mTy (StmtExpr spi e) = do
   pls4 <- improvePreds pls'''
   return ((pls4, Just ty), StmtExpr spi e')
 tcStmt _ pls mTy (StmtDecl spi li ds) = do
-  (pls', ds') <- tcDecls ds
+  (pls', ds') <- tcDecls True ds
   pls'' <- improvePreds $ plUnion pls pls'
   return ((pls'', mTy), StmtDecl spi li ds')
 tcStmt p pls mTy st@(StmtBind spi t e) = do
@@ -2401,8 +2385,8 @@ skol (ForAll n (PredType pls ty)) = do
 -- type variables that are free in tau and not fixed by the environment.
 -- The set of the latter is given by gvs.
 
-gen :: Set.Set Int -> LPredList -> Type -> TypeScheme
-gen gvs pls ty = ForAll (length tvs) (subst theta pty)
+gen :: Set.Set Int -> LPredList -> Type -> (TypeScheme, Subst Int Type)
+gen gvs pls ty = (ForAll (length tvs) (subst theta pty), theta)
   where pty = PredType (map getPred pls) ty
         tvs = [tv | tv <- nub (typeVars pty), tv `Set.notMember` gvs]
         tvs' = map TypeVariable [0 ..]
