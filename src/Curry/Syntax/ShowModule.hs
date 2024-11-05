@@ -30,8 +30,8 @@ showModule m = showsModule m "\n"
 showsModule :: Show a => Module a -> ShowS
 showsModule (Module spi li ps mident espec imps decls)
   = showsString "Module "
-  . showsLayoutInfo li . space
   . showsSpanInfo spi . space
+  . showsLayoutInfo li . space
   . showsList (\p -> showsPragma p . newline) ps . space
   . showsModuleIdent mident . newline
   . showsMaybe showsExportSpec espec . newline
