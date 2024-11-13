@@ -13,14 +13,10 @@
    type constructors and type classes defined in the current module and
    performs kind checking on all type definitions and type signatures.
 -}
-{-# LANGUAGE CPP           #-}
 {-# LANGUAGE TupleSections #-}
 module Checks.KindCheck (kindCheck) where
 
-
-import Prelude hiding ((<>))
-
-
+import           Prelude hiding ((<>))
 import           Control.Monad              (when, foldM, replicateM)
 import           Control.Monad.Fix          (mfix)
 import qualified Control.Monad.State as S   (State, runState, gets, modify)

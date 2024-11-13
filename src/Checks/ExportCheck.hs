@@ -23,16 +23,9 @@
       * The export of types without sub-entities is extended with an empty
         list of sub-entities.
 -}
-{-# LANGUAGE CPP #-}
 module Checks.ExportCheck (exportCheck, expandExports) where
 
-#if __GLASGOW_HASKELL__ >= 804
-import Prelude hiding ((<>))
-#endif
-
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative        ((<$>))
-#endif
+import           Prelude hiding ((<>))
 import           Control.Monad              (unless)
 import qualified Control.Monad.State as S   (State, runState, gets, modify)
 import           Data.List                  (nub, union)

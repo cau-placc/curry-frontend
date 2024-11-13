@@ -10,8 +10,6 @@
 
   TODO
 -}
-
-{-# LANGUAGE CPP           #-}
 {-# LANGUAGE TupleSections #-}
 module Transformations.Dictionary
   ( insertDicts

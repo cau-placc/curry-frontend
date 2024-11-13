@@ -19,12 +19,8 @@
    and rearrange infix applications according to the relative precedences
    of the operators involved.
 -}
-{-# LANGUAGE CPP #-}
 module Checks.PrecCheck (precCheck) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative      ((<$>), (<*>))
-#endif
 import           Control.Monad            (unless, when)
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 import           Data.List                (partition)

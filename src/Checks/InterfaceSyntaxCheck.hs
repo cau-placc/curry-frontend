@@ -20,13 +20,9 @@
    modules -- the compiler can perform this check without reference to
    the global environments.
 -}
-{-# LANGUAGE CPP #-}
 module Checks.InterfaceSyntaxCheck (intfSyntaxCheck) where
 
-#if __GLASGOW_HASKELL__ >= 804
-import Prelude hiding ((<>))
-#endif
-
+import           Prelude hiding ((<>))
 import           Control.Monad            (filterM, liftM, liftM2, when)
 import qualified Control.Monad.State as S
 import           Data.List                (nub, partition)
@@ -195,7 +191,7 @@ checkIMethodDecl (IMethodDecl p f a qty) =
 
 -- taken from Leif-Erik Krueger
 checkInstanceType :: InstanceType -> ISC ()
-checkInstanceType inst = 
+checkInstanceType inst =
   when (any isAnonId (typeVars inst) || containsForall inst) $
     report $ errIllegalInstanceType inst
 
@@ -314,23 +310,23 @@ funDepCoverage cx tvs = do
   then return tvs
   else funDepCoverage cx tvs'
   where
-   funDepCoverage' clsEnv tyEnv covVars =  
+   funDepCoverage' clsEnv tyEnv covVars =
     foldr (funDepCoverage'' clsEnv tyEnv) covVars cx
-  
+
    funDepCoverage'' clsEnv tyEnv c@(Constraint _ cls _) covVars =
     case qualClassIdent cls tyEnv of
       Nothing   -> covVars
-      Just qcls -> 
-           let fds = lookupFunDeps qcls clsEnv  
+      Just qcls ->
+           let fds = lookupFunDeps qcls clsEnv
            in foldr (funDepCoverage''' c) covVars fds
 
    funDepCoverage''' (Constraint _ _ tys) (lixs,rixs) covVars =
     let lixs' = Set.toAscList lixs
         rixs' = Set.toAscList rixs
-    in if Set.fromList (fv (filterIndices tys lixs')) `Set.isSubsetOf` tvs 
+    in if Set.fromList (fv (filterIndices tys lixs')) `Set.isSubsetOf` tvs
        then covVars `Set.union` Set.fromList (fv (filterIndices tys rixs'))
        else covVars
-       
+
 
 lookupFunDeps :: QualIdent -> SimpleClassEnv -> [CE.FunDep]
 lookupFunDeps qcls simpleClsEnv = case Map.lookup qcls simpleClsEnv of

@@ -25,12 +25,8 @@
      * Remove pattern bindings to constructor terms
      * Inline simple constants.
 -}
-{-# LANGUAGE CPP #-}
 module Transformations.Simplify (simplify) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative        ((<$>), (<*>))
-#endif
 import           Control.Monad.Extra        (concatMapM)
 import           Control.Monad.State as S   (State, runState, gets, modify)
 import qualified Data.Map            as Map (Map, empty, insert, lookup)

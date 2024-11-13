@@ -21,11 +21,7 @@
     Only functions and variables declared in local declarations groups
     as well as function arguments remain unchanged.
 -}
-{-# LANGUAGE CPP #-}
 module Transformations.Qual (qual) where
-
-
-
 
 import qualified Control.Monad.Reader as R (Reader, asks, runReader)
 import           Data.Traversable

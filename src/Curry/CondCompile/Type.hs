@@ -11,14 +11,11 @@
 
     TODO
 -}
-{-# LANGUAGE CPP #-}
 module Curry.CondCompile.Type
   ( Program, Stmt (..), Else (..), Elif (..), Cond (..), Op (..)
   ) where
 
-#if __GLASGOW_HASKELL__ >= 804
 import Prelude hiding ((<>))
-#endif
 
 import Curry.Base.Pretty
 

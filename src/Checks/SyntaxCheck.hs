@@ -23,17 +23,9 @@
    can be recognized. Finally, all (adjacent) equations of a function are
    merged into a single definition.
 -}
-{-# LANGUAGE CPP #-}
 module Checks.SyntaxCheck (syntaxCheck) where
 
-#if __GLASGOW_HASKELL__ >= 804
-import Prelude hiding ((<>))
-#endif
-
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative        ((<$>), (<*>))
-#endif
-
+import           Prelude hiding ((<>))
 import           Control.Monad       (unless, when)
 import qualified Control.Monad.State as S (State, gets, modify, runState,
                                            withState)
@@ -610,7 +602,7 @@ checkEquationsLhs p [Equation p' _ lhs rhs] = do
   case lhs' of
     Left  l -> return $ funDecl' l
     Right r -> checkDeclLhs (PatternDecl p' r rhs)
-  where funDecl' (f, lhs') 
+  where funDecl' (f, lhs')
            = FunctionDecl p () f [Equation p' Nothing lhs' rhs]
 checkEquationsLhs _ _ = internalError "SyntaxCheck.checkEquationsLhs"
 

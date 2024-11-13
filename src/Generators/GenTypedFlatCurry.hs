@@ -12,7 +12,6 @@
     This module contains the generation of a typed 'FlatCurry' program term
     for a given module in the intermediate language.
 -}
-{-# LANGUAGE CPP #-}
 module Generators.GenTypedFlatCurry (genTypedFlatCurry, genTypedExpr) where
 
 import Curry.FlatCurry.Annotated.Type

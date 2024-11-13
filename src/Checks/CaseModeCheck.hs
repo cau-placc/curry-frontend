@@ -11,7 +11,7 @@
     This is mainly for historical reasons, an artifact of accepting both the
     conventional casings employed in Haskell and Prolog, respectively. To a
     Haskell programmer it may be surprising that
-    
+
         data x = a
 
         f :: A -> A
@@ -26,7 +26,7 @@
 
         f :: a -> a
         f x = x
-    
+
     To avoid this confusion, while still retaining the flexibility of different
     casings, Curry supports different case modes, controlling which casings are
     accepted, warned about or rejected. Using the default case mode (`curry`),
@@ -34,22 +34,19 @@
     whereas using the case mode `prolog` the second program would error and the
     first program would be accepted.
 -}
-{-# LANGUAGE CPP #-}
 module Checks.CaseModeCheck (caseModeCheck) where
 
-#if __GLASGOW_HASKELL__ >= 804
 import Prelude hiding ((<>))
-#endif
-
-import Base.Messages (Message, spanInfoMessage, internalError)
-import CompilerOpts (CaseMode (..))
+import Data.Char (isAlpha, isUpper, isLower, toUpper, toLower)
+import Data.List (sort)
 import Control.Monad (unless)
 import Control.Monad.State.Strict (State, execState, gets, modify)
+
+import CompilerOpts (CaseMode (..))
+import Base.Messages (Message, spanInfoMessage, internalError)
 import Curry.Base.Ident (Ident (..), escName)
 import Curry.Base.Pretty
 import Curry.Syntax
-import Data.Char (isAlpha, isUpper, isLower, toUpper, toLower)
-import Data.List (sort)
 
 caseModeCheck :: CaseMode -> Module a -> ([Message], [Message])
 caseModeCheck cm (Module _ _ _ _ _ _ ds) = runOn state $ checkDecls ds

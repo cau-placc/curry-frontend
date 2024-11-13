@@ -10,12 +10,8 @@
 
   TODO
 -}
-{-# LANGUAGE CPP           #-}
 {-# LANGUAGE TupleSections #-}
 module Transformations.Derive (derive) where
-
-
-
 
 import qualified Control.Monad.State as S (State, evalState, gets, modify)
 import           Data.List         (intercalate, intersperse)
