@@ -1,15 +1,16 @@
 {- |
     Module      :  $Header$
     Description :  Parser for conditional compiling
-    Copyright   :  (c) 2017        Kai-Oliver Prott
+    Copyright   :  (c) 2017-2024   Kai-Oliver Prott
                        2017        Finn Teegen
     License     :  BSD-3-clause
 
-    Maintainer  :  fte@informatik.uni-kiel.de
+    Maintainer  :  kpr@informatik.uni-kiel.de
     Stability   :  experimental
     Portability :  portable
 
-    TODO
+    This module provides parsing capabilities for conditional compilation statements,
+    supporting directives such as `#if`, `#ifdef`, `#ifndef`, `#define`, and `#undef`.
 -}
 module Curry.CondCompile.Parser where
 

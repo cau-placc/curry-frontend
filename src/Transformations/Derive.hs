@@ -1,14 +1,17 @@
 {- |
   Module      :  $Header$
-  Description :  Deriving instances
+  Description :  Deriving instances for data types from previously collected info
   Copyright   :  (c) 2016        Finn Teegen
+  Copyright   :  (c) 2020 - 2024 Kai-Oliver Prott
   License     :  BSD-3-clause
 
   Maintainer  :  bjp@informatik.uni-kiel.de
   Stability   :  experimental
   Portability :  portable
 
-  TODO
+  This module automatically derives type class instances (e.g., Eq, Ord, Enum) for data types,
+  generating the necessary methods based on type constructors.
+  The derive function processes type declarations and creates corresponding instance declarations.
 -}
 {-# LANGUAGE TupleSections #-}
 module Transformations.Derive (derive) where

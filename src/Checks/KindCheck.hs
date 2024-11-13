@@ -161,7 +161,6 @@ instance HasType NewConstrDecl where
   fts m (NewConstrDecl      _ _ ty) = fts m ty
   fts m (NewRecordDecl _ _ (_, ty)) = fts m ty
 
--- TODO: Has to be changed for the FlexibleContexts extension
 instance HasType Constraint where
   fts m (Constraint _ qcls tys) = fts m qcls . fts m tys
 

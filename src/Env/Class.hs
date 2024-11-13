@@ -48,8 +48,6 @@ import qualified Curry.Syntax.Type as CS
 
 import Base.Messages (internalError)
 
--- TODO: Add and update comments, if this approach works
-
 -- ---------------------------------------------------------------------------
 -- Type Synonyms
 -- ---------------------------------------------------------------------------
@@ -103,7 +101,7 @@ constraintToSuperClass clsvars (CS.Constraint _ cls tys) =
   getIndex (CS.VariableType _ idt) =
     fromMaybe (internalError $ errMsg1 idt) (elemIndex idt clsvars)
   getIndex _                       = internalError errMsg2
-  
+
   errMsgLoc   = "Env.Classes.constraintToSuperClass: "
   errMsg1 idt = errMsgLoc ++ "Variable " ++ show idt ++
                 " missing in class variables of " ++ show cls
@@ -180,7 +178,7 @@ allSuperClasses cls clsEnv = allSuperClasses' $
 
 -- List version of minPredList
 minPredList :: IsPred a => ClassEnv -> [a] -> [a]
-minPredList clsEnv pls = 
+minPredList clsEnv pls =
   plDifference pls (plConcatMap (impliedPredicatesList clsEnv) pls)
 
 -- List version of maxPredSet
@@ -220,7 +218,7 @@ fromFunDep clsvars (lset, rset) =
  where
   toIdents :: Set.Set Int -> [Ident]
   toIdents = map (clsvars `at`) . Set.toList
-  
+
   -- Like (!!), but with a different error message.
   at :: [a] -> Int -> a
   at (x : _ ) 0         = x

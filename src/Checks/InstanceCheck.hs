@@ -184,8 +184,6 @@ checkDecls tcEnv clsEnv ds = do
 bindInstance :: TCEnv -> ClassEnv -> Decl a -> INCM ()
 bindInstance tcEnv clsEnv (InstanceDecl p _ cx qcls inst ds) = do
   m <- getModuleIdent
-  -- TODO: The following comment applies after the implementation of
-  --         FlexibleInstances.
   -- Before instances are entered into the instance environment, the context and
   -- instance types have to be expanded and normalized, as they could contain
   -- type synonyms. To report violations of the rules ensuring instance
@@ -327,7 +325,6 @@ inferPredLists clsEnv (DeriveInfo spi pty@(PredType _ inst) tys clss) = do
   let clss' = filter (\cls -> isJust $ lookupInstExact (cls, [inst]) inEnv) clss
   mapM (inferPredList clsEnv spi pty tys) clss'
 
--- TODO: The following probably has to be reworked with FlexibleInstances
 -- inspired by Leif-Erik Krueger
 inferPredList :: HasSpanInfo s => ClassEnv -> s -> PredType -> [Type]
               -> QualIdent -> INCM ((InstIdent, PredList), Bool)

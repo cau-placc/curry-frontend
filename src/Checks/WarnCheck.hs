@@ -271,7 +271,7 @@ checkDecl (InstanceDecl p _ cx cls tys ds) = do
   mapM_ checkDecl ds
 checkDecl _                             = ok
 
---TODO: shadowing und context etc.
+--TODO: shadowing and context etc.
 checkConstrDecl :: ConstrDecl -> WCM ()
 checkConstrDecl (ConstrDecl     _ c tys) = inNestedScope $ do
   visitId c

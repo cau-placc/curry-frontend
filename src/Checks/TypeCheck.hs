@@ -129,9 +129,6 @@ checkDecls ds = do
 -- only if) the programmer has explicitly constrained the respective function to
 -- only be usable if such instances existed.
 
--- TODO: With FlexibleContexts, predicates of the explicit predicate set should
---         not be reduced during type checking.
-
 type TCM = S.State TcState
 
 type IsExtPred = Bool

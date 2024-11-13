@@ -254,7 +254,7 @@ type KindSubst = Map.Map Int IL.Kind
 
 transKind :: Kind -> IL.Kind
 transKind KindStar          = IL.KindStar
-transKind KindConstraint    = internalError $ "CurryToIL.transKind: " ++ 
+transKind KindConstraint    = internalError $ "CurryToIL.transKind: " ++
                                 "Encountered untransformed constraint kind"
 transKind (KindVariable  _) = IL.KindStar
 transKind (KindArrow k1 k2) = IL.KindArrow (transKind k1) (transKind k2)
@@ -369,7 +369,7 @@ trExpr _  env (Variable    _ ty v)
   | otherwise     = do
     tcEnv <- getTCEnv
     case Map.lookup (unqualify v) env of
-      Nothing -> error $ "unexpected variable" ++ show v --TODO: Replace case by fromJust?
+      Nothing -> error $ "unexpected variable" ++ show v
       Just v' -> return $ IL.Variable (transType tcEnv ty) v' -- apply renaming
   where
     fun tcEnv = IL.Function (transType tcEnv ty) v <$> getArity v

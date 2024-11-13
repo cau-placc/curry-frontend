@@ -110,7 +110,6 @@ instance Symbol Token where
                                         in  (ld, cd + 11)
   dist _ _                            = (0, 0)
 
--- TODO: Comment
 updColDist :: Int -> Distance -> Distance
 updColDist c (ld, cd) = (ld, if ld == 0 then cd else cd - c + 1)
 
@@ -405,7 +404,7 @@ idTok :: Category -> [String] -> String -> Token
 idTok t mIdent ident = Token t
   IdentAttributes { modulVal = mIdent, sval = ident }
 
--- TODO
+-- |Construct a 'Token' for an options Pragma with the given tool name (if known) and arguments
 pragmaOptionsTok :: Maybe String -> String -> Token
 pragmaOptionsTok mbTool s = Token PragmaOptions
   OptionsAttributes { toolVal = mbTool, toolArgs = s }

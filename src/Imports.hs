@@ -267,10 +267,6 @@ values m (INewtypeDecl _ tc _ tvs nc hs o) =
         ty' = constrType tc' tvs
 values m (IFunctionDecl _ f Nothing a qty o) =
   [Value (applyOriginPragma o (qualQualify m f)) Nothing a (typeScheme (toQualPredType m [] OPred qty))]
--- TODO: Previously, a function was used here to find the correct constraint by
---         comparing the constraint type to the type variable of the pragma.
---         Check if there is any possibility of the implicit class constraint
---         not being the first constraint of the context.
 values m (IFunctionDecl _ f (Just tvs) _ qty@(QualTypeExpr _ cx _) o) =
   let mcls = case cx of []                      -> Nothing
                         Constraint _ qcls _ : _ -> Just qcls

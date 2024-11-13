@@ -123,8 +123,6 @@ incrSpan :: Span -> Int -> Span
 incrSpan (Span fn s e) n = Span fn (incr s n) (incr e n)
 incrSpan sp            _ = sp
 
--- TODO: Rename to tab and nl as soon as positions are completely replaced by spans
-
 -- |Convert a position to a single character span.
 pos2Span :: Position -> Span
 pos2Span p@(Position f _ _) = Span f p p
