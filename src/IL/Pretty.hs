@@ -16,13 +16,9 @@
    printer which, in turn, is based on Simon Marlow's pretty printer
    for Haskell.
 -}
-{-# LANGUAGE CPP #-}
 module IL.Pretty (ppModule) where
 
-#if __GLASGOW_HASKELL__ >= 804
 import Prelude hiding ((<>))
-#endif
-
 import Curry.Base.Ident
 import Curry.Base.Pretty
 import IL.Type

@@ -216,9 +216,11 @@ iHidingDecl :: Parser a Token (Maybe OriginPragma -> IDecl)
 iHidingDecl = tokenPos Id_hiding <**> (hDataDecl <|> hClassDecl)
   where
   hDataDecl = hiddenData <$> token KW_data <*> withKind qtycon <*> many tyvar
-  hClassDecl = hiddenClass <$> classInstHead KW_class (withKind qtycls) clsvar
+  hClassDecl = hiddenClass <$>
+    classInstHead KW_class (withKind qtycls) (many clsvar) <*> optFunDeps
   hiddenData _ (tc, k) tvs p = HidingDataDecl p tc k tvs
-  hiddenClass (_, _, cx, (qcls, k), tv) p = HidingClassDecl p cx qcls k tv
+  hiddenClass (_, _, cx, (qcls, k), clsvars) (fds, _) p =
+    HidingClassDecl p cx qcls k clsvars fds
 
 -- |Parser for an interface data declaration
 iDataDecl :: Parser a Token (Maybe OriginPragma -> IDecl)
@@ -250,8 +252,8 @@ iFunctionDecl = IFunctionDecl
                 <*> arity <*-> token DoubleColon <*> qualType
 
 -- |Parser for an interface method pragma
-iMethodPragma :: Parser a Token Ident
-iMethodPragma = token PragmaMethod <-*> clsvar <*-> token PragmaEnd
+iMethodPragma :: Parser a Token [Ident]
+iMethodPragma = token PragmaMethod <-*> many clsvar <*-> token PragmaEnd
 
 -- |Parser for function's arity
 arity :: Parser a Token Int
@@ -264,9 +266,10 @@ iTypeDeclLhs f kw = f' <$> tokenPos kw <*> withKind qtycon <*> many tyvar
 
 -- |Parser for an interface class declaration
 iClassDecl :: Parser a Token (Maybe OriginPragma -> IDecl)
-iClassDecl = (\(sp, _, cx, (qcls, k), tv) ->
-              IClassDecl (span2Pos sp) cx qcls k tv)
-           <$> classInstHead KW_class (withKind qtycls) clsvar
+iClassDecl = (\(sp, _, cx, (qcls, k), clsvars) (fds, _) ->
+              IClassDecl (span2Pos sp) cx qcls k clsvars fds)
+           <$> classInstHead KW_class (withKind qtycls) (many clsvar)
+           <*> optFunDeps
            <*> braces (iMethod `sepBy` semicolon)
            <*> iClassHidden
 
@@ -286,7 +289,7 @@ iClassHidden = token PragmaHiding
 iInstanceDecl :: Parser a Token (Maybe OriginPragma -> IDecl)
 iInstanceDecl = (\(sp, _, cx, qcls, inst) ->
                  IInstanceDecl (span2Pos sp) cx qcls inst)
-              <$> classInstHead KW_instance qtycls type2
+              <$> classInstHead KW_instance qtycls (many type2)
               <*> braces (iImpl `sepBy` semicolon)
               <*> option iModulePragma
 
@@ -433,8 +436,8 @@ typeSig = sig <$> tokenSpan DoubleColon <*> qualType
 
 mkFunDecl :: (Ident, Lhs ()) -> Rhs () -> Span -> Decl ()
 mkFunDecl (f, lhs) rhs' p = updateEndPos $
-    FunctionDecl (spanInfo p []) () f [updateEndPos $
-                                         Equation (spanInfo p []) lhs rhs']
+    FunctionDecl (spanInfo p []) () f 
+      [updateEndPos $ Equation (spanInfo p []) Nothing lhs rhs']
 
 funLhs :: Parser a Token (Ident, Lhs ())
 funLhs = mkFunLhs    <$> fun      <*> many1 pattern2
@@ -556,7 +559,8 @@ classInstHead kw cls ty = f <$> tokenSpan kw
 
 classDecl :: Parser a Token (Decl ())
 classDecl = mkClass
-        <$> classInstHead KW_class tycls clsvar
+        <$> classInstHead KW_class tycls (many clsvar)
+        <*> optFunDeps
         <*> whereClause innerDecl
   where
     --TODO: Refactor by left-factorization
@@ -565,14 +569,16 @@ classDecl = mkClass
       [ spanPosition <**> (fun `sepBy1Sp` comma <**> typeSig)
       , spanPosition <**> funRule
       {-, infixDecl-} ]
-    mkClass (sp1, ss, cx, cls, tv) (Just sp2, ds, li) = updateEndPos $
-      ClassDecl (SpanInfo sp1 (sp1 : (ss ++ [sp2]))) li cx cls tv ds
-    mkClass (sp1, ss, cx, cls, tv) (Nothing, ds, li) = updateEndPos $
-      ClassDecl (SpanInfo sp1 (sp1 : ss)) li cx cls tv ds
+    mkClass (sp1, ss, cx, cls, tvs) (fds, fdSps) (Just sp2, ds, li) =
+      updateEndPos $ ClassDecl (SpanInfo sp1 (sp1 : ss ++ fdSps ++ [sp2]))
+                               li cx cls tvs fds ds
+    mkClass (sp1, ss, cx, cls, tvs) (fds, fdSps) (Nothing, ds, li) =
+      updateEndPos $ ClassDecl (SpanInfo sp1 (sp1 : ss ++ fdSps))
+                               li cx cls tvs fds ds
 
 instanceDecl :: Parser a Token (Decl ())
 instanceDecl = mkInstance
-           <$> classInstHead KW_instance qtycls type2
+           <$> classInstHead KW_instance qtycls (many type2)
            <*> whereClause innerDecl
   where
     innerDecl = spanPosition <**> funRule
@@ -596,20 +602,22 @@ context = (\c -> ([c], [])) <$> constraint
       <|> combine <$> parensSp (constraint `sepBySp` comma)
   where combine ((ctx, ss), sp1, sp2) = (ctx, sp1 : (ss ++ [sp2]))
 
+-- taken from Leif-Erik Krueger
 constraint :: Parser a Token Constraint
-constraint = mkConstraint <$> spanPosition <*> qtycls <*> conType
-  where varType = mkVariableType <$> spanPosition <*> clsvar
-        conType = fmap ((,) []) varType
-               <|> mk <$> parensSp
-                            (foldl mkApplyType <$> varType <*> many1 type2)
-        mkConstraint sp qtc (ss, ty) = updateEndPos $
-          Constraint (spanInfo sp ss) qtc ty
-        mkVariableType sp = VariableType (fromSrcSpan sp)
-        mkApplyType t1 t2 =
-          ApplyType (fromSrcSpan (combineSpans (getSrcSpan t1)
-                                               (getSrcSpan t2)))
-                    t1 t2
-        mk (a, sp1, sp2) = ([sp1, sp2], a)
+constraint = mkConstraint <$> spanPosition <*> qtycls <*> many type2
+  where mkConstraint sp qtc tys = updateEndPos $
+          Constraint (fromSrcSpan sp) qtc tys
+
+optFunDeps :: Parser a Token ([FunDep], [Span])
+optFunDeps = (combine <$> tokenSpan Bar <*> funDep `sepBy1Sp` comma)
+       `opt` ([], [])
+  where combine barSp (funDeps, commaSps) = (funDeps, barSp : commaSps)
+
+funDep :: Parser a Token FunDep
+funDep = mkFunDep <$> many clsvar <*> tokenSpan RightArrow <*> many clsvar
+  where mkFunDep ltvs@(ltv : _) sp rtvs = updateEndPos $
+          FunDep (SpanInfo (getSrcSpan ltv) [sp]) ltvs rtvs
+        mkFunDep [] sp rtvs = updateEndPos $ FunDep (SpanInfo sp [sp]) [] rtvs
 
 -- ---------------------------------------------------------------------------
 -- Kinds
@@ -628,6 +636,7 @@ kind0 = kind1 `chainr1` (ArrowKind <$-> token RightArrow)
 -- kind1 ::= * | '(' kind0 ')'
 kind1 :: Parser a Token KindExpr
 kind1 = Star <$-> token SymStar
+    <|> ConstraintKind <$-> token Id_Constraint
     <|> parens kind0
 
 -- ---------------------------------------------------------------------------
@@ -1273,14 +1282,15 @@ anonIdent = (`setSpanInfo` anonId) . fromSrcSpanBoth <$> tokenSpan Underscore
 
 mIdent :: Parser a Token ModuleIdent
 mIdent = mIdent' <$> spanPosition <*>
-     tokens [Id,QId,Id_as,Id_ccall,Id_forall,Id_hiding,
-             Id_interface,Id_primitive,Id_qualified]
+     tokens [Id,QId,Id_as,Id_ccall,Id_Constraint,Id_forall,
+             Id_hiding,Id_interface,Id_primitive,Id_qualified]
   where mIdent' sp a = ModuleIdent (fromSrcSpanBoth sp) (modulVal a ++ [sval a])
 
 ident :: Parser a Token Ident
 ident = (\ sp t -> setSpanInfo (fromSrcSpanBoth sp) (mkIdent (sval t)))
-          <$> spanPosition <*> tokens [Id,Id_as,Id_ccall,Id_forall,Id_hiding,
-                                       Id_interface,Id_primitive,Id_qualified]
+          <$> spanPosition
+          <*> tokens [Id,Id_as,Id_ccall,Id_Constraint,Id_forall,
+                      Id_hiding,Id_interface,Id_primitive,Id_qualified]
 
 qIdent :: Parser a Token QualIdent
 qIdent = qualify <$> ident <|> qIdentWith QId

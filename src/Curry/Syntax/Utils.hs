@@ -25,7 +25,7 @@ module Curry.Syntax.Utils
   , isFunctionDecl, isExternalDecl, patchModuleId
   , isVariablePattern
   , isVariableType, isSimpleType
-  , typeConstr, typeVariables, varIdent
+  , typeConstr, typeVariables, containsForall, varIdent
   , flatLhs, eqnArity, fieldLabel, fieldTerm, field2Tuple, opName
   , funDecl, mkEquation, simpleRhs, patDecl, varDecl, constrPattern, caseAlt
   , mkLet, mkVar, mkCase, mkLambda
@@ -92,8 +92,8 @@ isDefaultDecl _                 = False
 
 -- |Is the declaration a class declaration?
 isClassDecl :: Decl a -> Bool
-isClassDecl (ClassDecl _ _ _ _ _ _) = True
-isClassDecl _                       = False
+isClassDecl (ClassDecl _ _ _ _ _ _ _) = True
+isClassDecl _                         = False
 
 -- |Is the declaration a type or a class declaration?
 isTypeOrClassDecl :: Decl a -> Bool
@@ -165,7 +165,7 @@ typeConstr (VariableType       _ _) =
 typeConstr (ForallType       _ _ _) =
   error "Curry.Syntax.Utils.typeConstr: forall type"
 
--- |Return the list of variables occuring in a type expression.
+-- |Return the list of variables occurring in a type expression.
 typeVariables :: TypeExpr -> [Ident]
 typeVariables (ConstructorType       _ _) = []
 typeVariables (ApplyType       _ ty1 ty2) = typeVariables ty1 ++ typeVariables ty2
@@ -175,6 +175,18 @@ typeVariables (ListType             _ ty) = typeVariables ty
 typeVariables (ArrowType       _ ty1 ty2) = typeVariables ty1 ++ typeVariables ty2
 typeVariables (ParenType            _ ty) = typeVariables ty
 typeVariables (ForallType        _ vs ty) = vs ++ typeVariables ty
+
+-- |Checks if a type expression contains a `forall'-expression
+--   taken from Leif-Erik Krueger
+containsForall :: TypeExpr -> Bool
+containsForall (ConstructorType     _ _) = False
+containsForall (ApplyType     _ ty1 ty2) = containsForall ty1 || containsForall ty2
+containsForall (VariableType        _ _) = False
+containsForall (TupleType         _ tys) = any containsForall tys
+containsForall (ListType           _ ty) = containsForall ty
+containsForall (ArrowType     _ ty1 ty2) = containsForall ty1 || containsForall ty2
+containsForall (ParenType          _ ty) = containsForall ty
+containsForall (ForallType        _ _ _) = True
 
 -- |Return the identifier of a variable.
 varIdent :: Var a -> Ident
@@ -194,7 +206,7 @@ flatLhs lhs = flat lhs []
 
 -- |Return the arity of an equation.
 eqnArity :: Equation a -> Int
-eqnArity (Equation _ lhs _) = length $ snd $ flatLhs lhs
+eqnArity (Equation _ _ lhs _) = length $ snd $ flatLhs lhs
 
 -- |Select the label of a field
 fieldLabel :: Field a -> QualIdent
@@ -245,7 +257,7 @@ methods :: Decl a -> [Ident]
 methods (TypeSig _ fs _) = fs
 methods _                = []
 
--- | Get the method identifiers of a type class method implementations
+-- | Get the method identifiers of a type class method implementation
 impls :: Decl a -> [Ident]
 impls (FunctionDecl _ _ f _) = [f]
 impls _                      = []
@@ -281,7 +293,8 @@ funDecl :: SpanInfo -> a -> Ident -> [Pattern a] -> Expression a -> Decl a
 funDecl spi a f ts e = FunctionDecl spi a f [mkEquation spi f ts e]
 
 mkEquation :: SpanInfo -> Ident -> [Pattern a] -> Expression a -> Equation a
-mkEquation spi f ts e = Equation spi (FunLhs NoSpanInfo f ts) (simpleRhs NoSpanInfo e)
+mkEquation spi f ts e =
+  Equation spi Nothing (FunLhs NoSpanInfo f ts) (simpleRhs NoSpanInfo e)
 
 simpleRhs :: SpanInfo -> Expression a -> Rhs a
 simpleRhs spi e = SimpleRhs spi WhitespaceLayout e []
@@ -354,8 +367,8 @@ instance ShortenAST (Module a) where
 instance ShortenAST (Decl a) where
   shortenAST (FunctionDecl spi a idt _) =
     FunctionDecl spi a idt []
-  shortenAST (ClassDecl spi li cx cls tyv ds) =
-    ClassDecl spi li cx cls tyv (map shortenAST ds)
-  shortenAST (InstanceDecl spi li cx cls tyv ds) =
-    InstanceDecl spi li cx cls tyv (map shortenAST ds)
+  shortenAST (ClassDecl spi li cx cls tvs fds ds) =
+    ClassDecl spi li cx cls tvs fds (map shortenAST ds)
+  shortenAST (InstanceDecl spi li cx cls tvs ds) =
+    InstanceDecl spi li cx cls tvs (map shortenAST ds)
   shortenAST d = d

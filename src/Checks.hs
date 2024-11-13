@@ -78,7 +78,8 @@ typeSyntaxCheck :: Monad m => Check m (Module a)
 typeSyntaxCheck _ (env, mdl)
   | null msgs = ok (env, mdl')
   | otherwise = failMessages msgs
-  where (mdl', msgs) = TSC.typeSyntaxCheck (tyConsEnv env) mdl
+  where (mdl', msgs) = TSC.typeSyntaxCheck (extensions env) (tyConsEnv env)
+                                           (classEnv env) mdl
 
 -- |Check the kinds of type definitions and signatures.
 --
@@ -144,9 +145,9 @@ typeCheck :: Monad m => Options -> CompEnv (Module a)
 typeCheck _ (env, Module spi li ps m es is ds)
   | null msgs = ok (env { valueEnv = vEnv' }, Module spi li ps m es is ds')
   | otherwise = failMessages msgs
-  where (ds', vEnv', msgs) = TC.typeCheck (moduleIdent env) (tyConsEnv env)
-                                          (valueEnv env) (classEnv env)
-                                          (instEnv env) ds
+  where (ds', vEnv', msgs) = TC.typeCheck (extensions env) (moduleIdent env)
+                                          (tyConsEnv env) (valueEnv env)
+                                          (classEnv env) (instEnv env) ds
 
 -- |Check the export specification
 exportCheck :: Monad m => Check m (Module a)
@@ -165,5 +166,5 @@ expandExports _ (env, Module spi li ps m es is ds)
 
 -- |Check for warnings.
 warnCheck :: Options -> CompilerEnv -> Module a -> [Message]
-warnCheck opts env mdl = WC.warnCheck (optWarnOpts opts)
-  (aliasEnv env) (valueEnv env) (tyConsEnv env) (classEnv env) mdl
+warnCheck opts env = WC.warnCheck (optWarnOpts opts)
+  (aliasEnv env) (valueEnv env) (tyConsEnv env) (classEnv env)

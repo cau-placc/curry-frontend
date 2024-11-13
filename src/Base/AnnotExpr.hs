@@ -2,13 +2,15 @@
     Module      :  $Header$
     Description :  Extraction of free qualified annotated variables
     Copyright   :  (c) 2017        Finn Teegen
+    Copyright   :  (c)   2018-2024 Kai-Oliver Prott
     License     :  BSD-3-clause
 
-    Maintainer  :  bjp@informatik.uni-kiel.de
+    Maintainer  :  kpr@informatik.uni-kiel.de
     Stability   :  experimental
     Portability :  portable
 
-    TODO
+    This module provides functionality for extracting free variables
+    with qualified annotations from expressions and declarations.
 -}
 module Base.AnnotExpr (QualAnnotExpr (..)) where
 
@@ -35,12 +37,12 @@ class QualAnnotExpr e where
 instance QualAnnotExpr Decl where
   qafv m (FunctionDecl    _ _ _ eqs) = concatMap (qafv m) eqs
   qafv m (PatternDecl       _ _ rhs) = qafv m rhs
-  qafv m (ClassDecl    _ _ _ _ _ ds) = concatMap (qafv m) ds
+  qafv m (ClassDecl  _ _ _ _ _ _ ds) = concatMap (qafv m) ds
   qafv m (InstanceDecl _ _ _ _ _ ds) = concatMap (qafv m) ds
   qafv _ _                           = []
 
 instance QualAnnotExpr Equation where
-  qafv m (Equation _ lhs rhs) = filterBv lhs $ qafv m lhs ++ qafv m rhs
+  qafv m (Equation _ _ lhs rhs) = filterBv lhs $ qafv m lhs ++ qafv m rhs
 
 instance QualAnnotExpr Lhs where
   qafv m = concatMap (qafv m) . snd . flatLhs

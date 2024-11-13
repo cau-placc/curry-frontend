@@ -8,7 +8,11 @@
     Stability   : experimental
     Portability : portable
 
-    TODO
+    This module defines the annotated data structures for FlatCurry programs.
+    These structures include annotated versions of programs, function declarations,
+    rules, expressions, patterns, and branches. The annotations are used to store
+    additional information for each element in the program, making it more flexible
+    for further processing.
 -}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveFunctor  #-}

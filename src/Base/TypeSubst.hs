@@ -59,7 +59,10 @@ subst' sigma (TypeForall      tvs ty) =
   applyType (TypeForall tvs (subst sigma ty))
 
 instance SubstType Pred where
-  subst sigma (Pred qcls ty) = Pred qcls (subst sigma ty)
+  subst sigma (Pred isIcc qcls tys) = Pred isIcc qcls (subst sigma tys)
+
+instance SubstType LPred where
+  subst sigma (LPred pr spi doc what) = LPred (subst sigma pr) spi doc what
 
 instance SubstType PredType where
   subst sigma (PredType ps ty) = PredType (subst sigma ps) (subst sigma ty)
@@ -106,11 +109,16 @@ expandAliasType' tys (TypeForall      tvs ty) =
   applyType (TypeForall tvs (expandAliasType tys ty))
 
 instance ExpandAliasType Pred where
-  expandAliasType tys (Pred qcls ty) = Pred qcls (expandAliasType tys ty)
+  expandAliasType tys (Pred isIcc qcls tys') =
+    Pred isIcc qcls (expandAliasType tys tys')
 
 instance ExpandAliasType PredType where
   expandAliasType tys (PredType ps ty) =
     PredType (expandAliasType tys ps) (expandAliasType tys ty)
+
+instance ExpandAliasType PredTypes where
+  expandAliasType tys (PredTypes ps tys') =
+    PredTypes (expandAliasType tys ps) (expandAliasType tys tys')
 
 -- After the expansion we have to reassign the type indices for all type
 -- variables. Otherwise, expanding a type synonym like type 'Pair a b = (b,a)'
@@ -121,17 +129,21 @@ instance ExpandAliasType PredType where
 -- of a type declaration and in the head of a type class declaration,
 -- respectively.
 
-normalize :: Int -> PredType -> PredType
+normalize :: (IsType a, ExpandAliasType a) => Int -> a -> a
 normalize n ty = expandAliasType [TypeVariable (occur tv) | tv <- [0..]] ty
   where tvs = zip (nub (filter (>= n) (typeVars ty))) [n..]
         occur tv = fromMaybe tv (lookup tv tvs)
 
--- The function 'instanceType' computes an instance of a polymorphic type by
--- substituting the first type argument for all occurrences of the type
--- variable with index 0 in the second argument. The function carefully
--- assigns new indices to all other type variables of the second argument
--- so that they do not conflict with the type variables of the first argument.
+-- The function 'instanceTypes' computes an instance of a polymorphic type by
+-- substituting the n types in the first argument for all occurrences of the
+-- type variables with indices 0 to n-1 in the second argument. The function
+-- carefully assigns new indices to all other type variables of the second
+-- argument so that they do not conflict with the type variables of the first
+-- argument.
 
-instanceType :: ExpandAliasType a => Type -> a -> a
-instanceType ty = expandAliasType (ty : map TypeVariable [n ..])
-  where ForAll n _ = polyType ty
+-- TODO: Implement 'polyTypes' or at least update the comment of the 'polyType'
+--         function as the type variables of each type don't necessarily start
+--         with 0 anymore.
+instanceTypes :: ExpandAliasType a => [Type] -> a -> a
+instanceTypes tys = expandAliasType (tys ++ map TypeVariable [nMax ..])
+  where nMax = maximum (0 : [n | ForAll n _ <- map polyType tys])

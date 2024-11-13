@@ -39,11 +39,11 @@ import           Data.Maybe                 (fromMaybe, listToMaybe)
 import           Curry.Base.Ident
 import qualified Curry.Syntax        as CS
 
-import Base.CurryTypes                      (toType)
 import Base.Expr
 import Base.Messages                        (internalError)
 import Base.Types                           ( charType, floatType
                                             , intType, stringType
+                                            , toType
                                             )
 import qualified Base.Types as CS
 import Base.Subst
@@ -97,17 +97,17 @@ freshIdent = do
 -- -----------------------------------------------------------------------------
 
 ccDecl :: Decl -> CCM Decl
-ccDecl dd@(DataDecl        _ _ _) = return dd
+ccDecl dd@DataDecl {}             = return dd
 ccDecl edd@(ExternalDataDecl _ _) = return edd
 ccDecl (FunctionDecl qid vs ty e) = FunctionDecl qid vs ty <$> ccExpr e
-ccDecl ed@(ExternalDecl    _ _ _) = return ed
-ccDecl nd@(NewtypeDecl     _ _ _) = return nd
+ccDecl ed@ExternalDecl {}         = return ed
+ccDecl nd@NewtypeDecl {}          = return nd
 
 ccExpr :: Expression -> CCM Expression
 ccExpr l@(Literal       _ _) = return l
 ccExpr v@(Variable      _ _) = return v
-ccExpr f@(Function    _ _ _) = return f
-ccExpr c@(Constructor _ _ _) = return c
+ccExpr f@Function {}         = return f
+ccExpr c@Constructor {}      = return c
 ccExpr (Apply         e1 e2) = Apply <$> ccExpr e1 <*> ccExpr e2
 ccExpr (Case        ea e bs) = do
   e'  <- ccExpr e
@@ -377,7 +377,7 @@ eqExpr _ ty' e1 | IL.TypeConstructor _ [_] <- ty'
   = Apply (Apply (Function (TypeArrow ty' (TypeArrow ty' boolType')) qEqStringId 2) e1)
 eqExpr ty ty' e1 =
     Apply (Apply (Function eqTy eq 2) e1)
-  where eq   = qImplMethodId preludeMIdent qEqId ty $ mkIdent "=="
+  where eq   = qImplMethodId preludeMIdent qEqId [ty] $ mkIdent "=="
         eqTy = TypeArrow ty' (TypeArrow ty' boolType')
 
 truePatt :: ConstrTerm

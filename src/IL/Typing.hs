@@ -1,6 +1,6 @@
 {- |
     Module      :  $Header$
-    Description :  TODO
+    Description :  Extracting types from intermediate language (IL) terms.
     Copyright   :  (c)        2017 Finn Teegen
     License     :  BSD-3-clause
 
@@ -8,7 +8,10 @@
     Stability   :  experimental
     Portability :  portable
 
-   TODO
+    This module provides the implementation of the `Typeable` class, which is responsible
+    for determining the type of different intermediate language (IL) terms, including patterns,
+    expressions, and alternatives. The `typeOf` function is defined for various constructs,
+    ensuring that each term's type can be derived for further processing in the type system.
 -}
 
 module IL.Typing (Typeable(..)) where

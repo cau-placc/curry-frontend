@@ -21,7 +21,6 @@
 
     Qualified identifiers may optionally be prefixed by a module name.
 -}
-{-# LANGUAGE CPP            #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric  #-}
 module Curry.Base.Ident
@@ -46,7 +45,8 @@ module Curry.Base.Ident
   , arrowId, unitId, boolId, charId, intId, floatId, listId, ioId, successId
     -- ** Identifiers for type classes
   , eqId, ordId, enumId, boundedId, readId, showId
-  , numId, fractionalId
+  , numId, fractionalId, realId, integralId, realFracId, floatingId
+  , monoidId, functorId, applicativeId, alternativeId
   , monadId, monadFailId
   , dataId
     -- ** Identifiers for constructors
@@ -68,7 +68,8 @@ module Curry.Base.Ident
   , qSuccessId, isPrimTypeId
     -- ** Identifiers for type classes
   , qEqId, qOrdId, qEnumId, qBoundedId, qReadId, qShowId
-  , qNumId, qFractionalId
+  , qNumId, qFractionalId, qRealId, qIntegralId, qRealFracId, qFloatingId
+  , qMonoidId, qFunctorId, qApplicativeId, qAlternativeId
   , qMonadId, qMonadFailId
   , qDataId
     -- ** Identifiers for constructors
@@ -92,6 +93,7 @@ module Curry.Base.Ident
   , renameLabel, mkLabelIdent
   ) where
 
+import Prelude hiding ((<>))
 import Control.Monad
 import Data.Binary
 import Data.Char           (isAlpha, isAlphaNum)
@@ -99,7 +101,6 @@ import Data.Function       (on)
 import Data.List           (intercalate, isInfixOf, isPrefixOf)
 import Data.Maybe          (isJust, fromMaybe)
 import GHC.Generics        (Generic)
-import Prelude hiding ((<>))
 
 import Curry.Base.Position
 import Curry.Base.Span hiding (file)
@@ -507,6 +508,39 @@ numId = mkIdent "Num"
 fractionalId :: Ident
 fractionalId = mkIdent "Fractional"
 
+-- taken from Leif Erik Krueger
+-- | 'Ident' for the 'Real' class
+realId :: Ident
+realId = mkIdent "Real"
+
+-- | 'Ident' for the 'Integral' class
+integralId :: Ident
+integralId = mkIdent "Integral"
+
+-- | 'Ident' for the 'RealFrac' class
+realFracId :: Ident
+realFracId = mkIdent "RealFrac"
+
+-- | 'Ident' for the 'Floating' class
+floatingId :: Ident
+floatingId = mkIdent "Floating"
+
+-- | 'Ident' for the 'Monoid' class
+monoidId :: Ident
+monoidId = mkIdent "Monoid"
+
+-- | 'Ident' for the 'Functor' class
+functorId :: Ident
+functorId = mkIdent "Functor"
+
+-- | 'Ident' for the 'Applicative' class
+applicativeId :: Ident
+applicativeId = mkIdent "Applicative"
+
+-- | 'Ident' for the 'Alternative' class
+alternativeId :: Ident
+alternativeId = mkIdent "Alternative"
+
 -- | 'Ident' for the 'Monad' class
 monadId :: Ident
 monadId = mkIdent "Monad"
@@ -764,6 +798,40 @@ qNumId = qPreludeIdent numId
 -- | 'QualIdent' for the 'Fractional' class
 qFractionalId :: QualIdent
 qFractionalId = qPreludeIdent fractionalId
+
+-- taken from Leif Erik Krueger
+-- | 'QualIdent' for the 'Real' class
+qRealId :: QualIdent
+qRealId = qPreludeIdent realId
+
+-- | 'QualIdent' for the 'Integral' class
+qIntegralId :: QualIdent
+qIntegralId = qPreludeIdent integralId
+
+-- | 'QualIdent' for the 'RealFrac' class
+qRealFracId :: QualIdent
+qRealFracId = qPreludeIdent realFracId
+
+-- | 'QualIdent' for the 'Floating' class
+qFloatingId :: QualIdent
+qFloatingId = qPreludeIdent floatingId
+
+-- | 'QualIdent' for the 'Monoid' class
+qMonoidId :: QualIdent
+qMonoidId = qPreludeIdent monoidId
+
+-- | 'QualIdent' for the 'Functor' class
+qFunctorId :: QualIdent
+qFunctorId = qPreludeIdent functorId
+
+-- | 'QualIdent' for the 'Applicative' class
+qApplicativeId :: QualIdent
+qApplicativeId = qPreludeIdent applicativeId
+
+-- | 'QualIdent' for the 'Alternative' class
+qAlternativeId :: QualIdent
+qAlternativeId = qPreludeIdent alternativeId
+
 
 -- | 'QualIdent' for the 'Monad' class
 qMonadId :: QualIdent

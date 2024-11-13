@@ -1,6 +1,6 @@
+cabal-version: 3.0
 name:          curry-frontend
-version:       2.1.1
-cabal-version: 2.0
+version:       3.0.0
 synopsis:      Compile the functional logic language Curry to several
                intermediate formats
 description:   The Curry front end consists of the executable program
@@ -15,58 +15,56 @@ description:   The Curry front end consists of the executable program
                For further information, please check
                <http://curry-language.org>
 category:      Language
-license:       BSD3
+license:       BSD-3-Clause
 license-file:  LICENSE
 author:        Wolfgang Lux, Martin Engelke, Bernd Brassel, Holger Siegel,
-               Bjoern Peemoeller, Finn Teegen
+               Bjoern Peemoeller, Finn Teegen, Kai-Oliver Prott
 maintainer:    fte@informatik.uni-kiel.de
 homepage:      http://curry-language.org
 build-type:    Simple
 stability:     experimental
 
-extra-source-files: README.md CHANGELOG.md
+extra-doc-files: README.md CHANGELOG.md
 
 data-dir:   data
 data-files: currysource.css
+
+common setup
+  ghc-options:      -Wall
+  other-extensions: TemplateHaskell
 
 source-repository head
   type:     git
   location: https://git.ps.informatik.uni-kiel.de/curry/curry-frontend.git
 
 library
-  hs-source-dirs:   src
+  import:           setup
   default-language: Haskell2010
-  other-extensions: CPP, TemplateHaskell
-  ghc-options:      -Wall
+  hs-source-dirs:   src
   build-depends:
       base             >= 4.11  && < 4.19
-    , template-haskell >= 2.10  && < 2.21
-    , extra            >= 1.4.6 && < 1.8
-    , transformers     >= 0.5   && < 0.7
-    , mtl              >= 2.2   && < 2.4
-    , directory        >= 1.2   && < 1.4
-    , filepath         >= 1.4   && < 1.5
-    , file-embed       >= 0.0   && < 0.1
-    , containers       >= 0.6   && < 0.7
-    , set-extra        >= 1.4   && < 1.5
-    , bytestring       >= 0.10  && < 0.12
-    , process          >= 1.6   && < 1.7
-    , network-uri      >= 2.6   && < 2.7
-    , pretty           >= 1.1   && < 1.2
-    , binary           >= 0.8   && < 0.9
-    , time             >= 1.9   && < 2.0
-    , parsec           >= 3.1   && < 3.2
+    , extra           ^>= 1.8
+    , transformers    ^>= 0.6
+    , mtl             ^>= 2.3
+    , directory       ^>= 1.3
+    , filepath        ^>= 1.4
+    , file-embed      ^>= 0.0
+    , containers      ^>= 0.7
+    , bytestring      ^>= 0.12
+    , set-extra       ^>= 1.4
+    , process         ^>= 1.6
+    , network-uri     ^>= 2.6
+    , pretty          ^>= 1.1
+    , binary          ^>= 0.8
+    , time            ^>= 1.9
+    , parsec          ^>= 3.1
   exposed-modules:
       Base.AnnotExpr
-    , Base.CurryKinds
-    , Base.CurryTypes
     , Base.Expr
     , Base.KindSubst
     , Base.Kinds
     , Base.Messages
     , Base.NestEnv
-    , Base.PrettyKinds
-    , Base.PrettyTypes
     , Base.SCC
     , Base.Subst
     , Base.TopEnv
@@ -175,9 +173,8 @@ library
 
 executable curry-frontend
   hs-source-dirs:   app
-  main-is:          Main.hs
   default-language: Haskell2010
-  ghc-options:      -Wall
+  main-is:          Main.hs
   build-depends:
       base >= 4.11
     , curry-frontend
@@ -185,24 +182,11 @@ executable curry-frontend
 test-suite test-frontend
   type:             detailed-0.9
   hs-source-dirs:   test
-  test-module:      TestFrontend
   default-language: Haskell2010
-  other-extensions: CPP, TemplateHaskell
-  ghc-options:      -Wall
+  test-module:      TestFrontend
   build-depends:
       base >= 4.11
-    , Cabal >= 1.20
-    , template-haskell >= 2.10
-    , extra >= 1.4.6
-    , transformers
-    , mtl
-    , directory >= 1.2.0.1
-    , filepath
-    , file-embed
+    , Cabal >= 3.0
     , containers
-    , set-extra
-    , bytestring >= 0.10
-    , process
-    , network-uri >= 2.6
-    , pretty
+    , filepath
     , curry-frontend

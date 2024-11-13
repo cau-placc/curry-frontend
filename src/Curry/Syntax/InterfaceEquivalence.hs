@@ -59,8 +59,9 @@ instance Equiv IImportDecl where
 
 -- Since the kind of type constructors or type classes can be omitted
 -- in the interface when the kind is simple, i.e., it is either * or of
--- the form * -> ... -> *, a non given kind has to be considered equivalent
--- to a given one if the latter is simple.
+-- the form * -> ... -> * for type constructors or Constraint or of the
+-- form * -> ... -> * -> Constraint for type classes, a non given kind has
+-- to be considered equivalent to a given one if the latter is simple.
 
 eqvKindExpr :: Maybe KindExpr -> Maybe KindExpr -> Bool
 Nothing  `eqvKindExpr` (Just k) = isSimpleKindExpr k
@@ -72,6 +73,15 @@ isSimpleKindExpr Star               = True
 isSimpleKindExpr (ArrowKind Star k) = isSimpleKindExpr k
 isSimpleKindExpr _                  = False
 
+eqvClassKindExpr :: Maybe KindExpr -> Maybe KindExpr -> Bool
+Nothing  `eqvClassKindExpr` (Just k) = isSimpleClassKindExpr k
+(Just k) `eqvClassKindExpr` Nothing  = isSimpleClassKindExpr k
+k1       `eqvClassKindExpr` k2       = k1 == k2
+
+isSimpleClassKindExpr :: KindExpr -> Bool
+isSimpleClassKindExpr ConstraintKind     = True
+isSimpleClassKindExpr (ArrowKind Star k) = isSimpleClassKindExpr k
+isSimpleClassKindExpr _                  = False
 
 instance Equiv IDecl where
   IInfixDecl _ fix1 p1 op1 o1 =~= IInfixDecl _ fix2 p2 op2 o2
@@ -88,13 +98,14 @@ instance Equiv IDecl where
     = tc1 == tc2 && k1 `eqvKindExpr` k2 && tvs1 == tvs2 && ty1 == ty2 && o1 == o2
   IFunctionDecl _ f1 cm1 n1 qty1 o1 =~= IFunctionDecl _ f2 cm2 n2 qty2 o2
     = f1 == f2 && cm1 == cm2 && n1 == n2 && qty1 == qty2 && o1 == o2
-  HidingClassDecl _ cx1 cls1 k1 _ o1 =~= HidingClassDecl _ cx2 cls2 k2 _ o2
-    = cx1 == cx2 && cls1 == cls2 && k1 `eqvKindExpr` k2 && o1 == o2
-  IClassDecl _ cx1 cls1 k1 _ ms1 hs1 o1 =~= IClassDecl _ cx2 cls2 k2 _ ms2 hs2 o2
-    = cx1 == cx2 && cls1 == cls2 && k1 `eqvKindExpr` k2 &&
-      ms1 `eqvList` ms2 && hs1 `eqvSet` hs2 && o1 == o2
-  IInstanceDecl _ cx1 cls1 ty1 is1 m1 o1 =~= IInstanceDecl _ cx2 cls2 ty2 is2 m2 o2
-    = cx1 == cx2 && cls1 == cls2 && ty1 == ty2 && sort is1 == sort is2 &&
+  HidingClassDecl _ cx1 cls1 k1 tvs1 fds1 o1 =~= HidingClassDecl _ cx2 cls2 k2 tvs2 fds2 o2
+    = cx1 == cx2 && cls1 == cls2 && k1 `eqvClassKindExpr` k2 && tvs1 == tvs2 &&
+      fds1 == fds2 && o1 == o2
+  IClassDecl _ cx1 cls1 k1 tvs1 fds1 ms1 hs1 o1 =~= IClassDecl _ cx2 cls2 k2 tvs2 fds2 ms2 hs2 o2
+    = cx1 == cx2 && cls1 == cls2 && k1 `eqvClassKindExpr` k2 && tvs1 == tvs2 &&
+      fds1 == fds2 && ms1 `eqvList` ms2 && hs1 `eqvSet` hs2 && o1 == o2
+  IInstanceDecl _ cx1 cls1 tys1 is1 m1 o1 =~= IInstanceDecl _ cx2 cls2 tys2 is2 m2 o2
+    = cx1 == cx2 && cls1 == cls2 && tys1 == tys2 && sort is1 == sort is2 &&
       m1 == m2 && o1 == o2
   _ =~= _ = False
 
@@ -149,10 +160,10 @@ instance FixInterface IDecl where
     ITypeDecl p tc k vs (fix tcs ty) o
   fix tcs (IFunctionDecl p f cm n qty o) =
     IFunctionDecl p f cm n (fix tcs qty) o
-  fix tcs (HidingClassDecl p cx cls k tv o) =
-    HidingClassDecl p (fix tcs cx) cls k tv o
-  fix tcs (IClassDecl p cx cls k tv ms hs o) =
-    IClassDecl p (fix tcs cx) cls k tv (fix tcs ms) hs o
+  fix tcs (HidingClassDecl p cx cls k tvs fds o) =
+    HidingClassDecl p (fix tcs cx) cls k tvs fds o
+  fix tcs (IClassDecl p cx cls k tvs fds ms hs o) =
+    IClassDecl p (fix tcs cx) cls k tvs fds (fix tcs ms) hs o
   fix tcs (IInstanceDecl p cx cls inst is m o) =
     IInstanceDecl p (fix tcs cx) cls (fix tcs inst) is m o
   fix _ d = d
@@ -177,7 +188,7 @@ instance FixInterface QualTypeExpr where
   fix tcs (QualTypeExpr spi cx ty) = QualTypeExpr spi (fix tcs cx) (fix tcs ty)
 
 instance FixInterface Constraint where
-  fix tcs (Constraint spi qcls ty) = Constraint spi qcls (fix tcs ty)
+  fix tcs (Constraint spi qcls tys) = Constraint spi qcls (fix tcs tys)
 
 instance FixInterface TypeExpr where
   fix tcs (ConstructorType spi tc)
@@ -197,12 +208,12 @@ instance FixInterface TypeExpr where
 
 typeConstructors :: [IDecl] -> [Ident]
 typeConstructors ds = [tc | (QualIdent _ Nothing tc) <- foldr tyCons [] ds]
-  where tyCons (IInfixDecl         _ _ _ _ _) tcs = tcs
-        tyCons (HidingDataDecl    _ tc _ _ o) tcs = applyOriginPragma o tc : tcs
-        tyCons (IDataDecl     _ tc _ _ _ _ o) tcs = applyOriginPragma o tc : tcs
-        tyCons (INewtypeDecl  _ tc _ _ _ _ o) tcs = applyOriginPragma o tc : tcs
-        tyCons (ITypeDecl       _ tc _ _ _ o) tcs = applyOriginPragma o tc : tcs
-        tyCons (IFunctionDecl    _ _ _ _ _ _) tcs = tcs
-        tyCons (HidingClassDecl  _ _ _ _ _ _) tcs = tcs
-        tyCons (IClassDecl   _ _ _ _ _ _ _ _) tcs = tcs
-        tyCons (IInstanceDecl  _ _ _ _ _ _ _) tcs = tcs
+  where tyCons (IInfixDecl          _ _ _ _ _) tcs = tcs
+        tyCons (HidingDataDecl     _ tc _ _ o) tcs = applyOriginPragma o tc : tcs
+        tyCons (IDataDecl      _ tc _ _ _ _ o) tcs = applyOriginPragma o tc : tcs
+        tyCons (INewtypeDecl   _ tc _ _ _ _ o) tcs = applyOriginPragma o tc : tcs
+        tyCons (ITypeDecl        _ tc _ _ _ o) tcs = applyOriginPragma o tc : tcs
+        tyCons (IFunctionDecl     _ _ _ _ _ _) tcs = tcs
+        tyCons (HidingClassDecl _ _ _ _ _ _ _) tcs = tcs
+        tyCons (IClassDecl  _ _ _ _ _ _ _ _ _) tcs = tcs
+        tyCons (IInstanceDecl   _ _ _ _ _ _ _) tcs = tcs

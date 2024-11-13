@@ -58,11 +58,10 @@ import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
 
-import Base.CurryKinds (toKind')
-import Base.CurryTypes
 import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.TopEnv
 import Base.Types
+import Base.Kinds
 
 import Env.Class
 import Env.Instance
@@ -149,41 +148,43 @@ checkImport (ITypeDecl _ tc k tvs ty _) = do
         = Just ok
       check _ = Nothing
   checkTypeInfo "synonym type" check tc tc
-checkImport (IFunctionDecl _ f (Just tv) n ty _) = do
+checkImport (IFunctionDecl _ f (Just tvs) n ty _) = do
   m <- getModuleIdent
   let check (Value f' cm' n' (ForAll _ ty')) =
         f == f' && isJust cm' && n' == n &&
-        toQualPredType m [tv] ty == ty'
+        toQualPredType m tvs ICC ty == ty'
       check _ = False
   checkValueInfo "method" check f f
 checkImport (IFunctionDecl _ f Nothing n ty _) = do
   m <- getModuleIdent
   let check (Value f' cm' n' (ForAll _ ty')) =
         f == f' && isNothing cm' && n' == n &&
-        toQualPredType m [] ty == ty'
+        toQualPredType m [] OPred ty == ty'
       check _ = False
   checkValueInfo "function" check f f
-checkImport (HidingClassDecl _ cx cls k _ _) = do
+checkImport (HidingClassDecl _ cx cls k clsvars funDeps _) = do
   clsEnv <- getClassEnv
   let check (TypeClass cls' k' _)
-        | cls == cls' && toKind' k 0 == k' &&
-          [cls'' | Constraint _ cls'' _ <- cx] == superClasses cls' clsEnv
+        | cls == cls' && toClassKind k (length clsvars) == k' &&
+          toPredList clsvars OPred cx == superClasses cls' clsEnv &&
+          map (toFunDep clsvars) funDeps == classFunDeps cls' clsEnv
         = Just ok
       check _ = Nothing
   checkTypeInfo "hidden type class" check cls cls
-checkImport (IClassDecl _ cx cls k clsvar ms _ _) = do
+checkImport (IClassDecl _ cx cls k clsvars funDeps ms _ _) = do
   clsEnv <- getClassEnv
   let check (TypeClass cls' k' fs)
-        | cls == cls' && toKind' k 0 == k' &&
-          [cls'' | Constraint _ cls'' _ <- cx] == superClasses cls' clsEnv &&
+        | cls == cls' && toClassKind k (length clsvars) == k' &&
+          toPredList clsvars OPred cx == superClasses cls' clsEnv &&
+          map (toFunDep clsvars) funDeps == classFunDeps cls' clsEnv &&
           map (\m -> (imethod m, imethodArity m)) ms ==
             map (\f -> (methodName f, methodArity f)) fs
-        = Just $ mapM_ (checkMethodImport cls clsvar) ms
+        = Just $ mapM_ (checkMethodImport cls clsvars) ms
       check _ = Nothing
   checkTypeInfo "type class" check cls cls
-checkImport (IInstanceDecl _ cx cls ty is m _) =
-  checkInstInfo check cls (cls, typeConstr ty) m
-  where PredType ps _ = toPredType [] $ QualTypeExpr NoSpanInfo cx ty
+checkImport (IInstanceDecl _ cx cls tys is m _) =
+  checkInstInfo check cls (cls, tys') m
+  where PredTypes ps tys' = toPredTypes [] OPred cx tys
         check ps' is' = ps == ps' && sort is == sort is'
 
 checkConstrImport :: QualIdent -> [Ident] -> ConstrDecl -> IC ()
@@ -230,13 +231,13 @@ checkNewConstrImport tc tvs (NewRecordDecl _ c (l, ty)) = do
       check _ = False
   checkValueInfo "newtype constructor" check c qc
 
-checkMethodImport :: QualIdent -> Ident -> IMethodDecl -> IC ()
-checkMethodImport qcls clsvar (IMethodDecl _ f _ qty) =
+checkMethodImport :: QualIdent -> [Ident] -> IMethodDecl -> IC ()
+checkMethodImport qcls clsvars (IMethodDecl _ f _ qty) =
   checkValueInfo "method" check f qf
   where qf = qualifyLike qcls f
         check (Value f' cm' _ (ForAll _ pty)) =
           qf == f' && isJust cm' &&
-          toMethodType qcls clsvar qty == pty
+          toMethodType qcls clsvars qty == pty
         check _ = False
 
 checkPrecInfo :: HasSpanInfo s => (PrecInfo -> Bool) -> s -> QualIdent -> IC ()
@@ -259,11 +260,11 @@ checkTypeInfo what check p tc = do
         _    -> internalError "checkTypeInfo"
   checkImported checkInfo tc
 
-checkInstInfo :: HasSpanInfo s => (PredSet -> [(Ident, Int)] -> Bool) -> s -> InstIdent
-              -> Maybe ModuleIdent -> IC ()
+checkInstInfo :: HasSpanInfo s => (PredList -> [(Ident, Int)] -> Bool) -> s
+              -> InstIdent -> Maybe ModuleIdent -> IC ()
 checkInstInfo check p i mm = do
   inEnv <- getInstEnv
-  let checkInfo m _ = case lookupInstInfo i inEnv of
+  let checkInfo m _ = case lookupInstExact i inEnv of
         Just (m', ps, is)
           | m /= m'   -> report $ errNoInstance p m i
           | otherwise ->

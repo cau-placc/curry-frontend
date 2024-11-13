@@ -22,13 +22,9 @@
     Interface files are updated by the Curry builder when necessary,
     see module "CurryBuilder".
 -}
-{-# LANGUAGE CPP #-}
 module Interfaces (loadInterfaces) where
 
-#if __GLASGOW_HASKELL__ >= 804
-import Prelude hiding ((<>))
-#endif
-
+import           Prelude hiding ((<>))
 import           Control.Monad               (unless)
 import qualified Control.Monad.State    as S (StateT, execStateT, gets, modify)
 import qualified Data.Map               as M (insert, member)

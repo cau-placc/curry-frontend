@@ -19,12 +19,8 @@
    and rearrange infix applications according to the relative precedences
    of the operators involved.
 -}
-{-# LANGUAGE CPP #-}
 module Checks.PrecCheck (precCheck) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative      ((<$>), (<*>))
-#endif
 import           Control.Monad            (unless, when)
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 import           Data.List                (partition)
@@ -94,7 +90,7 @@ bindPrecs ds0 = case findMultiples opFixDecls of
   opss -> mapM_ (report . errMultiplePrecedence) opss
   where
     (fixDs, nonFixDs) = partition isInfixDecl ds0
-    innerDs           = [ d | ClassDecl _ _ _ _ _ ds <- ds0, d <- ds ]
+    innerDs           = [ d | ClassDecl _ _ _ _ _ _ ds <- ds0, d <- ds ]
     opFixDecls        = [ op | InfixDecl _ _ _ ops <- fixDs, op <- ops ]
     -- Unrenaming is necessary for inner class declarations, because operators
     -- within class declarations have been renamed during syntax checking.
@@ -132,19 +128,19 @@ checkDecls :: [Decl a] -> PCM [Decl a]
 checkDecls decls = bindPrecs decls >> mapM checkDecl decls
 
 checkDecl :: Decl a -> PCM (Decl a)
-checkDecl (FunctionDecl p a f           eqs) =
+checkDecl (FunctionDecl p a f                 eqs) =
   FunctionDecl p a f <$> mapM checkEquation eqs
-checkDecl (PatternDecl  p t             rhs) =
+checkDecl (PatternDecl  p t                   rhs) =
   PatternDecl p <$> checkPattern t <*> checkRhs rhs
-checkDecl (ClassDecl p li cx cls    tv   ds) =
-  ClassDecl p li cx cls tv <$> mapM checkDecl ds
-checkDecl (InstanceDecl p li cx qcls   inst ds) =
+checkDecl (ClassDecl    p li cx cls  tvs  fds ds ) =
+  ClassDecl p li cx cls tvs fds <$> mapM checkDecl ds
+checkDecl (InstanceDecl p li cx qcls inst     ds ) =
   InstanceDecl p li cx qcls inst <$> mapM checkDecl ds
 checkDecl d                                  = return d
 
 checkEquation :: Equation a -> PCM (Equation a)
-checkEquation (Equation p lhs rhs) =
-  Equation p <$> checkLhs lhs <*> checkRhs rhs
+checkEquation (Equation p a lhs rhs) =
+  Equation p a <$> checkLhs lhs <*> checkRhs rhs
 
 checkLhs :: Lhs a -> PCM (Lhs a)
 checkLhs (FunLhs spi     f ts) = FunLhs spi f <$> mapM checkPattern ts

@@ -23,17 +23,9 @@
    can be recognized. Finally, all (adjacent) equations of a function are
    merged into a single definition.
 -}
-{-# LANGUAGE CPP #-}
 module Checks.SyntaxCheck (syntaxCheck) where
 
-#if __GLASGOW_HASKELL__ >= 804
-import Prelude hiding ((<>))
-#endif
-
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative        ((<$>), (<*>))
-#endif
-
+import           Prelude hiding ((<>))
 import           Control.Monad       (unless, when)
 import qualified Control.Monad.State as S (State, gets, modify, runState,
                                            withState)
@@ -92,7 +84,7 @@ syntaxCheck exts tcEnv vEnv mdl@(Module _ _ _ m _ _ ds) =
     cons  = concatMap constrs tds
     ls    = nub $ concatMap recLabels tds
     fs    = nub $ concatMap vars vds
-    cs    = concatMap (concatMap methods) [ds' | ClassDecl _ _ _ _ _ ds' <- cds]
+    cs    = [mtd | ClassDecl _ _ _ _ _ _ ds' <- cds, d <- ds', mtd <- methods d]
     rEnv  = globalEnv $ fmap renameInfo vEnv
     state = initState exts m tcEnv rEnv vEnv
 
@@ -396,8 +388,8 @@ bindFuncDecl _   _ _ env = env
 
 -- |Bind type class information, i.e. class methods
 bindClassDecl :: Decl a -> SCM ()
-bindClassDecl (ClassDecl _ _ _ _ _ ds) = mapM_ bindClassMethod ds
-bindClassDecl _                        = ok
+bindClassDecl (ClassDecl _ _ _ _ _ _ ds) = mapM_ bindClassMethod ds
+bindClassDecl _                          = ok
 
 bindClassMethod :: Decl a -> SCM ()
 bindClassMethod ts@(TypeSig _ _ _) = do
@@ -492,14 +484,14 @@ checkTopDecls ds = do
   checkDeclGroup (bindFuncDecl tcc m) ds
 
 checkClassDecl :: Decl () -> SCM (Decl ())
-checkClassDecl (ClassDecl p li cx cls tv ds) = do
+checkClassDecl (ClassDecl p li cx cls tvs fds ds) = do
   checkMethods (qualify cls) (concatMap methods ds) ds
-  ClassDecl p li cx cls tv <$> checkTopDecls ds
+  ClassDecl p li cx cls tvs fds <$> checkTopDecls ds
 checkClassDecl _ =
   internalError "SyntaxCheck.checkClassDecl: no class declaration"
 
 checkInstanceDecl :: Decl () -> SCM (Decl ())
-checkInstanceDecl (InstanceDecl p li cx qcls ty ds) = do
+checkInstanceDecl (InstanceDecl p li cx qcls tys ds) = do
   m <- getModuleIdent
   vEnv <- getValueEnv
   tcEnv <- getTyConsEnv
@@ -511,7 +503,7 @@ checkInstanceDecl (InstanceDecl p li cx qcls ty ds) = do
           else filter (isFromCls orig m vEnv) clsMthds
   checkMethods qcls mthds ds
   mapM_ checkAmbiguousMethod ds
-  InstanceDecl p li cx qcls ty <$> checkTopDecls ds
+  InstanceDecl p li cx qcls tys <$> checkTopDecls ds
   where
     isFromCls orig m vEnv f = case qualLookupValueUnique m (qualify f) vEnv of
       [Value _ (Just cls) _ _]
@@ -541,7 +533,7 @@ checkMethods qcls ms ds =
 
 updateClassAndInstanceDecls :: [Decl a] -> [Decl a] -> [Decl a] -> [Decl a]
 updateClassAndInstanceDecls [] [] ds = ds
-updateClassAndInstanceDecls (c:cs) is (ClassDecl _ _ _ _ _ _:ds) =
+updateClassAndInstanceDecls (c:cs) is (ClassDecl _ _ _ _ _ _ _:ds) =
   c : updateClassAndInstanceDecls cs is ds
 updateClassAndInstanceDecls cs (i:is) (InstanceDecl _ _ _ _ _ _:ds) =
   i : updateClassAndInstanceDecls cs is ds
@@ -605,12 +597,13 @@ renameVar :: Ident -> SCM Ident
 renameVar v = renameIdent v <$> getScopeId
 
 checkEquationsLhs :: SpanInfo -> [Equation ()] -> SCM (Decl ())
-checkEquationsLhs p [Equation p' lhs rhs] = do
+checkEquationsLhs p [Equation p' _ lhs rhs] = do
   lhs' <- checkEqLhs p' lhs
   case lhs' of
     Left  l -> return $ funDecl' l
     Right r -> checkDeclLhs (PatternDecl p' r rhs)
-  where funDecl' (f, lhs') = FunctionDecl p () f [Equation p' lhs' rhs]
+  where funDecl' (f, lhs')
+           = FunctionDecl p () f [Equation p' Nothing lhs' rhs]
 checkEquationsLhs _ _ = internalError "SyntaxCheck.checkEquationsLhs"
 
 checkEqLhs :: SpanInfo -> Lhs () -> SCM (Either (Ident, Lhs ()) (Pattern ()))
@@ -727,10 +720,10 @@ checkLocalVar bvs v = do
   return v
 
 checkEquation :: Equation () -> SCM (Equation ())
-checkEquation (Equation p lhs rhs) = inNestedScope $ do
+checkEquation (Equation p a lhs rhs) = inNestedScope $ do
   lhs' <- checkLhs p lhs >>= addBoundVariables False
   rhs' <- checkRhs rhs
-  return $ Equation p lhs' rhs'
+  return $ Equation p a lhs' rhs'
 
 checkLhs :: SpanInfo -> Lhs () -> SCM (Lhs ())
 checkLhs p (FunLhs    spi f ts) = FunLhs spi f <$> mapM (checkPattern p) ts
@@ -1269,7 +1262,7 @@ typeArity (ArrowType _ _ t2) = 1 + typeArity t2
 typeArity _                  = 0
 
 getFlatLhs :: Equation a -> (Ident, [Pattern a])
-getFlatLhs (Equation  _ lhs _) = flatLhs lhs
+getFlatLhs (Equation  _ _ lhs _) = flatLhs lhs
 
 opAnnotation :: InfixOp a -> a
 opAnnotation (InfixOp     a _) = a

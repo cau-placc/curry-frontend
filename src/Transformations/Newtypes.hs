@@ -14,12 +14,8 @@
   declarations are replaced by type synonyms and partial applications of
   newtype constructors are changed into calls to 'Prelude.id'.
 -}
-{-# LANGUAGE CPP #-}
 module Transformations.Newtypes (removeNewtypes) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative        ((<$>), (<*>))
-#endif
 import qualified Control.Monad.Reader as R
 
 import Curry.Base.Ident
@@ -60,7 +56,7 @@ instance Show a => Newtypes (Decl a) where
     "Newtypes.Newtypes.nt: unexpected declaration: " ++ show d
 
 instance Show a => Newtypes (Equation a) where
-  nt (Equation p lhs rhs) = Equation p <$> nt lhs <*> nt rhs
+  nt (Equation p a lhs rhs) = Equation p a <$> nt lhs <*> nt rhs
 
 instance Show a => Newtypes (Lhs a) where
   nt (FunLhs spi f ts) = FunLhs spi f <$> nt ts

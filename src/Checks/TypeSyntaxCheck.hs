@@ -17,17 +17,17 @@
    hand side of a type declaration are actually defined and no identifier
    is defined more than once.
 -}
-{-# LANGUAGE CPP        #-}
 {-# LANGUAGE LambdaCase #-}
 module Checks.TypeSyntaxCheck (typeSyntaxCheck) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative      ((<$>), (<*>), pure)
-#endif
-import           Control.Monad            (unless, when)
-import qualified Control.Monad.State as S (State, runState, gets, modify)
-import           Data.List                (nub)
-import           Data.Maybe               (isNothing, mapMaybe)
+import           Prelude hiding ((<>))
+import           Control.Monad              ( filterM, unless, when )
+import qualified Control.Monad.State as S   ( State, runState, gets, modify )
+import           Data.List                  ( nub )
+import qualified Data.Map            as Map ( Map, insert, lookup )
+import           Data.Maybe                 ( isNothing, mapMaybe )
+import qualified Data.Set            as Set ( Set, fromList, isSubsetOf, size
+                                            , toAscList, union )
 
 import Curry.Base.Ident
 import Curry.Base.Position
@@ -41,10 +41,17 @@ import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.TopEnv
 import Base.Utils (findMultiples, findDouble)
 
-import Env.TypeConstructor (TCEnv)
-import Env.Type
+import           Env.Class                 (ClassEnv)
+import qualified Env.Class           as CE (FunDep,toFunDep, toFunDepMap)
+import           Env.TypeConstructor       (TCEnv)
+import           Env.Type
 
 -- TODO Use span info for err messages
+
+-- TODO: If we decide to not allow repeating type variables in MPTC instance
+--         heads, this can be checked here.
+--       Could some functions which are almost identical in the type interface
+--         check and the interface syntax check be unified?
 
 -- In order to check type constructor applications, the compiler
 -- maintains an environment containing all known type constructors and
@@ -55,8 +62,9 @@ import Env.Type
 -- type classes are added to this environment and the declarations are checked
 -- within this environment.
 
-typeSyntaxCheck :: TCEnv -> Module a -> (Module a, [Message])
-typeSyntaxCheck tcEnv mdl@(Module _ _ _ m _ _ ds) =
+typeSyntaxCheck
+  :: [KnownExtension] -> TCEnv -> ClassEnv -> Module a -> (Module a, [Message])
+typeSyntaxCheck exts tcEnv clsEnv mdl@(Module _ _ _ m _ _ ds) =
   case findMultiples $ map getIdent tcds of
     [] -> if length dfps <= 1
             then runTSCM (checkModule mdl) state
@@ -64,29 +72,41 @@ typeSyntaxCheck tcEnv mdl@(Module _ _ _ m _ _ ds) =
     tss -> (mdl, map errMultipleDeclarations tss)
   where
     tcds = filter isTypeOrClassDecl ds
+    cds  = filter isClassDecl tcds
     dfps = mapMaybe (\case { DefaultDecl p _ -> Just p; _ -> Nothing }) ds
     tEnv = foldr (bindType m) (fmap toTypeKind tcEnv) tcds
-    state = TSCState m tEnv 1 []
+    fdmap = foldr (bindClass m) (CE.toFunDepMap clsEnv) cds
+    state = TSCState exts m tEnv fdmap 1 []
 
 -- Type Syntax Check Monad
 type TSCM = S.State TSCState
 
 -- |Internal state of the Type Syntax Check
 data TSCState = TSCState
-  { moduleIdent :: ModuleIdent
+  { extensions  :: [KnownExtension]
+  , moduleIdent :: ModuleIdent
   , typeEnv     :: TypeEnv
+  , simpClsEnv  :: SimpleClassEnv
   , nextId      :: Integer
   , errors      :: [Message]
   }
 
+type SimpleClassEnv = Map.Map QualIdent [CE.FunDep]
+
 runTSCM :: TSCM a -> TSCState -> (a, [Message])
 runTSCM tscm s = let (a, s') = S.runState tscm s in (a, reverse $ errors s')
+
+getExtensions :: TSCM [KnownExtension]
+getExtensions = S.gets extensions
 
 getModuleIdent :: TSCM ModuleIdent
 getModuleIdent = S.gets moduleIdent
 
 getTypeEnv :: TSCM TypeEnv
 getTypeEnv = S.gets typeEnv
+
+getSimpleClassEnv :: TSCM SimpleClassEnv
+getSimpleClassEnv = S.gets simpClsEnv
 
 newId :: TSCM Integer
 newId = do
@@ -115,11 +135,17 @@ bindType m (NewtypeDecl _ tc _ nc _) = bindTypeKind m tc (Data qtc ids)
 bindType m (TypeDecl _ tc _ _) = bindTypeKind m tc (Alias qtc)
   where
     qtc = qualifyWith m tc
-bindType m (ClassDecl _ _ _ cls _ ds)  = bindTypeKind m cls (Class qcls ms)
+bindType m (ClassDecl _ _ _ cls _ _ ds) = bindTypeKind m cls (Class qcls ms)
   where
     qcls = qualifyWith m cls
     ms = concatMap methods ds
 bindType _ _ = id
+
+bindClass :: ModuleIdent -> Decl a -> SimpleClassEnv -> SimpleClassEnv
+bindClass m (ClassDecl _ _ _ cls tvs fds _) = let qcls = qualifyWith m cls
+                                                  fds' = map (CE.toFunDep tvs) fds
+                                              in  Map.insert qcls fds'
+bindClass _ _                               = id
 
 -- When type declarations are checked, the compiler will allow anonymous
 -- type variables on the left hand side of the declaration, but not on
@@ -146,25 +172,28 @@ checkDecl (TypeDecl p tc tvs ty)              = do
   checkTypeLhs tvs
   ty' <- checkClosedType tvs ty
   return $ TypeDecl p tc tvs ty'
-checkDecl (TypeSig p vs qty)                   =
+checkDecl (TypeSig p vs qty)                  =
   TypeSig p vs <$> checkQualType qty
 checkDecl (FunctionDecl a p f eqs)            = FunctionDecl a p f <$>
   mapM checkEquation eqs
 checkDecl (PatternDecl p t rhs)               = PatternDecl p t <$> checkRhs rhs
 checkDecl (DefaultDecl p tys)                 = DefaultDecl p <$>
   mapM (checkClosedType []) tys
-checkDecl (ClassDecl p li cx cls clsvar ds)   = do
-  checkTypeVars "class declaration" [clsvar]
-  cx' <- checkClosedContext [clsvar] cx
+checkDecl (ClassDecl p li cx cls clsvars funDeps ds) = do
+  checkMPTCExtClass p cls clsvars
+  checkFunDepExt p cls funDeps
+  checkTypeVars "class declaration" clsvars
+  cx' <- checkClosedContext True clsvars cx
   checkSimpleContext cx'
+  funDeps' <- filterM (checkClosedFunDep clsvars) funDeps
   ds' <- mapM checkDecl ds
-  mapM_ (checkClassMethod clsvar) ds'
-  return $ ClassDecl p li cx' cls clsvar ds'
+  return $ ClassDecl p li cx' cls clsvars funDeps' ds'
 checkDecl (InstanceDecl p li cx qcls inst ds) = do
+  checkMPTCExtInstance p qcls inst
   checkClass True qcls
-  QualTypeExpr _ cx' inst' <- checkQualType $ QualTypeExpr NoSpanInfo cx inst
-  checkSimpleContext cx'
-  checkInstanceType p inst'
+  -- taken from Leif-Erik Krueger
+  (cx', inst') <- checkQualTypes True cx inst
+  mapM_ (checkInstanceType p) inst'
   InstanceDecl p li cx' qcls inst' <$> mapM checkDecl ds
 checkDecl d                                   = return d
 
@@ -196,28 +225,24 @@ checkSimpleContext :: Context -> TSCM ()
 checkSimpleContext = mapM_ checkSimpleConstraint
 
 checkSimpleConstraint :: Constraint -> TSCM ()
-checkSimpleConstraint c@(Constraint _ _ ty) =
-  unless (isVariableType ty) $ report $ errIllegalSimpleConstraint c
-
--- Class method's type signatures have to obey a few additional restrictions.
--- The class variable must appear in the method's type and the method's
--- context must not contain any additional constraints for that class variable.
-
-checkClassMethod :: Ident -> Decl a -> TSCM ()
-checkClassMethod tv (TypeSig spi _ qty) = do
-  unless (tv `elem` fv qty) $ report $ errAmbiguousType spi tv
-  let QualTypeExpr _ cx _ = qty
-  when (tv `elem` fv cx) $ report $ errConstrainedClassVariable spi tv
-checkClassMethod _ _ = ok
+checkSimpleConstraint c@(Constraint _ _ tys) =
+  unless (all isVariableType tys) $ report $ errIllegalSimpleConstraint c
 
 checkInstanceType :: SpanInfo -> InstanceType -> TSCM ()
 checkInstanceType p inst = do
   tEnv <- getTypeEnv
-  unless (isSimpleType inst &&
-    not (isTypeSyn (typeConstr inst) tEnv) &&
-    not (any isAnonId $ typeVariables inst) &&
-    isNothing (findDouble $ fv inst)) $
-      report $ errIllegalInstanceType p inst
+  -- with FlexibleInstances, instance types must not contain anonymous
+  -- variables or quantifiers, but can contain type synonyms or duplicate
+  -- variables or may not be simple types.
+  -- inspired by Leif-Erik Krueger
+  exts <- getExtensions
+  let flex = elem FlexibleInstances exts
+  if any isAnonId (typeVariables inst) || containsForall inst
+  then report $ errIllegalFlexibleInstanceType p inst
+  else unless (flex || (isSimpleType inst &&
+        not (isTypeSyn (typeConstr inst) tEnv) &&
+        isNothing (findDouble $ fv inst))) $
+          report $ errIllegalInstanceType p inst
 
 checkTypeLhs :: [Ident] -> TSCM ()
 checkTypeLhs = checkTypeVars "left hand side of type declaration"
@@ -240,7 +265,7 @@ checkTypeVars what (tv : tvs) = do
 -- declaration groups.
 
 checkEquation :: Equation a -> TSCM (Equation a)
-checkEquation (Equation p lhs rhs) = Equation p lhs <$> checkRhs rhs
+checkEquation (Equation p a lhs rhs) = Equation p a lhs <$> checkRhs rhs
 
 checkRhs :: Rhs a -> TSCM (Rhs a)
 checkRhs (SimpleRhs spi li e ds)   =
@@ -310,30 +335,55 @@ checkFieldExpr (Field spi l e) = Field spi l <$> checkExpr e
 -- identifier in a position where a type variable is admissible, it will
 -- interpret the identifier as such.
 
+-- taken from Leif-Erik Krueger
 checkQualType :: QualTypeExpr -> TSCM QualTypeExpr
 checkQualType (QualTypeExpr spi cx ty) = do
-  ty' <- checkType ty
-  cx' <- checkClosedContext (fv ty') cx
-  return $ QualTypeExpr spi cx' ty'
+  (cx', ty') <- checkQualTypes False cx [ty]
+  return $ QualTypeExpr spi cx' (head ty')
 
-checkClosedContext :: [Ident] -> Context -> TSCM Context
-checkClosedContext tvs cx = do
-  cx' <- checkContext cx
-  mapM_ (\(Constraint _ _ ty) -> checkClosed tvs ty) cx'
-  return cx'
+-- taken from Leif-Erik Krueger
+checkQualTypes :: Bool -> Context -> [TypeExpr] -> TSCM (Context, [TypeExpr])
+checkQualTypes simplecx cx tys = do
+  m <- getModuleIdent
+  tys' <- mapM checkType tys
+  fvs <- Set.toAscList <$> funDepCoverage m cx (Set.fromList $ fv tys)
+  cx' <- checkClosedContext simplecx fvs cx
+  return (cx', tys')
 
-checkContext :: Context -> TSCM Context
-checkContext = mapM checkConstraint
+-- taken from Leif-Erik Krueger
+checkClosedContext :: Bool -> [Ident] -> Context -> TSCM Context
+checkClosedContext simplecx tvs = mapM (checkClosedConstraint simplecx tvs)
 
-checkConstraint :: Constraint -> TSCM Constraint
-checkConstraint c@(Constraint spi qcls ty) = do
+-- taken from Leif-Erik Krueger
+checkClosedConstraint :: Bool -> [Ident] -> Constraint -> TSCM Constraint
+checkClosedConstraint simplecx tvs c = do
+  c'@(Constraint _ _ tys) <- checkConstraint simplecx c
+  mapM_ (checkClosed tvs) tys
+  return c'
+
+checkConstraint :: Bool -> Constraint -> TSCM Constraint
+checkConstraint simplecx c@(Constraint spi qcls tys) = do
   checkClass False qcls
-  ty' <- checkType ty
-  unless (isVariableType $ rootType ty') $ report $ errIllegalConstraint c
-  return $ Constraint spi qcls ty'
+  tys' <- mapM checkType tys
+  -- taken from Leif-Erik Krueger
+  flex <- elem FlexibleContexts <$> getExtensions
+  case (any containsForall tys', simplecx) of
+    (True , _    ) -> report $ errIllegalFlexibleConstraint c
+    (False, True ) -> unless (flex || all isVariableType tys') $
+                        report $ errIllegalSimpleConstraint c
+    (False, False) -> unless (flex || all (isVariableType . rootType) tys') $
+                        report $ errIllegalConstraint c
+  return $ Constraint spi qcls tys'
   where
-    rootType (ApplyType _ ty' _) = rootType ty'
-    rootType ty'                 = ty'
+    rootType (ApplyType _ ty _) = rootType ty
+    rootType (ParenType _ ty)   = rootType ty
+    rootType ty                 = ty
+
+checkClosedFunDep :: [Ident] -> FunDep -> TSCM Bool
+checkClosedFunDep clsvars (FunDep _ ltvs rtvs) = do
+  let unboundVars = filter (`notElem` clsvars) $ ltvs ++ rtvs
+  mapM_ (report . errUnboundVariable) unboundVars
+  return $ null unboundVars
 
 checkClass :: Bool -> QualIdent -> TSCM ()
 checkClass isInstDecl qcls = do
@@ -352,7 +402,7 @@ checkClass isInstDecl qcls = do
                             errIllegalDataInstance qcls
         | otherwise    -> ok
       [_] -> report $ errUndefinedClass qcls
-      _ -> report $ errAmbiguousIdent qcls $ map origName tks
+      _   -> report $ errAmbiguousIdent qcls $ map origName tks
 
 checkClosedType :: [Ident] -> TypeExpr -> TSCM TypeExpr
 checkClosedType tvs ty = do
@@ -398,23 +448,94 @@ checkClosed tvs (ArrowType _ ty1 ty2) = mapM_ (checkClosed tvs) [ty1, ty2]
 checkClosed tvs (ParenType      _ ty) = checkClosed tvs ty
 checkClosed tvs (ForallType  _ vs ty) = checkClosed (tvs ++ vs) ty
 
+checkMPTCExtClass :: SpanInfo -> Ident -> [Ident] -> TSCM ()
+checkMPTCExtClass spi cls = checkMPTCExt (errMultiParamClassNoExt spi cls)
+
+checkMPTCExtInstance :: SpanInfo -> QualIdent -> [InstanceType] -> TSCM ()
+checkMPTCExtInstance spi qcls =
+  checkMPTCExt (errMultiParamInstanceNoExt spi qcls)
+
+checkMPTCExt :: ([paramType] -> Message) -> [paramType] -> TSCM ()
+checkMPTCExt _       [_]    = ok
+checkMPTCExt errFunc params = do
+  exts <- getExtensions
+  unless (MultiParamTypeClasses `elem` exts) $ report $ errFunc params
+
+checkFunDepExt :: SpanInfo -> Ident -> [FunDep] -> TSCM ()
+checkFunDepExt _   _   []      = ok
+checkFunDepExt spi cls (_ : _) = do
+  exts <- getExtensions
+  unless (FunctionalDependencies `elem` exts) $ report $ errFunDepNoExt spi cls
+
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions
 -- ---------------------------------------------------------------------------
 
 getIdent :: Decl a -> Ident
-getIdent (DataDecl     _ tc _ _ _) = tc
-getIdent (ExternalDataDecl _ tc _) = tc
-getIdent (NewtypeDecl _ tc _ _ _)  = tc
-getIdent (TypeDecl _ tc _ _)       = tc
-getIdent (ClassDecl _ _ _ cls _ _) = cls
-getIdent _                         = internalError
+getIdent (DataDecl     _ tc _ _ _)   = tc
+getIdent (ExternalDataDecl _ tc _)   = tc
+getIdent (NewtypeDecl _ tc _ _ _)    = tc
+getIdent (TypeDecl _ tc _ _)         = tc
+getIdent (ClassDecl _ _ _ cls _ _ _) = cls
+getIdent _                           = internalError
   "Checks.TypeSyntaxCheck.getIdent: no type or class declaration"
 
 isTypeSyn :: QualIdent -> TypeEnv -> Bool
 isTypeSyn tc tEnv = case qualLookupTypeKind tc tEnv of
   [Alias _] -> True
   _ -> False
+
+qualClassIdent :: ModuleIdent -> QualIdent -> TypeEnv -> Maybe QualIdent
+qualClassIdent m qcls tEnv = case qualLookupTypeKind qcls tEnv of
+  []              -> Nothing
+  [Class qcls' _] -> Just qcls'
+  [_]             -> Nothing
+  _               ->
+    case qualLookupTypeKind (qualQualify m qcls) tEnv of
+      []                -> Nothing
+      [Class qcls'  _]  -> Just qcls'
+      [_]               -> Nothing
+      _                 -> Nothing
+
+funDepCoverage :: ModuleIdent -> Context -> Set.Set Ident -> TSCM (Set.Set Ident)
+funDepCoverage m cx tvs = do
+  simpleClsEnv <- getSimpleClassEnv
+  tyEnv      <- getTypeEnv
+  let tvs' = funDepCoverage' simpleClsEnv tyEnv tvs
+  if Set.size tvs' == Set.size tvs
+  then return tvs
+  else funDepCoverage m cx tvs'
+  where
+   funDepCoverage' clsEnv tyEnv covVars =
+    foldr (funDepCoverage'' clsEnv tyEnv) covVars cx
+
+   funDepCoverage'' clsEnv tyEnv c@(Constraint _ cls _) covVars =
+    case qualClassIdent m cls tyEnv of
+      Nothing   -> covVars
+      Just qcls ->
+           let fds = lookupFunDeps qcls clsEnv
+           in foldr (funDepCoverage''' c) covVars fds
+
+   funDepCoverage''' (Constraint _ _ tys) (lixs,rixs) covVars =
+    let lixs' = Set.toAscList lixs
+        rixs' = Set.toAscList rixs
+    in if Set.fromList (fv (filterIndices tys lixs')) `Set.isSubsetOf` tvs
+       then covVars `Set.union` Set.fromList (fv (filterIndices tys rixs'))
+       else covVars
+
+
+lookupFunDeps :: QualIdent -> SimpleClassEnv -> [CE.FunDep]
+lookupFunDeps qcls simpleClsEnv = case Map.lookup qcls simpleClsEnv of
+  Nothing  -> []
+  Just fds -> fds
+
+filterIndices :: [a] -> [Int] -> [a]
+filterIndices xs is = filterIndices' xs is 0
+  where
+    filterIndices' []     _      _             = []
+    filterIndices' _      []     _             = []
+    filterIndices' (y:ys) (j:js) k | j == k    = y : filterIndices' ys js (k+1)
+                                   | otherwise = filterIndices' ys (j:js) (k+1)
 
 -- ---------------------------------------------------------------------------
 -- Error messages
@@ -448,14 +569,6 @@ errAmbiguousIdent qident qidents = spanInfoMessage qident $
   text "Ambiguous identifier" <+> text (escQualName qident) $+$
     text "It could refer to:" $+$ nest 2 (vcat (map (text . qualName) qidents))
 
-errAmbiguousType :: SpanInfo -> Ident -> Message
-errAmbiguousType spi ident = spanInfoMessage spi $ hsep $ map text
-  [ "Method type does not mention class variable", idName ident ]
-
-errConstrainedClassVariable :: SpanInfo -> Ident -> Message
-errConstrainedClassVariable spi ident = spanInfoMessage spi $ hsep $ map text
-  [ "Method context must not constrain class variable", idName ident ]
-
 errNonLinear :: Ident -> String -> Message
 errNonLinear tv what = spanInfoMessage tv $ hsep $ map text
   [ "Type variable", idName tv, "occurs more than once in", what ]
@@ -471,23 +584,44 @@ errUnboundVariable tv = spanInfoMessage tv $ hsep $ map text
 errIllegalConstraint :: Constraint -> Message
 errIllegalConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
   [ text "Illegal class constraint" <+> pPrint c
-  , text "Constraints must be of the form C u or C (u t1 ... tn),"
-  , text "where C is a type class, u is a type variable and t1, ..., tn are types."
+  , text "Constraints must be of the form C u_1 ... u_n,"
+  , text "where C is a type class and u_1, ..., u_n are type variables"
+  , text "or type variables applied to types."
+  , text "Use the FlexibleContexts extension if you want to allow this."
   ]
 
 errIllegalSimpleConstraint :: Constraint -> Message
 errIllegalSimpleConstraint c@(Constraint _ qcls _) = spanInfoMessage qcls $ vcat
   [ text "Illegal class constraint" <+> pPrint c
   , text "Constraints in class and instance declarations must be of"
-  , text "the form C u, where C is a type class and u is a type variable."
+  , text "the form C u_1 ... u_n, where C is a type class"
+  , text "and u_1, ..., u_n are type variables."
+  , text "Use the FlexibleContexts extension if you want to allow this."
   ]
 
+-- taken from Leif-Erik Krueger
+errIllegalFlexibleConstraint :: Constraint -> Message
+errIllegalFlexibleConstraint c = spanInfoMessage c $ vcat
+  [ text "Illegal class constraint" <+> pPrint c
+  , text "Constraints must not contain type quantifiers."
+  ]
+
+-- taken from Leif-Erik Krueger
 errIllegalInstanceType :: SpanInfo -> InstanceType -> Message
 errIllegalInstanceType spi inst = spanInfoMessage spi $ vcat
   [ text "Illegal instance type" <+> ppInstanceType inst
-  , text "The instance type must be of the form (T u_1 ... u_n),"
+  , text "Each instance type must be of the form (T u_1 ... u_n),"
   , text "where T is not a type synonym and u_1, ..., u_n are"
   , text "mutually distinct, non-anonymous type variables."
+  , text "Use the FlexibleInstances extension if you want to allow this."
+  ]
+
+-- taken from Leif-Erik Krueger
+errIllegalFlexibleInstanceType :: SpanInfo -> InstanceType -> Message
+errIllegalFlexibleInstanceType spi inst = spanInfoMessage spi $ vcat
+  [ text "Illegal instance type" <+> ppInstanceType inst
+  , text "Each instance type must not contain anonymous"
+  , text "type variables or quantified types."
   ]
 
 errIllegalDataInstance :: QualIdent -> Message
@@ -495,4 +629,31 @@ errIllegalDataInstance qcls = spanInfoMessage qcls $ vcat
   [ text "Illegal instance of" <+> ppQIdent qcls
   , text "Instances of this class cannot be defined."
   , text "Instead, they are automatically derived if possible."
+  ]
+
+errMultiParamClassNoExt :: SpanInfo -> Ident -> [Ident] -> Message
+errMultiParamClassNoExt spi cls clsvars =
+  let arity = if null clsvars then "Nullary" else "Multi-parameter"
+  in spanInfoMessage spi $ vcat
+     [ text arity <+> text "type class declaration"
+       <+> hsep (pPrint cls : map pPrint clsvars)
+     , text "A type class must have exactly one type parameter."
+     , text "Use the MultiParamTypeClasses extension to enable"
+     , text "instance declarations with zero or multiple types."]
+
+errMultiParamInstanceNoExt :: SpanInfo -> QualIdent -> [InstanceType] -> Message
+errMultiParamInstanceNoExt spi qcls inst =
+  let quantity = if null inst then "Zero" else "Multiple"
+  in spanInfoMessage spi $ vcat
+     [ text quantity <+> text "types in instance declaration"
+       <+> hsep (pPrint qcls : map ppInstanceType inst)
+     , text "An instance head must have exactly one type."
+     , text "Use the MultiParamTypeClasses extension to enable"
+     , text "instance declarations with zero or multiple types."]
+
+errFunDepNoExt :: SpanInfo -> Ident -> Message
+errFunDepNoExt spi cls = spanInfoMessage spi $ vcat $
+  [ text "Class" <+> text (escName cls) <+> text "uses functional dependencies."
+  , text "Use the FunctionalDependencies extension to enable"
+  , text "class declarations with functional dependencies."
   ]

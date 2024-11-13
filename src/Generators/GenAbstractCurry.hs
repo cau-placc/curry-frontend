@@ -14,18 +14,16 @@
     This module contains the generation of an 'AbstractCurry' program term
     for a given 'Curry' module.
 -}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE LambdaCase #-}
 module Generators.GenAbstractCurry (genAbstractCurry) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative          ((<$>), (<*>), pure)
-#endif
-import           Control.Monad.Extra
+import Control.Monad                          ( when )
+import Control.Monad.Extra                    ( liftM2, concatMapM )
 import qualified Control.Monad.State as S     (State, evalState, get, gets
                                               , modify, put)
 import qualified Data.Map            as Map   (Map, empty, fromList, lookup
                                               , union)
-import qualified Data.Maybe          as Maybe (fromJust, fromMaybe, listToMaybe)
+import           Data.Maybe          as Maybe (fromJust, fromMaybe, listToMaybe)
 import qualified Data.Set            as Set   (Set, empty, insert, member)
 import qualified Data.Traversable    as T     (forM)
 
@@ -34,11 +32,10 @@ import Curry.Base.Ident
 import Curry.Base.SpanInfo
 import Curry.Syntax
 
-import Base.CurryTypes (fromPredType, toType, toPredType)
+import Base.Types
 import Base.Expr       (bv)
 import Base.Messages   (internalError)
 import Base.NestEnv
-import Base.Types      (arrowArity, PredType, unpredType, TypeScheme (..))
 import Base.TypeSubst
 
 import Env.Value       (ValueEnv, ValueInfo (..), qualLookupValue)
@@ -84,10 +81,11 @@ trDefaultDecl (DefaultDecl _ tys) = (\tys' -> [CDefaultDecl tys'])
 trDefaultDecl _                   = return []
 
 trClassDecl :: Decl PredType -> GAC [CClassDecl]
-trClassDecl (ClassDecl _ _ cx cls tv ds) =
-  (\cls' v' cx' tv' ds' -> [CClass cls' v' cx' tv' ds'])
+trClassDecl (ClassDecl _ _ cx cls tvs fds ds) =
+  (\cls' v' cx' tvs' fds' ds' -> [CClass cls' v' cx' tvs' fds' ds'])
     <$> trGlobalIdent cls <*> getTypeVisibility cls <*> trContext cx
-    <*> getTVarIndex tv <*> concatMapM (trClassMethodDecl sigs fs) ds
+    <*> mapM getTVarIndex tvs <*> mapM trFunDep fds
+    <*> concatMapM (trClassMethodDecl sigs fs) ds
   where fs = [f | FunctionDecl _ _ f _ <- ds]
         sigs = signatures ds
 trClassDecl _ = return []
@@ -111,32 +109,36 @@ trClassMethodDecl sigs _ (FunctionDecl _ _ f eqs) =
 trClassMethodDecl _ _ _ = return []
 
 trInstanceDecl :: Decl PredType -> GAC [CInstanceDecl]
-trInstanceDecl (InstanceDecl _ _ cx qcls ty ds) =
-  (\qcls' cx' ty' ds' -> [CInstance qcls' cx' ty' ds']) <$> trQual qcls
-  <*> trContext cx <*> trTypeExpr ty <*> mapM (trInstanceMethodDecl qcls ty) ds
+trInstanceDecl (InstanceDecl _ _ cx qcls tys ds) =
+  (\qcls' cx' tys' ds' -> [CInstance qcls' cx' tys' ds'])
+  <$> trQual qcls <*> trContext cx <*> mapM trTypeExpr tys
+  <*> mapM (trInstanceMethodDecl qcls tys) ds
 trInstanceDecl _ = return []
 
 -- Again, we use the equation's arity for function declarations instead of
 -- the one from the value.
-trInstanceMethodDecl :: QualIdent -> TypeExpr -> Decl PredType -> GAC CFuncDecl
-trInstanceMethodDecl qcls ty (FunctionDecl _ _ f eqs) = do
+trInstanceMethodDecl
+  :: QualIdent -> [TypeExpr] -> Decl PredType -> GAC CFuncDecl
+trInstanceMethodDecl qcls tys (FunctionDecl _ _ f eqs) = do
   uacy <- S.gets untypedAcy
   qty <- if uacy
            then return $ QualTypeExpr NoSpanInfo [] $
                            ConstructorType NoSpanInfo prelUntyped
            else getQualType' (qualifyLike qcls $ unRenameIdent f)
   CFunc <$> trLocalIdent f <*> pure (eqnArity $ head eqs) <*> pure Public
-        <*> trInstanceMethodType ty qty <*> mapM trEquation eqs
+        <*> trInstanceMethodType tys qty <*> mapM trEquation eqs
 trInstanceMethodDecl _ _ _ = internalError "GenAbstractCurry.trInstanceMethodDecl"
 
 -- Transforms a class method type into an instance method's type by replacing
--- the class variable with the given instance type. The implicit class context
--- is dropped in doing so.
-trInstanceMethodType :: TypeExpr -> QualTypeExpr -> GAC CQualTypeExpr
-trInstanceMethodType ity (QualTypeExpr _ cx ty) =
+-- the class variables with the given instance types. The implicit class
+-- constraint is dropped in doing so.
+trInstanceMethodType :: [TypeExpr] -> QualTypeExpr -> GAC CQualTypeExpr
+trInstanceMethodType itys (QualTypeExpr _ cx ty) =
   trQualTypeExpr $ fromPredType identSupply $
-    subst (bindSubst 0 (toType [] ity) idSubst) $
-      toPredType (take 1 identSupply) $ QualTypeExpr NoSpanInfo (drop 1 cx) ty
+    subst (foldr (uncurry bindSubst) idSubst indexedItys) $
+      toPredType (take (length itys) identSupply) OPred $
+        QualTypeExpr NoSpanInfo (drop 1 cx) ty
+  where indexedItys = zip [0 ..] (toTypes [] itys)
 
 trTypeDecl :: Decl a -> GAC [CTypeDecl]
 trTypeDecl (DataDecl    _ t vs cs clss) =
@@ -186,13 +188,17 @@ trTypeExpr (ListType       _ ty) =
   trTypeExpr $ ApplyType NoSpanInfo (ConstructorType NoSpanInfo qListId) ty
 trTypeExpr (ArrowType _ ty1 ty2) = CFuncType <$> trTypeExpr ty1 <*> trTypeExpr ty2
 trTypeExpr (ParenType      _ ty) = trTypeExpr ty
-trTypeExpr (ForallType    _ _ _) = internalError "GenAbstractCurry.trTypeExpr"
+trTypeExpr ForallType{}          = internalError "GenAbstractCurry.trTypeExpr"
 
 trConstraint :: Constraint -> GAC CConstraint
-trConstraint (Constraint _ q ty) = (,) <$> trQual q <*> trTypeExpr ty
+trConstraint (Constraint _ q tys) = (,) <$> trQual q <*> mapM trTypeExpr tys
 
 trContext :: Context -> GAC CContext
 trContext cx = CContext <$> mapM trConstraint cx
+
+trFunDep :: FunDep -> GAC CFunDep
+trFunDep (FunDep _ ltvs rtvs) =
+  (,) <$> mapM getTVarIndex ltvs <*> mapM getTVarIndex rtvs
 
 trQualTypeExpr :: QualTypeExpr -> GAC CQualTypeExpr
 trQualTypeExpr (QualTypeExpr _ cx ty) =
@@ -223,7 +229,7 @@ trFuncName :: Bool -> Ident -> GAC QName
 trFuncName global = if global then trGlobalIdent else trLocalIdent
 
 trEquation :: Equation PredType -> GAC CRule
-trEquation (Equation _ lhs rhs) = inNestedScope
+trEquation (Equation _ _ lhs rhs) = inNestedScope
                                 $ CRule <$> trLhs lhs <*> trRhs rhs
 
 trLhs :: Lhs a -> GAC [CPattern]
@@ -248,19 +254,19 @@ trLocalDecls ds = do
 -- Insert all variables declared in local declarations
 insertDeclLhs :: Decl a -> GAC ()
 insertDeclLhs   (PatternDecl      _ p _) = mapM_ genVarIndex (bv p)
-insertDeclLhs   (FreeDecl          _ vs) = mapM_ genVarIndex (map varIdent vs)
-insertDeclLhs s@(TypeSig          _ _ _) = do
+insertDeclLhs   (FreeDecl          _ vs) = mapM_ (genVarIndex . varIdent) vs
+insertDeclLhs s@(TypeSig {})             = do
   uacy <- S.gets untypedAcy
   when uacy (insertSig s)
 insertDeclLhs _                          = return ()
 
 trLocalDecl :: Decl PredType -> GAC [CLocalDecl]
-trLocalDecl f@(FunctionDecl    _ _ _ _) = map CLocalFunc <$> trFuncDecl False f
+trLocalDecl f@(FunctionDecl {}        ) = map CLocalFunc <$> trFuncDecl False f
 trLocalDecl f@(ExternalDecl        _ _) = map CLocalFunc <$> trFuncDecl False f
 trLocalDecl (PatternDecl       _ p rhs) = (\p' rhs' -> [CLocalPat p' rhs'])
                                           <$> trPat p <*> trRhs rhs
 trLocalDecl (FreeDecl             _ vs) = (\vs' -> [CLocalVars vs'])
-                                          <$> mapM getVarIndex (map varIdent vs)
+                                          <$> mapM (getVarIndex . varIdent) vs
 trLocalDecl _                           = return [] -- can not occur (types etc.)
 
 insertSig :: Decl a -> GAC ()
@@ -274,7 +280,7 @@ trExpr :: Expression PredType -> GAC CExpr
 trExpr (Literal       _ _ l) = return (CLit $ cvLiteral l)
 trExpr (Variable      _ _ v)
   | isQualified v = CSymbol <$> trQual v
-  | otherwise     = lookupVarIndex (unqualify v) >>= \mvi -> case mvi of
+  | otherwise     = lookupVarIndex (unqualify v) >>= \case
     Just vi -> return (CVar vi)
     _       -> CSymbol <$> trQual v
 trExpr (Constructor   _ _ c) = CSymbol <$> trQual c
@@ -495,7 +501,7 @@ withLocalEnv act = do
 inNestedScope :: GAC a -> GAC a
 inNestedScope act = do
   (vo, to) <- S.gets $ \e -> (varEnv e, tvarEnv e)
-  S.modify $ \e -> e { varEnv = nestEnv $ vo, tvarEnv = globalEnv emptyTopEnv }
+  S.modify $ \e -> e { varEnv = nestEnv vo, tvarEnv = globalEnv emptyTopEnv }
   res <- act
   S.modify $ \e -> e { varEnv = vo, tvarEnv = to }
   return res
@@ -503,7 +509,7 @@ inNestedScope act = do
 inNestedTScope :: GAC a -> GAC a
 inNestedTScope act = do
   (vo, to) <- S.gets $ \e -> (varEnv e, tvarEnv e)
-  S.modify $ \e -> e { varEnv = globalEnv emptyTopEnv, tvarEnv = nestEnv $ to }
+  S.modify $ \e -> e { varEnv = globalEnv emptyTopEnv, tvarEnv = nestEnv to }
   res <- act
   S.modify $ \e -> e { varEnv = vo, tvarEnv = to }
   return res
@@ -512,11 +518,11 @@ getQualType :: Ident -> PredType -> GAC CQualTypeExpr
 getQualType f pty = do
   uacy <- S.gets untypedAcy
   sigs <- S.gets typeSigs
-  trQualTypeExpr $ case uacy of
-    True  -> Maybe.fromMaybe (QualTypeExpr NoSpanInfo [] $
-                               ConstructorType NoSpanInfo prelUntyped)
-                             (Map.lookup f sigs)
-    False -> fromPredType identSupply pty
+  trQualTypeExpr $ if uacy
+    then fromMaybe (QualTypeExpr NoSpanInfo [] $
+                      ConstructorType NoSpanInfo prelUntyped)
+                   (Map.lookup f sigs)
+    else fromPredType identSupply pty
 
 getQualType' :: QualIdent -> GAC QualTypeExpr
 getQualType' f = do

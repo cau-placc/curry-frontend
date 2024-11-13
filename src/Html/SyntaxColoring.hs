@@ -208,7 +208,7 @@ keywordCategories =
 
 specialIdentCategories :: [Category]
 specialIdentCategories =
-  [ Id_as, Id_ccall, Id_forall, Id_hiding
+  [ Id_as, Id_ccall, Id_Constraint, Id_forall, Id_hiding
   , Id_interface, Id_primitive, Id_qualified ]
 
 punctuationCategories :: [Category]
@@ -301,36 +301,38 @@ idsImport mid (ImportTypeAll     _ t) =
 -- Declarations
 
 idsDecl :: Decl a -> [Code]
-idsDecl (InfixDecl         _ _ _ ops) =
+idsDecl (InfixDecl          _ _ _ ops) =
   map (Function FuncInfix False . qualify) ops
-idsDecl (DataDecl    _ d vs cds clss) =
+idsDecl (DataDecl     _ d vs cds clss) =
   TypeCons TypeDeclare False (qualify d) :
     map (Identifier IdDeclare False . qualify) vs ++
       concatMap idsConstrDecl cds ++ map (TypeCons TypeRefer False) clss
-idsDecl (ExternalDataDecl     _ d vs) =
+idsDecl (ExternalDataDecl      _ d vs) =
   TypeCons TypeDeclare False (qualify d) :
     map (Identifier IdDeclare False . qualify) vs
-idsDecl (NewtypeDecl  _ t vs nc clss) =
+idsDecl (NewtypeDecl   _ t vs nc clss) =
   TypeCons TypeDeclare False (qualify t) :
     map (Identifier IdDeclare False . qualify) vs ++ idsNewConstrDecl nc ++
       map (TypeCons TypeRefer False) clss
-idsDecl (TypeDecl          _ t vs ty) =
+idsDecl (TypeDecl           _ t vs ty) =
   TypeCons TypeDeclare False (qualify t) :
     map (Identifier IdDeclare False . qualify) vs ++ idsTypeExpr ty
-idsDecl (TypeSig            _ fs qty) =
+idsDecl (TypeSig             _ fs qty) =
   map (Function FuncTypeSig False . qualify) fs ++ idsQualTypeExpr qty
-idsDecl (FunctionDecl      _ _ _ eqs) = concatMap idsEquation eqs
-idsDecl (ExternalDecl           _ fs) =
+idsDecl (FunctionDecl       _ _ _ eqs) = concatMap idsEquation eqs
+idsDecl (ExternalDecl            _ fs) =
   map (Function FuncDeclare False . qualify . varIdent) fs
-idsDecl (PatternDecl         _ p rhs) = idsPat p ++ idsRhs rhs
-idsDecl (FreeDecl               _ vs) =
+idsDecl (PatternDecl          _ p rhs) = idsPat p ++ idsRhs rhs
+idsDecl (FreeDecl                _ vs) =
   map (Identifier IdDeclare False . qualify . varIdent) vs
-idsDecl (DefaultDecl           _ tys) = concatMap idsTypeExpr tys
-idsDecl (ClassDecl     _ _ cx c v ds) =
+idsDecl (DefaultDecl            _ tys) = concatMap idsTypeExpr tys
+idsDecl (ClassDecl _ _ cx c vs fds ds) =
   idsContext cx ++ TypeCons TypeDeclare False (qualify c) :
-    Identifier IdDeclare False (qualify v) : concatMap idsClassDecl ds
-idsDecl (InstanceDecl _ _ cx c ty ds) = idsContext cx ++
-  TypeCons TypeRefer False c : idsTypeExpr ty ++ concatMap idsInstanceDecl ds
+    map (Identifier IdDeclare False . qualify) vs ++ concatMap idsFunDep fds ++
+    concatMap idsClassDecl ds
+idsDecl (InstanceDecl _ _ cx c tys ds) = idsContext cx ++
+  TypeCons TypeRefer False c : concatMap idsTypeExpr tys ++
+  concatMap idsInstanceDecl ds
 
 idsConstrDecl :: ConstrDecl -> [Code]
 idsConstrDecl (ConstrDecl     _ c tys) =
@@ -366,8 +368,12 @@ idsContext :: Context -> [Code]
 idsContext = concatMap idsConstraint
 
 idsConstraint :: Constraint -> [Code]
-idsConstraint (Constraint _ qcls ty) =
-  TypeCons TypeRefer False qcls : idsTypeExpr ty
+idsConstraint (Constraint _ qcls tys) =
+  TypeCons TypeRefer False qcls : concatMap idsTypeExpr tys
+
+idsFunDep :: FunDep -> [Code]
+idsFunDep (FunDep _ ltvs rtvs) =
+  map (Identifier IdRefer False . qualify) (ltvs ++ rtvs)
 
 idsTypeExpr :: TypeExpr -> [Code]
 idsTypeExpr (ConstructorType _ qid) = [TypeCons TypeRefer False qid]
@@ -385,7 +391,7 @@ idsFieldDecl (FieldDecl _ ls ty) =
   map (Function FuncDeclare False . qualify . unRenameIdent) ls ++ idsTypeExpr ty
 
 idsEquation :: Equation a -> [Code]
-idsEquation (Equation _ lhs rhs) = idsLhs lhs ++ idsRhs rhs
+idsEquation (Equation _ _ lhs rhs) = idsLhs lhs ++ idsRhs rhs
 
 idsLhs :: Lhs a -> [Code]
 idsLhs (FunLhs    _ f ps) =
@@ -533,6 +539,7 @@ showToken (Token KW_type            _) = "type"
 showToken (Token KW_where           _) = "where"
 showToken (Token Id_as              _) = "as"
 showToken (Token Id_ccall           _) = "ccall"
+showToken (Token Id_Constraint      _) = "Constraint"
 showToken (Token Id_forall          _) = "forall"
 showToken (Token Id_hiding          _) = "hiding"
 showToken (Token Id_interface       _) = "interface"

@@ -1,24 +1,24 @@
 {- |
     Module      :  $Header$
     Description :  Abstract syntax for conditional compiling
-    Copyright   :  (c) 2017        Kai-Oliver Prott
+    Copyright   :  (c) 2017-2024   Kai-Oliver Prott
                        2017        Finn Teegen
     License     :  BSD-3-clause
 
-    Maintainer  :  fte@informatik.uni-kiel.de
+    Maintainer  :  kpr@informatik.uni-kiel.de
     Stability   :  experimental
     Portability :  portable
 
-    TODO
+    This module defines the abstract syntax for conditional compilation structures,
+    such as `#if`, `#ifdef`, and `#undef`, represented as Haskell data types.
+    It also provides Pretty instances for displaying conditional compilation statements
+    in their syntactic form.
 -}
-{-# LANGUAGE CPP #-}
 module Curry.CondCompile.Type
   ( Program, Stmt (..), Else (..), Elif (..), Cond (..), Op (..)
   ) where
 
-#if __GLASGOW_HASKELL__ >= 804
 import Prelude hiding ((<>))
-#endif
 
 import Curry.Base.Pretty
 

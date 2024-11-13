@@ -324,11 +324,19 @@ dumpLevel = [ (DumpCondCompiled     , "dump-cond" , "conditional compiling"     
 extensions :: [(KnownExtension, String, String)]
 extensions =
   [ ( AnonFreeVars             , "AnonFreeVars"
-    , "enable anonymous free variables"              )
+    , "enable anonymous free variables"                      )
   , ( CPP                      , "CPP"
-    , "run C preprocessor"                           )
+    , "run C preprocessor"                                   )
+  , (FlexibleContexts          , "FlexibleContexts"          
+    , "remove syntax restrictions on contexts"               )
+  , (FlexibleInstances         , "FlexibleInstances"         
+    , "remove syntax restrictions on instance declarations"  )
+  , ( FunctionalDependencies   , "FunctionalDependencies"
+    , "enable functional dependencies"                       )
   , ( FunctionalPatterns       , "FunctionalPatterns"
-    , "enable functional patterns"                   )
+    , "enable functional patterns"                           )
+  , ( MultiParamTypeClasses    , "MultiParamTypeClasses"
+    , "enable type classes with none or multiple parameters" )
   , ( NegativeLiterals         , "NegativeLiterals"
     , "desugar negated literals as negative literal" )
   , ( NoAnonFreeVars           , "NoAnonFreeVars"

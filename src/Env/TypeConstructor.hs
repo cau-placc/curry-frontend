@@ -27,9 +27,11 @@
     of the argument types. Note that renaming type constructors have only
     one type argument.
 
-    For type classes the all their methods are saved. Type classes are
-    recorded in the type constructor environment because type constructors
-    and type classes share a common name space.
+    For type classes, a list of kinds is stored, since each parameter of a
+    multi-parameter type class has a distinct kind. The length of this list is
+    the arity of the type class. Additionally, all class methods are saved.
+    Type classes are recorded in the type constructor environment because type
+    constructors and type classes share a common name space.
 
     For type variables only their kind is recorded in the environment.
 
@@ -45,7 +47,6 @@
     exported at all in order to make the interface more stable against
     changes which are private to the module.
 -}
-{-# LANGUAGE CPP #-}
 module Env.TypeConstructor
   ( TypeInfo (..), tcKind, clsKind, varKind, clsMethods
   , TCEnv, initTCEnv, bindTypeInfo, rebindTypeInfo
@@ -53,17 +54,12 @@ module Env.TypeConstructor
   , getOrigName, reverseLookupByOrigName
   ) where
 
-#if __GLASGOW_HASKELL__ >= 804
 import Prelude hiding ((<>))
-#endif
-
 import Curry.Base.Ident
 import Curry.Base.Pretty (Pretty(..), blankLine)
 
 import Base.Kinds
 import Base.Messages (internalError)
-import Base.PrettyKinds ()
-import Base.PrettyTypes ()
 import Base.TopEnv
 import Base.Types
 import Base.Utils         ((++!))
@@ -103,22 +99,22 @@ instance Entity TypeInfo where
   merge _ _ = Nothing
 
 instance Pretty TypeInfo where
-  pPrint (DataType qid k cs)    =      text "data" <+> pPrint qid
+  pPrint (DataType qid k cs)     =     text "data" <+> pPrint qid
                                    <>  text "/" <> pPrint k
                                    <+> equals
                                    <+> hsep (punctuate (text "|") (map pPrint cs))
-  pPrint (RenamingType qid k c) =      text "newtype" <+> pPrint qid
+  pPrint (RenamingType qid k c)  =     text "newtype" <+> pPrint qid
                                    <>  text "/" <> pPrint k
                                    <+> equals <+> pPrint c
-  pPrint (AliasType qid k ar ty)=      text "type" <+> pPrint qid
+  pPrint (AliasType qid k ar ty) =     text "type" <+> pPrint qid
                                    <>  text "/" <> pPrint k <> text "/" <> int ar
                                    <+> equals <+> pPrint ty
-  pPrint (TypeClass qid k ms)   =      text "class" <+> pPrint qid
+  pPrint (TypeClass qid k ms)    =     text "class" <+> pPrint qid
                                    <>  text "/" <> pPrint k
                                    <+> equals
                                    <+> vcat (blankLine : map pPrint ms)
-  pPrint (TypeVar _)            =
-    internalError $ "Env.TypeConstructor.Pretty.TypeInfo.pPrint: type variable"
+  pPrint (TypeVar _)             =
+    internalError "Env.TypeConstructor.Pretty.TypeInfo.pPrint: type variable"
 
 tcKind :: ModuleIdent -> QualIdent -> TCEnv -> Kind
 tcKind m tc tcEnv = case qualLookupTypeInfo tc tcEnv of
@@ -217,5 +213,5 @@ tupleTCs = map typeInfo tupleData
   where
     typeInfo dc@(DataConstr _ tys) =
       let n = length tys in DataType (qTupleId n) (simpleKind n) [dc]
-    typeInfo (RecordConstr  _ _ _) =
+    typeInfo RecordConstr {} =
       internalError "Env.TypeConstructor.tupleTCs: record constructor"

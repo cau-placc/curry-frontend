@@ -13,7 +13,6 @@
     from Hughes and Peyton-Jones. In addition, it re-exports the type class
     'Pretty' for pretty printing arbitrary types.
 -}
-{-# LANGUAGE CPP #-}
 module Curry.Base.Pretty
   ( module Curry.Base.Pretty
   , module Text.PrettyPrint
@@ -39,9 +38,7 @@ class Pretty a where
   pPrintList :: [a] -> Doc
   pPrintList = brackets . fsep . punctuate comma . map (pPrintPrec 0)
 
-#if __GLASGOW_HASKELL__ >= 707
   {-# MINIMAL pPrintPrec | pPrint #-}
-#endif
 
 -- | Pretty print a value to a 'String'.
 prettyShow :: Pretty a => a -> String

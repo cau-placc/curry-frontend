@@ -254,6 +254,8 @@ type KindSubst = Map.Map Int IL.Kind
 
 transKind :: Kind -> IL.Kind
 transKind KindStar          = IL.KindStar
+transKind KindConstraint    = internalError $ "CurryToIL.transKind: " ++
+                                "Encountered untransformed constraint kind"
 transKind (KindVariable  _) = IL.KindStar
 transKind (KindArrow k1 k2) = IL.KindArrow (transKind k1) (transKind k2)
 
@@ -314,7 +316,7 @@ trFunction f eqs = do
   where
   -- vs are the variables needed for the function: _1, _2, etc.
   -- ws is an infinite list for introducing additional variables later
-  Equation _ lhs rhs = head eqs
+  Equation _ _ lhs rhs = head eqs
   (_, ts) = flatLhs lhs
   (vs, ws) = splitAt (length ts) (argNames (mkIdent ""))
 
@@ -322,7 +324,7 @@ trEquation :: [Ident]       -- identifiers for the function's parameters
            -> [Ident]       -- infinite list of additional identifiers
            -> Equation Type -- equation to be translated
            -> TransM Match  -- nested constructor terms + translated RHS
-trEquation vs vs' (Equation _ (FunLhs _ _ ts) rhs) = do
+trEquation vs vs' (Equation _ _ (FunLhs _ _ ts) rhs) = do
   -- construct renaming of variables inside constructor terms
   let patternRenaming = foldr2 bindRenameEnv Map.empty vs ts
   -- translate right-hand-side
@@ -348,7 +350,7 @@ bindRenameEnv _ _                           _
 
 trRhs :: [Ident] -> RenameEnv -> Rhs Type -> TransM IL.Expression
 trRhs vs env (SimpleRhs _ _ e _) = trExpr vs env e
-trRhs _  _   (GuardedRhs _ _ _ _) = internalError "CurryToIL.trRhs: GuardedRhs"
+trRhs _  _   (GuardedRhs {})     = internalError "CurryToIL.trRhs: GuardedRhs"
 
 -- Note that the case matching algorithm assumes that the matched
 -- expression is accessible through a variable. The translation of case
@@ -367,7 +369,7 @@ trExpr _  env (Variable    _ ty v)
   | otherwise     = do
     tcEnv <- getTCEnv
     case Map.lookup (unqualify v) env of
-      Nothing -> error $ "unexpected variable" ++ show v --TODO: Replace case by fromJust?
+      Nothing -> error $ "unexpected variable" ++ show v
       Just v' -> return $ IL.Variable (transType tcEnv ty) v' -- apply renaming
   where
     fun tcEnv = IL.Function (transType tcEnv ty) v <$> getArity v
@@ -663,8 +665,8 @@ isLiteralPattern (IL.LiteralPattern _ _) = True
 isLiteralPattern _                       = False
 
 isConstructorPattern :: IL.ConstrTerm -> Bool
-isConstructorPattern (IL.ConstructorPattern _ _ _) = True
-isConstructorPattern _                             = False
+isConstructorPattern (IL.ConstructorPattern {}) = True
+isConstructorPattern _                          = False
 
 isVarMatch :: (IL.ConstrTerm, a) -> Bool
 isVarMatch = isVarPattern . fst

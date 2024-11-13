@@ -175,7 +175,7 @@ preprocess opts fn src
         case ec of
           ExitFailure x -> return $ Left [message $ text $
               "Preprocessor exited with exit code " ++ show x]
-          ExitSuccess   -> Right `liftM` readFile outFn
+          ExitSuccess   -> Right <$> readFile outFn
     either failMessages ok res
 
 withTempFile :: (FilePath -> Handle -> IO a) -> IO a
@@ -242,7 +242,6 @@ importSyntaxCheck iEnv (CS.Module _ _ _ _ _ imps _) = mapM checkImportDecl imps
 -- Checking a module
 -- ---------------------------------------------------------------------------
 
--- TODO: The order of the checks should be improved!
 checkModule :: Options -> CompEnv (CS.Module ())
             -> CYIO (CompEnv (CS.Module PredType))
 checkModule opts mdl = do
@@ -386,7 +385,7 @@ writeFlatIntf opts env prog
   | otherwise               = do
       mfint <- liftIO $ FC.readFlatInterface targetFile
       let oldInterface = fromMaybe emptyIntf mfint
-      when (mfint == mfint) $ return () -- necessary to close file -- TODO
+      when (mfint == mfint) $ return ()
       unless (oldInterface `eqInterface` fint) outputInterface
   where
   targetFile      = flatIntName (filePath env)

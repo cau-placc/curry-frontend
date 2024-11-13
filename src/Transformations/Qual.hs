@@ -21,12 +21,8 @@
     Only functions and variables declared in local declarations groups
     as well as function arguments remain unchanged.
 -}
-{-# LANGUAGE CPP #-}
 module Transformations.Qual (qual) where
 
-#if __GLASGOW_HASKELL__ < 710
-import           Control.Applicative       ((<$>), (<*>), pure)
-#endif
 import qualified Control.Monad.Reader as R (Reader, asks, runReader)
 import           Data.Traversable
 import           Prelude hiding            (mapM)
@@ -58,7 +54,7 @@ qModule (Module spi li ps m es is ds) = do
 
 qExportSpec :: Qual (Maybe ExportSpec)
 qExportSpec Nothing                 = return Nothing
-qExportSpec (Just (Exporting p es)) = (Just . Exporting p) <$> mapM qExport es
+qExportSpec (Just (Exporting p es)) = Just . Exporting p <$> mapM qExport es
 
 qExport :: Qual Export
 qExport (Export            spi x) = Export spi <$> qIdent x
@@ -67,23 +63,23 @@ qExport (ExportTypeAll     spi t) = ExportTypeAll spi <$> qConstr t
 qExport m@(ExportModule      _ _) = return m
 
 qDecl :: Qual (Decl a)
-qDecl i@(InfixDecl             _ _ _ _) = return i
-qDecl (DataDecl         p n vs cs clss) = DataDecl p n vs <$>
+qDecl i@(InfixDecl              _ _ _ _) = return i
+qDecl (DataDecl          p n vs cs clss) = DataDecl p n vs <$>
   mapM qConstrDecl cs <*> mapM qClass clss
-qDecl e@(ExternalDataDecl        _ _ _) = return e
-qDecl (NewtypeDecl      p n vs nc clss) = NewtypeDecl p n vs <$>
+qDecl e@(ExternalDataDecl         _ _ _) = return e
+qDecl (NewtypeDecl       p n vs nc clss) = NewtypeDecl p n vs <$>
   qNewConstrDecl nc <*> mapM qClass clss
-qDecl (TypeDecl              p n vs ty) = TypeDecl p n vs <$> qTypeExpr ty
-qDecl (TypeSig                p fs qty) = TypeSig p fs <$> qQualTypeExpr qty
-qDecl (FunctionDecl          a p f eqs) = FunctionDecl a p f <$> mapM qEquation eqs
-qDecl e@(ExternalDecl              _ _) = return e
-qDecl (PatternDecl             p t rhs) = PatternDecl p <$> qPattern t <*> qRhs rhs
-qDecl vs@(FreeDecl                 _ _) = return vs
-qDecl (DefaultDecl               p tys) = DefaultDecl p <$> mapM qTypeExpr tys
-qDecl (ClassDecl     p li cx cls tv ds) = ClassDecl p li <$>
-  qContext cx <*> pure cls <*> pure tv <*> mapM qDecl ds
-qDecl (InstanceDecl p li cx qcls ty ds) = InstanceDecl p li <$>
-  qContext cx <*> qClass qcls <*> qTypeExpr ty <*> mapM qDecl ds
+qDecl (TypeDecl               p n vs ty) = TypeDecl p n vs <$> qTypeExpr ty
+qDecl (TypeSig                 p fs qty) = TypeSig p fs <$> qQualTypeExpr qty
+qDecl (FunctionDecl           a p f eqs) = FunctionDecl a p f <$> mapM qEquation eqs
+qDecl e@(ExternalDecl               _ _) = return e
+qDecl (PatternDecl              p t rhs) = PatternDecl p <$> qPattern t <*> qRhs rhs
+qDecl vs@(FreeDecl                  _ _) = return vs
+qDecl (DefaultDecl                p tys) = DefaultDecl p <$> mapM qTypeExpr tys
+qDecl (ClassDecl p li cx cls tvs fds ds) = ClassDecl p li <$>
+  qContext cx <*> pure cls <*> pure tvs <*> pure fds <*> mapM qDecl ds
+qDecl (InstanceDecl p li cx qcls tys ds) = InstanceDecl p li <$>
+  qContext cx <*> qClass qcls <*> mapM qTypeExpr tys <*> mapM qDecl ds
 
 qConstrDecl :: Qual ConstrDecl
 qConstrDecl (ConstrDecl p      n tys) =
@@ -103,8 +99,8 @@ qFieldDecl :: Qual FieldDecl
 qFieldDecl (FieldDecl p fs ty) = FieldDecl p fs <$> qTypeExpr ty
 
 qConstraint :: Qual Constraint
-qConstraint (Constraint spi cls ty) =
-  Constraint spi <$> qClass cls <*> qTypeExpr ty
+qConstraint (Constraint spi cls tys) =
+  Constraint spi <$> qClass cls <*> mapM qTypeExpr tys
 
 qContext :: Qual Context
 qContext = mapM qConstraint
@@ -126,7 +122,7 @@ qQualTypeExpr (QualTypeExpr spi cx ty) = QualTypeExpr spi <$> qContext cx
                                                           <*> qTypeExpr ty
 
 qEquation :: Qual (Equation a)
-qEquation (Equation p lhs rhs) = Equation p <$> qLhs lhs <*> qRhs rhs
+qEquation (Equation p a lhs rhs) = Equation p a <$> qLhs lhs <*> qRhs rhs
 
 qLhs :: Qual (Lhs a)
 qLhs (FunLhs sp    f ts) = FunLhs sp       f  <$> mapM qPattern ts

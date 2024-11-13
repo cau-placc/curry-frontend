@@ -44,12 +44,15 @@ instance HasSpanInfo Extension where
 instance HasPosition Extension where
   getPosition = getStartPosition
   setPosition = setStartPosition
-
 -- |Known language extensions of Curry.
 data KnownExtension
   = AnonFreeVars              -- ^ anonymous free variables
   | CPP                       -- ^ C preprocessor
+  | FlexibleContexts          -- ^ no restrictions on context form
+  | FlexibleInstances         -- ^ no restrictions on instance syntax
+  | FunctionalDependencies    -- ^ functional dependencies
   | FunctionalPatterns        -- ^ functional patterns
+  | MultiParamTypeClasses     -- ^ multi-parameter type classes
   | NegativeLiterals          -- ^ negative literals
   | NoAnonFreeVars            -- ^ no anonymous free variables
   | NoFunctionalPatterns      -- ^ no functional patterns

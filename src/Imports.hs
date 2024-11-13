@@ -17,19 +17,15 @@
 -}
 module Imports (importInterfaces, importModules, qualifyEnv) where
 
-import           Data.List                  (nubBy, find)
+import           Data.List                  (nubBy)
 import qualified Data.Map            as Map
-import           Data.Maybe                 (catMaybes, fromMaybe, isJust)
+import           Data.Maybe                 (mapMaybe, fromMaybe, isJust)
 import qualified Data.Set            as Set
 
 import Curry.Base.Ident
 import Curry.Base.SpanInfo
 import Curry.Base.Monad
 import Curry.Syntax
-
-import Base.CurryKinds (toKind')
-import Base.CurryTypes ( toQualType, toQualTypes, toQualPredType, toConstrType
-                       , toMethodType )
 
 import Base.Kinds
 import Base.Messages
@@ -142,12 +138,12 @@ importEntities ents m q isVisible' f ds env =
 
 importData :: (Ident -> Bool) -> TypeInfo -> TypeInfo
 importData isVisible' (DataType tc k cs) =
-  DataType tc k $ catMaybes $ map (importConstr isVisible') cs
+  DataType tc k $ mapMaybe (importConstr isVisible') cs
 importData isVisible' (RenamingType tc k nc) =
   maybe (DataType tc k []) (RenamingType tc k) (importConstr isVisible' nc)
 importData _ (AliasType tc k n ty) = AliasType tc k n ty
 importData isVisible' (TypeClass qcls k ms) =
-  TypeClass qcls k $ catMaybes $ map (importMethod isVisible') ms
+  TypeClass qcls k $ mapMaybe (importMethod isVisible') ms
 importData _ (TypeVar _) = internalError "Imports.importData: type variable"
 
 importConstr :: (Ident -> Bool) -> DataConstr -> Maybe DataConstr
@@ -164,11 +160,13 @@ importClasses :: ModuleIdent -> [IDecl] -> ClassEnv -> ClassEnv
 importClasses m = flip $ foldr (bindClass m)
 
 bindClass :: ModuleIdent -> IDecl -> ClassEnv -> ClassEnv
-bindClass m (HidingClassDecl p cx cls k tv o) =
-  bindClass m (IClassDecl p cx cls k tv [] [] o)
-bindClass m (IClassDecl _ cx cls _ _ ds ids o) =
-  bindClassInfo (applyOriginPragma o (qualQualify m cls)) (sclss, ms)
-  where sclss = map (\(Constraint _ scls _) -> qualQualify m scls) cx
+bindClass m (HidingClassDecl p cx cls k tvs fds o) =
+  bindClass m (IClassDecl p cx cls k tvs fds [] [] o)
+bindClass m (IClassDecl _ cx cls _ tvs fds ds ids o) =
+  bindClassInfo (applyOriginPragma o (qualQualify m cls)) (ar, sclss, fds', ms)
+  where ar = length tvs
+        sclss = toQualPredList m tvs OPred cx
+        fds' = map (toFunDep tvs) fds
         ms = map (\d -> (imethod d, isJust $ imethodArity d)) $ filter isVis ds
         isVis (IMethodDecl _ idt _ _ ) = idt `notElem` ids
 bindClass _ _ = id
@@ -177,9 +175,9 @@ importInstances :: ModuleIdent -> [IDecl] -> InstEnv -> InstEnv
 importInstances m = flip $ foldr (bindInstance m)
 
 bindInstance :: ModuleIdent -> IDecl -> InstEnv -> InstEnv
-bindInstance m (IInstanceDecl _ cx qcls ty is mm o) = bindInstInfo
-  (applyOriginPragma o (qualQualify m qcls), qualifyTC m $ typeConstr ty) (fromMaybe m mm, ps, is)
-  where PredType ps _ = toQualPredType m [] $ QualTypeExpr NoSpanInfo cx ty
+bindInstance m (IInstanceDecl _ cx qcls tys is mm o) =
+  bindInstInfo (applyOriginPragma o (qualQualify m qcls), tys') (fromMaybe m mm, ps, is)
+  where PredTypes ps tys' = toQualPredTypes m [] OPred cx tys
 bindInstance _ _ = id
 
 -- ---------------------------------------------------------------------------
@@ -195,9 +193,9 @@ precs m (IInfixDecl _ fix prec op o) = [PrecInfo (applyOriginPragma o (qualQuali
 precs _ _                          = []
 
 hiddenTypes :: ModuleIdent -> IDecl -> [TypeInfo]
-hiddenTypes m (HidingDataDecl    _ tc   k tvs o) = [typeCon DataType o m tc k tvs []]
-hiddenTypes m (HidingClassDecl _ _ qcls k _   o) = [typeCls o m qcls k []]
-hiddenTypes m d                                   = types m d
+hiddenTypes m (HidingDataDecl        _ tc k tvs o) = [typeCon DataType o m tc k tvs []]
+hiddenTypes m (HidingClassDecl _ _ qcls k tvs _ o) = [typeCls o m qcls k tvs []]
+hiddenTypes m d                                    = types m d
 
 -- type constructors and type classes
 types :: ModuleIdent -> IDecl -> [TypeInfo]
@@ -222,12 +220,12 @@ types m (ITypeDecl _ tc k tvs ty o) =
   [typeCon aliasType o m tc k tvs (toQualType m tvs ty)]
   where
     aliasType tc' k' = AliasType tc' k' (length tvs)
-types m (IClassDecl _ _ qcls k tv ds ids o) =
-  [typeCls o m qcls k (map mkMethod $ filter isVis ds)]
+types m (IClassDecl _ _ qcls k tvs _ ds ids o) =
+  [typeCls o m qcls k tvs (map mkMethod $ filter isVis ds)]
   where
     isVis (IMethodDecl _ f _ _ ) = f `notElem` ids
-    mkMethod (IMethodDecl _ f a qty) = ClassMethod f a $
-      qualifyPredType m $ normalize 1 $ toMethodType qcls tv qty
+    mkMethod (IMethodDecl _ f a qty) = ClassMethod f a $ qualifyPredType m $
+      normalize (length tvs) $ toMethodType qcls tvs qty
 types _ _ = []
 
 -- type constructors
@@ -236,9 +234,10 @@ typeCon :: (QualIdent -> Kind -> a) -> Maybe OriginPragma -> ModuleIdent -> Qual
 typeCon f o m tc k tvs = f (applyOriginPragma o (qualQualify m tc)) (toKind' k (length tvs))
 
 -- type classes
-typeCls :: Maybe OriginPragma -> ModuleIdent -> QualIdent -> Maybe KindExpr -> [ClassMethod]
-        -> TypeInfo
-typeCls o m qcls k ms = TypeClass (applyOriginPragma o (qualQualify m qcls)) (toKind' k 0) ms
+typeCls :: Maybe OriginPragma -> ModuleIdent -> QualIdent -> Maybe KindExpr -> [Ident]
+        -> [ClassMethod] -> TypeInfo
+typeCls o m qcls k tvs =
+  TypeClass (applyOriginPragma o (qualQualify m qcls)) (toClassKind k (length tvs))
 
 -- data constructors, record labels, functions and class methods
 values :: ModuleIdent -> IDecl -> [ValueInfo]
@@ -259,26 +258,21 @@ values m (IDataDecl _ tc _ tvs cs hs o) =
         isHiddenButNeeded = flip elem hiddenCs
         sameLabel (l1,_,_) (l2,_,_) = l1 == l2
 values m (INewtypeDecl _ tc _ tvs nc hs o) =
-  map (newConstr m tc' tvs) [nc | nconstrId nc `notElem` hs] ++
+  [newConstr m tc' tvs nc | nconstrId nc `notElem` hs] ++
   case nc of
-    NewConstrDecl _ _ _        -> []
+    NewConstrDecl {}           -> []
     NewRecordDecl _ c (l, lty) ->
       [recLabel m tc' tvs ty' (l, [c], lty) | l `notElem` hs]
   where tc' = applyOriginPragma o $ qualQualify m tc
         ty' = constrType tc' tvs
 values m (IFunctionDecl _ f Nothing a qty o) =
-  [Value (applyOriginPragma o (qualQualify m f)) Nothing a (typeScheme (toQualPredType m [] qty))]
-values m (IFunctionDecl _ f (Just tv) _ qty o) =
-  let mcls = case qty of
-        QualTypeExpr _ ctx _ -> fmap (\(Constraint _ qcls _) -> qcls) $
-                                find (\(Constraint _ _ ty) -> isVar ty) ctx
-  in [Value (applyOriginPragma o (qualQualify m f)) mcls 0 (typeScheme (toQualPredType m [tv] qty))]
-  where
-    isVar (VariableType _ i) = i == tv
-    isVar _                  = False
-values m (IClassDecl _ _ qcls _ tv ds hs o) =
-  map (classMethod m qcls' tv hs) ds
-  where qcls' = applyOriginPragma o $ qualQualify m qcls
+  [Value (applyOriginPragma o (qualQualify m f)) Nothing a (typeScheme (toQualPredType m [] OPred qty))]
+values m (IFunctionDecl _ f (Just tvs) _ qty@(QualTypeExpr _ cx _) o) =
+  let mcls = case cx of []                      -> Nothing
+                        Constraint _ qcls _ : _ -> Just qcls
+  in [Value (applyOriginPragma o (qualQualify m f)) mcls 0 (typeScheme (toQualPredType m tvs ICC qty))]
+values m (IClassDecl _ _ qcls _ tvs _ ds hs o) =
+  map (classMethod m (applyOriginPragma o $ qualQualify m qcls) tvs hs) ds
 values _ _                        = []
 
 dataConstr :: ModuleIdent -> QualIdent -> [Ident] -> ConstrDecl -> ValueInfo
@@ -323,11 +317,11 @@ constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)
 -- We always enter class methods with an arity of 0 into the value environment
 -- because there may be different implementations with different arities.
 
-classMethod :: ModuleIdent -> QualIdent -> Ident -> [Ident] -> IMethodDecl
+classMethod :: ModuleIdent -> QualIdent -> [Ident] -> [Ident] -> IMethodDecl
             -> ValueInfo
-classMethod m qcls tv hs (IMethodDecl _ f _ qty) =
+classMethod m qcls tvs hs (IMethodDecl _ f _ qty) =
   Value (qualifyLike qcls f) mcls 0 $
-    typeScheme $ qualifyPredType m $ toMethodType qcls tv qty
+    typeScheme $ qualifyPredType m $ toMethodType qcls tvs qty
   where
     mcls = if f `elem` hs then Nothing else Just qcls
 
@@ -370,7 +364,7 @@ qualifyLocal currentEnv initEnv = currentEnv
   , tyConsEnv = foldr bindQual   tcEnv $ localBindings $ tyConsEnv currentEnv
   , valueEnv  = foldr bindGlobal tyEnv $ localBindings $ valueEnv  currentEnv
   , classEnv  = Map.unionWith mergeClassInfo clsEnv $ classEnv currentEnv
-  , instEnv   = Map.union                    iEnv   $ instEnv  currentEnv
+  , instEnv   = Map.unionWith Map.union      iEnv   $ instEnv  currentEnv
   }
   where
     pEnv   = opPrecEnv initEnv
