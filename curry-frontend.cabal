@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name:          curry-frontend
-version:       2.1.1
+version:       3.0.0
 synopsis:      Compile the functional logic language Curry to several
                intermediate formats
 description:   The Curry front end consists of the executable program
@@ -18,7 +18,7 @@ category:      Language
 license:       BSD-3-Clause
 license-file:  LICENSE
 author:        Wolfgang Lux, Martin Engelke, Bernd Brassel, Holger Siegel,
-               Bjoern Peemoeller, Finn Teegen
+               Bjoern Peemoeller, Finn Teegen, Kai-Oliver Prott
 maintainer:    fte@informatik.uni-kiel.de
 homepage:      http://curry-language.org
 build-type:    Simple

@@ -1,6 +1,29 @@
 Change log for curry-frontend
 =============================
 
+Version 3.0.0
+=============
+
+  Features
+  --------
+  * Added support for multi-parameter type classes (enabled with `-XMultiParamTypeClasses`),
+    allowing type classes to be constrained across multiple type variables.
+  * Added support for functional dependencies (enabled with `-XFunctionalDependencies`),
+    enabling a class type variable to depend on another class variable.
+  * Added support for flexible contexts (enabled with `-XFlexibleContexts`),
+    relaxing rules on context specifications so that some class variables can be fixed to specific types.
+  * Added support for flexible instances (enabled with `-XFlexibleInstances`),
+    which allows similar flexibility in type class instances.
+  * `-XFunctionalDependencies` implies `-XMultiParamTypeClasses`.
+
+  Improvements
+  ------------
+  * Use Eq.== instead of Data.=== for primitive type comparisons to prevent non-deterministic issues in KiCS2.
+
+  Bug fixes
+  ---------
+  * Fixed a bug in the annotated types of certain functional patterns.
+
 Version 2.1.1
 =============
 
@@ -9,6 +32,10 @@ Version 2.1.1
 
   * Generated interface files now optionally include a pragma that indicates the source code origin of identifiers. This improves the language server.
   * Added the option `-Oadd-failed-case`. If on, the front-end inserts explicit branches for failing pattern matches in each case and rule. It is on by default. The old behavior can be restored with `-Ono-add-failed-case`.
+
+  Bug fixes
+  ---------
+  * Fixed a bug where the AST information gets printed in a wrong order.
 
 Version 2.1.0
 =============
