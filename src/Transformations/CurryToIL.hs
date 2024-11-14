@@ -536,9 +536,10 @@ flexMatchInductive :: FunList (IL.Type, Ident)  -- skipped variables
                    -> [(IL.Type, Ident)]        -- next variables
                    -> [(IL.ConstrTerm, Match')] -- alternatives
                    -> IL.Expression
-flexMatchInductive prefix v vs as
+flexMatchInductive prefix v vs as'
   = IL.Case IL.Flex (uncurry IL.Variable v) (flexMatchAlts as)
   where
+  as = map (desugarOuterLit (snd v)) as'
   -- create alternatives for the different constructors
   flexMatchAlts []              = []
   flexMatchAlts ((t, e) : alts) = IL.Alt t expr : flexMatchAlts others
