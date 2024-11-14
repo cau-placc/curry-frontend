@@ -33,11 +33,11 @@ import Curry.Base.Pretty
 import Curry.Syntax
 
 import Curry.Frontend.Base.Expr
-import Curry.Frontend.Base.Messages (Message, spanInfoMessage, internalError)
-import Curry.Frontend.Base.Utils    (findMultiples)
+import Curry.Frontend.Base.Messages       (Message, spanInfoMessage, internalError)
+import Curry.Frontend.Base.Utils          (findMultiples)
 
-import Curry.Frontend.Env.OpPrec (OpPrecEnv, OpPrec (..), PrecInfo (..), defaultP, bindP
-  , mkPrec, qualLookupP)
+import Curry.Frontend.Env.OpPrec          (OpPrecEnv, OpPrec (..), PrecInfo (..)
+                                          , defaultP, bindP, mkPrec, qualLookupP)
 
 precCheck :: ModuleIdent -> OpPrecEnv -> [Decl a] -> ([Decl a], OpPrecEnv, [Message])
 precCheck m pEnv decls = runPCM (checkDecls decls) initState

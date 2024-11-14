@@ -31,9 +31,9 @@ import qualified Data.Set as Set          ( Set, fromList, isSubsetOf, size
                                           , toAscList, union)
 
 import Curry.Frontend.Base.Expr
-import Curry.Frontend.Base.Messages (Message, spanInfoMessage, internalError)
+import Curry.Frontend.Base.Messages       (Message, spanInfoMessage, internalError)
 import Curry.Frontend.Base.TopEnv
-import Curry.Frontend.Base.Utils    (findMultiples)
+import Curry.Frontend.Base.Utils          (findMultiples)
 
 import           Curry.Frontend.Env.TypeConstructor
 import           Curry.Frontend.Env.Type

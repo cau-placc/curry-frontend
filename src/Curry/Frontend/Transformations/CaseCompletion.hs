@@ -40,19 +40,19 @@ import           Curry.Base.Ident
 import qualified Curry.Syntax        as CS
 
 import Curry.Frontend.Base.Expr
-import Curry.Frontend.Base.Messages                        (internalError)
-import Curry.Frontend.Base.Types                           ( charType, floatType
-                                            , intType, stringType
-                                            , toType
-                                            )
+import Curry.Frontend.Base.Messages               (internalError)
+import Curry.Frontend.Base.Types                  ( charType, floatType
+                                                  , intType, stringType
+                                                  , toType
+                                                  )
 import qualified Curry.Frontend.Base.Types as CS
 import Curry.Frontend.Base.Subst
 
-import Curry.Frontend.Env.TypeConstructor                  (TCEnv)
-import Curry.Frontend.Env.Interface                        (InterfaceEnv, lookupInterface)
+import Curry.Frontend.Env.TypeConstructor         (TCEnv)
+import Curry.Frontend.Env.Interface               (InterfaceEnv, lookupInterface)
 
-import Curry.Frontend.Transformations.CurryToIL            (transType)
-import Curry.Frontend.Transformations.Dictionary           (qImplMethodId)
+import Curry.Frontend.Transformations.CurryToIL   (transType)
+import Curry.Frontend.Transformations.Dictionary  (qImplMethodId)
 
 import Curry.Frontend.IL as IL
 

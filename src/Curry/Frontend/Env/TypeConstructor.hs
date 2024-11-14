@@ -62,7 +62,7 @@ import Curry.Frontend.Base.Kinds
 import Curry.Frontend.Base.Messages (internalError)
 import Curry.Frontend.Base.TopEnv
 import Curry.Frontend.Base.Types
-import Curry.Frontend.Base.Utils         ((++!))
+import Curry.Frontend.Base.Utils ((++!))
 
 import Text.PrettyPrint
 

@@ -19,8 +19,8 @@ import Curry.Base.Monad (runCYIO)
 import Curry.Frontend.Base.Messages
 import Curry.Frontend.Files.FrontendPath (frontendGreeting, frontendVersion)
 
-import Curry.Frontend.CurryBuilder     (buildCurry)
-import Curry.Frontend.CompilerOpts     (Options (..), FrontendMode (..), getCompilerOpts, usage)
+import Curry.Frontend.CurryBuilder       (buildCurry)
+import Curry.Frontend.CompilerOpts       (Options (..), FrontendMode (..), getCompilerOpts, usage)
 
 -- |The command line tool frontend
 main :: IO ()

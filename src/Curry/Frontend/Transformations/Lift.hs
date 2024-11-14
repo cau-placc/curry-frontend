@@ -33,7 +33,7 @@ import Curry.Syntax
 
 import Curry.Frontend.Base.AnnotExpr
 import Curry.Frontend.Base.Expr
-import Curry.Frontend.Base.Messages                        (internalError)
+import Curry.Frontend.Base.Messages         (internalError)
 import Curry.Frontend.Base.SCC
 import Curry.Frontend.Base.Types
 import Curry.Frontend.Base.TypeSubst

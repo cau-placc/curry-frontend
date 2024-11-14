@@ -21,9 +21,9 @@ import Control.Monad.Identity
 import Control.Monad.Trans.Except (ExceptT, mapExceptT, runExceptT, throwE)
 import Control.Monad.Writer
 
-import Curry.Base.Message  (Message, spanMessage, message)
+import Curry.Base.Message (Message, spanMessage, message)
 import Curry.Base.Span (Span)
-import Curry.Base.Pretty   (text)
+import Curry.Base.Pretty (text)
 import Curry.Frontend.CompilerOpts (WarnOpts (..))
 
 -- |Curry compiler monad transformer

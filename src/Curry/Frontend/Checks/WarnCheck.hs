@@ -46,14 +46,15 @@ import Curry.Frontend.Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv
 import Curry.Frontend.Base.TopEnv     ( allBoundQualIdents )
 
 import Curry.Frontend.Base.Types
-import Curry.Frontend.Base.Utils ( findMultiples )
+import Curry.Frontend.Base.Utils      ( findMultiples )
 import Curry.Frontend.Env.ModuleAlias ( AliasEnv )
-import Curry.Frontend.Env.Class ( ClassEnv, classMethods, hasDefaultImpl, minPredList )
-import Curry.Frontend.Env.TypeConstructor ( TCEnv, TypeInfo (..), lookupTypeInfo
-                                          , qualLookupTypeInfo, getOrigName )
-import Curry.Frontend.Env.Value ( ValueEnv, ValueInfo (..), qualLookupValue )
+import Curry.Frontend.Env.Class       ( ClassEnv, classMethods, hasDefaultImpl, minPredList )
+import Curry.Frontend.Env.TypeConstructor
+                                      ( TCEnv, TypeInfo (..), lookupTypeInfo
+                                      , qualLookupTypeInfo, getOrigName )
+import Curry.Frontend.Env.Value       ( ValueEnv, ValueInfo (..), qualLookupValue )
 
-import Curry.Frontend.CompilerOpts ( WarnFlag(..), WarnOpts(..) )
+import Curry.Frontend.CompilerOpts    ( WarnFlag(..), WarnOpts(..) )
 
 -- Find potentially incorrect code in a Curry program and generate warnings
 -- for the following issues:

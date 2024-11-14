@@ -44,9 +44,9 @@ import Curry.Syntax
 import Curry.Frontend.Base.Messages       (Message, internalError, spanInfoMessage)
 import Curry.Frontend.Base.TopEnv         (allEntities, origName, localBindings, moduleImports)
 import Curry.Frontend.Base.Types          ( Type (..), unapplyType, arrowBase, PredType (..)
-                           , DataConstr (..), constrIdent, recLabels
-                           , ClassMethod, methodName
-                           , TypeScheme (..), rawType, rootOfType )
+                                          , DataConstr (..), constrIdent, recLabels
+                                          , ClassMethod, methodName
+                                          , TypeScheme (..), rawType, rootOfType )
 import Curry.Frontend.Base.Utils          (findMultiples)
 
 import Curry.Frontend.Env.ModuleAlias     (AliasEnv)
