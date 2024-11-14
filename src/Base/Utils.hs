@@ -17,6 +17,7 @@
 
 module Base.Utils
   ( fst3, snd3, thd3, curry3, uncurry3
+  , fst4, snd4, thd4, fth4
   , (++!), foldr2, mapAccumM, findDouble, findMultiples
   ) where
 
@@ -37,6 +38,18 @@ snd3 (_, y, _) = y
 
 thd3 :: (a, b, c) -> c
 thd3 (_, _, z) = z
+
+fst4 :: (a, b, c, d) -> a
+fst4 (x, _, _, _) = x
+
+snd4 :: (a, b, c, d) -> b
+snd4 (_, y, _, _) = y
+
+thd4 :: (a, b, c, d) -> c
+thd4 (_, _, z, _) = z
+
+fth4 :: (a, b, c, d) -> d
+fth4 (_, _, _, w) = w
 
 curry3 :: ((a, b, c) -> d) -> a -> b -> c -> d
 curry3 f x y z = f (x,y,z)
