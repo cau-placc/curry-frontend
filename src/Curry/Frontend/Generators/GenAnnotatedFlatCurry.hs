@@ -12,7 +12,7 @@
     This module contains the generation of a type-annotated 'FlatCurry'
     program term for a given module in the intermediate language.
 -}
-module Generators.GenAnnotatedFlatCurry (genAnnotatedFlatCurry) where
+module Curry.Frontend.Generators.GenAnnotatedFlatCurry (genAnnotatedFlatCurry) where
 
 import           Control.Monad              ((<=<))
 import           Control.Monad.Extra        (concatMapM)
@@ -31,15 +31,15 @@ import           Curry.FlatCurry.Annotated.Goodies (typeName)
 import           Curry.FlatCurry.Annotated.Type
 import qualified Curry.Syntax as CS
 
-import Base.Messages       (internalError)
-import Base.NestEnv        ( NestEnv, emptyEnv, bindNestEnv, lookupNestEnv
-                           , nestEnv, unnestEnv )
-import Base.Types
+import Curry.Frontend.Base.Messages       (internalError)
+import Curry.Frontend.Base.NestEnv        ( NestEnv, emptyEnv, bindNestEnv, lookupNestEnv
+                                          , nestEnv, unnestEnv )
+import Curry.Frontend.Base.Types
 
-import CompilerEnv
-import Env.TypeConstructor (TCEnv)
+import Curry.Frontend.CompilerEnv
+import Curry.Frontend.Env.TypeConstructor (TCEnv)
 
-import qualified IL
+import qualified Curry.Frontend.IL as IL
 
 -- transforms intermediate language code (IL) to type-annotated FlatCurry code
 genAnnotatedFlatCurry :: Bool -> CompilerEnv -> CS.Module Type -> IL.Module

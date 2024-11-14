@@ -17,7 +17,7 @@
    instances and that all types specified in a default declaration are
    instances of the Num class.
 -}
-module Checks.InstanceCheck (instanceCheck) where
+module Curry.Frontend.Checks.InstanceCheck (instanceCheck) where
 
 import           Control.Monad.Extra        ( concatMapM, unless, unlessM
                                             , when, void, whileM )
@@ -37,17 +37,17 @@ import Curry.Base.SpanInfo
 import Curry.Syntax hiding (impls)
 import Curry.Syntax.Pretty
 
-import Base.Expr (fv)
-import Base.Messages (Message, spanInfoMessage, internalError)
-import Base.SCC (scc)
-import Base.TypeExpansion
-import Base.Types
-import Base.TypeSubst
-import Base.Utils (findMultiples)
+import Curry.Frontend.Base.Expr (fv)
+import Curry.Frontend.Base.Messages (Message, spanInfoMessage, internalError)
+import Curry.Frontend.Base.SCC (scc)
+import Curry.Frontend.Base.TypeExpansion
+import Curry.Frontend.Base.Types
+import Curry.Frontend.Base.TypeSubst
+import Curry.Frontend.Base.Utils (findMultiples)
 
-import Env.Class
-import Env.Instance
-import Env.TypeConstructor
+import Curry.Frontend.Env.Class
+import Curry.Frontend.Env.Instance
+import Curry.Frontend.Env.TypeConstructor
 
 instanceCheck :: [KnownExtension] -> ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Decl a]
               -> (InstEnv, [Message])

@@ -17,7 +17,7 @@
     perform any (non-trivial) unifications.
 -}
 
-module Base.Typing
+module Curry.Frontend.Base.Typing
   ( Typeable (..)
   , withType, matchPredType, matchPredType', matchPreds, matchPred, matchType
   , matchPredTypeSafe, matchPredTypeSafe', matchPredsSafe, matchPredSafe
@@ -34,13 +34,13 @@ import Curry.Syntax
 
 import GHC.Stack (HasCallStack)
 
-import Base.Messages (internalError)
-import Base.Subst
-import Base.Types
-import Base.TypeSubst
-import Base.Utils (fst3)
+import Curry.Frontend.Base.Messages (internalError)
+import Curry.Frontend.Base.Subst
+import Curry.Frontend.Base.Types
+import Curry.Frontend.Base.TypeSubst
+import Curry.Frontend.Base.Utils (fst3)
 
-import Env.Value
+import Curry.Frontend.Env.Value
 
 class Typeable a where
   typeOf :: a -> Type

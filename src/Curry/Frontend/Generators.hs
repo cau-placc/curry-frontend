@@ -12,7 +12,7 @@
 
     This module subsumes the different code generators.
 -}
-module Generators where
+module Curry.Frontend.Generators where
 
 import Data.ByteString.Lazy
 import Data.Binary
@@ -23,18 +23,21 @@ import qualified Curry.FlatCurry.Annotated.Type as AFC  (AProg)
 import qualified Curry.FlatCurry.Typed.Type     as TFC  (TProg)
 import qualified Curry.Syntax                   as CS   (Module)
 
-import qualified Generators.GenAbstractCurry    as GAC  (genAbstractCurry)
-import qualified Generators.GenFlatCurry        as GFC  ( genFlatCurry
+import qualified Curry.Frontend.Generators.GenAbstractCurry
+                                                as GAC  (genAbstractCurry)
+import qualified Curry.Frontend.Generators.GenFlatCurry
+                                                as GFC  ( genFlatCurry
                                                         , genFlatInterface
                                                         )
-import qualified Generators.GenAnnotatedFlatCurry
+import qualified Curry.Frontend.Generators.GenAnnotatedFlatCurry
                                                 as GAFC (genAnnotatedFlatCurry)
-import qualified Generators.GenTypedFlatCurry   as GTFC (genTypedFlatCurry)
+import qualified Curry.Frontend.Generators.GenTypedFlatCurry
+                                                as GTFC (genTypedFlatCurry)
 
-import           Base.Types                             (Type, PredType)
+import           Curry.Frontend.Base.Types              (Type, PredType)
 
-import           CompilerEnv                            (CompilerEnv (..))
-import qualified IL                                     (Module)
+import           Curry.Frontend.CompilerEnv             (CompilerEnv (..))
+import qualified Curry.Frontend.IL              as IL   (Module)
 
 -- |Generate typed AbstractCurry
 genTypedAbstractCurry :: CompilerEnv -> CS.Module PredType -> AC.CurryProg

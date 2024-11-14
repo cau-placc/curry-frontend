@@ -17,7 +17,7 @@
 
     then @FM@ is an alias for @FiniteMap@, and @FiniteMap@ is aliased by @FM@.
 -}
-module Env.ModuleAlias ( AliasEnv, initAliasEnv, importAliases ) where
+module Curry.Frontend.Env.ModuleAlias ( AliasEnv, initAliasEnv, importAliases ) where
 
 import qualified Data.Map   as Map (Map, empty, insert)
 import           Data.Maybe        (fromMaybe)

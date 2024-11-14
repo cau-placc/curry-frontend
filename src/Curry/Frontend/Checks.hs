@@ -12,30 +12,30 @@
     This module subsumes the different checks to be performed on a Curry
     module during compilation, e.g. type checking.
 -}
-module Checks where
+module Curry.Frontend.Checks where
 
-import qualified Checks.CaseModeCheck     as CMC (caseModeCheck)
-import qualified Checks.InstanceCheck     as INC (instanceCheck)
-import qualified Checks.InterfaceCheck    as IC  (interfaceCheck)
-import qualified Checks.ImportSyntaxCheck as ISC (importCheck)
-import qualified Checks.DeriveCheck       as DC  (deriveCheck)
-import qualified Checks.ExportCheck       as EC  (exportCheck, expandExports)
-import qualified Checks.ExtensionCheck    as EXC (extensionCheck)
-import qualified Checks.KindCheck         as KC  (kindCheck)
-import qualified Checks.PrecCheck         as PC  (precCheck)
-import qualified Checks.SyntaxCheck       as SC  (syntaxCheck)
-import qualified Checks.TypeCheck         as TC  (typeCheck)
-import qualified Checks.TypeSyntaxCheck   as TSC (typeSyntaxCheck)
-import qualified Checks.WarnCheck         as WC  (warnCheck)
+import qualified Curry.Frontend.Checks.CaseModeCheck     as CMC (caseModeCheck)
+import qualified Curry.Frontend.Checks.InstanceCheck     as INC (instanceCheck)
+import qualified Curry.Frontend.Checks.InterfaceCheck    as IC  (interfaceCheck)
+import qualified Curry.Frontend.Checks.ImportSyntaxCheck as ISC (importCheck)
+import qualified Curry.Frontend.Checks.DeriveCheck       as DC  (deriveCheck)
+import qualified Curry.Frontend.Checks.ExportCheck       as EC  (exportCheck, expandExports)
+import qualified Curry.Frontend.Checks.ExtensionCheck    as EXC (extensionCheck)
+import qualified Curry.Frontend.Checks.KindCheck         as KC  (kindCheck)
+import qualified Curry.Frontend.Checks.PrecCheck         as PC  (precCheck)
+import qualified Curry.Frontend.Checks.SyntaxCheck       as SC  (syntaxCheck)
+import qualified Curry.Frontend.Checks.TypeCheck         as TC  (typeCheck)
+import qualified Curry.Frontend.Checks.TypeSyntaxCheck   as TSC (typeSyntaxCheck)
+import qualified Curry.Frontend.Checks.WarnCheck         as WC  (warnCheck)
 
 import Curry.Base.Monad
 import Curry.Syntax (Module (..), Interface (..), ImportSpec)
 
-import Base.Messages
-import Base.Types
+import Curry.Frontend.Base.Messages
+import Curry.Frontend.Base.Types
 
-import CompilerEnv
-import CompilerOpts
+import Curry.Frontend.CompilerEnv
+import Curry.Frontend.CompilerOpts
 
 type Check m a = Options -> CompEnv a -> CYT m (CompEnv a)
 

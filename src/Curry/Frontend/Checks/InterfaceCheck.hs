@@ -46,7 +46,7 @@
    interface module only. However, this has not been implemented yet.
 -}
 
-module Checks.InterfaceCheck (interfaceCheck) where
+module Curry.Frontend.Checks.InterfaceCheck (interfaceCheck) where
 
 import           Control.Monad            (unless)
 import qualified Control.Monad.State as S
@@ -58,16 +58,16 @@ import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
 
-import Base.Messages (Message, spanInfoMessage, internalError)
-import Base.TopEnv
-import Base.Types
-import Base.Kinds
+import Curry.Frontend.Base.Messages (Message, spanInfoMessage, internalError)
+import Curry.Frontend.Base.TopEnv
+import Curry.Frontend.Base.Types
+import Curry.Frontend.Base.Kinds
 
-import Env.Class
-import Env.Instance
-import Env.OpPrec
-import Env.TypeConstructor
-import Env.Value
+import Curry.Frontend.Env.Class
+import Curry.Frontend.Env.Instance
+import Curry.Frontend.Env.OpPrec
+import Curry.Frontend.Env.TypeConstructor
+import Curry.Frontend.Env.Value
 
 data ICState = ICState
   { moduleIdent :: ModuleIdent

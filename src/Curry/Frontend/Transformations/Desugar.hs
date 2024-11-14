@@ -52,7 +52,7 @@
   As we are going to insert references to real prelude entities,
   all names must be properly qualified before calling this module.
 -}
-module Transformations.Desugar (desugar) where
+module Curry.Frontend.Transformations.Desugar (desugar) where
 import           Control.Arrow              (first, second)
 import           Control.Monad              (liftM2, mapAndUnzipM)
 import           Control.Monad.Extra        (concatMapM)
@@ -67,16 +67,16 @@ import Curry.Base.Ident
 import Curry.Base.SpanInfo
 import Curry.Syntax
 
-import Base.Expr
-import Base.Messages (internalError)
-import Base.TypeExpansion
-import Base.Types
-import Base.TypeSubst
-import Base.Typing
-import Base.Utils (fst3, mapAccumM)
+import Curry.Frontend.Base.Expr
+import Curry.Frontend.Base.Messages (internalError)
+import Curry.Frontend.Base.TypeExpansion
+import Curry.Frontend.Base.Types
+import Curry.Frontend.Base.TypeSubst
+import Curry.Frontend.Base.Typing
+import Curry.Frontend.Base.Utils (fst3, mapAccumM)
 
-import Env.TypeConstructor (TCEnv, TypeInfo (..), qualLookupTypeInfo)
-import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
+import Curry.Frontend.Env.TypeConstructor (TCEnv, TypeInfo (..), qualLookupTypeInfo)
+import Curry.Frontend.Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 
 -- TODO: some types keep their spanInfo, some don't. Probably none of them are needed
 

@@ -13,7 +13,7 @@
    all, possibly transitively, implied extensions to the set of enabled
    extensions.
 -}
-module Checks.ExtensionCheck (extensionCheck) where
+module Curry.Frontend.Checks.ExtensionCheck (extensionCheck) where
 
 import qualified Control.Monad.State as S (State, execState, modify, gets)
 import qualified Data.Set as Set
@@ -23,9 +23,9 @@ import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
 
-import Base.Messages (Message, spanInfoMessage)
+import Curry.Frontend.Base.Messages (Message, spanInfoMessage)
 
-import CompilerOpts
+import Curry.Frontend.CompilerOpts
 
 extensionCheck :: Options -> Module a -> ([KnownExtension], [Message])
 extensionCheck opts mdl = execEXC (checkModule mdl >> applyImplicitExtensions) initState

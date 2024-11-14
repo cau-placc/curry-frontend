@@ -13,7 +13,7 @@
     for Curry source modules.
 -}
 {-# LANGUAGE TemplateHaskell   #-}
-module Html.CurryHtml (source2html) where
+module Curry.Frontend.Html.CurryHtml (source2html) where
 
 import Prelude         as P
 import Control.Monad.Writer
@@ -31,10 +31,10 @@ import Curry.Base.Position   (Position)
 import Curry.Files.Filenames (htmlName)
 import Curry.Syntax          (Module (..), Token)
 
-import Html.SyntaxColoring
+import Curry.Frontend.Html.SyntaxColoring
 
 
-import CompilerOpts          (Options (..))
+import Curry.Frontend.CompilerOpts          (Options (..))
 
 -- |Read file via TemplateHaskell at compile time
 cssContent :: ByteString

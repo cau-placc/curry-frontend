@@ -11,7 +11,7 @@
 
     This module provides an environment for imported interfaces.
 -}
-module Env.Interface where
+module Curry.Frontend.Env.Interface where
 
 import qualified Data.Map as Map (Map, empty, lookup)
 

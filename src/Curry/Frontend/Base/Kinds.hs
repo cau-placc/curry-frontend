@@ -12,7 +12,7 @@
    representation of kinds in the compiler.
 -}
 
-module Base.Kinds where
+module Curry.Frontend.Base.Kinds where
 
 import Curry.Base.Pretty
 import Curry.Syntax

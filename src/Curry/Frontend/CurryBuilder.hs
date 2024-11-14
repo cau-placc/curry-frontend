@@ -16,7 +16,7 @@
 -}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase       #-}
-module CurryBuilder (buildCurry, findCurry, processPragmas, adjustOptions, smake, compMessage) where
+module Curry.Frontend.CurryBuilder (buildCurry, findCurry, processPragmas, adjustOptions, smake, compMessage) where
 
 import Control.Monad   (foldM)
 import Control.Monad.Except ( MonadError(..) )
@@ -33,12 +33,12 @@ import Curry.Files.PathUtils
 import Curry.Syntax ( ModulePragma (..), Extension (KnownExtension)
                     , KnownExtension (CPP), Tool (KnownTool), KnownTool (CYMAKE, FRONTEND) )
 
-import Base.Messages
+import Curry.Frontend.Base.Messages
 
-import CompilerOpts ( Options (..), CppOpts (..), DebugOpts (..)
-                    , TargetType (..), defaultDebugOpts, updateOpts )
-import CurryDeps    (Source (..), flatDeps)
-import Modules      (compileModule)
+import Curry.Frontend.CompilerOpts ( Options (..), CppOpts (..), DebugOpts (..)
+                                   , TargetType (..), defaultDebugOpts, updateOpts )
+import Curry.Frontend.CurryDeps    (Source (..), flatDeps)
+import Curry.Frontend.Modules      (compileModule)
 
 -- |Compile the Curry module in the given source file including all imported
 -- modules w.r.t. the given 'Options'.

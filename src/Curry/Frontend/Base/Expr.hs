@@ -21,7 +21,7 @@
     definitions as @M.x@ always denotes an entity defined at the
     top-level.
 -}
-module Base.Expr (Expr (..), QualExpr (..), QuantExpr (..)) where
+module Curry.Frontend.Base.Expr (Expr (..), QualExpr (..), QuantExpr (..)) where
 
 import           Data.List        (nub)
 import qualified Data.Set  as Set (fromList, notMember)

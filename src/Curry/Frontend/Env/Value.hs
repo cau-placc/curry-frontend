@@ -22,7 +22,7 @@
     information. On import two values are considered equal if their original
     names match.
 -}
-module Env.Value
+module Curry.Frontend.Env.Value
   ( ValueEnv, ValueInfo (..)
   , bindGlobalInfo, bindFun, qualBindFun, rebindFun, unbindFun
   , lookupValue, qualLookupValue, qualLookupValueUnique
@@ -36,10 +36,10 @@ import Control.Monad (zipWithM)
 import Curry.Base.Ident
 import Curry.Base.Pretty (Pretty(..))
 
-import Base.Messages (internalError)
-import Base.TopEnv
-import Base.Types
-import Base.Utils ((++!))
+import Curry.Frontend.Base.Messages (internalError)
+import Curry.Frontend.Base.TopEnv
+import Curry.Frontend.Base.Types
+import Curry.Frontend.Base.Utils ((++!))
 
 import Text.PrettyPrint
 

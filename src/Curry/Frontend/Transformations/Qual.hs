@@ -21,7 +21,7 @@
     Only functions and variables declared in local declarations groups
     as well as function arguments remain unchanged.
 -}
-module Transformations.Qual (qual) where
+module Curry.Frontend.Transformations.Qual (qual) where
 
 import qualified Control.Monad.Reader as R (Reader, asks, runReader)
 import           Data.Traversable
@@ -30,10 +30,10 @@ import           Prelude hiding            (mapM)
 import Curry.Base.Ident
 import Curry.Syntax
 
-import Base.TopEnv         (origName)
+import Curry.Frontend.Base.TopEnv         (origName)
 
-import Env.TypeConstructor (TCEnv   , qualLookupTypeInfo)
-import Env.Value           (ValueEnv, qualLookupValue)
+import Curry.Frontend.Env.TypeConstructor (TCEnv   , qualLookupTypeInfo)
+import Curry.Frontend.Env.Value           (ValueEnv, qualLookupValue)
 
 data QualEnv = QualEnv
   { moduleIdent :: ModuleIdent

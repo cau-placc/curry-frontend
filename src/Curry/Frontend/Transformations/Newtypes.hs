@@ -14,17 +14,17 @@
   declarations are replaced by type synonyms and partial applications of
   newtype constructors are changed into calls to 'Prelude.id'.
 -}
-module Transformations.Newtypes (removeNewtypes) where
+module Curry.Frontend.Transformations.Newtypes (removeNewtypes) where
 
 import qualified Control.Monad.Reader as R
 
 import Curry.Base.Ident
 import Curry.Syntax
 
-import Base.Messages (internalError)
-import Base.Types
+import Curry.Frontend.Base.Messages (internalError)
+import Curry.Frontend.Base.Types
 
-import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
+import Curry.Frontend.Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 
 removeNewtypes :: Bool -> ValueEnv -> Module Type -> Module Type
 removeNewtypes remNT vEnv mdl

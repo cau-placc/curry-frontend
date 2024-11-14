@@ -16,7 +16,7 @@
     information between Curry modules. This is used to create Makefile
     dependencies and to update programs composed of multiple modules.
 -}
-module CurryDeps
+module Curry.Frontend.CurryDeps
   ( Source (..), flatDeps, deps, flattenDeps, sourceDeps, moduleDeps ) where
 
 import           Prelude hiding ((<>))
@@ -33,10 +33,10 @@ import Curry.Syntax
   ( Module (..), ModulePragma (..), ImportDecl (..), parseHeader, parsePragmas
   , patchModuleId, hasLanguageExtension)
 
-import Base.Messages
-import Base.SCC (scc)
-import CompilerOpts (Options (..), CppOpts (..), KnownExtension (..))
-import CondCompile (condCompile)
+import Curry.Frontend.Base.Messages
+import Curry.Frontend.Base.SCC (scc)
+import Curry.Frontend.CompilerOpts (Options (..), CppOpts (..), KnownExtension (..))
+import Curry.Frontend.CondCompile (condCompile)
 
 -- |Different types of source files
 data Source

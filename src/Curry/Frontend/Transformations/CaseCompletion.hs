@@ -30,7 +30,7 @@
     To summarize, this module expands all rigid case expressions.
 -}
 {-# LANGUAGE TupleSections #-}
-module Transformations.CaseCompletion (completeCase) where
+module Curry.Frontend.Transformations.CaseCompletion (completeCase) where
 
 import qualified Control.Monad.State as S   (State, evalState, gets, modify)
 import           Data.List                  (find)
@@ -39,22 +39,22 @@ import           Data.Maybe                 (fromMaybe, listToMaybe)
 import           Curry.Base.Ident
 import qualified Curry.Syntax        as CS
 
-import Base.Expr
-import Base.Messages                        (internalError)
-import Base.Types                           ( charType, floatType
+import Curry.Frontend.Base.Expr
+import Curry.Frontend.Base.Messages                        (internalError)
+import Curry.Frontend.Base.Types                           ( charType, floatType
                                             , intType, stringType
                                             , toType
                                             )
-import qualified Base.Types as CS
-import Base.Subst
+import qualified Curry.Frontend.Base.Types as CS
+import Curry.Frontend.Base.Subst
 
-import Env.TypeConstructor                  (TCEnv)
-import Env.Interface                        (InterfaceEnv, lookupInterface)
+import Curry.Frontend.Env.TypeConstructor                  (TCEnv)
+import Curry.Frontend.Env.Interface                        (InterfaceEnv, lookupInterface)
 
-import Transformations.CurryToIL            (transType)
-import Transformations.Dictionary           (qImplMethodId)
+import Curry.Frontend.Transformations.CurryToIL            (transType)
+import Curry.Frontend.Transformations.Dictionary           (qImplMethodId)
 
-import IL
+import Curry.Frontend.IL as IL
 
 -- Completes case expressions by adding branches for missing constructors.
 -- The interface environment 'iEnv' is needed to compute these constructors.

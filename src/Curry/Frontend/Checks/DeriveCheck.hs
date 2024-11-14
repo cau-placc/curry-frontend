@@ -12,16 +12,16 @@
    compiler has to ensure that it is not asked for other instances than
    those of supported type classes.
 -}
-module Checks.DeriveCheck (deriveCheck) where
+module Curry.Frontend.Checks.DeriveCheck (deriveCheck) where
 
 import Curry.Base.Ident
 import Curry.Base.Pretty
 import Curry.Base.SpanInfo (HasSpanInfo)
 import Curry.Syntax
 
-import Base.Messages (Message, spanInfoMessage)
+import Curry.Frontend.Base.Messages (Message, spanInfoMessage)
 
-import Env.TypeConstructor
+import Curry.Frontend.Env.TypeConstructor
 
 deriveCheck :: TCEnv -> Module a -> [Message]
 deriveCheck tcEnv (Module _ _ _ m _ _ ds) = concatMap (checkDecl m tcEnv) ds

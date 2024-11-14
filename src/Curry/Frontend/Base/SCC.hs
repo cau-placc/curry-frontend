@@ -23,7 +23,7 @@
    so that the declarations can be used as set elements.
 -}
 
-module Base.SCC (scc) where
+module Curry.Frontend.Base.SCC (scc) where
 
 import qualified Data.Set as Set (empty, member, insert)
 

@@ -18,7 +18,7 @@
     the interface of the module.
 -}
 {-# LANGUAGE MultiWayIf, RecursiveDo #-}
-module Exports (exportInterface) where
+module Curry.Frontend.Exports (exportInterface) where
 
 import           Control.Monad.Trans.Reader (ReaderT (runReaderT), ask)
 import           Data.Foldable     (foldrM)
@@ -35,19 +35,19 @@ import Curry.Base.Ident
 import Curry.Base.Monad (CYIO)
 import Curry.Syntax
 
-import Base.Messages
-import Base.Types
+import Curry.Frontend.Base.Messages
+import Curry.Frontend.Base.Types
 
-import Env.Class
-import Env.OpPrec          (OpPrecEnv, PrecInfo (..), OpPrec (..), qualLookupP)
-import Env.Instance
-import Env.TypeConstructor (TCEnv, TypeInfo (..), clsKind, qualLookupTypeInfo)
-import Env.Value           (ValueEnv, ValueInfo (..), qualLookupValue)
+import Curry.Frontend.Env.Class
+import Curry.Frontend.Env.OpPrec          (OpPrecEnv, PrecInfo (..), OpPrec (..), qualLookupP)
+import Curry.Frontend.Env.Instance
+import Curry.Frontend.Env.TypeConstructor (TCEnv, TypeInfo (..), clsKind, qualLookupTypeInfo)
+import Curry.Frontend.Env.Value           (ValueEnv, ValueInfo (..), qualLookupValue)
 
-import CompilerEnv
-import CompilerOpts (Options (optOriginPragmas))
+import Curry.Frontend.CompilerEnv
+import Curry.Frontend.CompilerOpts (Options (optOriginPragmas))
 
-import Base.Kinds
+import Curry.Frontend.Base.Kinds
 
 -- ---------------------------------------------------------------------------
 -- Computation of the interface

@@ -18,7 +18,7 @@
    is defined more than once.
 -}
 {-# LANGUAGE LambdaCase #-}
-module Checks.TypeSyntaxCheck (typeSyntaxCheck) where
+module Curry.Frontend.Checks.TypeSyntaxCheck (typeSyntaxCheck) where
 
 import           Prelude hiding ((<>))
 import           Control.Monad              ( filterM, unless, when )
@@ -36,15 +36,15 @@ import Curry.Base.Pretty
 import Curry.Syntax
 import Curry.Syntax.Pretty
 
-import Base.Expr (Expr (fv))
-import Base.Messages (Message, spanInfoMessage, internalError)
-import Base.TopEnv
-import Base.Utils (findMultiples, findDouble)
+import Curry.Frontend.Base.Expr (Expr (fv))
+import Curry.Frontend.Base.Messages (Message, spanInfoMessage, internalError)
+import Curry.Frontend.Base.TopEnv
+import Curry.Frontend.Base.Utils (findMultiples, findDouble)
 
-import           Env.Class                 (ClassEnv)
-import qualified Env.Class           as CE (FunDep,toFunDep, toFunDepMap)
-import           Env.TypeConstructor       (TCEnv)
-import           Env.Type
+import           Curry.Frontend.Env.Class                 (ClassEnv)
+import qualified Curry.Frontend.Env.Class           as CE (FunDep,toFunDep, toFunDepMap)
+import           Curry.Frontend.Env.TypeConstructor       (TCEnv)
+import           Curry.Frontend.Env.Type
 
 -- TODO Use span info for err messages
 

@@ -11,9 +11,13 @@
     This module is a simple re-export of the definition of the AST of IL
     and the pretty-printing of IL modules.
 -}
-module IL ( module IL.Type, module IL.Typing, ppModule, showModule ) where
+module Curry.Frontend.IL
+  ( module Curry.Frontend.IL.Type
+  , module Curry.Frontend.IL.Typing
+  , ppModule, showModule
+  ) where
 
-import IL.Pretty     (ppModule)
-import IL.ShowModule (showModule)
-import IL.Type
-import IL.Typing
+import Curry.Frontend.IL.Pretty     (ppModule)
+import Curry.Frontend.IL.ShowModule (showModule)
+import Curry.Frontend.IL.Type
+import Curry.Frontend.IL.Typing

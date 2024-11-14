@@ -14,7 +14,7 @@
   The derive function processes type declarations and creates corresponding instance declarations.
 -}
 {-# LANGUAGE TupleSections #-}
-module Transformations.Derive (derive) where
+module Curry.Frontend.Transformations.Derive (derive) where
 
 import qualified Control.Monad.State as S (State, evalState, gets, modify)
 import           Data.List         (intercalate, intersperse)
@@ -24,16 +24,16 @@ import Curry.Base.Ident
 import Curry.Base.SpanInfo
 import Curry.Syntax
 
-import Base.Messages (internalError)
-import Base.Types
-import Base.TypeSubst (instanceTypes)
-import Base.Typing (typeOf)
-import Base.Utils (snd4, thd4, mapAccumM)
+import Curry.Frontend.Base.Messages (internalError)
+import Curry.Frontend.Base.Types
+import Curry.Frontend.Base.TypeSubst (instanceTypes)
+import Curry.Frontend.Base.Typing (typeOf)
+import Curry.Frontend.Base.Utils (snd4, thd4, mapAccumM)
 
-import Env.Instance
-import Env.OpPrec
-import Env.TypeConstructor
-import Env.Value
+import Curry.Frontend.Env.Instance
+import Curry.Frontend.Env.OpPrec
+import Curry.Frontend.Env.TypeConstructor
+import Curry.Frontend.Env.Value
 
 -- TODO: Check whether it is possible for derived instances to violate the
 --         instance termination rules, especially considering FlexibleInstances

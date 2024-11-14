@@ -34,7 +34,7 @@
     whereas using the case mode `prolog` the second program would error and the
     first program would be accepted.
 -}
-module Checks.CaseModeCheck (caseModeCheck) where
+module Curry.Frontend.Checks.CaseModeCheck (caseModeCheck) where
 
 import Prelude hiding ((<>))
 import Data.Char (isAlpha, isUpper, isLower, toUpper, toLower)
@@ -42,8 +42,8 @@ import Data.List (sort)
 import Control.Monad (unless)
 import Control.Monad.State.Strict (State, execState, gets, modify)
 
-import CompilerOpts (CaseMode (..))
-import Base.Messages (Message, spanInfoMessage, internalError)
+import Curry.Frontend.CompilerOpts (CaseMode (..))
+import Curry.Frontend.Base.Messages (Message, spanInfoMessage, internalError)
 import Curry.Base.Ident (Ident (..), escName)
 import Curry.Base.Pretty
 import Curry.Syntax

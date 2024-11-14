@@ -20,7 +20,7 @@
     involved. The context also uses original names and is already minimized.
 -}
 
-module Env.Instance
+module Curry.Frontend.Env.Instance
   ( InstIdent, ppInstIdent, InstInfo, InstMatchInfo
   , InstEnv, initInstEnv, bindInstInfo, removeInstInfo, instEnvList
   , lookupInstExact, lookupInstMatch, typeDepsInstEnv
@@ -37,11 +37,11 @@ import Curry.Base.Pretty
 import Curry.Syntax.Pretty
 import Curry.Base.SpanInfo
 
-import Base.Subst
-import Base.Types
-import Base.TypeSubst
+import Curry.Frontend.Base.Subst
+import Curry.Frontend.Base.Types
+import Curry.Frontend.Base.TypeSubst
 
-import Env.Class
+import Curry.Frontend.Env.Class
 
 -- An 'InstIdent' uniquely identifies an instance by its class name and instance
 -- types.

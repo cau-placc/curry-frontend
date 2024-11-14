@@ -16,12 +16,12 @@
    printer which, in turn, is based on Simon Marlow's pretty printer
    for Haskell.
 -}
-module IL.Pretty (ppModule) where
+module Curry.Frontend.IL.Pretty (ppModule) where
 
 import Prelude hiding ((<>))
 import Curry.Base.Ident
 import Curry.Base.Pretty
-import IL.Type
+import Curry.Frontend.IL.Type
 
 dataIndent :: Int
 dataIndent = 2

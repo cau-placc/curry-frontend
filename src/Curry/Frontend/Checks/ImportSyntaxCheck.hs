@@ -12,7 +12,7 @@
     This module provides the function 'importCheck' to check and expand
     the import specifications of all import declarations.
 -}
-module Checks.ImportSyntaxCheck(importCheck) where
+module Curry.Frontend.Checks.ImportSyntaxCheck(importCheck) where
 
 import           Control.Monad              (liftM, unless)
 import qualified Control.Monad.State as S   (State, gets, modify, runState)
@@ -25,8 +25,8 @@ import Curry.Base.Pretty
 import Curry.Base.SpanInfo
 import Curry.Syntax hiding (Var (..))
 
-import Base.Messages
-import Base.TopEnv
+import Curry.Frontend.Base.Messages
+import Curry.Frontend.Base.TopEnv
 
 importCheck :: Interface -> Maybe ImportSpec -> (Maybe ImportSpec, [Message])
 importCheck (Interface m _ ds o) is = runExpand (expandSpecs is) m' mTCEnv mTyEnv

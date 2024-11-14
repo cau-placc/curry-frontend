@@ -14,7 +14,7 @@
     This module searches for potentially irregular code and generates
     warning messages.
 -}
-module Checks.WarnCheck (warnCheck) where
+module Curry.Frontend.Checks.WarnCheck (warnCheck) where
 
 import Prelude hiding ((<>))
 
@@ -39,21 +39,21 @@ import Curry.Base.Pretty
 import Curry.Base.SpanInfo
 import Curry.Syntax
 
-import Base.Messages   ( Message, spanInfoMessage, internalError )
-import Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
-                       , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv
-                       , qualModifyNestEnv)
-import Base.TopEnv     ( allBoundQualIdents )
+import Curry.Frontend.Base.Messages   ( Message, spanInfoMessage, internalError )
+import Curry.Frontend.Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
+                                      , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv
+                                      , qualModifyNestEnv)
+import Curry.Frontend.Base.TopEnv     ( allBoundQualIdents )
 
-import Base.Types
-import Base.Utils ( findMultiples )
-import Env.ModuleAlias ( AliasEnv )
-import Env.Class ( ClassEnv, classMethods, hasDefaultImpl, minPredList )
-import Env.TypeConstructor ( TCEnv, TypeInfo (..), lookupTypeInfo
-                           , qualLookupTypeInfo, getOrigName )
-import Env.Value ( ValueEnv, ValueInfo (..), qualLookupValue )
+import Curry.Frontend.Base.Types
+import Curry.Frontend.Base.Utils ( findMultiples )
+import Curry.Frontend.Env.ModuleAlias ( AliasEnv )
+import Curry.Frontend.Env.Class ( ClassEnv, classMethods, hasDefaultImpl, minPredList )
+import Curry.Frontend.Env.TypeConstructor ( TCEnv, TypeInfo (..), lookupTypeInfo
+                                          , qualLookupTypeInfo, getOrigName )
+import Curry.Frontend.Env.Value ( ValueEnv, ValueInfo (..), qualLookupValue )
 
-import CompilerOpts ( WarnFlag(..), WarnOpts(..) )
+import Curry.Frontend.CompilerOpts ( WarnFlag(..), WarnOpts(..) )
 
 -- Find potentially incorrect code in a Curry program and generate warnings
 -- for the following issues:

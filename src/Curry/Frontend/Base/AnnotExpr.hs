@@ -12,7 +12,7 @@
     This module provides functionality for extracting free variables
     with qualified annotations from expressions and declarations.
 -}
-module Base.AnnotExpr (QualAnnotExpr (..)) where
+module Curry.Frontend.Base.AnnotExpr (QualAnnotExpr (..)) where
 
 import qualified Data.Set  as Set (fromList, notMember)
 
@@ -20,9 +20,9 @@ import Curry.Base.Ident
 import Curry.Base.SpanInfo
 import Curry.Syntax
 
-import Base.Expr
-import Base.Types
-import Base.Typing
+import Curry.Frontend.Base.Expr
+import Curry.Frontend.Base.Types
+import Curry.Frontend.Base.Typing
 
 class QualAnnotExpr e where
   -- |Free qualified annotated variables in an 'Expr'

@@ -16,8 +16,8 @@
    the module 'NestEnv'. Thus, only the latter needs to be imported.
 -}
 
-module Base.NestEnv
-  ( module Base.TopEnv
+module Curry.Frontend.Base.NestEnv
+  ( module Curry.Frontend.Base.TopEnv
   , NestEnv, emptyEnv, bindNestEnv, qualBindNestEnv
   , lookupNestEnv, qualLookupNestEnv
   , rebindNestEnv, qualRebindNestEnv
@@ -28,8 +28,8 @@ module Base.NestEnv
 import qualified Data.Map         as Map
 import           Curry.Base.Ident
 
-import Base.Messages (internalError)
-import Base.TopEnv
+import Curry.Frontend.Base.Messages (internalError)
+import Curry.Frontend.Base.TopEnv
 
 data NestEnv a
   = GlobalEnv (TopEnv  a)

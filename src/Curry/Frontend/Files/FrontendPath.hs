@@ -11,7 +11,7 @@
     This module contains functions to obtain the version number and path
     of the front end binary.
 -}
-module Files.FrontendPath (getFrontend, frontendGreeting, frontendVersion) where
+module Curry.Frontend.Files.FrontendPath (getFrontend, frontendGreeting, frontendVersion) where
 
 import Data.Version (showVersion)
 import System.FilePath ((</>))

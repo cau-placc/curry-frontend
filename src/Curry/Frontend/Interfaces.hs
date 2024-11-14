@@ -22,7 +22,7 @@
     Interface files are updated by the Curry builder when necessary,
     see module "CurryBuilder".
 -}
-module Interfaces (loadInterfaces) where
+module Curry.Frontend.Interfaces (loadInterfaces) where
 
 import           Prelude hiding ((<>))
 import           Control.Monad               (unless)
@@ -37,10 +37,10 @@ import           Curry.Base.Pretty
 import           Curry.Files.PathUtils
 import           Curry.Syntax
 
-import Base.Messages
-import Env.Interface
+import Curry.Frontend.Base.Messages
+import Curry.Frontend.Env.Interface
 
-import Checks.InterfaceSyntaxCheck (intfSyntaxCheck)
+import Curry.Frontend.Checks.InterfaceSyntaxCheck (intfSyntaxCheck)
 
 -- Interface accumulating monad
 type IntfLoader a = S.StateT LoaderState IO a

@@ -34,7 +34,7 @@
    variable is used.
 -}
 {-# LANGUAGE TupleSections #-}
-module Checks.TypeCheck (typeCheck) where
+module Curry.Frontend.Checks.TypeCheck (typeCheck) where
 
 import Prelude hiding ((<>))
 import           Control.Arrow       ( first )
@@ -63,22 +63,22 @@ import Curry.Base.SpanInfo
 import Curry.Syntax
 import Curry.Syntax.Pretty
 
-import Base.Expr
-import Base.Kinds
-import Base.Messages (Message, spanInfoMessage, internalError)
-import Base.SCC
-import Base.Subst
-import Base.TopEnv
-import Base.TypeExpansion
-import Base.Types
-import Base.TypeSubst
-import Base.Typing hiding (declVars)
-import Base.Utils (foldr2, fst3, thd3, uncurry3, mapAccumM)
+import Curry.Frontend.Base.Expr
+import Curry.Frontend.Base.Kinds
+import Curry.Frontend.Base.Messages (Message, spanInfoMessage, internalError)
+import Curry.Frontend.Base.SCC
+import Curry.Frontend.Base.Subst
+import Curry.Frontend.Base.TopEnv
+import Curry.Frontend.Base.TypeExpansion
+import Curry.Frontend.Base.Types
+import Curry.Frontend.Base.TypeSubst
+import Curry.Frontend.Base.Typing hiding (declVars)
+import Curry.Frontend.Base.Utils (foldr2, fst3, thd3, uncurry3, mapAccumM)
 
-import Env.Class            as CE
-import Env.Instance
-import Env.TypeConstructor
-import Env.Value
+import Curry.Frontend.Env.Class            as CE
+import Curry.Frontend.Env.Instance
+import Curry.Frontend.Env.TypeConstructor
+import Curry.Frontend.Env.Value
 
 -- TODO: Check if the set operations on predicate sets (like union) could be
 --         problematic with the 'PredIsICC' field.

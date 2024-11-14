@@ -17,7 +17,7 @@
     is sufficient.
 -}
 
-module Env.Class
+module Curry.Frontend.Env.Class
   ( ClassEnv, initClassEnv
   , ClassInfo, SuperClassInfo, FunDep, bindClassInfo, mergeClassInfo
   , constraintToSuperClass, lookupClassInfo, superClasses, classFunDeps
@@ -39,14 +39,14 @@ import qualified Data.Set as Set           ( Set, delete, difference, findMax
                                            , null, singleton, size, toList
                                            , union, unions )
 
-import           Base.Types
-import           Base.TypeSubst (expandAliasType)
+import           Curry.Frontend.Base.Types
+import           Curry.Frontend.Base.TypeSubst (expandAliasType)
 
 import           Curry.Base.Ident
 import           Curry.Base.SpanInfo
 import qualified Curry.Syntax.Type as CS
 
-import Base.Messages (internalError)
+import Curry.Frontend.Base.Messages (internalError)
 
 -- ---------------------------------------------------------------------------
 -- Type Synonyms

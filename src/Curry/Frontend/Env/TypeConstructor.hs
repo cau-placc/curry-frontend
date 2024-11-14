@@ -47,7 +47,7 @@
     exported at all in order to make the interface more stable against
     changes which are private to the module.
 -}
-module Env.TypeConstructor
+module Curry.Frontend.Env.TypeConstructor
   ( TypeInfo (..), tcKind, clsKind, varKind, clsMethods
   , TCEnv, initTCEnv, bindTypeInfo, rebindTypeInfo
   , lookupTypeInfo, qualLookupTypeInfo, qualLookupTypeInfoUnique
@@ -58,11 +58,11 @@ import Prelude hiding ((<>))
 import Curry.Base.Ident
 import Curry.Base.Pretty (Pretty(..), blankLine)
 
-import Base.Kinds
-import Base.Messages (internalError)
-import Base.TopEnv
-import Base.Types
-import Base.Utils         ((++!))
+import Curry.Frontend.Base.Kinds
+import Curry.Frontend.Base.Messages (internalError)
+import Curry.Frontend.Base.TopEnv
+import Curry.Frontend.Base.Types
+import Curry.Frontend.Base.Utils         ((++!))
 
 import Text.PrettyPrint
 

@@ -20,7 +20,7 @@
    modules -- the compiler can perform this check without reference to
    the global environments.
 -}
-module Checks.InterfaceSyntaxCheck (intfSyntaxCheck) where
+module Curry.Frontend.Checks.InterfaceSyntaxCheck (intfSyntaxCheck) where
 
 import           Prelude hiding ((<>))
 import           Control.Monad            (filterM, liftM, liftM2, when)
@@ -30,14 +30,14 @@ import qualified Data.Map as Map          (Map, empty, insert, lookup)
 import qualified Data.Set as Set          ( Set, fromList, isSubsetOf, size
                                           , toAscList, union)
 
-import Base.Expr
-import Base.Messages (Message, spanInfoMessage, internalError)
-import Base.TopEnv
-import Base.Utils    (findMultiples)
+import Curry.Frontend.Base.Expr
+import Curry.Frontend.Base.Messages (Message, spanInfoMessage, internalError)
+import Curry.Frontend.Base.TopEnv
+import Curry.Frontend.Base.Utils    (findMultiples)
 
-import           Env.TypeConstructor
-import           Env.Type
-import qualified Env.Class as CE
+import           Curry.Frontend.Env.TypeConstructor
+import           Curry.Frontend.Env.Type
+import qualified Curry.Frontend.Env.Class as CE
 
 import Curry.Base.Ident
 import Curry.Base.SpanInfo

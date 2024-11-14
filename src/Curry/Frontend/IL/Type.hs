@@ -41,7 +41,7 @@
    an unlimited range of integer constants in Curry programs.
 -}
 
-module IL.Type
+module Curry.Frontend.IL.Type
   ( -- * Representation of (type) variables
     TypeVariableWithKind
     -- * Data types
@@ -52,7 +52,7 @@ module IL.Type
 
 import Curry.Base.Ident
 
-import Base.Expr
+import Curry.Frontend.Base.Expr
 
 data Module = Module ModuleIdent [ModuleIdent] [Decl]
     deriving (Eq, Show)

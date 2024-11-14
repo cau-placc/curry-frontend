@@ -14,11 +14,11 @@
     ensuring that each term's type can be derived for further processing in the type system.
 -}
 
-module IL.Typing (Typeable(..)) where
+module Curry.Frontend.IL.Typing (Typeable(..)) where
 
-import Base.Messages (internalError)
+import Curry.Frontend.Base.Messages (internalError)
 
-import IL.Type
+import Curry.Frontend.IL.Type
 
 class Typeable a where
   typeOf :: a -> Type

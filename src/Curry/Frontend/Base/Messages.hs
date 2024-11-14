@@ -11,7 +11,7 @@
     This module defines several operations to construct and emit compiler
     messages to the user.
 -}
-module Base.Messages
+module Curry.Frontend.Base.Messages
   ( -- * Output of user information
     MonadIO (..), status, putMsg, putErrLn, putErrsLn
     -- * program abortion
@@ -30,7 +30,7 @@ import System.Exit                (exitFailure)
 import Curry.Base.Message         ( Message, message, posMessage, spanInfoMessage
                                   , ppWarning, ppMessagesWithPreviews, ppError)
 import Curry.Base.Pretty          (Doc, text)
-import CompilerOpts               (Options (..), WarnOpts (..), Verbosity (..))
+import Curry.Frontend.CompilerOpts               (Options (..), WarnOpts (..), Verbosity (..))
 
 -- |Print a status message, depending on the current verbosity
 status :: MonadIO m => Options -> String -> m ()

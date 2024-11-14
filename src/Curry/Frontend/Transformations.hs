@@ -10,27 +10,27 @@
 
     This module subsumes the different transformations of the source code.
 -}
-module Transformations where
+module Curry.Frontend.Transformations where
 
 import Curry.Syntax
 
-import Base.Types
+import Curry.Frontend.Base.Types
 
-import Transformations.CaseCompletion as CC (completeCase)
-import Transformations.CurryToIL      as IL (ilTrans, transType)
-import Transformations.Derive         as DV (derive)
-import Transformations.Desugar        as DS (desugar)
-import Transformations.Dictionary     as DI (insertDicts)
-import Transformations.Lift           as L  (lift)
-import Transformations.Newtypes       as NT (removeNewtypes)
-import Transformations.Qual           as Q  (qual)
-import Transformations.Simplify       as S  (simplify)
+import Curry.Frontend.Transformations.CaseCompletion as CC (completeCase)
+import Curry.Frontend.Transformations.CurryToIL      as IL (ilTrans, transType)
+import Curry.Frontend.Transformations.Derive         as DV (derive)
+import Curry.Frontend.Transformations.Desugar        as DS (desugar)
+import Curry.Frontend.Transformations.Dictionary     as DI (insertDicts)
+import Curry.Frontend.Transformations.Lift           as L  (lift)
+import Curry.Frontend.Transformations.Newtypes       as NT (removeNewtypes)
+import Curry.Frontend.Transformations.Qual           as Q  (qual)
+import Curry.Frontend.Transformations.Simplify       as S  (simplify)
 
-import Env.TypeConstructor
+import Curry.Frontend.Env.TypeConstructor
 
-import CompilerEnv
-import Imports (qualifyEnv)
-import qualified IL
+import Curry.Frontend.CompilerEnv
+import Curry.Frontend.Imports (qualifyEnv)
+import qualified Curry.Frontend.IL as IL
 
 -- |Fully qualify used constructors and functions.
 qual :: CompEnv (Module a) -> CompEnv (Module a)

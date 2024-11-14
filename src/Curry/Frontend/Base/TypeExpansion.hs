@@ -11,8 +11,8 @@
    This module implements expansion of alias types in types and predicates.
 -}
 
-module Base.TypeExpansion
-  ( module Base.TypeExpansion
+module Curry.Frontend.Base.TypeExpansion
+  ( module Curry.Frontend.Base.TypeExpansion
   ) where
 
 import Curry.Base.Ident
@@ -20,12 +20,12 @@ import Curry.Syntax
 
 import Data.List (nub)
 
-import Base.Messages
-import Base.Types
-import Base.TypeSubst
+import Curry.Frontend.Base.Messages
+import Curry.Frontend.Base.Types
+import Curry.Frontend.Base.TypeSubst
 
-import Env.Class
-import Env.TypeConstructor
+import Curry.Frontend.Env.Class
+import Curry.Frontend.Env.TypeConstructor
 
 -- The function 'expandType' expands all type synonyms in a type
 -- and also qualifies all type constructors with the name of the module

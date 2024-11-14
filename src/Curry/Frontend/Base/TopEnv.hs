@@ -36,7 +36,7 @@
     the modules from which the entity was imported.
 -}
 
-module Base.TopEnv
+module Curry.Frontend.Base.TopEnv
   ( -- * Data types
     TopEnv (..), Entity (..)
     -- * creation and insertion
@@ -53,7 +53,7 @@ import qualified Data.Map      as Map
   (Map, empty, insert, findWithDefault, lookup, toList, keys)
 
 import Curry.Base.Ident
-import Base.Messages (internalError)
+import Curry.Frontend.Base.Messages (internalError)
 
 class Entity a where
  origName :: a -> QualIdent

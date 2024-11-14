@@ -23,7 +23,7 @@
    can be recognized. Finally, all (adjacent) equations of a function are
    merged into a single definition.
 -}
-module Checks.SyntaxCheck (syntaxCheck) where
+module Curry.Frontend.Checks.SyntaxCheck (syntaxCheck) where
 
 import           Prelude hiding ((<>))
 import           Control.Monad       (unless, when)
@@ -44,16 +44,16 @@ import           Curry.Base.Span
 import           Curry.Base.SpanInfo
 import           Curry.Syntax
 
-import           Base.Expr
-import           Base.Messages       (Message, internalError,
-                                      spanInfoMessage)
-import           Base.NestEnv
-import           Base.SCC            (scc)
-import           Base.Utils          (findDouble, findMultiples, (++!))
+import           Curry.Frontend.Base.Expr
+import           Curry.Frontend.Base.Messages       (Message, internalError,
+                                                     spanInfoMessage)
+import           Curry.Frontend.Base.NestEnv
+import           Curry.Frontend.Base.SCC            (scc)
+import           Curry.Frontend.Base.Utils          (findDouble, findMultiples, (++!))
 
-import           Env.TypeConstructor (TCEnv, clsMethods, getOrigName)
-import           Env.Value           (ValueEnv, ValueInfo (..),
-                                      qualLookupValueUnique)
+import           Curry.Frontend.Env.TypeConstructor (TCEnv, clsMethods, getOrigName)
+import           Curry.Frontend.Env.Value           (ValueEnv, ValueInfo (..),
+                                                     qualLookupValueUnique)
 
 
 -- The syntax checking proceeds as follows. First, the compiler extracts

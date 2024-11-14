@@ -23,7 +23,7 @@
     for representing the precedence. This change had to be done due to the
     introduction of unlimited integer constants in the parser / lexer.
 -}
-module Env.OpPrec
+module Curry.Frontend.Env.OpPrec
   ( OpPrec (..), defaultP, defaultAssoc, defaultPrecedence, mkPrec
   , OpPrecEnv,  PrecInfo (..), bindP, lookupP, qualLookupP, initOpPrecEnv
   ) where
@@ -32,7 +32,7 @@ import Curry.Base.Ident
 import Curry.Base.Pretty (Pretty(..))
 import Curry.Syntax      (Infix (..))
 
-import Base.TopEnv
+import Curry.Frontend.Base.TopEnv
 
 import Data.Maybe        (fromMaybe)
 

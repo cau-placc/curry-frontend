@@ -14,12 +14,12 @@
    identifiers is hidden to avoid syntactic clutter.
 -}
 
-module IL.ShowModule (showModule) where
+module Curry.Frontend.IL.ShowModule (showModule) where
 
 import Curry.Base.Ident
 import Curry.Base.Position
 
-import IL.Type
+import Curry.Frontend.IL.Type
 
 -- |Show an IL module like by a devired 'Show' instance
 showModule :: Module -> String

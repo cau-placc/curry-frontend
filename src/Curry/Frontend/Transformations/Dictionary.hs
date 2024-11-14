@@ -11,7 +11,7 @@
   TODO
 -}
 {-# LANGUAGE TupleSections #-}
-module Transformations.Dictionary
+module Curry.Frontend.Transformations.Dictionary
   ( insertDicts
   , dictTypeId, qDictTypeId, dictConstrId, qDictConstrId
   , defaultMethodId, qDefaultMethodId, superDictStubId, qSuperDictStubId
@@ -31,21 +31,21 @@ import Curry.Base.SpanInfo
 import Curry.Syntax
 import Curry.Syntax.Pretty (ppQIdent)
 
-import Base.Expr
-import Base.Kinds
-import Base.Messages (internalError)
-import Base.TopEnv
-import Base.Types
-import Base.TypeSubst
-import Base.Typing
-import Base.Utils (foldr2, uncurry3)
+import Curry.Frontend.Base.Expr
+import Curry.Frontend.Base.Kinds
+import Curry.Frontend.Base.Messages (internalError)
+import Curry.Frontend.Base.TopEnv
+import Curry.Frontend.Base.Types
+import Curry.Frontend.Base.TypeSubst
+import Curry.Frontend.Base.Typing
+import Curry.Frontend.Base.Utils (foldr2, uncurry3)
 
-import Env.Class
-import Env.Instance
-import Env.Interface
-import Env.OpPrec
-import Env.TypeConstructor
-import Env.Value
+import Curry.Frontend.Env.Class
+import Curry.Frontend.Env.Instance
+import Curry.Frontend.Env.Interface
+import Curry.Frontend.Env.OpPrec
+import Curry.Frontend.Env.TypeConstructor
+import Curry.Frontend.Env.Value
 
 data DTState = DTState
   { moduleIdent :: ModuleIdent

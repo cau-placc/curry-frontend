@@ -29,7 +29,7 @@
       * update the qualification information of identifiers in the code list.
 -}
 
-module Html.SyntaxColoring
+module Curry.Frontend.Html.SyntaxColoring
   ( Code (..), TypeUsage (..), ConsUsage (..)
   , IdentUsage (..), FuncUsage (..)
   , genProgram, code2string, getQualIdent
@@ -43,7 +43,7 @@ import Curry.Base.Position
 import Curry.Base.SpanInfo ()
 import Curry.Syntax
 
-import Base.Messages
+import Curry.Frontend.Base.Messages
 
 -- |Type of codes which are distinguished for HTML output
 -- the boolean flags indicate whether the corresponding identifier

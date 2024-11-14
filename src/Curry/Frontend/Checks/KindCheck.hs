@@ -14,7 +14,7 @@
    performs kind checking on all type definitions and type signatures.
 -}
 {-# LANGUAGE TupleSections #-}
-module Checks.KindCheck (kindCheck) where
+module Curry.Frontend.Checks.KindCheck (kindCheck) where
 
 import           Prelude hiding ((<>))
 import           Control.Monad              (when, foldM, replicateM)
@@ -31,17 +31,17 @@ import Curry.Base.Pretty
 import Curry.Syntax
 import Curry.Syntax.Pretty
 
-import Base.Expr
-import Base.Kinds
-import Base.KindSubst
-import Base.Messages (Message, spanInfoMessage, internalError)
-import Base.SCC
-import Base.TopEnv
-import Base.Types
-import Base.TypeExpansion
+import Curry.Frontend.Base.Expr
+import Curry.Frontend.Base.Kinds
+import Curry.Frontend.Base.KindSubst
+import Curry.Frontend.Base.Messages (Message, spanInfoMessage, internalError)
+import Curry.Frontend.Base.SCC
+import Curry.Frontend.Base.TopEnv
+import Curry.Frontend.Base.Types
+import Curry.Frontend.Base.TypeExpansion
 
-import Env.Class
-import Env.TypeConstructor
+import Curry.Frontend.Env.Class
+import Curry.Frontend.Env.TypeConstructor
 
 -- In order to infer kinds for type constructors and type classes, the
 -- compiler sorts the module's type and class declarations into minimal

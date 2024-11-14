@@ -11,7 +11,7 @@
     This module defines the compilation environment for a single module,
      containing the information needed throughout the compilation process.
 -}
-module CompilerEnv where
+module Curry.Frontend.CompilerEnv where
 
 import qualified Data.Map as Map (Map, fromList, keys, toList)
 
@@ -20,15 +20,15 @@ import Curry.Base.Pretty
 import Curry.Base.Span   (Span)
 import Curry.Syntax
 
-import Base.TopEnv (allBindings, allLocalBindings)
+import Curry.Frontend.Base.TopEnv (allBindings, allLocalBindings)
 
-import Env.Class
-import Env.Instance
-import Env.Interface
-import Env.ModuleAlias (AliasEnv, initAliasEnv)
-import Env.OpPrec
-import Env.TypeConstructor
-import Env.Value
+import Curry.Frontend.Env.Class
+import Curry.Frontend.Env.Instance
+import Curry.Frontend.Env.Interface
+import Curry.Frontend.Env.ModuleAlias (AliasEnv, initAliasEnv)
+import Curry.Frontend.Env.OpPrec
+import Curry.Frontend.Env.TypeConstructor
+import Curry.Frontend.Env.Value
 
 type CompEnv a = (CompilerEnv, a)
 

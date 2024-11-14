@@ -14,18 +14,18 @@
     no type synonyms are used in type expressions in interface files.
 -}
 
-module Env.Type
+module Curry.Frontend.Env.Type
   ( TypeKind (..), toTypeKind,
     TypeEnv, bindTypeKind, lookupTypeKind, qualLookupTypeKind
   ) where
 
 import Curry.Base.Ident
 
-import Base.Messages (internalError)
-import Base.TopEnv
-import Base.Types (constrIdent, methodName)
+import Curry.Frontend.Base.Messages (internalError)
+import Curry.Frontend.Base.TopEnv
+import Curry.Frontend.Base.Types (constrIdent, methodName)
 
-import Env.TypeConstructor (TypeInfo (..))
+import Curry.Frontend.Env.TypeConstructor (TypeInfo (..))
 
 import Data.List (union)
 

@@ -33,11 +33,12 @@ import           System.FilePath        ((</>), (<.>))
 import           Curry.Base.Message     (Message, message, ppMessages, ppError)
 import           Curry.Base.Monad       (CYIO, runCYIO)
 import           Curry.Base.Pretty      (text, render)
-import qualified CompilerOpts as CO     ( Options (..), WarnOpts (..)
-                                        , WarnFlag (..), Verbosity (VerbQuiet)
-                                        , CppOpts (..)
-                                        , defaultOptions)
-import CurryBuilder                     (buildCurry)
+
+import qualified Curry.Frontend.CompilerOpts as CO ( Options (..), WarnOpts (..)
+                                                   , WarnFlag (..), Verbosity (VerbQuiet)
+                                                   , CppOpts (..)
+                                                   , defaultOptions )
+import           Curry.Frontend.CurryBuilder       ( buildCurry )
 
 tests :: IO [Test]
 tests = return [failingTests, passingTests, warningTests]

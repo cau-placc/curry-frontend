@@ -19,7 +19,7 @@
    and rearrange infix applications according to the relative precedences
    of the operators involved.
 -}
-module Checks.PrecCheck (precCheck) where
+module Curry.Frontend.Checks.PrecCheck (precCheck) where
 
 import           Control.Monad            (unless, when)
 import qualified Control.Monad.State as S (State, runState, gets, modify)
@@ -32,11 +32,11 @@ import Curry.Base.Span
 import Curry.Base.Pretty
 import Curry.Syntax
 
-import Base.Expr
-import Base.Messages (Message, spanInfoMessage, internalError)
-import Base.Utils    (findMultiples)
+import Curry.Frontend.Base.Expr
+import Curry.Frontend.Base.Messages (Message, spanInfoMessage, internalError)
+import Curry.Frontend.Base.Utils    (findMultiples)
 
-import Env.OpPrec (OpPrecEnv, OpPrec (..), PrecInfo (..), defaultP, bindP
+import Curry.Frontend.Env.OpPrec (OpPrecEnv, OpPrec (..), PrecInfo (..), defaultP, bindP
   , mkPrec, qualLookupP)
 
 precCheck :: ModuleIdent -> OpPrecEnv -> [Decl a] -> ([Decl a], OpPrecEnv, [Message])

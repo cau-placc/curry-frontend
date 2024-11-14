@@ -12,7 +12,7 @@
     This module contains the generation of a typed 'FlatCurry' program term
     for a given module in the intermediate language.
 -}
-module Generators.GenTypedFlatCurry (genTypedFlatCurry, genTypedExpr) where
+module Curry.Frontend.Generators.GenTypedFlatCurry (genTypedFlatCurry, genTypedExpr) where
 
 import Curry.FlatCurry.Annotated.Type
 import Curry.FlatCurry.Annotated.Goodies

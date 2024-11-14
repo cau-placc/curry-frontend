@@ -23,7 +23,7 @@
       * The export of types without sub-entities is extended with an empty
         list of sub-entities.
 -}
-module Checks.ExportCheck (exportCheck, expandExports) where
+module Curry.Frontend.Checks.ExportCheck (exportCheck, expandExports) where
 
 import           Prelude hiding ((<>))
 import           Control.Monad              (unless)
@@ -41,17 +41,17 @@ import Curry.Base.SpanInfo
 import Curry.Base.Pretty
 import Curry.Syntax
 
-import Base.Messages       (Message, internalError, spanInfoMessage)
-import Base.TopEnv         (allEntities, origName, localBindings, moduleImports)
-import Base.Types          ( Type (..), unapplyType, arrowBase, PredType (..)
+import Curry.Frontend.Base.Messages       (Message, internalError, spanInfoMessage)
+import Curry.Frontend.Base.TopEnv         (allEntities, origName, localBindings, moduleImports)
+import Curry.Frontend.Base.Types          ( Type (..), unapplyType, arrowBase, PredType (..)
                            , DataConstr (..), constrIdent, recLabels
                            , ClassMethod, methodName
                            , TypeScheme (..), rawType, rootOfType )
-import Base.Utils          (findMultiples)
+import Curry.Frontend.Base.Utils          (findMultiples)
 
-import Env.ModuleAlias     (AliasEnv)
-import Env.TypeConstructor (TCEnv, TypeInfo (..), qualLookupTypeInfoUnique)
-import Env.Value           (ValueEnv, ValueInfo (..), qualLookupValueUnique)
+import Curry.Frontend.Env.ModuleAlias     (AliasEnv)
+import Curry.Frontend.Env.TypeConstructor (TCEnv, TypeInfo (..), qualLookupTypeInfoUnique)
+import Curry.Frontend.Env.Value           (ValueEnv, ValueInfo (..), qualLookupValueUnique)
 
 currentModuleName :: String
 currentModuleName = "Checks.ExportCheck"

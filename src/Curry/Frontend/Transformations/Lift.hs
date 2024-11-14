@@ -18,7 +18,7 @@
    to take these variables into account. Second, all local function
    declarations are collected and lifted to the top-level.
 -}
-module Transformations.Lift (lift) where
+module Curry.Frontend.Transformations.Lift (lift) where
 
 import           Control.Arrow              (first)
 import qualified Control.Monad.State as S   (State, runState, gets, modify)
@@ -31,16 +31,16 @@ import Curry.Base.Ident
 import Curry.Base.SpanInfo
 import Curry.Syntax
 
-import Base.AnnotExpr
-import Base.Expr
-import Base.Messages                        (internalError)
-import Base.SCC
-import Base.Types
-import Base.TypeSubst
-import Base.Typing
-import Base.Utils
+import Curry.Frontend.Base.AnnotExpr
+import Curry.Frontend.Base.Expr
+import Curry.Frontend.Base.Messages                        (internalError)
+import Curry.Frontend.Base.SCC
+import Curry.Frontend.Base.Types
+import Curry.Frontend.Base.TypeSubst
+import Curry.Frontend.Base.Typing
+import Curry.Frontend.Base.Utils
 
-import Env.Value
+import Curry.Frontend.Env.Value
 
 lift :: ValueEnv -> Module Type -> (Module Type, ValueEnv)
 lift vEnv (Module spi li ps m es is ds) = (lifted, valueEnv s')

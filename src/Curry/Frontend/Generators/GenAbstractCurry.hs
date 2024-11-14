@@ -15,7 +15,7 @@
     for a given 'Curry' module.
 -}
 {-# LANGUAGE LambdaCase #-}
-module Generators.GenAbstractCurry (genAbstractCurry) where
+module Curry.Frontend.Generators.GenAbstractCurry (genAbstractCurry) where
 
 import Control.Monad                          ( when )
 import Control.Monad.Extra                    ( liftM2, concatMapM )
@@ -32,16 +32,16 @@ import Curry.Base.Ident
 import Curry.Base.SpanInfo
 import Curry.Syntax
 
-import Base.Types
-import Base.Expr       (bv)
-import Base.Messages   (internalError)
-import Base.NestEnv
-import Base.TypeSubst
+import Curry.Frontend.Base.Types
+import Curry.Frontend.Base.Expr       (bv)
+import Curry.Frontend.Base.Messages   (internalError)
+import Curry.Frontend.Base.NestEnv
+import Curry.Frontend.Base.TypeSubst
 
-import Env.Value       (ValueEnv, ValueInfo (..), qualLookupValue)
-import Env.OpPrec      (mkPrec)
+import Curry.Frontend.Env.Value       (ValueEnv, ValueInfo (..), qualLookupValue)
+import Curry.Frontend.Env.OpPrec      (mkPrec)
 
-import CompilerEnv
+import Curry.Frontend.CompilerEnv
 
 type GAC a = S.State AbstractEnv a
 

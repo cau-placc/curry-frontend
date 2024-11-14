@@ -11,15 +11,15 @@
    This module implements substitutions on kinds.
 -}
 
-module Base.KindSubst
-  ( module Base.KindSubst, idSubst, singleSubst, bindSubst, compose
+module Curry.Frontend.Base.KindSubst
+  ( module Curry.Frontend.Base.KindSubst, idSubst, singleSubst, bindSubst, compose
   ) where
 
-import Base.Kinds
-import Base.Subst
-import Base.TopEnv
+import Curry.Frontend.Base.Kinds
+import Curry.Frontend.Base.Subst
+import Curry.Frontend.Base.TopEnv
 
-import Env.TypeConstructor
+import Curry.Frontend.Env.TypeConstructor
 
 type KindSubst = Subst Int Kind
 

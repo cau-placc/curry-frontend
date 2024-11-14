@@ -12,19 +12,19 @@
    This module implements substitutions on types.
 -}
 
-module Base.TypeSubst
-  ( module Base.TypeSubst, idSubst, singleSubst, bindSubst, compose
+module Curry.Frontend.Base.TypeSubst
+  ( module Curry.Frontend.Base.TypeSubst, idSubst, singleSubst, bindSubst, compose
   ) where
 
 import           Data.List       (nub)
 import           Data.Maybe      (fromMaybe)
 import qualified Data.Set as Set (Set, map)
 
-import Base.Subst
-import Base.TopEnv
-import Base.Types
+import Curry.Frontend.Base.Subst
+import Curry.Frontend.Base.TopEnv
+import Curry.Frontend.Base.Types
 
-import Env.Value (ValueInfo (..))
+import Curry.Frontend.Env.Value (ValueInfo (..))
 
 type TypeSubst = Subst Int Type
 

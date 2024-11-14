@@ -15,7 +15,7 @@
     entities into the module's scope, and the function 'qualifyEnv' to
     qualify the environment prior to computing the export interface.
 -}
-module Imports (importInterfaces, importModules, qualifyEnv) where
+module Curry.Frontend.Imports (importInterfaces, importModules, qualifyEnv) where
 
 import           Data.List                  (nubBy)
 import qualified Data.Map            as Map
@@ -27,21 +27,21 @@ import Curry.Base.SpanInfo
 import Curry.Base.Monad
 import Curry.Syntax
 
-import Base.Kinds
-import Base.Messages
-import Base.TopEnv
-import Base.Types
-import Base.TypeSubst
+import Curry.Frontend.Base.Kinds
+import Curry.Frontend.Base.Messages
+import Curry.Frontend.Base.TopEnv
+import Curry.Frontend.Base.Types
+import Curry.Frontend.Base.TypeSubst
 
-import Env.Class
-import Env.Instance
-import Env.Interface
-import Env.ModuleAlias (importAliases, initAliasEnv)
-import Env.OpPrec
-import Env.TypeConstructor
-import Env.Value
+import Curry.Frontend.Env.Class
+import Curry.Frontend.Env.Instance
+import Curry.Frontend.Env.Interface
+import Curry.Frontend.Env.ModuleAlias (importAliases, initAliasEnv)
+import Curry.Frontend.Env.OpPrec
+import Curry.Frontend.Env.TypeConstructor
+import Curry.Frontend.Env.Value
 
-import CompilerEnv
+import Curry.Frontend.CompilerEnv
 
 importModules :: Monad m => Module a -> InterfaceEnv -> [ImportDecl]
               -> CYT m CompilerEnv

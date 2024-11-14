@@ -25,7 +25,7 @@
      * Remove pattern bindings to constructor terms
      * Inline simple constants.
 -}
-module Transformations.Simplify (simplify) where
+module Curry.Frontend.Transformations.Simplify (simplify) where
 
 import           Control.Monad.Extra        (concatMapM)
 import           Control.Monad.State as S   (State, runState, gets, modify)
@@ -35,14 +35,14 @@ import Curry.Base.Ident
 import Curry.Base.SpanInfo
 import Curry.Syntax
 
-import Base.Expr
-import Base.Messages (internalError)
-import Base.SCC
-import Base.Types
-import Base.Typing
-import Base.Utils
+import Curry.Frontend.Base.Expr
+import Curry.Frontend.Base.Messages (internalError)
+import Curry.Frontend.Base.SCC
+import Curry.Frontend.Base.Types
+import Curry.Frontend.Base.Typing
+import Curry.Frontend.Base.Utils
 
-import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
+import Curry.Frontend.Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 
 -- -----------------------------------------------------------------------------
 -- Simplification

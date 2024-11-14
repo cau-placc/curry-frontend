@@ -21,7 +21,7 @@
    Because of name conflicts between the source and intermediate language
    data structures, we can use only a qualified import for the 'IL' module.
 -}
-module Transformations.CurryToIL (ilTrans, transType) where
+module Curry.Frontend.Transformations.CurryToIL (ilTrans, transType) where
 import           Control.Monad.Extra         (concatMapM)
 import           Control.Monad.Reader        (Reader, asks, runReader)
 import Control.Monad.State                   (State, put, get, execState)
@@ -32,17 +32,17 @@ import qualified Data.Map             as Map
 import Curry.Base.Ident
 import Curry.Syntax hiding (caseAlt)
 
-import Base.Expr
-import Base.Messages (internalError)
-import Base.Types hiding (polyType)
-import Base.Kinds
-import Base.Typing
-import Base.Utils (foldr2)
+import Curry.Frontend.Base.Expr
+import Curry.Frontend.Base.Messages (internalError)
+import Curry.Frontend.Base.Types hiding (polyType)
+import Curry.Frontend.Base.Kinds
+import Curry.Frontend.Base.Typing
+import Curry.Frontend.Base.Utils (foldr2)
 
-import Env.TypeConstructor
-import Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
+import Curry.Frontend.Env.TypeConstructor
+import Curry.Frontend.Env.Value (ValueEnv, ValueInfo (..), qualLookupValue)
 
-import qualified IL
+import qualified Curry.Frontend.IL as IL
 
 ilTrans :: ValueEnv -> TCEnv -> Module Type -> IL.Module
 ilTrans vEnv tcEnv (Module _ _ _ m _ im ds) = IL.Module m (map moduleImport im) ds'

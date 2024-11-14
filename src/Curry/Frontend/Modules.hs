@@ -17,7 +17,7 @@
     This module controls the compilation of modules.
 -}
 
-module Modules
+module Curry.Frontend.Modules
   ( compileModule, loadAndCheckModule
   , loadModule, parseModule, checkModule, transModule
   , checkModuleHeader, dumpWith
@@ -50,28 +50,28 @@ import Curry.Files.PathUtils
 import Curry.Syntax.InterfaceEquivalence
 import Curry.Syntax.Utils (shortenModuleAST)
 
-import Base.Messages
-import Base.Types
+import Curry.Frontend.Base.Messages
+import Curry.Frontend.Base.Types
 
-import Env.Interface
+import Curry.Frontend.Env.Interface
 
 -- source representations
 import qualified Curry.AbstractCurry as AC
 import qualified Curry.FlatCurry     as FC
 import qualified Curry.Syntax        as CS
-import qualified IL
+import qualified Curry.Frontend.IL   as IL
 
-import Checks
-import CompilerEnv
-import CompilerOpts
-import CondCompile (condCompile)
-import Exports
-import Generators
-import Html.CurryHtml (source2html)
-import Imports
-import Interfaces (loadInterfaces)
-import TokenStream (showTokenStream, showCommentTokenStream)
-import Transformations
+import Curry.Frontend.Checks
+import Curry.Frontend.CompilerEnv
+import Curry.Frontend.CompilerOpts
+import Curry.Frontend.CondCompile (condCompile)
+import Curry.Frontend.Exports
+import Curry.Frontend.Generators
+import Curry.Frontend.Html.CurryHtml (source2html)
+import Curry.Frontend.Imports
+import Curry.Frontend.Interfaces (loadInterfaces)
+import Curry.Frontend.TokenStream (showTokenStream, showCommentTokenStream)
+import Curry.Frontend.Transformations
 
 -- The function 'compileModule' is the main entry-point of this
 -- module for compiling a Curry source module. Depending on the command

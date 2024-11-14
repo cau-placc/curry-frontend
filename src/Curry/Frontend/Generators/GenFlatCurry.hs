@@ -11,7 +11,7 @@
     This module contains the generation of a 'FlatCurry' program term or
     a 'FlatCurry' interface out of an 'Annotated FlatCurry' module.
 -}
-module Generators.GenFlatCurry (genFlatCurry, genFlatInterface) where
+module Curry.Frontend.Generators.GenFlatCurry (genFlatCurry, genFlatInterface) where
 
 import Curry.FlatCurry.Goodies
 import Curry.FlatCurry.Type

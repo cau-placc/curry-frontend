@@ -18,7 +18,7 @@
 -- TODO: Use MultiParamTypeClasses ?
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Base.Types
+module Curry.Frontend.Base.Types
   ( -- * Representation of types
     Type (..), applyType, unapplyType, rootOfType
   , isTypeVariable, isAppliedTypeVariable
@@ -73,8 +73,8 @@ import Curry.Base.Ident
 import Curry.Base.Pretty
 import Curry.Base.SpanInfo (SpanInfo(..))
 
-import Base.Expr
-import Base.Messages (internalError)
+import Curry.Frontend.Base.Expr
+import Curry.Frontend.Base.Messages (internalError)
 
 -- ---------------------------------------------------------------------------
 -- Types

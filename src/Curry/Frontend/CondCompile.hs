@@ -13,12 +13,12 @@
     source code based on specified preprocessor directives.
 -}
 
-module CondCompile (condCompile) where
+module Curry.Frontend.CondCompile (condCompile) where
 
 import Curry.Base.Monad
 import Curry.CondCompile.Transform (condTransform)
 
-import CompilerOpts (CppOpts (..))
+import Curry.Frontend.CompilerOpts (CppOpts (..))
 
 condCompile :: CppOpts -> FilePath -> String -> CYIO String
 condCompile opts fn p

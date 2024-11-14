@@ -16,7 +16,7 @@
     compilation of Curry programs, and utility functions for printing
     help information as well as parsing the command line arguments.
 -}
-module CompilerOpts
+module Curry.Frontend.CompilerOpts
   ( Options (..), CppOpts (..), PrepOpts (..), WarnOpts (..), DebugOpts (..)
   , OptimizationOpts(..), CaseMode (..), FrontendMode (..), Verbosity (..)
   , TargetType (..), WarnFlag (..), KnownExtension (..), DumpLevel (..)

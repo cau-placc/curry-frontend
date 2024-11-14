@@ -15,7 +15,7 @@
    Prelude or standard library.
 -}
 
-module Base.Utils
+module Curry.Frontend.Base.Utils
   ( fst3, snd3, thd3, curry3, uncurry3
   , fst4, snd4, thd4, fth4
   , (++!), foldr2, mapAccumM, findDouble, findMultiples

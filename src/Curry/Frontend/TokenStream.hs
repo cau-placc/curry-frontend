@@ -9,7 +9,7 @@
     and spans of a Curry source module into a separate file.
 -}
 
-module TokenStream (showTokenStream, showCommentTokenStream) where
+module Curry.Frontend.TokenStream (showTokenStream, showCommentTokenStream) where
 
 import Data.List             (intercalate)
 

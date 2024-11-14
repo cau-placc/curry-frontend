@@ -17,7 +17,7 @@
    composed substitutions are marked with a boolean flag (see below).
 -}
 
-module Base.Subst
+module Curry.Frontend.Base.Subst
   ( Subst (..), IntSubst (..), idSubst, singleSubst, bindSubst, unbindSubst
   , substToList, compose, substVar', isubstVar, restrictSubstTo
   ) where
