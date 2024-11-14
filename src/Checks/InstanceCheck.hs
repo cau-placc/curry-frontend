@@ -38,7 +38,7 @@ import Curry.Syntax hiding (impls)
 import Curry.Syntax.Pretty
 
 import Base.Expr (fv)
-import Base.Messages (Message, spanInfoMessage, message, internalError)
+import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.SCC (scc)
 import Base.TypeExpansion
 import Base.Types
@@ -696,7 +696,7 @@ errMultipleInstances tcEnv iss@(InstSource spi i _ : _) = spanInfoMessage spi $
                                           _ -> "and types"
 
 errFunDepConflict :: TCEnv -> (InstSource, InstSource) -> Message
-errFunDepConflict tcEnv (is1, is2) = message $
+errFunDepConflict tcEnv (is1@(InstSource spi _ _), is2) = spanInfoMessage spi $
   text "Functional dependency conflict between instances" $+$
     nest 2 (vcat (map (ppInstSource tcEnv) [is1, is2]))
 
