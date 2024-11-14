@@ -445,7 +445,7 @@ bindInstDecls m clsEnv = flip (foldr $ bindInstFuns m clsEnv) . instEnvList
 
 bindInstFuns :: ModuleIdent -> ClassEnv -> (InstIdent, InstInfo) -> ValueEnv
              -> ValueEnv
-bindInstFuns m clsEnv ((cls, tys), (m', pls, is)) =
+bindInstFuns m clsEnv ((cls, tys), (_, m', pls, is)) =
   bindInstDict m cls tys m' pls . bindInstMethods m clsEnv cls tys m' pls is
 
 bindInstDict :: ModuleIdent -> QualIdent -> [Type] -> ModuleIdent -> PredList
@@ -767,7 +767,7 @@ instPredList (Pred _ cls tys) = do
     [] -> internalError $ "Dictionary.instPredList: " ++
                             "Could not find an instance for " ++ show (cls, tys)
                             ++ " pretty printed: " ++ show (ppQIdent cls, pPrint tys)
-    [(m, pls, itys, _, tau)] -> return (m, itys, subst tau pls)
+    [(_, m, pls, itys, _, tau)] -> return (m, itys, subst tau pls)
     _ : _ -> internalError $ "Dictionary.instPredList: " ++
                                "Multiple instances for " ++ show (cls, tys)
 
@@ -862,7 +862,7 @@ emptySpEnv = Map.empty
 
 initSpEnv :: ClassEnv -> InstEnv -> SpecEnv
 initSpEnv clsEnv = foldr (uncurry bindInstance) emptySpEnv . instEnvList
-  where bindInstance (cls, tys) (m, _, _) =
+  where bindInstance (cls, tys) (_, m, _, _) =
           flip (foldr $ bindInstanceMethod m cls tys) $ classMethods cls clsEnv
         bindInstanceMethod m cls tys f = Map.insert (f', d) f''
           where f'  = qualifyLike cls f

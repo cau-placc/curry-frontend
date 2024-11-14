@@ -1874,7 +1874,7 @@ instPredList m inEnv (LPred (Pred _ qcls tys) p what doc) =
            ([], _)                -> One $ errMissingInstance m lpr
            (insts@(_ : _ : _), _) -> One $ errInstanceOverlap m lpr insts False
            (_, insts@(_ : _ : _)) -> One $ errInstanceOverlap m lpr insts True
-           ([(_, ps, _, _, sigma)], _) ->
+           ([(_, _, ps, _, _, sigma)], _) ->
              Three $ map (\pr -> LPred pr p what doc) (subst sigma ps)
   where lpr = LPred (Pred OPred qcls (map removeTypeConstrained tys)) p what doc
 
@@ -2613,7 +2613,7 @@ errInstanceOverlap m (LPred pr@(Pred _ qcls _) p what doc) insts tvChoice =
                      else []
  where
   displayMatchingInst :: InstMatchInfo -> Doc
-  displayMatchingInst (m', _, itys, _, _) =
+  displayMatchingInst (_, m', _, itys, _, _) =
     ppPred m (Pred OPred qcls itys) <+> text "from" <+> pPrint m'
 
 errFlexibleContext :: HasSpanInfo a => ModuleIdent -> a -> String -> Ident

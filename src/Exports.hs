@@ -250,7 +250,7 @@ initInstExports m clsEnv =
   Map.fromListWith (++) . map instExpMapEntry . instEnvList
  where
   instExpMapEntry :: (InstIdent, InstInfo) -> (Set.Set QualIdent, [InstIdent])
-  instExpMapEntry (instId@(cls, tys), (m', _, _)) =
+  instExpMapEntry (instId@(cls, tys), (_, m', _, _)) =
     let select = if m == m' then id else take 1
         tcs = if null (classFunDeps cls clsEnv) then concatMap typeConstrs tys
                                                 else []
@@ -271,7 +271,7 @@ iInstDecl m inEnv tvs instId@(cls, tys) = do
   o <- originPragma cls
   return $ IInstanceDecl NoPos cx (qualUnqualify m cls) tys' is mm o
  where
-  (m', ps, is) = case lookupInstExact instId inEnv of
+  (_, m', ps, is) = case lookupInstExact instId inEnv of
                    Just instInfo -> instInfo
                    Nothing -> internalError $ "Exports.iInstDecl: Could not " ++
                                 "find instance information for " ++ show instId
