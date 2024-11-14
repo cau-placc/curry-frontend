@@ -176,7 +176,7 @@ importInstances m = flip $ foldr (bindInstance m)
 
 bindInstance :: ModuleIdent -> IDecl -> InstEnv -> InstEnv
 bindInstance m (IInstanceDecl _ cx qcls tys is mm o) =
-  bindInstInfo (applyOriginPragma o (qualQualify m qcls), tys') (fromMaybe m mm, ps, is)
+  bindInstInfo (applyOriginPragma o (qualQualify m qcls), tys') (NoSpanInfo, fromMaybe m mm, ps, is)
   where PredTypes ps tys' = toQualPredTypes m [] OPred cx tys
 bindInstance _ _ = id
 

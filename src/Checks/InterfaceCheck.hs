@@ -265,7 +265,7 @@ checkInstInfo :: HasSpanInfo s => (PredList -> [(Ident, Int)] -> Bool) -> s
 checkInstInfo check p i mm = do
   inEnv <- getInstEnv
   let checkInfo m _ = case lookupInstExact i inEnv of
-        Just (m', ps, is)
+        Just (_, m', ps, is)
           | m /= m'   -> report $ errNoInstance p m i
           | otherwise ->
             unless (check ps is) $ report $ errInstanceConflict p m i

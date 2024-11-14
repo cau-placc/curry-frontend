@@ -28,7 +28,7 @@ import Base.Messages (internalError)
 import Base.Types
 import Base.TypeSubst (instanceTypes)
 import Base.Typing (typeOf)
-import Base.Utils (fst3, snd3, mapAccumM)
+import Base.Utils (snd4, thd4, mapAccumM)
 
 import Env.Instance
 import Env.OpPrec
@@ -95,7 +95,7 @@ deriveAllInstances ds = do
 -- environment, we can safely derive a data instance
 hasDataInstance :: InstEnv -> ModuleIdent -> Decl PredType -> Bool
 hasDataInstance inst mid (DataDecl    _ tc tvs _ _) =
-  maybe False ((== mid) . fst3) (lookupInstExact (qDataId, [ty]) inst)
+  maybe False ((== mid) . snd4) (lookupInstExact (qDataId, [ty]) inst)
   -- TODO: An alternative would be to use 'expandConstrType' or 'toConstrType',
   --         but that probably isn't needed.
   where ty = applyType (TypeConstructor (qualifyWith mid tc))
@@ -133,7 +133,7 @@ deriveInstance tc tvs cis cls = do
   let ty = applyType (TypeConstructor tc) $
              take (length tvs) $ map TypeVariable [0 ..]
       -- TODO: Maybe add a specific error message?
-      pls = snd3 $ fromJust $ lookupInstExact (cls, [ty]) inEnv
+      pls = thd4 $ fromJust $ lookupInstExact (cls, [ty]) inEnv
       QualTypeExpr _ cx inst = fromPredType tvs $ PredType pls ty
   ds <- deriveMethods cls ty cis pls
   return $ InstanceDecl NoSpanInfo WhitespaceLayout cx cls [inst] ds

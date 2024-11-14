@@ -38,7 +38,7 @@ import Curry.Syntax hiding (impls)
 import Curry.Syntax.Pretty
 
 import Base.Expr (fv)
-import Base.Messages (Message, spanInfoMessage, message, internalError)
+import Base.Messages (Message, spanInfoMessage, internalError)
 import Base.SCC (scc)
 import Base.TypeExpansion
 import Base.Types
@@ -57,11 +57,10 @@ instanceCheck exts m tcEnv clsEnv inEnv ds =
     errs -> (inEnv, errs)
   where
     localInsts = concatMap (genInstSources m tcEnv) ds
-    localInstIdents = concatMap (genInstIdents m tcEnv) ds
     importedISs = concatMap (\(qi, mp) -> map (\(tys, _) -> InstSource NoSpanInfo (qi, tys) m) $ Map.toList mp) $ Map.toList inEnv
     multipleErrs = map (errMultipleInstances tcEnv) $ findMultiples $ localInsts ++ importedISs
     funDepConflictErrs = map (errFunDepConflict tcEnv) $
-                           findFunDepConflicts m clsEnv inEnv localInstIdents
+                           findFunDepConflicts m clsEnv inEnv localInsts
     state = INCState m inEnv exts []
 
 -- In order to provide better error messages, we use the following data type
@@ -80,15 +79,15 @@ instance HasSpanInfo InstSource where
 instance Eq InstSource where
   InstSource _ i1 _ == InstSource _ i2 _ = i1 == i2
 
-findFunDepConflicts :: ModuleIdent -> ClassEnv -> InstEnv -> [InstIdent]
+findFunDepConflicts :: ModuleIdent -> ClassEnv -> InstEnv -> [InstSource]
                     -> [(InstSource, InstSource)]
 findFunDepConflicts m clsEnv inEnv localInsts =
-  [ (InstSource NoSpanInfo (cls, itys1) m1, InstSource NoSpanInfo (cls, itys2) m2)
-  | let inEnv' = foldr (`bindInstInfo` (m, [], [])) inEnv localInsts
+  [ (InstSource spi1 (cls, itys1) m1, InstSource spi2 (cls, itys2) m2)
+  | let inEnv' = foldr (\(InstSource spi i _) -> bindInstInfo i (spi, m, [], [])) inEnv localInsts
   , (cls, instMap) <- Map.toList inEnv'
   , funDep <- classFunDeps cls clsEnv
-  , (itys1, (m1, _, _)) : remInsts <- tails (Map.toList instMap)
-  , (itys2, (m2, _, _)) <- remInsts
+  , (itys1, (spi1, m1, _, _)) : remInsts <- tails (Map.toList instMap)
+  , (itys2, (spi2, m2, _, _)) <- remInsts
   , m1 /= m2 || m1 == m
   , let (lhs1, rhs1) = (getFunDepLhs funDep itys1, getFunDepRhs funDep itys1)
         maxIdLhs1 = maximum (-1 : typeVars lhs1) + 1
@@ -203,7 +202,7 @@ bindInstance tcEnv clsEnv (InstanceDecl p _ cx qcls inst ds) = do
   fdCov <- checkFunDepCoverage clsEnv p qcls (getOrigName m qcls tcEnv) inst
   when fdCov $ modifyInstEnv $
     bindInstInfo (getOrigName m qcls tcEnv, itys)
-                    (m, if term then ipls else [], impls [] ds)
+                    (p, m, if term then ipls else [], impls [] ds)
   where impls is [] = is
         impls is (FunctionDecl _ _ f eqs:ds')
           | f' `elem` map fst is = impls is ds'
@@ -303,7 +302,7 @@ bindDerivedInstance :: HasSpanInfo s => ClassEnv -> s -> PredType -> QualIdent
 bindDerivedInstance clsEnv p pty cls = do
   m <- getModuleIdent
   (((_, tys), pls), enter) <- inferPredList clsEnv p pty [] cls
-  when enter $ modifyInstEnv (bindInstInfo (cls, tys) (m, pls, impls))
+  when enter $ modifyInstEnv (bindInstInfo (cls, tys) (getSpanInfo p, m, pls, impls))
                -- taken from Leif-Erik Krueger
                >> checkMissingImplementations clsEnv p cls tys (map fst impls)
   where impls | cls == qEqId      = [(eqOpId, 2)]
@@ -351,12 +350,12 @@ updatePredList :: (InstIdent, PredList) -> Bool -> INCM Bool
 updatePredList (i, pls) enter = do
   inEnv <- getInstEnv
   case lookupInstExact i inEnv of
-    Just (m, pls', is)
+    Just (spi, m, pls', is)
       | not enter   -> modifyInstEnv (removeInstInfo i) >> return False
       -- TODO : is this correct every time? Order of elements in list?
       | pls == pls' -> return False
       | otherwise   -> do
-        modifyInstEnv $ bindInstInfo i (m, pls, is)
+        modifyInstEnv $ bindInstInfo i (spi, m, pls, is)
         return True
     _ -> internalError "InstanceCheck.updatePredList"
 
@@ -596,7 +595,7 @@ instPredList rm m p doc pr@(Pred _ qcls tys) inEnv =
   then Right []
   else case lookupInstMatch qcls tys inEnv of
          ([],_) -> Left $ errMissingInstance rm m p doc pr
-         ([(_, pls, _, _, sigma)], insts) ->
+         ([(_, _, pls, _, _, sigma)], insts) ->
              if isDeriveMode rm && length insts > 1
              then Left $ errInstanceOverlap rm True m p doc pr insts
              else Right $ subst sigma pls
@@ -696,7 +695,7 @@ errMultipleInstances tcEnv iss@(InstSource spi i _ : _) = spanInfoMessage spi $
                                           _ -> "and types"
 
 errFunDepConflict :: TCEnv -> (InstSource, InstSource) -> Message
-errFunDepConflict tcEnv (is1, is2) = message $
+errFunDepConflict tcEnv (is1@(InstSource spi _ _), is2) = spanInfoMessage spi $
   text "Functional dependency conflict between instances" $+$
     nest 2 (vcat (map (ppInstSource tcEnv) [is1, is2]))
 
@@ -730,7 +729,7 @@ errInstanceOverlap rm tvChoice m p doc pr@(Pred _ qcls _) insts =
   --         many functions to be available here. Check if this extra effort
   --         would produce better error messages.
   displayMatchingInst :: InstMatchInfo -> Doc
-  displayMatchingInst (m', _, itys, _, _) =
+  displayMatchingInst (_, m', _, itys, _, _) =
     ppPred m (Pred OPred qcls itys) <+> parens (text "defined in" <+> pPrint m')
 
   note = map text $ case (rm, tvChoice) of

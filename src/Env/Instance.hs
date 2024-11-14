@@ -35,6 +35,7 @@ import Control.Monad ((<=<))
 import Curry.Base.Ident
 import Curry.Base.Pretty
 import Curry.Syntax.Pretty
+import Curry.Base.SpanInfo
 
 import Base.Subst
 import Base.Types
@@ -53,13 +54,13 @@ ppInstIdent (qcls, tys) =
 -- An 'InstInfo' contains all relevant information about an instance declaration
 -- beyond its identifier. These are its module, the given instance context, and
 -- the implemented methods with their arity.
-type InstInfo = (ModuleIdent, PredList, [(Ident, Int)])
+type InstInfo = (SpanInfo, ModuleIdent, PredList, [(Ident, Int)])
 
 -- An 'InstMatchInfo' is represents a successful result when searching for a
 -- matching instance. In addition to the information of an 'InstInfo', it
 -- contains the original instance types of the matching instance and a type
 -- substitution mapping instance types to the the requested types.
-type InstMatchInfo = (ModuleIdent, PredList, [Type], [(Ident, Int)], TypeSubst)
+type InstMatchInfo = (SpanInfo, ModuleIdent, PredList, [Type], [(Ident, Int)], TypeSubst)
 
 -- taken from Leif-Erik Krueger
 type InstLookupResult = ([InstMatchInfo], [InstMatchInfo])
@@ -101,10 +102,10 @@ lookupInstMatch qcls tys inEnv =
   case fmap Map.toList (Map.lookup qcls inEnv) of
     Nothing       -> ([], [])
     Just instList ->
-      ( [ (m, ps, itys, is, sigma) | (itys, (m, ps, is)) <- instList
-                                   , Just sigma <- [matchInstTypes itys tys] ]
-      , [ (m, ps', itys', is, sigma)
-        | (itys, (m, ps, is)) <- instList
+      ( [ (spi, m, ps, itys, is, sigma) | (itys, (spi, m, ps, is)) <- instList
+                                        , Just sigma <- [matchInstTypes itys tys] ]
+      , [ (spi, m, ps', itys', is, sigma)
+        | (itys, (spi, m, ps, is)) <- instList
         -- 'TypeConstrained's, which are special type variables standing for
         -- Int or Float, are converted to regular type variables here. They are
         -- treated specially in 'defaultTypeConstrained' in the type check.
