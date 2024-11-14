@@ -57,11 +57,10 @@ instanceCheck exts m tcEnv clsEnv inEnv ds =
     errs -> (inEnv, errs)
   where
     localInsts = concatMap (genInstSources m tcEnv) ds
-    localInstIdents = concatMap (genInstIdents m tcEnv) ds
     importedISs = concatMap (\(qi, mp) -> map (\(tys, _) -> InstSource NoSpanInfo (qi, tys) m) $ Map.toList mp) $ Map.toList inEnv
     multipleErrs = map (errMultipleInstances tcEnv) $ findMultiples $ localInsts ++ importedISs
     funDepConflictErrs = map (errFunDepConflict tcEnv) $
-                           findFunDepConflicts m clsEnv inEnv localInstIdents
+                           findFunDepConflicts m clsEnv inEnv localInsts
     state = INCState m inEnv exts []
 
 -- In order to provide better error messages, we use the following data type
@@ -80,11 +79,11 @@ instance HasSpanInfo InstSource where
 instance Eq InstSource where
   InstSource _ i1 _ == InstSource _ i2 _ = i1 == i2
 
-findFunDepConflicts :: ModuleIdent -> ClassEnv -> InstEnv -> [InstIdent]
+findFunDepConflicts :: ModuleIdent -> ClassEnv -> InstEnv -> [InstSource]
                     -> [(InstSource, InstSource)]
 findFunDepConflicts m clsEnv inEnv localInsts =
   [ (InstSource spi1 (cls, itys1) m1, InstSource spi2 (cls, itys2) m2)
-  | let inEnv' = foldr (`bindInstInfo` (NoSpanInfo, m, [], [])) inEnv localInsts
+  | let inEnv' = foldr (\(InstSource spi i _) -> bindInstInfo i (spi, m, [], [])) inEnv localInsts
   , (cls, instMap) <- Map.toList inEnv'
   , funDep <- classFunDeps cls clsEnv
   , (itys1, (spi1, m1, _, _)) : remInsts <- tails (Map.toList instMap)
