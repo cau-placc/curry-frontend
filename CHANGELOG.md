@@ -15,6 +15,7 @@ Version 3.0.0
   * Added support for flexible instances (enabled with `-XFlexibleInstances`),
     which allows similar flexibility in type class instances.
   * `-XFunctionalDependencies` implies `-XMultiParamTypeClasses`.
+  * Prefixed frontend modules with `Curry.Frontend` to improve usability as a library
 
   Improvements
   ------------
