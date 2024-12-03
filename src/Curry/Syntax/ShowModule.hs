@@ -47,7 +47,7 @@ showsPragma (LanguagePragma pos exts)
 showsPragma (OptionsPragma pos mbTool args)
   = showsString "(OptionsPragma "
   . showsSpanInfo pos . space
-  . showsMaybe shows mbTool
+  . showsMaybe showsTool mbTool
   . shows args
   . showsString ")"
 
@@ -61,6 +61,16 @@ showsExtension (UnknownExtension p s)
   = showsString "(UnknownExtension "
   . showsSpanInfo p . space
   . shows s
+  . showString ")"
+
+showsTool :: Tool -> ShowS
+showsTool (KnownTool t)
+  = showsString "(KnownTool "
+  . shows t
+  . showString ")"
+showsTool (UnknownTool t)
+  = showsString "(UnknownTool "
+  . shows t
   . showString ")"
 
 showsExportSpec :: ExportSpec -> ShowS
