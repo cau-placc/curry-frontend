@@ -8,7 +8,10 @@
   Stability   :  experimental
   Portability :  portable
 
-  TODO
+  During dictionary translation, type classes and instances
+  are translated into dictionarya data types and functions.
+  Any function with a class context gets the
+  corresponding dictionary as an explicit argument.
 -}
 {-# LANGUAGE TupleSections #-}
 module Transformations.Dictionary
