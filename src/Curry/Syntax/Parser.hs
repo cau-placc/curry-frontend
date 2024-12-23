@@ -679,7 +679,11 @@ identType =  mkVariableType    <$> spanPosition <*> tyvar
 
 -- parenType ::= '(' tupleType ')'
 parenType :: Parser a Token TypeExpr
-parenType = fmap updateSpanWithBrackets (parensSp tupleType)
+parenType = up <$> fmap updateSpanWithBrackets (parensSp tupleType)
+ where
+  up n = case n of
+    ConstructorType ss qid | qid == qUnitId -> ConstructorType ss (setSpanInfo ss qid)
+    _                                       -> n
 
 -- tupleType ::= type0                         (parenthesized type)
 --            |  type0 ',' type0 { ',' type0 } (tuple type)
