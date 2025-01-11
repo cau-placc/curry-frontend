@@ -42,6 +42,7 @@ import Base.Types
 import Base.Utils ((++!))
 
 import Text.PrettyPrint
+import Data.Maybe (isNothing)
 
 data ValueInfo
   -- |Data constructor with original name, arity, list of record labels and type
@@ -50,7 +51,7 @@ data ValueInfo
   -- (arity is always 1)
   | NewtypeConstructor QualIdent                       Ident   TypeScheme
   -- |Value with original name, class method name, arity and type
-  | Value              QualIdent (Maybe QualIdent) Int         TypeScheme
+  | Value              QualIdent (Maybe (Bool, QualIdent)) Int         TypeScheme
   -- |Record label with original name, list of constructors for which label
   -- is a valid field and type (arity is always 1)
   | Label              QualIdent [QualIdent]                   TypeScheme
@@ -83,8 +84,8 @@ instance Pretty ValueInfo where
                                            <+> equals <+> pPrint tySc
   pPrint (NewtypeConstructor qid _ tySc) =     text "newtype" <+> pPrint qid
                                            <+> equals <+> pPrint tySc
-  pPrint (Value qid _ ar tySc)           =     pPrint qid
-                                           <>  text "/" <> int ar
+  pPrint (Value qid mq ar tySc)           =     pPrint qid
+                                           <>  (if isNothing mq then text "N" else empty) <> text "/" <> int ar
                                            <+> equals <+> pPrint tySc
   pPrint (Label qid _ tySc)              =     text "label" <+> pPrint qid
                                            <+> equals <+> pPrint tySc
@@ -112,7 +113,7 @@ bindGlobalInfo f m c ty = bindTopEnv c v . qualBindTopEnv qc v
   where qc = qualifyWith m c
         v  = f qc ty
 
-bindFun :: ModuleIdent -> Ident -> Maybe QualIdent -> Int -> TypeScheme
+bindFun :: ModuleIdent -> Ident -> Maybe (Bool, QualIdent) -> Int -> TypeScheme
         -> ValueEnv -> ValueEnv
 bindFun m f cm a ty
   | hasGlobalScope f = bindTopEnv f v . qualBindTopEnv qf v
@@ -120,12 +121,12 @@ bindFun m f cm a ty
   where qf = qualifyWith m f
         v  = Value qf cm a ty
 
-qualBindFun :: ModuleIdent -> Ident -> Maybe QualIdent -> Int -> TypeScheme
+qualBindFun :: ModuleIdent -> Ident -> Maybe (Bool, QualIdent) -> Int -> TypeScheme
             -> ValueEnv -> ValueEnv
 qualBindFun m f cm a ty = qualBindTopEnv qf $ Value qf cm a ty
   where qf = qualifyWith m f
 
-rebindFun :: ModuleIdent -> Ident -> Maybe QualIdent -> Int -> TypeScheme
+rebindFun :: ModuleIdent -> Ident -> Maybe (Bool, QualIdent) -> Int -> TypeScheme
           -> ValueEnv -> ValueEnv
 rebindFun m f cm a ty
   | hasGlobalScope f = rebindTopEnv f v . qualRebindTopEnv qf v

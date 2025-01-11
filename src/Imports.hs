@@ -167,7 +167,9 @@ bindClass m (IClassDecl _ cx cls _ tvs fds ds ids o) =
   where ar = length tvs
         sclss = toQualPredList m tvs OPred cx
         fds' = map (toFunDep tvs) fds
-        ms = map (\d -> (imethod d, isJust $ imethodArity d)) $ filter isVis ds
+        -- Add all methods to the class environment, but remember which
+        -- methods are visible in the module.
+        ms = map (\d -> (imethod d, (isJust $ imethodArity d, isVis d))) ds
         isVis (IMethodDecl _ idt _ _ ) = idt `notElem` ids
 bindClass _ _ = id
 
@@ -220,10 +222,9 @@ types m (ITypeDecl _ tc k tvs ty o) =
   [typeCon aliasType o m tc k tvs (toQualType m tvs ty)]
   where
     aliasType tc' k' = AliasType tc' k' (length tvs)
-types m (IClassDecl _ _ qcls k tvs _ ds ids o) =
-  [typeCls o m qcls k tvs (map mkMethod $ filter isVis ds)]
+types m (IClassDecl _ _ qcls k tvs _ ds _ o) =
+  [typeCls o m qcls k tvs (map mkMethod ds)]
   where
-    isVis (IMethodDecl _ f _ _ ) = f `notElem` ids
     mkMethod (IMethodDecl _ f a qty) = ClassMethod f a $ qualifyPredType m $
       normalize (length tvs) $ toMethodType qcls tvs qty
 types _ _ = []
@@ -269,7 +270,7 @@ values m (IFunctionDecl _ f Nothing a qty o) =
   [Value (applyOriginPragma o (qualQualify m f)) Nothing a (typeScheme (toQualPredType m [] OPred qty))]
 values m (IFunctionDecl _ f (Just tvs) _ qty@(QualTypeExpr _ cx _) o) =
   let mcls = case cx of []                      -> Nothing
-                        Constraint _ qcls _ : _ -> Just qcls
+                        Constraint _ qcls _ : _ -> Just (False, qcls)
   in [Value (applyOriginPragma o (qualQualify m f)) mcls 0 (typeScheme (toQualPredType m tvs ICC qty))]
 values m (IClassDecl _ _ qcls _ tvs _ ds hs o) =
   map (classMethod m (applyOriginPragma o $ qualQualify m qcls) tvs hs) ds
@@ -323,7 +324,7 @@ classMethod m qcls tvs hs (IMethodDecl _ f _ qty) =
   Value (qualifyLike qcls f) mcls 0 $
     typeScheme $ qualifyPredType m $ toMethodType qcls tvs qty
   where
-    mcls = if f `elem` hs then Nothing else Just qcls
+    mcls = Just (f `elem` hs, qcls)
 
 
 -- ---------------------------------------------------------------------------

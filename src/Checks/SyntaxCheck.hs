@@ -54,7 +54,7 @@ import           Base.Utils          (findDouble, findMultiples, (++!))
 import           Env.TypeConstructor (TCEnv, clsMethods, getOrigName)
 import           Env.Value           (ValueEnv, ValueInfo (..),
                                       qualLookupValueUnique)
-
+import qualified Data.Map as Map     (filter) 
 
 -- The syntax checking proceeds as follows. First, the compiler extracts
 -- information about all imported values and data constructors from the
@@ -85,8 +85,13 @@ syntaxCheck exts tcEnv vEnv mdl@(Module _ _ _ m _ _ ds) =
     ls    = nub $ concatMap recLabels tds
     fs    = nub $ concatMap vars vds
     cs    = [mtd | ClassDecl _ _ _ _ _ _ ds' <- cds, d <- ds', mtd <- methods d]
-    rEnv  = globalEnv $ fmap renameInfo vEnv
+    rEnv  = globalEnv $ renameInfo <$> filterVis vEnv
     state = initState exts m tcEnv rEnv vEnv
+    -- Filters out all class methods that are not visible
+    filterVis (TopEnv vi) = TopEnv $ Map.filter visible vi
+     where 
+      visible [(_, Value _ (Just (True, _)) _ _)] = False
+      visible _ = True
 
 -- A global state transformer is used for generating fresh integer keys with
 -- which the variables are renamed.
@@ -506,7 +511,7 @@ checkInstanceDecl (InstanceDecl p li cx qcls tys ds) = do
   InstanceDecl p li cx qcls tys <$> checkTopDecls ds
   where
     isFromCls orig m vEnv f = case qualLookupValueUnique m (qualify f) vEnv of
-      [Value _ (Just cls) _ _]
+      [Value _ (Just (_, cls)) _ _]
         | cls == orig -> True
       _               -> False
 
