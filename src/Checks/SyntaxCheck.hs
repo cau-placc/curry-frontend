@@ -53,7 +53,7 @@ import           Base.Utils          (findDouble, findMultiples, (++!))
 
 import           Env.TypeConstructor (TCEnv, clsMethods, getOrigName)
 import           Env.Value           (ValueEnv, ValueInfo (..),
-                                      qualLookupValueUnique)
+                                      qualLookupValueUnique, Visibility (Visible, Hidden))
 import qualified Data.Map as Map     (filter) 
 
 -- The syntax checking proceeds as follows. First, the compiler extracts
@@ -90,7 +90,7 @@ syntaxCheck exts tcEnv vEnv mdl@(Module _ _ _ m _ _ ds) =
     -- Filters out all class methods that are not visible
     filterVis (TopEnv vi) = TopEnv $ Map.filter visible vi
      where 
-      visible [(_, Value _ (Just (True, _)) _ _)] = False
+      visible [(_, Value _ (Just (Hidden, _)) _ _)] = False
       visible _ = True
 
 -- A global state transformer is used for generating fresh integer keys with
@@ -510,8 +510,10 @@ checkInstanceDecl (InstanceDecl p li cx qcls tys ds) = do
   mapM_ checkAmbiguousMethod ds
   InstanceDecl p li cx qcls tys <$> checkTopDecls ds
   where
+    -- Checks if a method is from the class `orig'
+    -- and visible in the current module.
     isFromCls orig m vEnv f = case qualLookupValueUnique m (qualify f) vEnv of
-      [Value _ (Just (_, cls)) _ _]
+      [Value _ (Just (Visible, cls)) _ _]
         | cls == orig -> True
       _               -> False
 

@@ -39,7 +39,7 @@ import Env.Interface
 import Env.ModuleAlias (importAliases, initAliasEnv)
 import Env.OpPrec
 import Env.TypeConstructor
-import Env.Value
+import Env.Value ( ValueInfo(..), toVisible, Visibility(..) )
 
 import CompilerEnv
 
@@ -270,7 +270,7 @@ values m (IFunctionDecl _ f Nothing a qty o) =
   [Value (applyOriginPragma o (qualQualify m f)) Nothing a (typeScheme (toQualPredType m [] OPred qty))]
 values m (IFunctionDecl _ f (Just tvs) _ qty@(QualTypeExpr _ cx _) o) =
   let mcls = case cx of []                      -> Nothing
-                        Constraint _ qcls _ : _ -> Just (False, qcls)
+                        Constraint _ qcls _ : _ -> Just (Visible, qcls)
   in [Value (applyOriginPragma o (qualQualify m f)) mcls 0 (typeScheme (toQualPredType m tvs ICC qty))]
 values m (IClassDecl _ _ qcls _ tvs _ ds hs o) =
   map (classMethod m (applyOriginPragma o $ qualQualify m qcls) tvs hs) ds
@@ -324,8 +324,7 @@ classMethod m qcls tvs hs (IMethodDecl _ f _ qty) =
   Value (qualifyLike qcls f) mcls 0 $
     typeScheme $ qualifyPredType m $ toMethodType qcls tvs qty
   where
-    mcls = Just (f `elem` hs, qcls)
-
+    mcls = Just (toVisible (f `notElem` hs), qcls)
 
 -- ---------------------------------------------------------------------------
 

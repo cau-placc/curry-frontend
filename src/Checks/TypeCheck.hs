@@ -415,7 +415,7 @@ bindClassMethods' m tcEnv vEnv =
 bindClassMethod :: ModuleIdent -> QualIdent -> ClassMethod -> ValueEnv
                 -> ValueEnv
 bindClassMethod m cls (ClassMethod f _ ty) =
-  bindGlobalInfo (\qc tySc -> Value qc (Just (False, cls)) 0 tySc) m f (typeScheme ty)
+  bindGlobalInfo (\qc tySc -> Value qc (Just (Visible, cls)) 0 tySc) m f (typeScheme ty)
 
 -- -----------------------------------------------------------------------------
 -- Default Types
@@ -1095,7 +1095,7 @@ tcMethodPDecl :: QualIdent -> TypeScheme -> PDecl a
               -> TCM (PredType, TypeScheme, PDecl PredType)
 tcMethodPDecl qcls tySc (i, FunctionDecl p _ f eqs) = withLocalValueEnv $ do
   m <- getModuleIdent
-  modifyValueEnv $ bindFun m f (Just (False, qcls)) (eqnArity $ head eqs) tySc
+  modifyValueEnv $ bindFun m f (Just (Visible, qcls)) (eqnArity $ head eqs) tySc
   (pls, (ty, pd)) <- tcFunctionPDecl i [] tySc p f eqs
   let what = "implementation of method " ++ escName f
   clsEnv <- getClassEnv
