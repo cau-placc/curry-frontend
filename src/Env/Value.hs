@@ -42,7 +42,6 @@ import Base.Types
 import Base.Utils ((++!))
 
 import Text.PrettyPrint
-import Data.Maybe (isNothing)
 
 data ValueInfo
   -- |Data constructor with original name, arity, list of record labels and type
@@ -84,8 +83,8 @@ instance Pretty ValueInfo where
                                            <+> equals <+> pPrint tySc
   pPrint (NewtypeConstructor qid _ tySc) =     text "newtype" <+> pPrint qid
                                            <+> equals <+> pPrint tySc
-  pPrint (Value qid mq ar tySc)           =     pPrint qid
-                                           <>  (if isNothing mq then text "N" else empty) <> text "/" <> int ar
+  pPrint (Value qid _ ar tySc)           =     pPrint qid
+                                           <>  text "/" <> int ar
                                            <+> equals <+> pPrint tySc
   pPrint (Label qid _ tySc)              =     text "label" <+> pPrint qid
                                            <+> equals <+> pPrint tySc
