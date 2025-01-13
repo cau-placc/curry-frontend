@@ -679,7 +679,11 @@ identType =  mkVariableType    <$> spanPosition <*> tyvar
 
 -- parenType ::= '(' tupleType ')'
 parenType :: Parser a Token TypeExpr
-parenType = fmap updateSpanWithBrackets (parensSp tupleType)
+parenType = up <$> fmap updateSpanWithBrackets (parensSp tupleType)
+ where
+  up n = case n of
+    ConstructorType ss qid | qid == qUnitId -> ConstructorType ss (setSpanInfo ss qid)
+    _                                       -> n
 
 -- tupleType ::= type0                         (parenthesized type)
 --            |  type0 ',' type0 { ',' type0 } (tuple type)
@@ -1039,7 +1043,7 @@ listExpr = updateSpanWithBrackets <$>
     EnumFromThen (fromSrcInfoPoints [sp2,sp1]) e2 e1
   mkEnumFromThenTo e1 sp1 e2 sp2 e3 =
     EnumFromThenTo (fromSrcInfoPoints [sp2,sp1]) e3 e2 e1
-  mkListCompr sp qu e = ListCompr (fromSrcInfoPoints [sp]) e qu
+  mkListCompr sp (qu, ss) e = ListCompr (fromSrcInfoPoints (sp:ss)) e qu
 
   list xs e2 sp e1 = let (ss, es) = unzip xs
                      in List (fromSrcInfoPoints (sp:ss)) () (e1:e2:es)
@@ -1128,8 +1132,8 @@ optStmts :: Parser a Token (Expression ()
 optStmts = succeed mkStmtExpr <.> reqStmts `opt` (\e -> (([], e), []))
   where mkStmtExpr e = StmtExpr (fromSrcSpan (getSrcSpan e)) e
 
-quals :: Parser a Token [Statement ()]
-quals = stmt (succeed id) (succeed mkStmtExpr) `sepBy1` comma
+quals :: Parser a Token ([Statement ()], [Span])
+quals = stmt (succeed id) (succeed mkStmtExpr) `sepBy1Sp` comma
   where mkStmtExpr e = StmtExpr (fromSrcSpan (getSrcSpan e)) e
 
 stmt :: Parser a Token (Statement () -> b)

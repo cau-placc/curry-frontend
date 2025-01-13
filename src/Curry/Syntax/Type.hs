@@ -524,9 +524,11 @@ instance HasSpanInfo (Decl a) where
   updateEndPos d@(InfixDecl _ _ _ ops) =
     let i' = last ops
     in setEndPosition (incr (getPosition i') (identLength i' - 1)) d
-  updateEndPos d@(DataDecl _ _ _ _ (c:cs)) =
-    let i' = last (c:cs)
-    in setEndPosition (incr (getPosition i') (qIdentLength i' - 1)) d
+  updateEndPos d@(DataDecl (SpanInfo _ ss@(_:_)) _ _ _ cs@(_:_)) =
+    let i' = last cs
+        endPosQual = incr (getPosition i') (qIdentLength i' - 1)
+        endPosSp   = end (last ss)
+    in setEndPosition (max endPosQual endPosSp) d
   updateEndPos d@(DataDecl _ _ _ (c:cs) _) =
     setEndPosition (getSrcSpanEnd (last (c:cs))) d
   updateEndPos d@(DataDecl _ _ (i:is) _ _) =
