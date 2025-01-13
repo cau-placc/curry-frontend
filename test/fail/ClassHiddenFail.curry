@@ -5,3 +5,5 @@ import ClassHiddenExport
 instance A Bool where
   methodA = True
   methodB = False
+
+val = methodB 

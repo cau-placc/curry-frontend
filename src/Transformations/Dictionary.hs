@@ -9,7 +9,7 @@
   Portability :  portable
 
   During dictionary translation, type classes and instances
-  are translated into dictionarya data types and functions.
+  are translated into dictionary data types and functions.
   Any function with a class context gets the
   corresponding dictionary as an explicit argument.
 -}

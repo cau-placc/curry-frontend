@@ -354,6 +354,9 @@ failInfos = map (uncurry mkFailTest)
       ,   {- "Type: a" -} "Inferred kind: (* -> *) -> *" {- "Expected kind: *" -}
       ]
     )
+  , ("ClassHiddenFail", 
+      [ "`methodB' is not a (visible) method of class `A'",
+        "`methodB' is undefined"])
   , ("ModuleLevelWerror",
       [ "Failed due to -Werror"
       , "Top-level binding with no type signature"
