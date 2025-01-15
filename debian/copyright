@@ -3,184 +3,184 @@ Upstream-Name: curry-frontend
 Upstream-Contact: Michael Hanus <mh@informatik.uni-kiel.de>
 Source: https://git.ps.informatik.uni-kiel.de/curry/curry-frontend
 
-Files: src/Base/CurryTypes.hs
+Files: src/Curry/Frontend/Base/CurryTypes.hs
 Copyright: Wolfgang Lux
   2011 - 2012, Björn Peemöller
   2015, Jan Tikovsky
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Base/Expr.hs
+Files: src/Curry/Frontend/Base/Expr.hs
 Copyright: Wolfgang Lux
   2011 - 2015, Björn Peemöller
   2015, Jan Tikovsky
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Base/Messages.hs
+Files: src/Curry/Frontend/Base/Messages.hs
 Copyright: 2011 - 2016, Björn Peemöller
 License: BSD-3-clause
 
-Files: src/Base/NestEnv.hs
+Files: src/Curry/Frontend/Base/NestEnv.hs
 Copyright: 1999 - 2003, Wolfgang Lux
   2011 - 2015, Björn Peemöller
 License: BSD-3-clause
 
-Files: src/Base/SCC.hs
+Files: src/Curry/Frontend/Base/SCC.hs
 Copyright: 2000, 2002 - 2003, Wolfgang Lux
 License: BSD-3-clause
 
-Files: src/Base/Subst.hs
+Files: src/Curry/Frontend/Base/Subst.hs
 Copyright: 2002, Wolfgang Lux
 License: BSD-3-clause
 
-Files: src/Base/TopEnv.hs
+Files: src/Curry/Frontend/Base/TopEnv.hs
 Copyright: 1999 - 2003, Wolfgang Lux
   2005, Martin Engelke
   2011 - 2012, Björn Peemöller
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Base/TypeSubst.hs
+Files: src/Curry/Frontend/Base/TypeSubst.hs
 Copyright: 2003, Wolfgang Lux
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Base/Types.hs
+Files: src/Curry/Frontend/Base/Types.hs
 Copyright: 2002 - 2004, Wolfgang Lux
   Martin Engelke
   2015, Jan Tikovsky
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Base/Typing.hs
+Files: src/Curry/Frontend/Base/Typing.hs
 Copyright: 2003 - 2006, Wolfgang Lux
   2014 - 2015, Jan Tikovsky
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Base/Utils.hs
+Files: src/Curry/Frontend/Base/Utils.hs
 Copyright: 2001 - 2003, Wolfgang Lux
   2011 - 2015, Björn Peemöler
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Checks.hs
+Files: src/Curry/Frontend/Checks.hs
 Copyright: 2011 - 2013, Björn Peemöller
   2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Checks/ExportCheck.hs
+Files: src/Curry/Frontend/Checks/ExportCheck.hs
 Copyright: 1999 - 2004, Wolfgang Lux
   2011 - 2016, Björn Peemöller
   2015 - 2016, Yannik Potdevin
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Checks/ImportSyntaxCheck.hs
+Files: src/Curry/Frontend/Checks/ImportSyntaxCheck.hs
 Copyright: 2016, Jan Tikovsky
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Checks/InterfaceCheck.hs
+Files: src/Curry/Frontend/Checks/InterfaceCheck.hs
 Copyright: 2000 - 2007, Wolfgang Lux
   2015, Jan Tikovsky
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Checks/InterfaceSyntaxCheck.hs
+Files: src/Curry/Frontend/Checks/InterfaceSyntaxCheck.hs
 Copyright: 2000 - 2007, Wolfgang Lux
   2011 - 2015, Björn Peemöller
   2015, Jan Tikovsky
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Checks/KindCheck.hs
+Files: src/Curry/Frontend/Checks/KindCheck.hs
 Copyright: 2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Checks/PrecCheck.hs
+Files: src/Curry/Frontend/Checks/PrecCheck.hs
 Copyright: 2001 - 2004, Wolfgang Lux
   Martin Engelke
   Björn Peemöller
   2015, Jan Tikovsky
 License: BSD-3-clause
 
-Files: src/Checks/SyntaxCheck.hs
+Files: src/Curry/Frontend/Checks/SyntaxCheck.hs
 Copyright: 1999 - 2004, Wolfgang Lux
   Martin Engelke
   Björn Peemöller
   2015, Jan Tikovsky
 License: BSD-3-clause
 
-Files: src/Checks/TypeCheck.hs
+Files: src/Curry/Frontend/Checks/TypeCheck.hs
 Copyright: 1999 - 2004, Wolfgang Lux
   Martin Engelke
   2011 - 2015, Björn Peemöller
   2014 - 2015, Jan Tikovsky
 License: BSD-3-clause
 
-Files: src/Checks/WarnCheck.hs
+Files: src/Curry/Frontend/Checks/WarnCheck.hs
 Copyright: 2006, Martin Engelke
   2011 - 2014, Björn Peemöller
   2014 - 2015, Jan Tikovsky
   2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
-Files: src/CompilerEnv.hs
+Files: src/Curry/Frontend/CompilerEnv.hs
 Copyright: 2011 - 2015, Björn Peemöller
 License: BSD-3-clause
 
-Files: src/CompilerOpts.hs
+Files: src/Curry/Frontend/CompilerOpts.hs
 Copyright: 2005, Martin Engelke
   2007, Sebastian Fischer
   2011 - 2016, Björn Peemöller
   2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
-Files: src/CurryBuilder.hs
+Files: src/Curry/Frontend/CurryBuilder.hs
 Copyright: 2005, Martin Engelke
   2007, Sebastian Fischer
   2011 - 2015, Björn Peemöller
   2018, Kai-Oliver Prott
 License: BSD-3-clause
 
-Files: src/CurryDeps.hs
+Files: src/Curry/Frontend/CurryDeps.hs
 Copyright: 2002 - 2004, Wolfgang Lux
   2005, Martin Engelke
   2007, Sebastian Fischer
   2011 - 2013, Björn Peemöller
 License: BSD-3-clause
 
-Files: src/Env/Interface.hs
+Files: src/Curry/Frontend/Env/Interface.hs
 Copyright: 2002 - 2004, Wolfgang Lux
   2011 - 20113, Björn Peemöller
 License: BSD-3-clause
 
-Files: src/Env/ModuleAlias.hs
+Files: src/Curry/Frontend/Env/ModuleAlias.hs
 Copyright: 2002 - 2004, Wolfgang Lux
   2011 - 2013, Björn Peemöller
 License: BSD-3-clause
 
-Files: src/Env/OpPrec.hs
+Files: src/Curry/Frontend/Env/OpPrec.hs
 Copyright: 2002 - 2004, Wolfgang Lux
   2011 - 2013, Björn Peemöller
 License: BSD-3-clause
 
-Files: src/Env/TypeConstructor.hs
+Files: src/Curry/Frontend/Env/TypeConstructor.hs
 Copyright: 2002 - 2004, Wolfgang Lux
   2011, Björn Peemöller
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Env/Value.hs
+Files: src/Curry/Frontend/Env/Value.hs
 Copyright: 2001 - 2004, Wolfgang Lux
   2011, Björn Peemöller
   2015, Jan Tikovsky
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Exports.hs
+Files: src/Curry/Frontend/Exports.hs
 Copyright: 2000 - 2004, Wolfgang Lux
   2005, Martin Engelke
   2011 - 2016, Björn Peemöller
@@ -188,74 +188,74 @@ Copyright: 2000 - 2004, Wolfgang Lux
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Files/FrontendPath.hs
+Files: src/Curry/Frontend/Files/FrontendPath.hs
 Copyright: 2011, Björn Peemöller (bjp@informatik.uni-kiel.de)
 License: BSD-3-clause
 
-Files: src/Generators.hs
+Files: src/Curry/Frontend/Generators.hs
 Copyright: 2011, Björn Peemöller (bjp@informatik.uni-kiel.de)
   2017, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Generators/GenAbstractCurry.hs
+Files: src/Curry/Frontend/Generators/GenAbstractCurry.hs
 Copyright: 2005, Martin Engelke
   2011 - 2015, Björn Peemöller
   2015, Jan Tikovsky
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Generators/GenFlatCurry.hs
+Files: src/Curry/Frontend/Generators/GenFlatCurry.hs
 Copyright: 2005, Martin Engelke
   2011 - 2016, Björn Peemöller
   2017, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Html/CurryHtml.hs
+Files: src/Curry/Frontend/Html/CurryHtml.hs
 Copyright: 2011 - 2016, Björn Peemöller
   2016, Jan Tikovsky
 License: BSD-3-clause
 
-Files: src/Html/SyntaxColoring.hs
+Files: src/Curry/Frontend/Html/SyntaxColoring.hs
 Copyright: 2014 - 2016, Björn Peemöller
   2016, Jan Tikovsky
   2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
-Files: src/IL.hs
+Files: src/Curry/Frontend/IL.hs
 Copyright: 2014, Björn Peemöller
 License: BSD-3-clause
 
-Files: src/IL/Pretty.hs
+Files: src/Curry/Frontend/IL/Pretty.hs
 Copyright: 1999 - 2003, Wolfgang Lux
   Martin Engelke
   2011 - 2015, Björn Peemöller
   2017, Finn Teegen
 License: BSD-3-clause
 
-Files: src/IL/ShowModule.hs
+Files: src/Curry/Frontend/IL/ShowModule.hs
 Copyright: 2015, Björn Peemöller
   2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
-Files: src/IL/Type.hs
+Files: src/Curry/Frontend/IL/Type.hs
 Copyright: 1999 - 2003, Wolfgang Lux
   Martin Engelke
   2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Imports.hs
+Files: src/Curry/Frontend/Imports.hs
 Copyright: 2000 - 2003, Wolfgang Lux
   2011, Björn Peemöller
   2016, Jan Tikovsky
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Interfaces.hs
+Files: src/Curry/Frontend/Interfaces.hs
 Copyright: 2000 - 2004, Wolfgang Lux
   2011 - 2013, Björn Peemöller
 License: BSD-3-clause
 
-Files: src/Modules.hs
+Files: src/Curry/Frontend/Modules.hs
 Copyright: 1999 - 2004, Wolfgang Lux
   2005, Martin Engelke
   2007, Sebastian Fischer
@@ -265,87 +265,87 @@ Copyright: 1999 - 2004, Wolfgang Lux
   2018, Kai-Oliver Prott
 License: BSD-3-clause
 
-Files: src/TokenStream.hs
+Files: src/Curry/Frontend/TokenStream.hs
 Copyright: 2015 - 2016, Katharina Rahf
   2015 - 2016, Björn Peemöller
   2015 - 2016, Jan Tikovsky
 License: BSD-3-clause
 
-Files: src/Transformations.hs
+Files: src/Curry/Frontend/Transformations.hs
 Copyright: 2011, Björn Peemöller (bjp@informatik.uni-kiel.de)
 License: BSD-3-clause
 
-Files: src/Transformations/CaseCompletion.hs
+Files: src/Curry/Frontend/Transformations/CaseCompletion.hs
 Copyright: 2005, Martin Engelke
   2011 - 2015, Björn Peemöller
   2016, Jan Tikovsky
   2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Transformations/CurryToIL.hs
+Files: src/Curry/Frontend/Transformations/CurryToIL.hs
 Copyright: 1999 - 2003, Wolfgang Lux
   Martin Engelke
   2011 - 2015, Björn Peemöller
   2015, Jan Tikovsky
 License: BSD-3-clause
 
-Files: src/Transformations/Desugar.hs
+Files: src/Curry/Frontend/Transformations/Desugar.hs
 Copyright: 2001 - 2004, Wolfgang Lux
   Martin Engelke
   2011 - 2015, Björn Peemöller
   2015, Jan Tikovsky
 License: BSD-3-clause
 
-Files: src/Transformations/Lift.hs
+Files: src/Curry/Frontend/Transformations/Lift.hs
 Copyright: 2001 - 2003, Wolfgang Lux
   2011 - 2015, Björn Peemöller
   2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Transformations/Qual.hs
+Files: src/Curry/Frontend/Transformations/Qual.hs
 Copyright: 2001 - 2004, Wolfgang Lux
   2005, Martin Engelke
   2011 - 2015, Björn Peemöller
   2016 - 2017, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Transformations/Simplify.hs
+Files: src/Curry/Frontend/Transformations/Simplify.hs
 Copyright: 2003, Wolfgang Lux
   Martin Engelke
   2011 - 2015, Björn Peemöller
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Generators/GenAnnotatedFlatCurry.hs
+Files: src/Curry/Frontend/Generators/GenAnnotatedFlatCurry.hs
 Copyright: 2017, Finn Teegen
            2018, Kai-Oliver Prott
 License: BSD-3-clause
 
-Files: src/Base/AnnotExpr.hs
- src/Base/CurryKinds.hs
- src/Base/KindSubst.hs
- src/Base/Kinds.hs
- src/Base/PrettyKinds.hs
- src/Base/PrettyTypes.hs
- src/Base/TypeExpansion.hs
- src/Checks/DeriveCheck.hs
- src/Checks/ExtensionCheck.hs
- src/Checks/TypeSyntaxCheck.hs
- src/CondCompile.hs
- src/Env/Class.hs
- src/Env/Instance.hs
- src/Env/Type.hs
- src/Generators/GenTypedFlatCurry.hs
- src/IL/Typing.hs
- src/Transformations/Derive.hs
- src/Transformations/Dictionary.hs
- src/Transformations/Newtypes.hs
+Files: src/Curry/Frontend/Base/AnnotExpr.hs
+ src/Curry/Frontend/Base/CurryKinds.hs
+ src/Curry/Frontend/Base/KindSubst.hs
+ src/Curry/Frontend/Base/Kinds.hs
+ src/Curry/Frontend/Base/PrettyKinds.hs
+ src/Curry/Frontend/Base/PrettyTypes.hs
+ src/Curry/Frontend/Base/TypeExpansion.hs
+ src/Curry/Frontend/Checks/DeriveCheck.hs
+ src/Curry/Frontend/Checks/ExtensionCheck.hs
+ src/Curry/Frontend/Checks/TypeSyntaxCheck.hs
+ src/Curry/Frontend/CondCompile.hs
+ src/Curry/Frontend/Env/Class.hs
+ src/Curry/Frontend/Env/Instance.hs
+ src/Curry/Frontend/Env/Type.hs
+ src/Curry/Frontend/Generators/GenTypedFlatCurry.hs
+ src/Curry/Frontend/IL/Typing.hs
+ src/Curry/Frontend/Transformations/Derive.hs
+ src/Curry/Frontend/Transformations/Dictionary.hs
+ src/Curry/Frontend/Transformations/Newtypes.hs
 Copyright: 2017, Finn Teegen
   2016 - 2017, Finn Teegen
   2016, Finn Teegen
 License: BSD-3-clause
 
-Files: src/Checks/InstanceCheck.hs
+Files: src/Curry/Frontend/Checks/InstanceCheck.hs
 Copyright: 2000-2007, Wolfgang Lux
   2011-2015, Björn Peemöller
   2015, Jan Tikovsky

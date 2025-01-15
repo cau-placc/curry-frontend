@@ -16,11 +16,11 @@ module Main (main) where
 
 import Curry.Base.Monad (runCYIO)
 
-import Base.Messages
-import Files.FrontendPath (frontendGreeting, frontendVersion)
+import Curry.Frontend.Base.Messages
+import Curry.Frontend.Files.FrontendPath (frontendGreeting, frontendVersion)
 
-import CurryBuilder     (buildCurry)
-import CompilerOpts     (Options (..), FrontendMode (..), getCompilerOpts, usage)
+import Curry.Frontend.CurryBuilder       (buildCurry)
+import Curry.Frontend.CompilerOpts       (Options (..), FrontendMode (..), getCompilerOpts, usage)
 
 -- |The command line tool frontend
 main :: IO ()

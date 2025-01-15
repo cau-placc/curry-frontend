@@ -59,36 +59,7 @@ library
     , time            ^>= 1.9
     , parsec          ^>= 3.1
   exposed-modules:
-      Base.AnnotExpr
-    , Base.Expr
-    , Base.KindSubst
-    , Base.Kinds
-    , Base.Messages
-    , Base.NestEnv
-    , Base.SCC
-    , Base.Subst
-    , Base.TopEnv
-    , Base.TypeExpansion
-    , Base.TypeSubst
-    , Base.Types
-    , Base.Typing
-    , Base.Utils
-    , Checks
-    , Checks.CaseModeCheck
-    , Checks.DeriveCheck
-    , Checks.ExportCheck
-    , Checks.ExtensionCheck
-    , Checks.ImportSyntaxCheck
-    , Checks.InstanceCheck
-    , Checks.InterfaceCheck
-    , Checks.InterfaceSyntaxCheck
-    , Checks.KindCheck
-    , Checks.PrecCheck
-    , Checks.SyntaxCheck
-    , Checks.TypeCheck
-    , Checks.TypeSyntaxCheck
-    , Checks.WarnCheck
-    , Curry.AbstractCurry
+      Curry.AbstractCurry
     , Curry.AbstractCurry.Files
     , Curry.AbstractCurry.Type
     , Curry.Base.Ident
@@ -117,6 +88,76 @@ library
     , Curry.FlatCurry.Annotated.Type
     , Curry.FlatCurry.Typed.Goodies
     , Curry.FlatCurry.Typed.Type
+    , Curry.Frontend.Base.AnnotExpr
+    , Curry.Frontend.Base.Expr
+    , Curry.Frontend.Base.KindSubst
+    , Curry.Frontend.Base.Kinds
+    , Curry.Frontend.Base.Messages
+    , Curry.Frontend.Base.NestEnv
+    , Curry.Frontend.Base.SCC
+    , Curry.Frontend.Base.Subst
+    , Curry.Frontend.Base.TopEnv
+    , Curry.Frontend.Base.TypeExpansion
+    , Curry.Frontend.Base.TypeSubst
+    , Curry.Frontend.Base.Types
+    , Curry.Frontend.Base.Typing
+    , Curry.Frontend.Base.Utils
+    , Curry.Frontend.Checks
+    , Curry.Frontend.Checks.CaseModeCheck
+    , Curry.Frontend.Checks.DeriveCheck
+    , Curry.Frontend.Checks.ExportCheck
+    , Curry.Frontend.Checks.ExtensionCheck
+    , Curry.Frontend.Checks.ImportSyntaxCheck
+    , Curry.Frontend.Checks.InstanceCheck
+    , Curry.Frontend.Checks.InterfaceCheck
+    , Curry.Frontend.Checks.InterfaceSyntaxCheck
+    , Curry.Frontend.Checks.KindCheck
+    , Curry.Frontend.Checks.PrecCheck
+    , Curry.Frontend.Checks.SyntaxCheck
+    , Curry.Frontend.Checks.TypeCheck
+    , Curry.Frontend.Checks.TypeSyntaxCheck
+    , Curry.Frontend.Checks.WarnCheck
+    , Curry.Frontend.CompilerEnv
+    , Curry.Frontend.CompilerOpts
+    , Curry.Frontend.CondCompile
+    , Curry.Frontend.CurryBuilder
+    , Curry.Frontend.CurryDeps
+    , Curry.Frontend.Env.Class
+    , Curry.Frontend.Env.Instance
+    , Curry.Frontend.Env.Interface
+    , Curry.Frontend.Env.ModuleAlias
+    , Curry.Frontend.Env.OpPrec
+    , Curry.Frontend.Env.Type
+    , Curry.Frontend.Env.TypeConstructor
+    , Curry.Frontend.Env.Value
+    , Curry.Frontend.Exports
+    , Curry.Frontend.Files.FrontendPath
+    , Curry.Frontend.Generators
+    , Curry.Frontend.Generators.GenAbstractCurry
+    , Curry.Frontend.Generators.GenFlatCurry
+    , Curry.Frontend.Generators.GenTypedFlatCurry
+    , Curry.Frontend.Generators.GenAnnotatedFlatCurry
+    , Curry.Frontend.Html.CurryHtml
+    , Curry.Frontend.Html.SyntaxColoring
+    , Curry.Frontend.IL
+    , Curry.Frontend.IL.Pretty
+    , Curry.Frontend.IL.ShowModule
+    , Curry.Frontend.IL.Type
+    , Curry.Frontend.IL.Typing
+    , Curry.Frontend.Imports
+    , Curry.Frontend.Interfaces
+    , Curry.Frontend.Modules
+    , Curry.Frontend.TokenStream
+    , Curry.Frontend.Transformations
+    , Curry.Frontend.Transformations.CaseCompletion
+    , Curry.Frontend.Transformations.CurryToIL
+    , Curry.Frontend.Transformations.Derive
+    , Curry.Frontend.Transformations.Desugar
+    , Curry.Frontend.Transformations.Dictionary
+    , Curry.Frontend.Transformations.Lift
+    , Curry.Frontend.Transformations.Newtypes
+    , Curry.Frontend.Transformations.Qual
+    , Curry.Frontend.Transformations.Simplify
     , Curry.Syntax
     , Curry.Syntax.Extension
     , Curry.Syntax.InterfaceEquivalence
@@ -126,47 +167,6 @@ library
     , Curry.Syntax.ShowModule
     , Curry.Syntax.Type
     , Curry.Syntax.Utils
-    , CompilerEnv
-    , CompilerOpts
-    , CondCompile
-    , CurryBuilder
-    , CurryDeps
-    , Env.Class
-    , Env.Instance
-    , Env.Interface
-    , Env.ModuleAlias
-    , Env.OpPrec
-    , Env.Type
-    , Env.TypeConstructor
-    , Env.Value
-    , Exports
-    , Files.FrontendPath
-    , Generators
-    , Generators.GenAbstractCurry
-    , Generators.GenFlatCurry
-    , Generators.GenTypedFlatCurry
-    , Generators.GenAnnotatedFlatCurry
-    , Html.CurryHtml
-    , Html.SyntaxColoring
-    , IL
-    , IL.Pretty
-    , IL.ShowModule
-    , IL.Type
-    , IL.Typing
-    , Imports
-    , Interfaces
-    , Modules
-    , TokenStream
-    , Transformations
-    , Transformations.CaseCompletion
-    , Transformations.CurryToIL
-    , Transformations.Derive
-    , Transformations.Desugar
-    , Transformations.Dictionary
-    , Transformations.Lift
-    , Transformations.Newtypes
-    , Transformations.Qual
-    , Transformations.Simplify
     , Paths_curry_frontend
   autogen-modules:
       Paths_curry_frontend
