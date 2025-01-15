@@ -196,7 +196,7 @@ valueDecl m tcEnv vEnv tvs (Export     _ f) ds = case qualLookupValue f vEnv of
   [Value _ cm a (ForAll _ pty)] -> do
     o <- originPragma f
     return $ IFunctionDecl NoPos (qualUnqualify m f)
-      (fmap (flip take tvs . kindArity . flip (clsKind m) tcEnv) cm) a
+      (fmap (flip take tvs . kindArity . flip (clsKind m) tcEnv) (snd <$> cm)) a
       (fromQualPredType m tvs pty) o : ds
   [Label {}] -> return ds -- Record labels are collected somewhere else.
   _ -> internalError $ "Exports.valueDecl: " ++ show f

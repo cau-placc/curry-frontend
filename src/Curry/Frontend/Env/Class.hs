@@ -11,8 +11,10 @@
     The compiler maintains information about all type classes in an environment
     that maps type classes to their arity, a sorted list of their direct super
     classes, their functional dependencies, and all their associated class
-    methods with an additional flag stating whether an default implementation
-    has been provided or not. For both the type class identifier and the list of
+    methods with additional flags stating 
+      a) whether an default implementation has been provided or not.
+      b) whether the method is visible.
+    For both the type class identifier and the list of
     super classes original names are used. Thus, the use of a flat environment
     is sufficient.
 -}
@@ -21,7 +23,7 @@ module Curry.Frontend.Env.Class
   ( ClassEnv, initClassEnv
   , ClassInfo, SuperClassInfo, FunDep, bindClassInfo, mergeClassInfo
   , constraintToSuperClass, lookupClassInfo, superClasses, classFunDeps
-  , classMethods, hasDefaultImpl, applySuperClass, allSuperClasses
+  , classMethods, hasDefaultImpl, isVisibleMethod, applySuperClass, allSuperClasses
   , toFunDep, fromFunDep, getFunDepLhs, getFunDepRhs
   , deleteVarFunDep, renameVarFunDep, renameFunDep, removeTrivialFunDeps
   , getRhsOnLhsMatch, funDepCoverage, funDepCoveragePredList, ambiguousTypeVars
@@ -52,7 +54,9 @@ import Curry.Frontend.Base.Messages (internalError)
 -- Type Synonyms
 -- ---------------------------------------------------------------------------
 
-type ClassInfo = (Int, [Pred], [FunDep], [(Ident, Bool)])
+type Flags = (Bool, Bool)
+
+type ClassInfo = (Int, [Pred], [FunDep], [(Ident, Flags)])
 
 -- The list represents the type variables of the superclass from left to right.
 -- The integers within this list are the indices of these variables in the
@@ -134,12 +138,18 @@ classMethods cls clsEnv = case lookupClassInfo cls clsEnv of
   Just (_, _, _, ms) -> map fst ms
   _ -> internalError $ "Env.Classes.classMethods: " ++ show cls
 
-hasDefaultImpl :: QualIdent -> Ident -> ClassEnv -> Bool
-hasDefaultImpl cls f clsEnv = case lookupClassInfo cls clsEnv of
+flags :: QualIdent -> Ident -> ClassEnv -> Flags
+flags cls f clsEnv = case lookupClassInfo cls clsEnv of
   Just (_, _, _, ms) -> case lookup f ms of
     Just dflt -> dflt
-    Nothing -> internalError $ "Env.Classes.hasDefaultImpl: " ++ show f
-  _ -> internalError $ "Env.Classes.hasDefaultImpl: " ++ show cls
+    Nothing -> internalError $ "Env.Classes.flags: " ++ show f
+  _ -> internalError $ "Env.Classes.flags: " ++ show cls
+
+hasDefaultImpl :: QualIdent -> Ident -> ClassEnv -> Bool
+hasDefaultImpl cls f clsEnv = fst $ flags cls f clsEnv
+
+isVisibleMethod :: QualIdent -> Ident -> ClassEnv -> Bool
+isVisibleMethod cls f clsEnv = snd $ flags cls f clsEnv
 
 -- ---------------------------------------------------------------------------
 -- Super Class Application
@@ -191,8 +201,6 @@ impliedPredicatesList clsEnv pr = plDelete (getFromPred (Pred OPred cls tys)) $
   nub $ map (flip modifyPred pr . const . expandAliasType tys)
             (allSuperClasses cls clsEnv)
   where Pred _ cls tys = getPred pr
-
-
 
 -- ---------------------------------------------------------------------------
 -- Functional Dependencies
@@ -271,7 +279,7 @@ getRhsOnLhsMatch funDep xs ys =
 funDepCoverage :: [FunDep] -> Set.Set Int -> Set.Set Int
 funDepCoverage fds covSet =
   let (useFds, oFds) = partition ((`Set.isSubsetOf` covSet) . fst) fds
-      covSet' = Set.unions $ covSet : (map snd useFds)
+      covSet' = Set.unions $ covSet : map snd useFds
   in if Set.size covSet == Set.size covSet' then covSet
                                             else funDepCoverage oFds covSet'
 

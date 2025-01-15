@@ -32,7 +32,7 @@ import qualified Control.Monad.State as S (State, gets, modify, runState,
 import           Data.Function       (on)
 import           Data.List           (insertBy, intersect, nub, nubBy)
 import qualified Data.Map            as Map (Map, empty, findWithDefault,
-                                             fromList, insertWith, keys)
+                                             fromList, insertWith, keys, filter)
 import           Data.Maybe          (isJust, isNothing)
 import qualified Data.Set            as Set (Set, empty, insert, member,
                                              singleton, toList, union)
@@ -53,7 +53,7 @@ import           Curry.Frontend.Base.Utils          (findDouble, findMultiples, 
 
 import           Curry.Frontend.Env.TypeConstructor (TCEnv, clsMethods, getOrigName)
 import           Curry.Frontend.Env.Value           (ValueEnv, ValueInfo (..),
-                                                     qualLookupValueUnique)
+                                                     qualLookupValueUnique, Visibility (..))
 
 
 -- The syntax checking proceeds as follows. First, the compiler extracts
@@ -85,8 +85,13 @@ syntaxCheck exts tcEnv vEnv mdl@(Module _ _ _ m _ _ ds) =
     ls    = nub $ concatMap recLabels tds
     fs    = nub $ concatMap vars vds
     cs    = [mtd | ClassDecl _ _ _ _ _ _ ds' <- cds, d <- ds', mtd <- methods d]
-    rEnv  = globalEnv $ fmap renameInfo vEnv
+    rEnv  = globalEnv $ renameInfo <$> filterVis vEnv
     state = initState exts m tcEnv rEnv vEnv
+    -- Filters out all class methods that are not visible
+    filterVis (TopEnv vi) = TopEnv $ Map.filter visible vi
+     where
+      visible [(_, Value _ (Just (Hidden, _)) _ _)] = False
+      visible _ = True
 
 -- A global state transformer is used for generating fresh integer keys with
 -- which the variables are renamed.
@@ -505,8 +510,10 @@ checkInstanceDecl (InstanceDecl p li cx qcls tys ds) = do
   mapM_ checkAmbiguousMethod ds
   InstanceDecl p li cx qcls tys <$> checkTopDecls ds
   where
+    -- Checks if a method is from the class `orig'
+    -- and visible in the current module.
     isFromCls orig m vEnv f = case qualLookupValueUnique m (qualify f) vEnv of
-      [Value _ (Just cls) _ _]
+      [Value _ (Just (Visible, cls)) _ _]
         | cls == orig -> True
       _               -> False
 
