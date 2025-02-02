@@ -172,7 +172,8 @@ tryWriteFile fn contents = do
  where
   issueWarning :: C.IOException -> IO ()
   issueWarning _ = do
-    putStrLn $ "*** Warning: cannot update file `" ++ fn ++ "' (update ignored)"
+    hPutStrLn stderr $
+      "*** Warning: cannot update file `" ++ fn ++ "' (update ignored)"
     return ()
   writeFileUTF8 :: FilePath -> String -> IO ()
   writeFileUTF8 fn' str =
@@ -191,5 +192,6 @@ tryWriteBinaryFile fn contents = do
  where
   issueWarning :: C.IOException -> IO ()
   issueWarning _ = do
-    putStrLn $ "*** Warning: cannot update file `" ++ fn ++ "' (update ignored)"
+    hPutStrLn stderr $
+      "*** Warning: cannot update file `" ++ fn ++ "' (update ignored)"
     return ()
