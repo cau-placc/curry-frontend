@@ -361,7 +361,7 @@ failInfos = map (uncurry mkFailTest)
       ,   {- "Type: a" -} "Inferred kind: (* -> *) -> *" {- "Expected kind: *" -}
       ]
     )
-  , ("ClassHiddenFail", 
+  , ("ClassHiddenFail",
       [ "`methodB' is not a (visible) method of class `A'",
         "`methodB' is undefined"])
   , ("ModuleLevelWerror",
@@ -453,6 +453,7 @@ passInfos = map mkPassTest
   , "Infix"
   , "Inline"
   , "Lambda"
+  , "List"
   , "Maybe"
   , "MPTCCoercible"
   , "MPTCConstrainedMethods"
