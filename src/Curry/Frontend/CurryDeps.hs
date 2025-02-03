@@ -31,7 +31,7 @@ import Curry.Files.Filenames
 import Curry.Files.PathUtils
 import Curry.Syntax
   ( Module (..), ModulePragma (..), ImportDecl (..), parseHeader, parsePragmas
-  , patchModuleId, hasLanguageExtension)
+  , patchModuleId, hasLanguageExtension, unlit)
 
 import Curry.Frontend.Base.Messages
 import Curry.Frontend.Base.SCC (scc)
@@ -135,11 +135,12 @@ readHeader opts fn = do
   case mbFile of
     Nothing  -> failMessages [errMissingFile fn]
     Just src -> do
-      prgs <- liftCYM $ parsePragmas fn src
+      unlitSrc <- liftCYM $ unlit fn src
+      prgs <- liftCYM $ parsePragmas fn unlitSrc
       let cppOpts  = optCppOpts opts
           cppOpts' =
             cppOpts { cppRun = cppRun cppOpts || hasLanguageExtension prgs CPP }
-      condC <- condCompile cppOpts' fn src
+      condC <- condCompile cppOpts' fn unlitSrc
       hdr <- liftCYM $ parseHeader fn condC
       return $ patchModuleId fn hdr
 

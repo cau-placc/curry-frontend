@@ -484,6 +484,8 @@ passInfos = map mkPassTest
   , "UntypedAcy"
   , "Unzip"
   , "WhereAfterDo"
+  ] ++ map mkPassLitTest
+  [ "LiterateImport"
   ]
 
 --------------------------------------------------------------------------------
