@@ -29,6 +29,7 @@ import           Distribution.TestSuite ( Test (..), TestInstance (..)
                                         , Progress (..), Result (..)
                                         , OptionDescr)
 import           System.FilePath        ((</>), (<.>))
+import           System.Directory       (removePathForcibly)
 
 import           Curry.Base.Message     (Message, message, ppMessages, ppError)
 import           Curry.Base.Monad       (CYIO, runCYIO)
@@ -41,7 +42,11 @@ import qualified Curry.Frontend.CompilerOpts as CO ( Options (..), WarnOpts (..)
 import           Curry.Frontend.CurryBuilder       ( buildCurry )
 
 tests :: IO [Test]
-tests = return [failingTests, passingTests, warningTests]
+tests = do
+  removePathForcibly "test/fail/.curry"
+  removePathForcibly "test/pass/.curry"
+  removePathForcibly "test/warning/.curry"
+  return [failingTests, passingTests, warningTests]
 
 runSecure :: CYIO a -> IO (Either [Message] (a, [Message]))
 runSecure act = runCYIO act `E.catch` handler

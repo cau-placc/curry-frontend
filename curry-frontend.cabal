@@ -189,4 +189,5 @@ test-suite test-frontend
     , Cabal >= 3.0
     , containers
     , filepath
+    , directory
     , curry-frontend
