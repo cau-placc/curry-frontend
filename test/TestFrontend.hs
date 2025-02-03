@@ -107,8 +107,8 @@ warningTests = Group { groupName    = "Warning Tests"
 
 -- create a new test
 mkTest :: FilePath -> TestInfo -> Test
-mkTest path (testName, testTags, testOpts, mSetOpts, errorMsgs) =
-  let file = path </> testName <.> "curry"
+mkTest path (testName, testTags, testOpts, mSetOpts, errorMsgs, litFile) =
+  let file = path </> testName <.> if litFile then "lcurry" else "curry"
       opts = CO.defaultOptions { CO.optVerbosity   = CO.VerbQuiet
                                , CO.optImportPaths = [path]
                                }
@@ -127,7 +127,8 @@ mkTest path (testName, testTags, testOpts, mSetOpts, errorMsgs) =
 -- * options
 -- * function to set options
 -- * optional warning/error message which should be thrown on execution of test
-type TestInfo = (String, [String], [OptionDescr], Maybe SetOption, [String])
+-- * literate file
+type TestInfo = (String, [String], [OptionDescr], Maybe SetOption, [String], Bool)
 
 type SetOption = String -> String -> Either String TestInstance
 
@@ -137,7 +138,7 @@ type SetOption = String -> String -> Either String TestInstance
 
 -- generate a simple failing test
 mkFailTest :: String -> [String] -> TestInfo
-mkFailTest nm errorMsgs = (nm, [], [], Nothing, errorMsgs)
+mkFailTest nm errorMsgs = (nm, [], [], Nothing, errorMsgs, False)
 
 -- To add a failing test to the test suite simply add the module name of the
 -- test code and the expected error message(s) to the following list
@@ -407,6 +408,10 @@ failInfos = map (uncurry mkFailTest)
 -- generate a simple passing test
 mkPassTest :: String -> TestInfo
 mkPassTest = flip mkFailTest []
+
+-- generate a simple passing test for literate files
+mkPassLitTest :: String -> TestInfo
+mkPassLitTest nm = (nm, [], [], Nothing, [], True)
 
 -- To add a passing test to the test suite simply add the module name of the
 -- test code to the following list
