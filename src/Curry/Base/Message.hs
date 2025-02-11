@@ -13,7 +13,7 @@
     code position.
 -}
 module Curry.Base.Message
-  ( Message (..), message, posMessage, spanMessage, spanInfoMessage
+  ( Message (..), message, posMessage, spanMessage, spanInfoMessage, withFixes
   , showWarning, showError
   , ppMessage, ppWarning, ppError, ppMessages, ppMessagesWithPreviews
   ) where
@@ -71,6 +71,10 @@ spanMessage s = spanInfoMessage $ fromSrcSpan s
 -- |Construct a message from an entity with a 'SpanInfo' and a text
 spanInfoMessage :: HasSpanInfo s => s -> Doc -> Message
 spanInfoMessage s msg = Message (getSpanInfo s) msg []
+
+-- |Adds the given fixes to the message.
+withFixes :: [QuickFix] -> Message -> Message
+withFixes fs m = m { msgFixes = msgFixes m ++ fs }
 
 -- |Show a 'Message' as a warning
 showWarning :: Message -> String
