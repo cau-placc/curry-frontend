@@ -69,6 +69,7 @@ library
     , Curry.Base.Monad
     , Curry.Base.Position
     , Curry.Base.Pretty
+    , Curry.Base.QuickFix
     , Curry.Base.Span
     , Curry.Base.SpanInfo
     , Curry.Base.TextEdit
