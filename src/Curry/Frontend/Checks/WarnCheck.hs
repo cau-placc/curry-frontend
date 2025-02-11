@@ -36,10 +36,11 @@ import           Data.Tuple.Extra
 import Curry.Base.Ident
 import Curry.Base.Position ( Position, HasPosition(getPosition), ppPosition, ppLine, showLine)
 import Curry.Base.Pretty
+import Curry.Base.QuickFix ( prependFix )
 import Curry.Base.SpanInfo
 import Curry.Syntax
 
-import Curry.Frontend.Base.Messages   ( Message, spanInfoMessage, internalError )
+import Curry.Frontend.Base.Messages   ( Message, spanInfoMessage, withFixes, internalError )
 import Curry.Frontend.Base.NestEnv    ( NestEnv, emptyEnv, localNestEnv, nestEnv, unnestEnv
                                       , qualBindNestEnv, qualInLocalNestEnv, qualLookupNestEnv
                                       , qualModifyNestEnv)
@@ -506,10 +507,13 @@ getTyScheme q = do
     _ -> internalError $ "Checks.WarnCheck.getTyScheme: " ++ show q
 
 warnMissingTypeSignature :: ModuleIdent -> Ident -> TypeScheme -> Message
-warnMissingTypeSignature mid i tys = spanInfoMessage i $ fsep
-  [ text "Top-level binding with no type signature:"
-  , nest 2 $ text (showIdent i) <+> text "::" <+> ppTypeScheme mid tys
-  ]
+warnMissingTypeSignature mid i tys =
+  withFixes [prependFix i (render sig ++ "\n") ("Insert type signature '" ++ render sig ++ "'")] $
+    spanInfoMessage i $ fsep
+      [ text "Top-level binding with no type signature:"
+      , nest 2 sig
+      ]
+  where sig = text (showIdent i) <+> text "::" <+> ppTypeScheme mid tys
 
 -- -----------------------------------------------------------------------------
 -- Check for overlapping module alias names
