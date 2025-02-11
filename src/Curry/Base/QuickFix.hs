@@ -18,3 +18,4 @@ data QuickFix = QuickFix
   { fixEdit        :: TextEdit
   , fixDescription :: String
   }
+  deriving (Eq, Ord, Show)

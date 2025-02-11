@@ -20,3 +20,4 @@ data TextEdit = TextEdit
   { editSpan :: Span   -- ^ The span to replace
   , editText :: String -- ^ The text to replace the span with
   }
+  deriving (Eq, Ord, Show)
