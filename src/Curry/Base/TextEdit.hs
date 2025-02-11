@@ -1,0 +1,22 @@
+{- |
+    Module      :  $Header$
+    Description :  Text edits in a source file
+    License     :  BSD-3-clause
+
+    Stability   :  experimental
+    Portability :  portable
+
+    This module implements a type for representing source file edits,
+    primarily to provide quick fixes in language tooling.
+-}
+module Curry.Base.TextEdit
+  ( TextEdit (..)
+  ) where
+
+import Curry.Base.Span (Span (..))
+
+-- |A source file edit.
+data TextEdit = TextEdit
+  { editSpan :: Span   -- ^ The span to replace
+  , editText :: String -- ^ The text to replace the span with
+  }
