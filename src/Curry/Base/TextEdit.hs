@@ -17,7 +17,8 @@ import Curry.Base.Span (Span (..))
 
 -- |A source file edit.
 data TextEdit = TextEdit
-  { editSpan :: Span   -- ^ The span to replace
-  , editText :: String -- ^ The text to replace the span with
+  { editStart :: Position -- ^ The (inclusive) start of the range to replace
+  , editEnd   :: Position -- ^ The (exclusive) end of the range to replace
+  , editText  :: String   -- ^ The text to replace the span with
   }
   deriving (Eq, Ord, Show)
