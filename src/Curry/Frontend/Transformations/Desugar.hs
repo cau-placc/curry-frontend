@@ -440,7 +440,8 @@ dsFunctionalPatternsNonLinear fvs p@(AsPattern               spi v t)
   | otherwise = do
     (bs, t') <- dsFunctionalPatternsNonLinear fvs t
     return (bs, AsPattern spi v t')
-dsFunctionalPatternsNonLinear fvs (LazyPattern               _ t) = dsFunctionalPatternsNonLinear fvs t
+dsFunctionalPatternsNonLinear fvs (LazyPattern             spi t) =
+  fmap (LazyPattern spi) <$> dsFunctionalPatternsNonLinear fvs t
 dsFunctionalPatternsNonLinear _ p@FunctionPattern {}  = internalError $ "Desugar.dsFunctionalPatternsNonLinear: functional pattern " ++ show p
 dsFunctionalPatternsNonLinear _ p@InfixFuncPattern {} = internalError $ "Desugar.dsFunctionalPatternsNonLinear: functional pattern " ++ show p
 
@@ -469,7 +470,8 @@ funPats (ListPattern spi pty ts) = do
 funPats (AsPattern             spi v t) = do
   (bs, t') <- funPats t
   return (bs, AsPattern spi v t')
-funPats (LazyPattern               _ t) = funPats t
+funPats (LazyPattern             spi t) =
+  fmap (LazyPattern spi) <$> funPats t
 funPats fp@FunctionPattern {}  = do
   v <- freshVar "#funpat" fp
   return ([(v, fp)], uncurry (VariablePattern NoSpanInfo) v)
