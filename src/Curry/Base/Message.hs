@@ -21,6 +21,7 @@ module Curry.Base.Message
 import Prelude hiding ((<>))
 import Curry.Base.Position
 import Curry.Base.Pretty
+import Curry.Base.QuickFix (QuickFix (..))
 import Curry.Base.Span
 import Curry.Base.SpanInfo
 
@@ -30,15 +31,16 @@ import Curry.Base.SpanInfo
 
 -- |Compiler message
 data Message = Message
-  { msgSpanInfo :: SpanInfo -- ^ span in the source code
-  , msgTxt      :: Doc      -- ^ the message itself
+  { msgSpanInfo :: SpanInfo   -- ^ span in the source code
+  , msgTxt      :: Doc        -- ^ the message itself
+  , msgFixes    :: [QuickFix] -- ^ fixes that resolve the issue
   }
 
 instance Eq Message where
-  Message s1 t1 == Message s2 t2 = (s1, show t1) == (s2, show t2)
+  Message s1 t1 fs1 == Message s2 t2 fs2 = (s1, show t1, fs1) == (s2, show t2, fs2)
 
 instance Ord Message where
-  Message s1 t1 `compare` Message s2 t2 = compare (s1, show t1) (s2, show t2)
+  Message s1 t1 fs1 `compare` Message s2 t2 fs2 = compare (s1, show t1, fs1) (s2, show t2, fs2)
 
 instance Show Message where
   showsPrec _ = shows . ppMessage
@@ -56,7 +58,7 @@ instance Pretty Message where
 
 -- |Construct a 'Message' without a 'SpanInfo'
 message :: Doc -> Message
-message = Message NoSpanInfo
+message msg = Message NoSpanInfo msg []
 
 -- |Construct a message from a position.
 posMessage :: HasPosition p => p -> Doc -> Message
@@ -68,7 +70,7 @@ spanMessage s = spanInfoMessage $ fromSrcSpan s
 
 -- |Construct a message from an entity with a 'SpanInfo' and a text
 spanInfoMessage :: HasSpanInfo s => s -> Doc -> Message
-spanInfoMessage s msg = Message (getSpanInfo s) msg
+spanInfoMessage s msg = Message (getSpanInfo s) msg []
 
 -- |Show a 'Message' as a warning
 showWarning :: Message -> String
@@ -92,7 +94,7 @@ ppError = ppAs "Error"
 
 -- |Pretty print a 'Message' with a given key
 ppAs :: String -> Message -> Doc
-ppAs key (Message mbSpanInfo txt) = (hsep $ filter (not . isEmpty) [spanPP, keyPP]) $$ nest 4 txt
+ppAs key (Message mbSpanInfo txt _) = (hsep $ filter (not . isEmpty) [spanPP, keyPP]) $$ nest 4 txt
   where
   spanPP = ppCompactSpan $ getSrcSpan $ mbSpanInfo
   keyPP = if null key then empty else text key <> colon
@@ -105,6 +107,6 @@ ppMessages ppFun = foldr (\m ms -> text "" $+$ m $+$ ms) empty . map ppFun
 ppMessagesWithPreviews :: (Message -> Doc) -> [Message] -> IO Doc
 ppMessagesWithPreviews ppFun = (fmap $ foldr (\m ms -> text "" $+$ m $+$ ms) empty) . mapM ppFunWithPreview
   where ppFunWithPreview m = do preview <- case m of
-                                  Message (SpanInfo sp _) _ -> ppSpanPreview sp
-                                  _                         -> return empty
+                                  Message (SpanInfo sp _) _ _ -> ppSpanPreview sp
+                                  _                           -> return empty
                                 return $ ppFun m $+$ preview
