@@ -69,8 +69,10 @@ library
     , Curry.Base.Monad
     , Curry.Base.Position
     , Curry.Base.Pretty
+    , Curry.Base.QuickFix
     , Curry.Base.Span
     , Curry.Base.SpanInfo
+    , Curry.Base.TextEdit
     , Curry.CondCompile.Parser
     , Curry.CondCompile.Transform
     , Curry.CondCompile.Type

@@ -17,7 +17,7 @@ module Curry.Frontend.Base.Messages
     -- * program abortion
   , abortWith, abortWithMessage, abortWithMessages, warnOrAbort, internalError
     -- * creating messages
-  , Message, message, posMessage, spanInfoMessage
+  , Message, message, posMessage, spanInfoMessage, withFixes
   ) where
 
 import Control.Monad              (unless, when)
@@ -27,7 +27,7 @@ import GHC.Stack                  (HasCallStack)
 import System.IO                  (hFlush, hPutStrLn, stderr, stdout)
 import System.Exit                (exitFailure)
 
-import Curry.Base.Message         ( Message, message, posMessage, spanInfoMessage
+import Curry.Base.Message         ( Message, message, posMessage, spanInfoMessage, withFixes
                                   , ppWarning, ppMessagesWithPreviews, ppError)
 import Curry.Base.Pretty          (Doc, text)
 import Curry.Frontend.CompilerOpts               (Options (..), WarnOpts (..), Verbosity (..))
