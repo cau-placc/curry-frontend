@@ -1379,14 +1379,16 @@ csep [x]    = x
 csep (x:xs) = x <> comma <+> csep xs
 
 warnUnrefTypeVar :: Ident -> Message
-warnUnrefTypeVar v = spanInfoMessage v $ hsep $ map text
-  [ "Unreferenced type variable", escName v ]
+warnUnrefTypeVar = warnUnref "Unreferenced type variable"
 
 warnUnrefVar :: Ident -> Message
-warnUnrefVar v =
+warnUnrefVar = warnUnref "Unused declaration of variable"
+
+warnUnref :: String -> Ident -> Message
+warnUnref msg v =
   withFixes [replaceFix v "_" ("Replace '" ++ escName v ++ "' with _")] $
     spanInfoMessage v $ hsep $ map text
-      [ "Unused declaration of variable", escName v ]
+      [ msg, escName v ]
 
 warnShadowing :: Ident -> Ident -> Message
 warnShadowing x v = spanInfoMessage x $
