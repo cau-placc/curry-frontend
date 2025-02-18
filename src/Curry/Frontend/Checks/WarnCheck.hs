@@ -1386,7 +1386,7 @@ warnUnrefVar = warnUnref "Unused declaration of variable"
 
 warnUnref :: String -> Ident -> Message
 warnUnref msg v =
-  withFixes [replaceFix v "_" ("Replace '" ++ escName v ++ "' with _")] $
+  withFixes [replaceFix v "_" ("Replace " ++ escName v ++ " with _")] $
     spanInfoMessage v $ hsep $ map text
       [ msg, escName v ]
 
