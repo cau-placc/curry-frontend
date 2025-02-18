@@ -43,8 +43,9 @@ import Control.Monad (unless)
 import Control.Monad.State.Strict (State, execState, gets, modify)
 
 import Curry.Frontend.CompilerOpts (CaseMode (..))
-import Curry.Frontend.Base.Messages (Message, spanInfoMessage, internalError)
+import Curry.Frontend.Base.Messages (Message, spanInfoMessage, internalError, withFixes)
 import Curry.Base.Ident (Ident (..), escName)
+import Curry.Base.QuickFix (replaceFix)
 import Curry.Base.Pretty
 import Curry.Syntax
 
@@ -347,10 +348,13 @@ isDataDeclName CaseModeCurry   (x:_) | isAlpha x = isUpper x
 isDataDeclName _               _     = True
 
 wrongCaseMode :: String -> Ident -> CaseMode -> Message
-wrongCaseMode what i@(Ident _ name _ ) c = spanInfoMessage i $
-  text "Symbol" <+> text (escName i) <+> text "is a" <+> text what <> comma <+>
-  text "but the selected case mode is" <+> text (escapeCaseMode c) <> comma <+>
-  text "try renaming to" <+> text (caseSuggestion name) <+> text "instead"
+wrongCaseMode what i@(Ident _ name _ ) c =
+  withFixes [replaceFix i suggestion ("Rename symbol to '" ++ suggestion ++ "'")] $
+    spanInfoMessage i $
+      text "Symbol" <+> text (escName i) <+> text "is a" <+> text what <> comma <+>
+      text "but the selected case mode is" <+> text (escapeCaseMode c) <> comma <+>
+      text "try renaming to" <+> text suggestion <+> text "instead"
+  where suggestion = caseSuggestion name
 
 caseSuggestion :: String -> String
 caseSuggestion (x:xs) | isLower x = toUpper x : xs
