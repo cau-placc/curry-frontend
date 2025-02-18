@@ -36,7 +36,7 @@ import           Data.Tuple.Extra
 import Curry.Base.Ident
 import Curry.Base.Position ( Position, HasPosition(getPosition), ppPosition, ppLine, showLine)
 import Curry.Base.Pretty
-import Curry.Base.QuickFix ( prependFix )
+import Curry.Base.QuickFix ( prependFix, replaceFix )
 import Curry.Base.SpanInfo
 import Curry.Syntax
 
@@ -1383,8 +1383,10 @@ warnUnrefTypeVar v = spanInfoMessage v $ hsep $ map text
   [ "Unreferenced type variable", escName v ]
 
 warnUnrefVar :: Ident -> Message
-warnUnrefVar v = spanInfoMessage v $ hsep $ map text
-  [ "Unused declaration of variable", escName v ]
+warnUnrefVar v =
+  withFixes [replaceFix v "_" ("Replace '" ++ escName v ++ "' with _")] $
+    spanInfoMessage v $ hsep $ map text
+      [ "Unused declaration of variable", escName v ]
 
 warnShadowing :: Ident -> Ident -> Message
 warnShadowing x v = spanInfoMessage x $
