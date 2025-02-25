@@ -12,7 +12,7 @@ module Curry.Base.QuickFix
   ( QuickFix (..), prependFix, replaceFix
   ) where
 
-import Curry.Base.SpanInfo (HasSpanInfo (..), SpanInfo (..), getStartPosition)
+import Curry.Base.SpanInfo (HasSpanInfo (..), getStartPosition, getSrcSpan)
 import Curry.Base.TextEdit (TextEdit (..), insertEdit, replaceEdit)
 
 data QuickFix = QuickFix
@@ -29,4 +29,4 @@ prependFix s txt = QuickFix (insertEdit p txt)
 -- |Creates a fix replacing the given entity with the given text and the given description.
 replaceFix :: HasSpanInfo s => s -> String -> String -> QuickFix
 replaceFix s txt = QuickFix (replaceEdit sp txt)
-  where sp = srcSpan $ getSpanInfo s
+  where sp = getSrcSpan s
