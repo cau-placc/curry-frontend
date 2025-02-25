@@ -40,13 +40,14 @@ import qualified Data.Set            as Set (Set, empty, insert, member,
 import           Curry.Base.Ident
 import           Curry.Base.Position
 import           Curry.Base.Pretty
+import           Curry.Base.QuickFix                (insertAlignedLineBelowFix)
 import           Curry.Base.Span
 import           Curry.Base.SpanInfo
 import           Curry.Syntax
 
 import           Curry.Frontend.Base.Expr
 import           Curry.Frontend.Base.Messages       (Message, internalError,
-                                                     spanInfoMessage)
+                                                     spanInfoMessage, withFixes)
 import           Curry.Frontend.Base.NestEnv
 import           Curry.Frontend.Base.SCC            (scc)
 import           Curry.Frontend.Base.Utils          (findDouble, findMultiples, (++!))
@@ -1379,7 +1380,9 @@ errNonVariable what c = spanInfoMessage c $ hsep $ map text
   ["Data constructor", escName c, "in left hand side of", what]
 
 errNoBody :: Ident -> Message
-errNoBody v = spanInfoMessage v $  hsep $ map text ["No body for", escName v]
+errNoBody v =
+  withFixes [insertAlignedLineBelowFix v (idName v ++ " = failed") ("Stub out " ++ escName v)] $
+    spanInfoMessage v $ hsep $ map text ["No body for", escName v]
 
 errNoCommonCons :: SpanInfo -> [QualIdent] -> Message
 errNoCommonCons spi ls = spanInfoMessage spi $
