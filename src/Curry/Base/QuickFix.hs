@@ -34,5 +34,5 @@ replaceFix s txt = QuickFix (replaceEdit sp txt)
 
 -- |Creates a fix inserting a line below the given entity with the given description.
 insertLineBelowFix :: HasSpanInfo s => s -> String -> String -> QuickFix
-insertLineBelowFix s txt = QuickFix (insertEdit (nl p) txt)
+insertLineBelowFix s txt = QuickFix (insertEdit (nl p) (txt ++ "\n"))
   where p = getSrcSpanEnd s
