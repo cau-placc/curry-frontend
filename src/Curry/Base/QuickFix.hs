@@ -45,4 +45,4 @@ insertAlignedLineBelowFix s txt = QuickFix (insertEdit p' (replicate n ' ' ++ tx
   where p1 = getStartPosition s
         p2 = getSrcSpanEnd s
         p' = nl p2
-        n  = column p1
+        n  = column p1 - 1
