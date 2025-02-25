@@ -40,7 +40,7 @@ import qualified Data.Set            as Set (Set, empty, insert, member,
 import           Curry.Base.Ident
 import           Curry.Base.Position
 import           Curry.Base.Pretty
-import           Curry.Base.QuickFix                (insertLineBelowFix)
+import           Curry.Base.QuickFix                (insertAlignedLineBelowFix)
 import           Curry.Base.Span
 import           Curry.Base.SpanInfo
 import           Curry.Syntax
@@ -1381,7 +1381,7 @@ errNonVariable what c = spanInfoMessage c $ hsep $ map text
 
 errNoBody :: Ident -> Message
 errNoBody v =
-  withFixes [insertLineBelowFix v (idName v ++ " = failed") ("Stub out " ++ escName v)] $
+  withFixes [insertAlignedLineBelowFix v (idName v ++ " = failed") ("Stub out " ++ escName v)] $
     spanInfoMessage v $ hsep $ map text ["No body for", escName v]
 
 errNoCommonCons :: SpanInfo -> [QualIdent] -> Message
