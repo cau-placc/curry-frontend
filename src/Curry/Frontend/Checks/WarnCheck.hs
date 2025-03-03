@@ -479,8 +479,8 @@ missingFieldsFix spi q fs missing =
     (getSrcSpanEnd spi)
     (render (prefix <+> csep (map ((<+> text "= _") . text . showIdent) missing)))
     ("Make missing " ++ escName (qidIdent q) ++ " fields explicit")
-  where prefix | null fs   = comma
-               | otherwise = empty
+  where prefix | null fs   = empty
+               | otherwise = comma
 
 -- -----------------------------------------------------------------------------
 -- Check for orphan instances
