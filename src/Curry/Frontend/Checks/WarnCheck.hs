@@ -482,7 +482,7 @@ missingFieldsFix spi q fs missing =
   where prefix | null fs   = empty
                | otherwise = comma
         insertPos | null fs   = getSrcSpanEnd spi
-                  | otherwise = getSrcSpanEnd $ last fs
+                  | otherwise = case last fs of Field _ _ e -> getSrcSpanEnd e
 
 -- -----------------------------------------------------------------------------
 -- Check for orphan instances
