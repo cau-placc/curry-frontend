@@ -476,11 +476,13 @@ warnMissingFields spi q fs missing =
 missingFieldsFix :: SpanInfo -> QualIdent -> [Field (Expression ())] -> [Ident] -> QuickFix
 missingFieldsFix spi q fs missing =
   insertFix
-    (getSrcSpanEnd spi)
+    insertPos
     (render (prefix <+> csep (map ((<+> text "= _") . text . showIdent) missing)))
     ("Make missing " ++ escName (qidIdent q) ++ " fields explicit")
   where prefix | null fs   = empty
                | otherwise = comma
+        insertPos | null fs   = getSrcSpanEnd spi
+                  | otherwise = getSrcSpanEnd $ last fs
 
 -- -----------------------------------------------------------------------------
 -- Check for orphan instances
