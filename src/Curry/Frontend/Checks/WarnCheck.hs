@@ -26,6 +26,7 @@ import qualified Data.IntSet         as IntSet
 import           Data.Bifunctor
   (first)
 import qualified Data.Map            as Map    (empty, insert, lookup, (!))
+import qualified Data.Set            as Set
 import           Data.Maybe
   (catMaybes, fromMaybe, listToMaybe, isJust)
 import           Data.List
@@ -389,7 +390,9 @@ checkExpr :: Expression () -> WCM ()
 checkExpr (Variable            _ _ v) = visitQId v
 checkExpr (Paren                 _ e) = checkExpr e
 checkExpr (Typed               _ e _) = checkExpr e
-checkExpr (Record           _ _ _ fs) = mapM_ (checkField checkExpr) fs
+checkExpr (Record           s _ q fs) = do
+  checkMissingFields s q fs
+  mapM_ (checkField checkExpr) fs
 checkExpr (RecordUpdate       _ e fs) = do
   checkExpr e
   mapM_ (checkField checkExpr) fs
@@ -445,6 +448,31 @@ checkAlt (Alt _ p rhs) = inNestedScope $ do
 
 checkField :: (a -> WCM ()) -> Field a -> WCM ()
 checkField check (Field _ _ x) = check x
+
+-- -----------------------------------------------------------------------------
+-- Check for missing record fields
+-- -----------------------------------------------------------------------------
+
+checkMissingFields :: SpanInfo -> QualIdent -> [Field (Expression ())] -> WCM ()
+checkMissingFields spi q fs = warnFor WarnMissingFields $ do
+  tyEnv <- gets valueEnv
+  case qualLookupValue q tyEnv of
+    [DataConstructor  _ _ idents _] -> do
+      let provided = Set.fromList $ map (\(Field _ fq _) -> idName (qidIdent fq)) fs
+          missing  = filter (not . flip Set.member provided . idName) idents
+      unless (null missing) $
+        report (warnMissingFields spi q missing)
+    _ -> internalError $ "Checks.WarnCheck.checkMissingFields: " ++ show q
+
+-- TODO: Add a quick fix
+
+warnMissingFields :: SpanInfo -> QualIdent -> [Ident] -> Message
+warnMissingFields spi q missing =
+  spanInfoMessage spi $ fsep
+    [ hsep $ map text ["Fields of", escName (qidIdent q), "not initialized:"]
+      -- TODO: Provide the type here too, would require another lookup in checkMissingFields
+    , nest 2 $ vcat $ map (text . showIdent) missing
+    ]
 
 -- -----------------------------------------------------------------------------
 -- Check for orphan instances
