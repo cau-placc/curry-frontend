@@ -468,7 +468,7 @@ warnMissingFields :: SpanInfo -> QualIdent -> [Field (Expression ())] -> [Ident]
 warnMissingFields spi q fs missing =
   withFixes [missingFieldsFix spi q fs missing] $
     spanInfoMessage spi $ fsep
-      [ hsep $ map text ["Fields of", escName (qidIdent q), "not initialized:"]
+      [ hsep $ map text ["Fields of", escName (qidIdent q), "not initialized and implicitly free:"]
         -- TODO: Provide the type here too, would require another lookup in checkMissingFields
       , nest 2 $ vcat $ map (text . showIdent) missing
       ]
