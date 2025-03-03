@@ -37,7 +37,7 @@ import           Data.Tuple.Extra
 import Curry.Base.Ident
 import Curry.Base.Position ( Position, HasPosition(getPosition), ppPosition, ppLine, showLine)
 import Curry.Base.Pretty
-import Curry.Base.QuickFix ( prependFix, replaceFix )
+import Curry.Base.QuickFix ( QuickFix (..), prependFix, replaceFix, insertFix )
 import Curry.Base.SpanInfo
 import Curry.Syntax
 
@@ -461,18 +461,26 @@ checkMissingFields spi q fs = warnFor WarnMissingFields $ do
       let provided = Set.fromList $ map (\(Field _ fq _) -> idName (qidIdent fq)) fs
           missing  = filter (not . flip Set.member provided . idName) idents
       unless (null missing) $
-        report (warnMissingFields spi q missing)
+        report (warnMissingFields spi q fs missing)
     _ -> internalError $ "Checks.WarnCheck.checkMissingFields: " ++ show q
 
--- TODO: Add a quick fix
+warnMissingFields :: SpanInfo -> QualIdent -> [Field (Expression ())] -> [Ident] -> Message
+warnMissingFields spi q fs missing =
+  withFixes [missingFieldsFix spi q fs missing] $
+    spanInfoMessage spi $ fsep
+      [ hsep $ map text ["Fields of", escName (qidIdent q), "not initialized:"]
+        -- TODO: Provide the type here too, would require another lookup in checkMissingFields
+      , nest 2 $ vcat $ map (text . showIdent) missing
+      ]
 
-warnMissingFields :: SpanInfo -> QualIdent -> [Ident] -> Message
-warnMissingFields spi q missing =
-  spanInfoMessage spi $ fsep
-    [ hsep $ map text ["Fields of", escName (qidIdent q), "not initialized:"]
-      -- TODO: Provide the type here too, would require another lookup in checkMissingFields
-    , nest 2 $ vcat $ map (text . showIdent) missing
-    ]
+missingFieldsFix :: SpanInfo -> QualIdent -> [Field (Expression ())] -> [Ident] -> QuickFix
+missingFieldsFix spi q fs missing =
+  insertFix
+    (getSrcSpanEnd spi)
+    (render (prefix <+> csep (map ((<+> text "= _") . text . showIdent) missing)))
+    ("Make missing " ++ escName (qidIdent q) ++ " fields explicit")
+  where prefix | null fs   = comma
+               | otherwise = empty
 
 -- -----------------------------------------------------------------------------
 -- Check for orphan instances
