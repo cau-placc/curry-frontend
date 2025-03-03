@@ -26,6 +26,7 @@ import qualified Data.IntSet         as IntSet
 import           Data.Bifunctor
   (first)
 import qualified Data.Map            as Map    (empty, insert, lookup, (!))
+import qualified Data.Set            as Set
 import           Data.Maybe
   (catMaybes, fromMaybe, listToMaybe, isJust)
 import           Data.List
@@ -34,9 +35,9 @@ import           Data.Tuple.Extra
   (snd3)
 
 import Curry.Base.Ident
-import Curry.Base.Position ( Position, HasPosition(getPosition), ppPosition, ppLine, showLine)
+import Curry.Base.Position ( Position, HasPosition(getPosition), ppPosition, ppLine, showLine, next)
 import Curry.Base.Pretty
-import Curry.Base.QuickFix ( prependFix, replaceFix )
+import Curry.Base.QuickFix ( QuickFix (..), prependFix, replaceFix, insertFix )
 import Curry.Base.SpanInfo
 import Curry.Syntax
 
@@ -389,7 +390,9 @@ checkExpr :: Expression () -> WCM ()
 checkExpr (Variable            _ _ v) = visitQId v
 checkExpr (Paren                 _ e) = checkExpr e
 checkExpr (Typed               _ e _) = checkExpr e
-checkExpr (Record           _ _ _ fs) = mapM_ (checkField checkExpr) fs
+checkExpr (Record           s _ q fs) = do
+  checkMissingFields s q fs
+  mapM_ (checkField checkExpr) fs
 checkExpr (RecordUpdate       _ e fs) = do
   checkExpr e
   mapM_ (checkField checkExpr) fs
@@ -445,6 +448,41 @@ checkAlt (Alt _ p rhs) = inNestedScope $ do
 
 checkField :: (a -> WCM ()) -> Field a -> WCM ()
 checkField check (Field _ _ x) = check x
+
+-- -----------------------------------------------------------------------------
+-- Check for missing record fields
+-- -----------------------------------------------------------------------------
+
+checkMissingFields :: SpanInfo -> QualIdent -> [Field (Expression ())] -> WCM ()
+checkMissingFields spi q fs = warnFor WarnMissingFields $ do
+  tyEnv <- gets valueEnv
+  case qualLookupValue q tyEnv of
+    [DataConstructor  _ _ idents _] -> do
+      let provided = Set.fromList $ map (\(Field _ fq _) -> idName (qidIdent fq)) fs
+          missing  = filter (not . flip Set.member provided . idName) idents
+      unless (null missing) $
+        report (warnMissingFields spi q fs missing)
+    _ -> internalError $ "Checks.WarnCheck.checkMissingFields: " ++ show q
+
+warnMissingFields :: SpanInfo -> QualIdent -> [Field (Expression ())] -> [Ident] -> Message
+warnMissingFields spi q fs missing =
+  withFixes [missingFieldsFix spi q fs missing] $
+    spanInfoMessage spi $ fsep
+      [ hsep $ map text ["Fields of", escName (qidIdent q), "not initialized and implicitly free:"]
+        -- TODO: Provide the type here too, would require another lookup in checkMissingFields
+      , nest 2 $ vcat $ map (text . showIdent) missing
+      ]
+
+missingFieldsFix :: SpanInfo -> QualIdent -> [Field (Expression ())] -> [Ident] -> QuickFix
+missingFieldsFix spi q fs missing =
+  insertFix
+    insertPos
+    (render (prefix <+> csep (map ((<+> text "= _") . text . showIdent) missing)))
+    ("Make missing " ++ escName (qidIdent q) ++ " fields explicit")
+  where prefix | null fs   = empty
+               | otherwise = comma
+        insertPos | null fs   = getSrcSpanEnd spi
+                  | otherwise = case last fs of Field _ _ e -> next (getSrcSpanEnd e)
 
 -- -----------------------------------------------------------------------------
 -- Check for orphan instances

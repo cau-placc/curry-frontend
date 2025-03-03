@@ -9,11 +9,11 @@
     This module implements a type for representing fixes for diagnostics.
 -}
 module Curry.Base.QuickFix
-  ( QuickFix (..), prependFix, replaceFix
+  ( QuickFix (..), insertFix, prependFix, replaceFix
   , insertLineBelowFix, insertAlignedLineBelowFix
   ) where
 
-import Curry.Base.Position (Position (..), nl)
+import Curry.Base.Position (Position (..), nl, HasPosition (..))
 import Curry.Base.SpanInfo (HasSpanInfo (..), getStartPosition, getSrcSpan, getSrcSpanEnd)
 import Curry.Base.TextEdit (TextEdit (..), insertEdit, replaceEdit)
 
@@ -22,6 +22,11 @@ data QuickFix = QuickFix
   , fixDescription :: String
   }
   deriving (Eq, Ord, Show)
+
+-- |Creates a fix inserting the given text at the given position.
+insertFix :: HasPosition p => p -> String -> String -> QuickFix
+insertFix s txt = QuickFix (insertEdit p txt)
+  where p = getPosition s
 
 -- |Creates a fix prepending to the given entity the given text and using the given description.
 prependFix :: HasSpanInfo s => s -> String -> String -> QuickFix

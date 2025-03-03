@@ -222,6 +222,7 @@ data WarnFlag
   | WarnImportNameShadowing  -- ^ Warn for shadowing of imported names
   | WarnOverlapping          -- ^ Warn for overlapping rules/alternatives
   | WarnIncompletePatterns   -- ^ Warn for incomplete pattern matching
+  | WarnMissingFields        -- ^ Warn for missing fields in record expressions
   | WarnMissingSignatures    -- ^ Warn for missing type signatures
   | WarnMissingMethods       -- ^ Warn for missing method implementations
   | WarnOrphanInstances      -- ^ Warn for orphan instances
@@ -233,8 +234,8 @@ stdWarnFlags :: [WarnFlag]
 stdWarnFlags =
   [ WarnMultipleImports   , WarnDisjoinedRules   --, WarnUnusedGlobalBindings
   , WarnUnusedBindings    , WarnNameShadowing    , WarnOverlapping
-  , WarnIncompletePatterns, WarnMissingSignatures, WarnMissingMethods
-  , WarnRedundantContext
+  , WarnIncompletePatterns, WarnMissingFields    , WarnMissingSignatures
+  , WarnMissingMethods    , WarnRedundantContext
   ]
 
 -- |Description and flag of warnings flags

@@ -528,6 +528,10 @@ warnInfos = map (uncurry mkFailTest)
       , "Unused declaration of variable `answer'"
       ]
     )
+  , ("MissingFields",
+      [ "Fields of `P' not initialized and implicitly free: w"
+      ]
+    )
   , ("MPTCIncompleteInstance",
       [ "No explicit implementation for method `methodC3'"
       , "No explicit implementation for method `methodD1'"
