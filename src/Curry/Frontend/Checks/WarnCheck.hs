@@ -35,7 +35,7 @@ import           Data.Tuple.Extra
   (snd3)
 
 import Curry.Base.Ident
-import Curry.Base.Position ( Position, HasPosition(getPosition), ppPosition, ppLine, showLine)
+import Curry.Base.Position ( Position, HasPosition(getPosition), ppPosition, ppLine, showLine, next)
 import Curry.Base.Pretty
 import Curry.Base.QuickFix ( QuickFix (..), prependFix, replaceFix, insertFix )
 import Curry.Base.SpanInfo
@@ -482,7 +482,7 @@ missingFieldsFix spi q fs missing =
   where prefix | null fs   = empty
                | otherwise = comma
         insertPos | null fs   = getSrcSpanEnd spi
-                  | otherwise = case last fs of Field _ _ e -> getSrcSpanEnd e
+                  | otherwise = case last fs of Field _ _ e -> next (getSrcSpanEnd e)
 
 -- -----------------------------------------------------------------------------
 -- Check for orphan instances
