@@ -530,6 +530,7 @@ warnInfos = map (uncurry mkFailTest)
     )
   , ("MissingFields",
       [ "Fields of `P' not initialized and implicitly free: w"
+      , "Fields of `N' not initialized and implicitly free: unN"
       ]
     )
   , ("MPTCIncompleteInstance",
