@@ -456,13 +456,16 @@ checkField check (Field _ _ x) = check x
 checkMissingFields :: SpanInfo -> QualIdent -> [Field (Expression ())] -> WCM ()
 checkMissingFields spi q fs = warnFor WarnMissingFields $ do
   tyEnv <- gets valueEnv
-  case qualLookupValue q tyEnv of
-    [DataConstructor  _ _ idents _] -> do
-      let provided = Set.fromList $ map (\(Field _ fq _) -> idName (qidIdent fq)) fs
-          missing  = filter (not . flip Set.member provided . idName) idents
-      unless (null missing) $
-        report (warnMissingFields spi q fs missing)
-    _ -> internalError $ "Checks.WarnCheck.checkMissingFields: " ++ show q
+
+  let idents = case qualLookupValue q tyEnv of
+                 [DataConstructor  _ _ is _] -> is
+                 [NewtypeConstructor _ i _]  -> [i]
+                 _ -> internalError $ "Checks.WarnCheck.checkMissingFields: " ++ show q
+      provided = Set.fromList $ map (\(Field _ fq _) -> idName (qidIdent fq)) fs
+      missing  = filter (not . flip Set.member provided . idName) idents
+
+  unless (null missing) $
+    report (warnMissingFields spi q fs missing)
 
 warnMissingFields :: SpanInfo -> QualIdent -> [Field (Expression ())] -> [Ident] -> Message
 warnMissingFields spi q fs missing =
