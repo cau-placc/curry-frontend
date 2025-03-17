@@ -27,7 +27,7 @@ import Curry.Base.Pretty (text)
 import Curry.Frontend.CompilerOpts (WarnOpts (..))
 
 -- |Curry compiler monad transformer
-type CYT m = WriterT [Message] (ExceptT [Message] m)
+type CYT m = ExceptT [Message] (WriterT [Message] m)
 
 -- |Curry compiler monad based on the `IO` monad
 type CYIO = CYT IO
@@ -36,26 +36,26 @@ type CYIO = CYT IO
 type CYM = CYT Identity
 
 -- |Run an `IO`-based Curry compiler action in the `IO` monad,
--- yielding either a list of errors or a result in case of success
--- consisting of the actual result and a (possibly empty) list of warnings
-runCYIO :: CYIO a -> IO (Either [Message] (a, [Message]))
-runCYIO = runExceptT . runWriterT
+-- yielding either a list of errors or a result in case of success,
+-- along with a (possibly empty) list of warnings (in every case)
+runCYIO :: CYIO a -> IO (Either [Message] a, [Message])
+runCYIO = runWriterT . runExceptT
 
 -- |Run an pure Curry compiler action,
--- yielding either a list of errors or a result in case of success
--- consisting of the actual result and a (possibly empty) list of warnings
-runCYM :: CYM a -> Either [Message] (a, [Message])
-runCYM = runIdentity . runExceptT . runWriterT
+-- yielding either a list of errors or a result in case of success,
+-- along with a (possibly empty) list of warnings (in every case)
+runCYM :: CYM a -> (Either [Message] a, [Message])
+runCYM = runIdentity . runWriterT . runExceptT
 
 -- |Run an `IO`-based Curry compiler action in the `IO` monad,
 -- yielding either a list of errors or a result in case of success.
 runCYIOIgnWarn :: CYIO a -> IO (Either [Message] a)
-runCYIOIgnWarn = runExceptT . (fmap fst) . runWriterT
+runCYIOIgnWarn = fmap fst . runCYIO
 
 -- |Run an pure Curry compiler action,
 -- yielding either a list of errors or a result in case of success.
 runCYMIgnWarn :: CYM a -> Either [Message] a
-runCYMIgnWarn = runIdentity . runExceptT . (fmap fst) . runWriterT
+runCYMIgnWarn = fst . runCYM
 
 -- |Failing action with a message describing the cause of failure.
 failMessage :: Monad m => Message -> CYT m a
@@ -63,7 +63,7 @@ failMessage msg = failMessages [msg]
 
 -- |Failing action with a list of messages describing the cause(s) of failure.
 failMessages :: Monad m => [Message] -> CYT m a
-failMessages = lift . throwE
+failMessages = throwE
 
 -- |Failing action with a source code span and a `String` indicating
 -- the cause of failure.
@@ -99,4 +99,4 @@ ok = return
 
 -- |Lift a pure action into an action based on another monad.
 liftCYM :: Monad m => CYM a -> CYT m a
-liftCYM = mapWriterT (mapExceptT (return . runIdentity))
+liftCYM = mapExceptT (mapWriterT (return . runIdentity))
