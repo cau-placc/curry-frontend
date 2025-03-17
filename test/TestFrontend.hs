@@ -22,6 +22,7 @@ module TestFrontend (tests) where
 
 import qualified Control.Exception as E (SomeException, catch)
 
+import           Data.Either            (fromLeft)
 import           Data.List              (isInfixOf, sort)
 import qualified Data.Map as Map        (insert)
 import           Data.Maybe             (fromMaybe)
@@ -48,9 +49,9 @@ tests = do
   removePathForcibly "test/warning/.curry"
   return [failingTests, passingTests, warningTests]
 
-runSecure :: CYIO a -> IO (Either [Message] (a, [Message]))
+runSecure :: CYIO a -> IO (Either [Message] a, [Message])
 runSecure act = runCYIO act `E.catch` handler
-  where handler e = return (Left [message $ text $ show (e :: E.SomeException)])
+  where handler e = return (Left [message $ text $ show (e :: E.SomeException)], [])
 
 -- Execute a test by calling the frontend
 runTest :: CO.Options -> String -> [String] -> IO Progress
@@ -59,25 +60,25 @@ runTest opts test errorMsgs =
     then passOrFail <$> runSecure (buildCurry opts' test)
     else catchE     <$> runSecure (buildCurry opts' test)
   where
-    cppOpts       = CO.optCppOpts opts
-    cppDefs       = Map.insert "__PAKCS__" 3 (CO.cppDefinitions cppOpts)
-    wOpts         = CO.optWarnOpts opts
-    wFlags        =   CO.WarnUnusedBindings
-                    : CO.WarnUnusedGlobalBindings
-                    : CO.WarnImportNameShadowing
-                    : CO.wnWarnFlags wOpts
-    opts'         = opts { CO.optForce    = True
-                         , CO.optWarnOpts = wOpts
-                            { CO.wnWarnFlags    = wFlags  }
-                         , CO.optCppOpts  = cppOpts
-                            { CO.cppDefinitions = cppDefs }
-                         }
-    passOrFail    = Finished . either failAct (const Pass)
-    catchE        = Finished . either passAct (passAct . snd)
+    cppOpts        = CO.optCppOpts opts
+    cppDefs        = Map.insert "__PAKCS__" 3 (CO.cppDefinitions cppOpts)
+    wOpts          = CO.optWarnOpts opts
+    wFlags         =   CO.WarnUnusedBindings
+                     : CO.WarnUnusedGlobalBindings
+                     : CO.WarnImportNameShadowing
+                     : CO.wnWarnFlags wOpts
+    opts'          = opts { CO.optForce    = True
+                          , CO.optWarnOpts = wOpts
+                             { CO.wnWarnFlags    = wFlags  }
+                          , CO.optCppOpts  = cppOpts
+                             { CO.cppDefinitions = cppDefs }
+                          }
+    passOrFail     = Finished . either failAct (const Pass) . fst
+    catchE (e, ws) = Finished . passAct $ fromLeft [] e ++ ws
     failAct msgs
-      | null msgs = Pass
-      | otherwise = Fail $ "An unexpected failure occurred: " ++
-                           showMessages msgs
+      | null msgs  = Pass
+      | otherwise  = Fail $ "An unexpected failure occurred: " ++
+                            showMessages msgs
     passAct msgs
       | null otherMsgs = Pass
       | otherwise      = Fail $ "Expected warnings/failures did not occur: " ++
@@ -531,6 +532,10 @@ warnInfos = map (uncurry mkFailTest)
   , ("MissingFields",
       [ "Fields of `P' not initialized and implicitly free: w"
       , "Fields of `N' not initialized and implicitly free: unN"
+      ]
+    )
+  , ("MissingTypeImportAsVariable",
+      [ "Symbol `IORef' is a variable name, but the selected case mode is `curry`, try renaming to iORef instead"
       ]
     )
   , ("MPTCIncompleteInstance",
