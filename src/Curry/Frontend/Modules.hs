@@ -248,10 +248,10 @@ checkModule opts mdl = do
   _   <- dumpCS DumpParsed mdl
   exc <- extensionCheck  opts mdl >>= dumpCS DumpExtensionChecked
   tsc <- typeSyntaxCheck opts exc >>= dumpCS DumpTypeSyntaxChecked
-  cmc <- caseModeCheck   opts tsc >>= dumpCS DumpCaseModeChecked
-  kc  <- kindCheck       opts cmc >>= dumpCS DumpKindChecked
+  kc  <- kindCheck       opts tsc >>= dumpCS DumpKindChecked
   sc  <- syntaxCheck     opts kc  >>= dumpCS DumpSyntaxChecked
-  pc  <- precCheck       opts sc  >>= dumpCS DumpPrecChecked
+  cmc <- caseModeCheck   opts sc  >>= dumpCS DumpCaseModeChecked
+  pc  <- precCheck       opts cmc >>= dumpCS DumpPrecChecked
   dc  <- deriveCheck     opts pc  >>= dumpCS DumpDeriveChecked
   inc <- instanceCheck   opts dc  >>= dumpCS DumpInstanceChecked
   tc  <- typeCheck       opts inc >>= dumpCS DumpTypeChecked
