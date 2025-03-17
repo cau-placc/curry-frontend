@@ -534,6 +534,10 @@ warnInfos = map (uncurry mkFailTest)
       , "Fields of `N' not initialized and implicitly free: unN"
       ]
     )
+  , ("MissingTypeImportAsVariable",
+      [ "Symbol `IORef' is a variable name, but the selected case mode is `curry`, try renaming to iORef instead"
+      ]
+    )
   , ("MPTCIncompleteInstance",
       [ "No explicit implementation for method `methodC3'"
       , "No explicit implementation for method `methodD1'"
