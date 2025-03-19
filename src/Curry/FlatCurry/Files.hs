@@ -24,7 +24,7 @@ import Curry.Files.Filenames (typedFlatName, flatName, flatIntName)
 import Curry.Files.PathUtils (writeModule, writeBinaryModule, readModule)
 
 import Curry.FlatCurry.Type  (Prog)
-import Curry.FlatCurry.Annotated.Type (AProg, TypeExpr)
+import Curry.FlatCurry.Typed.Type (TProg)
 
 
 -- ---------------------------------------------------------------------------
@@ -32,8 +32,8 @@ import Curry.FlatCurry.Annotated.Type (AProg, TypeExpr)
 -- ---------------------------------------------------------------------------
 
 -- |Reads an typed FlatCurry file (extension ".tfcy") and eventually
--- returns the corresponding FlatCurry program term (type 'AProg').
-readTypedFlatCurry :: FilePath -> IO (Maybe (AProg TypeExpr))
+-- returns the corresponding FlatCurry program term (type 'TProg').
+readTypedFlatCurry :: FilePath -> IO (Maybe TProg)
 readTypedFlatCurry = readFlat . typedFlatName
 
 -- |Reads a FlatCurry file (extension ".fcy") and eventually returns the

@@ -356,7 +356,7 @@ writeFlat :: Options -> CompilerEnv -> CS.Module Type -> IL.Module -> CYIO ()
 writeFlat opts env mdl il = do
   _ <- dumpWith opts show (pPrint . genFlatCurry) DumpTypedFlatCurry (env, afcy)
   when afcyTarget   $ liftIO $ FC.writeFlatCurry (useSubDir afcyName) afcy
-  when tfcyTarget   $ liftIO $ FC.writeFlatCurry (useSubDir tfcyName)  tfcy
+  when tfcyTarget   $ liftIO $ FC.writeFlatCurry (useSubDir tfcyName) tfcy
   when tbfcyTarget  $ liftIO $ ByteString.writeFile (useSubDir tbfcyName) tbfcy
   when fcyTarget $ do
     _ <- dumpWith opts show pPrint DumpFlatCurry (env, fcy)
