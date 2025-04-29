@@ -219,7 +219,8 @@ checkNewConstrImport tc tvs (NewConstrDecl _ c ty) = do
   m <- getModuleIdent
   let qc = qualifyLike tc c
       check (NewtypeConstructor c' _ (ForAll uqvs (PredType _ ty'))) =
-        qc == c' && length tvs == uqvs && toQualType m tvs ty == head (arrowArgs ty')
+        qc == c' && length tvs == uqvs &&
+        Just (toQualType m tvs ty) == safeHead (arrowArgs ty')
       check _ = False
   checkValueInfo "newtype constructor" check c qc
 checkNewConstrImport tc tvs (NewRecordDecl _ c (l, ty)) = do
@@ -227,9 +228,13 @@ checkNewConstrImport tc tvs (NewRecordDecl _ c (l, ty)) = do
   let qc = qualifyLike tc c
       check (NewtypeConstructor c' l' (ForAll uqvs (PredType _ ty'))) =
         qc == c' && length tvs == uqvs && l == l' &&
-        toQualType m tvs ty == head (arrowArgs ty')
+        Just (toQualType m tvs ty) == safeHead (arrowArgs ty')
       check _ = False
   checkValueInfo "newtype constructor" check c qc
+
+safeHead :: [a] -> Maybe a
+safeHead [] = Nothing
+safeHead (x:_) = Just x
 
 checkMethodImport :: QualIdent -> [Ident] -> IMethodDecl -> IC ()
 checkMethodImport qcls clsvars (IMethodDecl _ f _ qty) =

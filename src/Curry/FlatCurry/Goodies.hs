@@ -24,6 +24,8 @@
 
 module Curry.FlatCurry.Goodies where
 
+import Control.Arrow (first, second)
+
 import Curry.FlatCurry.Type
 
 -- |Update of a type's component
@@ -385,22 +387,22 @@ trTypeExpr tvar tcons functype foralltype (ForallType ns t)
 
 -- |is type expression a type variable?
 isTVar :: TypeExpr -> Bool
-isTVar = trTypeExpr (\_ -> True) (\_ _ -> False) (\_ _ -> False) (\_ _ -> False)
+isTVar = trTypeExpr (const True) (\_ _ -> False) (\_ _ -> False) (\_ _ -> False)
 
 -- |is type declaration a constructed type?
 isTCons :: TypeExpr -> Bool
 isTCons
-  = trTypeExpr (\_ -> False) (\_ _ -> True) (\_ _ -> False) (\_ _ -> False)
+  = trTypeExpr (const False) (\_ _ -> True) (\_ _ -> False) (\_ _ -> False)
 
 -- |is type declaration a functional type?
 isFuncType :: TypeExpr -> Bool
 isFuncType
-  = trTypeExpr (\_ -> False) (\_ _ -> False) (\_ _ -> True) (\_ _ -> False)
+  = trTypeExpr (const False) (\_ _ -> False) (\_ _ -> True) (\_ _ -> False)
 
 -- |is type declaration a forall type?
 isForallType :: TypeExpr -> Bool
 isForallType
-  = trTypeExpr (\_ -> False) (\_ _ -> False) (\_ _ -> False) (\_ _ -> True)
+  = trTypeExpr (const False) (\_ _ -> False) (\_ _ -> False) (\_ _ -> True)
 
 -- Update Operations
 
@@ -457,7 +459,7 @@ rnmAllVarsInTypeExpr f = updTVars (TVar . f)
 
 -- |update all qualified names in type expression
 updQNamesInTypeExpr :: (QName -> QName) -> TypeExpr -> TypeExpr
-updQNamesInTypeExpr f = updTCons (\name args -> TCons (f name) args)
+updQNamesInTypeExpr f = updTCons (TCons . f)
 
 -- OpDecl --------------------------------------------------------------------
 
@@ -590,7 +592,7 @@ funcRHS f | not (isExternal f) = orCase (funcBody f)
  where
   orCase e
     | isOr e = concatMap orCase (orExps e)
-    | isCase e = concatMap orCase (map branchExpr (caseBranches e))
+    | isCase e = concatMap (orCase . branchExpr) (caseBranches e)
     | otherwise = [e]
 
 -- |rename all variables in function
@@ -620,7 +622,7 @@ trRule _ ext (External s) = ext s
 
 -- |get rules arguments if it's not external
 ruleArgs :: Rule -> [VarIndex]
-ruleArgs = trRule (\args _ -> args) undefined
+ruleArgs = trRule const undefined
 
 -- |get rules body if it's not external
 ruleBody :: Rule -> Expr
@@ -634,7 +636,7 @@ ruleExtDecl = trRule undefined id
 
 -- |is rule external?
 isRuleExternal :: Rule -> Bool
-isRuleExternal = trRule (\_ _ -> False) (\_ -> True)
+isRuleExternal = trRule (\_ _ -> False) (const True)
 
 -- Update Operations
 
@@ -657,13 +659,13 @@ updRuleBody f = updRule id f id
 
 -- |update rules external declaration
 updRuleExtDecl :: Update Rule String
-updRuleExtDecl f = updRule id id f
+updRuleExtDecl = updRule id id
 
 -- Auxiliary Functions
 
 -- |get variable names in a functions rule
 allVarsInRule :: Rule -> [VarIndex]
-allVarsInRule = trRule (\args body -> args ++ allVars body) (\_ -> [])
+allVarsInRule = trRule (\args body -> args ++ allVars body) (const [])
 
 -- |rename all variables in rule
 rnmAllVarsInRule :: Update Rule VarIndex
@@ -686,19 +688,19 @@ trCombType _ _ _ cpc (ConsPartCall n) = cpc n
 
 -- |is type of combination FuncCall?
 isCombTypeFuncCall :: CombType -> Bool
-isCombTypeFuncCall = trCombType True (\_ -> False) False (\_ -> False)
+isCombTypeFuncCall = trCombType True (const False) False (const False)
 
 -- |is type of combination FuncPartCall?
 isCombTypeFuncPartCall :: CombType -> Bool
-isCombTypeFuncPartCall = trCombType False (\_ -> True) False (\_ -> False)
+isCombTypeFuncPartCall = trCombType False (const True) False (const False)
 
 -- |is type of combination ConsCall?
 isCombTypeConsCall :: CombType -> Bool
-isCombTypeConsCall = trCombType False (\_ -> False) True (\_ -> False)
+isCombTypeConsCall = trCombType False (const False) True (const False)
 
 -- |is type of combination ConsPartCall?
 isCombTypeConsPartCall :: CombType -> Bool
-isCombTypeConsPartCall = trCombType False (\_ -> False) False (\_ -> True)
+isCombTypeConsPartCall = trCombType False (const False) False (const True)
 
 -- Expr ----------------------------------------------------------------------
 
@@ -793,44 +795,44 @@ caseBranches _             = error
 -- |is expression a variable?
 isVar :: Expr -> Bool
 isVar e = case e of
-  Var _ -> True
-  _ -> False
+  Var {} -> True
+  _      -> False
 
 -- |is expression a literal expression?
 isLit :: Expr -> Bool
 isLit e = case e of
-  Lit _ -> True
-  _ -> False
+  Lit {} -> True
+  _      -> False
 
 -- |is expression combined?
 isComb :: Expr -> Bool
 isComb e = case e of
-  Comb _ _ _ -> True
-  _ -> False
+  Comb {} -> True
+  _       -> False
 
 -- |is expression a let expression?
 isLet :: Expr -> Bool
 isLet e = case e of
-  Let _ _ -> True
-  _ -> False
+  Let {} -> True
+  _      -> False
 
 -- |is expression a declaration of free variables?
 isFree :: Expr -> Bool
 isFree e = case e of
-  Free _ _ -> True
-  _ -> False
+  Free {} -> True
+  _       -> False
 
 -- |is expression an or-expression?
 isOr :: Expr -> Bool
 isOr e = case e of
-  Or _ _ -> True
-  _ -> False
+  Or {} -> True
+  _     -> False
 
 -- |is expression a case expression?
 isCase :: Expr -> Bool
 isCase e = case e of
-  Case _ _ _ -> True
-  _ -> False
+  Case {} -> True
+  _       -> False
 
 -- |transform expression
 trExpr  :: (VarIndex -> a)
@@ -848,7 +850,7 @@ trExpr var lit comb lt fr oR cas branch typed expr = case expr of
   Var n             -> var n
   Lit l             -> lit l
   Comb ct name args -> comb ct name (map f args)
-  Let bs e          -> lt (map (\(v, x) -> (v, f x)) bs) (f e)
+  Let bs e          -> lt (map (second f) bs) (f e)
   Free vs e         -> fr vs (f e)
   Or e1 e2          -> oR (f e1) (f e2)
   Case ct e bs      -> cas ct (f e) (map (\ (Branch p e') -> branch p (f e')) bs)
@@ -924,10 +926,10 @@ allVars :: Expr -> [VarIndex]
 allVars e = trExpr (:) (const id) comb lt fr (.) cas branch const e []
  where
   comb _ _ = foldr (.) id
-  lt bs e' = e' . foldr (.) id (map (\ (n,ns) -> (n:) . ns) bs)
+  lt bs e' = e' . foldr ((.) . (\ (n,ns) -> (n:) . ns)) id bs
   fr vs e' = (vs++) . e'
   cas _ e' bs = e' . foldr (.) id bs
-  branch pat e' = ((args pat)++) . e'
+  branch pat e' = (args pat++) . e'
   args pat | isConsPattern pat = patArgs pat
            | otherwise = []
 
@@ -935,14 +937,14 @@ allVars e = trExpr (:) (const id) comb lt fr (.) cas branch const e []
 rnmAllVars :: Update Expr VarIndex
 rnmAllVars f = trExpr (Var . f) Lit Comb lt (Free . map f) Or Case branch Typed
  where
-   lt = Let . map (\ (n,e) -> (f n,e))
+   lt = Let . map (first f)
    branch = Branch . updPatArgs (map f)
 
 -- |update all qualified names in expression
 updQNames :: Update Expr QName
 updQNames f = trExpr Var Lit comb Let Free Or Case (Branch . updPatCons f) Typed
  where
-  comb ct name args = Comb ct (f name) args
+  comb ct name = Comb ct (f name)
 
 -- BranchExpr ----------------------------------------------------------------
 
@@ -954,7 +956,7 @@ trBranch branch (Branch pat e) = branch pat e
 
 -- |get pattern from branch expression
 branchPattern :: BranchExpr -> Pattern
-branchPattern = trBranch (\pat _ -> pat)
+branchPattern = trBranch const
 
 -- |get expression from branch expression
 branchExpr :: BranchExpr -> Expr
@@ -987,7 +989,7 @@ trPattern _ lpattern (LPattern l) = lpattern l
 
 -- |get name from constructor pattern
 patCons :: Pattern -> QName
-patCons = trPattern (\name _ -> name) undefined
+patCons = trPattern const undefined
 
 -- |get arguments from constructor pattern
 patArgs :: Pattern -> [VarIndex]
@@ -1001,7 +1003,7 @@ patLiteral = trPattern undefined id
 
 -- |is pattern a constructor pattern?
 isConsPattern :: Pattern -> Bool
-isConsPattern = trPattern (\_ _ -> True) (\_ -> False)
+isConsPattern = trPattern (\_ _ -> True) (const False)
 
 -- Update Operations
 
@@ -1024,7 +1026,7 @@ updPatArgs f = updPattern id f id
 
 -- |update literal of pattern
 updPatLiteral :: (Literal -> Literal) -> Pattern -> Pattern
-updPatLiteral f = updPattern id id f
+updPatLiteral = updPattern id id
 
 -- Auxiliary Functions
 

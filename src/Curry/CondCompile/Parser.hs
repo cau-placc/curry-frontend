@@ -14,6 +14,7 @@
 -}
 module Curry.CondCompile.Parser where
 
+import Data.Functor (($>))
 import Text.Parsec
 
 import Curry.CondCompile.Type
@@ -52,7 +53,7 @@ line :: Parser Stmt
 line = do
   sps <- many sp
   try $  ((char '#' <?> "") *> fail "unknown directive")
-     <|> ((Line . (sps ++)) <$> manyTill anyChar (try (lookAhead (eol <|> eof))))
+     <|> (Line . (sps ++) <$> manyTill anyChar (try (lookAhead (eol <|> eof))))
 
 keyword :: String -> Parser String
 keyword = string . ('#' :)
@@ -79,7 +80,7 @@ value :: Parser Int
 value = fmap read (many1 digit)
 
 eol :: Parser ()
-eol = endOfLine *> return ()
+eol = endOfLine $> ()
 
 sp :: Parser Char
 sp = try $  lookAhead (eol *> unexpected "end of line" <?> "")

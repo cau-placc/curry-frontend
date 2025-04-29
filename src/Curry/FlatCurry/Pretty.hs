@@ -73,11 +73,11 @@ instance Pretty Fixity where
 
 instance Pretty TypeDecl where
   pPrint (Type    qn _ vs cs) = text "data" <+> ppQName qn
-    <+> hsep (ppTVarIndex <$> fst <$> vs) $+$ ppConsDecls cs
+    <+> hsep (ppTVarIndex . fst <$> vs) $+$ ppConsDecls cs
   pPrint (TypeSyn qn _ vs ty) = text "type" <+> ppQName qn
-    <+> hsep (ppTVarIndex <$> fst <$> vs) <+> equals <+> pPrintPrec 0 ty
+    <+> hsep (ppTVarIndex . fst <$> vs) <+> equals <+> pPrintPrec 0 ty
   pPrint (TypeNew qn _ vs nc) = text "newtype" <+> ppQName qn
-    <+> hsep (ppTVarIndex <$> fst <$> vs) <+> equals <+> pPrint nc
+    <+> hsep (ppTVarIndex . fst <$> vs) <+> equals <+> pPrint nc
 
 -- |pretty-print the constructor declarations
 ppConsDecls :: [ConsDecl] -> Doc

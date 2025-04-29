@@ -24,6 +24,7 @@ import           Prelude hiding ((<>))
 import           Control.Monad              ( filterM, unless, when )
 import qualified Control.Monad.State as S   ( State, runState, gets, modify )
 import           Data.List                  ( nub )
+import           Data.List.NonEmpty         (NonEmpty(..))
 import qualified Data.Map            as Map ( Map, insert, lookup )
 import           Data.Maybe                 ( isNothing, mapMaybe )
 import qualified Data.Set            as Set ( Set, fromList, isSubsetOf, size
@@ -547,10 +548,10 @@ errMultipleDefaultDeclarations spis = spanInfoMessage (head spis) $
     nest 2 (vcat $ map showPos spis)
   where showPos = text . showLine . getPosition
 
-errMultipleDeclarations :: [Ident] -> Message
-errMultipleDeclarations is = spanInfoMessage i $
+errMultipleDeclarations :: NonEmpty Ident -> Message
+errMultipleDeclarations (i :| is) = spanInfoMessage i $
   text "Multiple declarations of" <+> text (escName i) <+> text "at:" $+$
-    nest 2 (vcat $ map showPos is)
+    nest 2 (vcat $ map showPos (i:is))
   where i = head is
         showPos = text . showLine . getPosition
 

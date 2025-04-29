@@ -24,6 +24,7 @@ module Curry.Frontend.Base.Utils
 import Control.Monad (MonadPlus, mzero, mplus)
 
 import Data.List     (partition)
+import Data.List.NonEmpty (NonEmpty (..))
 
 infixr 5 ++!
 
@@ -98,10 +99,10 @@ findDouble (x : xs)
   | x `elem` xs = Just x
   | otherwise   = findDouble xs
 
-findMultiples :: Eq a => [a] -> [[a]]
+findMultiples :: Eq a => [a] -> [NonEmpty a]
 findMultiples []       = []
 findMultiples (x : xs)
   | null same = multiples
-  | otherwise = (x : same) : multiples
+  | otherwise = (x :| same) : multiples
   where (same, other) = partition (==x) xs
         multiples     = findMultiples other

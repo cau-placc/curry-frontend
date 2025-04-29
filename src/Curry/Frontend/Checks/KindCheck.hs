@@ -346,8 +346,8 @@ bindKind m tcEnv' clsEnv tcEnv (ClassDecl _ _ _ cls tvs _ ds) =
     mkMethod qty f = ClassMethod f (findArity f ds) $
                        expandMethodType m tcEnv' clsEnv (qualify cls) tvs qty
     findArity _ []                                    = Nothing
-    findArity f (FunctionDecl _ _ f' eqs:_) | f == f' =
-      Just $ eqnArity $ head eqs
+    findArity f (FunctionDecl _ _ f' (eq:_):_) | f == f' =
+      Just $ eqnArity eq
     findArity f (_:ds')                               = findArity f ds'
 bindKind _ _      _      tcEnv _                              = return tcEnv
 

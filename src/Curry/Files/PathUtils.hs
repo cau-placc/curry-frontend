@@ -138,7 +138,7 @@ checkVersion expected src = case lines src of
     Just v | v == expected -> Right (unlines ls)
            | otherwise     -> Left $ "Expected version `" ++ expected
                                      ++ "', but found version `" ++ v ++ "'"
-    _                      -> Left $ "No version found"
+    _                      -> Left "No version found"
 
   where
     getVersion s | "{- " `isPrefixOf` s && " -}" `isSuffixOf` s

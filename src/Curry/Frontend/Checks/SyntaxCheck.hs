@@ -31,6 +31,7 @@ import qualified Control.Monad.State as S (State, gets, modify, runState,
                                            withState)
 import           Data.Function       (on)
 import           Data.List           (insertBy, intersect, nub, nubBy)
+import           Data.List.NonEmpty  (NonEmpty ((:|)))
 import qualified Data.Map            as Map (Map, empty, findWithDefault,
                                              fromList, insertWith, keys, filter)
 import           Data.Maybe          (isJust, isNothing)
@@ -408,9 +409,9 @@ bindClassMethod _ = ok
 -- |Bind a local declaration (function, variables) in the 'RenameEnv'
 bindVarDecl :: Decl a -> RenameEnv -> RenameEnv
 bindVarDecl (FunctionDecl    _ _ f eqs) env
-  | null eqs  = internalError "SyntaxCheck.bindVarDecl: no equations"
-  | otherwise = let arty = length $ snd $ getFlatLhs $ head eqs
+  | e:_ <- eqs = let arty = length $ snd $ getFlatLhs e
                 in  bindLocal (unRenameIdent f) (LocalVar f arty) env
+  | otherwise = internalError "SyntaxCheck.bindVarDecl: no equations"
 bindVarDecl (PatternDecl         _ t _) env = foldr bindVar env (bv t)
 bindVarDecl (FreeDecl             _ vs) env = foldr (bindVar . varIdent) env vs
 bindVarDecl _                           env = env
@@ -629,7 +630,20 @@ checkEqLhs pspi toplhs = do
       where f'    = renameIdent f k
             infos = qualLookupVar (qualifyWith m f) env
             left  = Left  (f', FunLhs spi f' ts)
-            right = Right $  -- use start from the parsed FunLhs and compute end
+            right = Right $  -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end
+                -- use start from the parsed FunLhs and compute end
+                -- use start from the parsed FunLhs and compute end
+                -- use start from the parsed FunLhs and compute end
+                -- use start from the parsed FunLhs and compute end
+                -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end
+                -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end
+                -- use start from the parsed FunLhs and compute end
+                -- use start from the parsed FunLhs and compute end
+                -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end
+                -- use start from the parsed FunLhs and compute end
+                -- use start from the parsed FunLhs and compute end
+                -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end
+                -- use start from the parsed FunLhs and compute end
               updateEndPos $ ConstructorPattern spi () (qualify f) ts
     OpLhs spi t1 op t2
       | not $ isDataConstr op env -> return left
@@ -672,9 +686,9 @@ checkOpLhs _ _ f t = Right (f t)
 
 joinEquations :: [Decl a] -> SCM [Decl a]
 joinEquations [] = return []
-joinEquations (FunctionDecl a p f eqs : FunctionDecl _ _ f' [eq] : ds)
+joinEquations (FunctionDecl a p f eqs@(eq':_) : FunctionDecl _ _ f' [eq] : ds)
   | f == f' = do
-    when (getArity (head eqs) /= getArity eq) $ report $ errDifferentArity [f, f']
+    when (getArity eq' /= getArity eq) $ report $ errDifferentArity [f, f']
     joinEquations (updateEndPos (FunctionDecl a p f (eqs ++ [eq])) : ds)
   where getArity = length . snd . getFlatLhs
 joinEquations (d : ds) = (d :) <$> joinEquations ds
@@ -922,7 +936,70 @@ checkExpr p (Record     spi _ c fs) = checkRecordExpr p spi c fs
 checkExpr p (RecordUpdate spi e fs) = checkRecordUpdExpr p spi e fs
 checkExpr p (Tuple        spi   es) = Tuple spi <$> mapM (checkExpr p) es
 checkExpr p (List         spi a es) = List spi a <$> mapM (checkExpr p) es
-checkExpr p (ListCompr    spi e qs) = withLocalEnv $ flip (ListCompr spi) <$>
+checkExpr p (ListCompr    spi e qs) = withLocalEnv $        flip (ListCompr spi) <$>
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
+  -- Note: must be flipped to insert qs into RenameEnv first
   -- Note: must be flipped to insert qs into RenameEnv first
   mapM (checkStatement "list comprehension" p) qs <*> checkExpr p e
 checkExpr p (EnumFrom              spi e) = EnumFrom spi <$> checkExpr p e
@@ -1118,7 +1195,7 @@ checkFieldLabel l = do
     [RecordLabel _ cs] -> processLabel cs
     rs                 -> case qualLookupVar (qualQualify m l) env of
       [RecordLabel _ cs] -> processLabel cs
-      rs'                -> if (null rs && null rs')
+      rs'                -> if null rs && null rs'
                                then do report $ errUndefinedLabel l
                                        return []
                                else do report $
@@ -1230,9 +1307,9 @@ qualVarIdent (LocalVar  v _) = qualify v
 qualVarIdent _ = internalError "SyntaxCheck.qualVarIdent: no variable"
 
 checkFPTerm :: SpanInfo -> Pattern a -> SCM ()
-checkFPTerm _ (LiteralPattern        _ _ _) = ok
-checkFPTerm _ (NegativePattern       _ _ _) = ok
-checkFPTerm _ (VariablePattern       _ _ _) = ok
+checkFPTerm _ (LiteralPattern          {} ) = ok
+checkFPTerm _ (NegativePattern         {} ) = ok
+checkFPTerm _ (VariablePattern         {} ) = ok
 checkFPTerm p (ConstructorPattern _ _ _ ts) = mapM_ (checkFPTerm p) ts
 checkFPTerm p (InfixPattern    _ _ t1 _ t2) = mapM_ (checkFPTerm p) [t1, t2]
 checkFPTerm p (ParenPattern            _ t) = checkFPTerm p t
@@ -1243,8 +1320,8 @@ checkFPTerm p t@(LazyPattern           _ _) =
   report $ errUnsupportedFPTerm "Lazy" p t
 checkFPTerm p (RecordPattern      _ _ _ fs) = mapM_ (checkFPTerm p)
                                             [ t | Field _ _ t <- fs ]
-checkFPTerm _ (FunctionPattern     _ _ _ _) = ok -- do not check again
-checkFPTerm _ (InfixFuncPattern  _ _ _ _ _) = ok -- do not check again
+checkFPTerm _ (FunctionPattern         {} ) = ok -- do not check again
+checkFPTerm _ (InfixFuncPattern        {} ) = ok -- do not check again
 
 -- ---------------------------------------------------------------------------
 -- Miscellaneous functions
@@ -1340,33 +1417,25 @@ errDuplicateDefinition :: Ident -> Message
 errDuplicateDefinition v = spanInfoMessage v $ hsep $ map text
   ["More than one definition for", escName v]
 
-errDuplicateVariables :: [Ident] -> Message
-errDuplicateVariables [] = internalError
-  "SyntaxCheck.errDuplicateVariables: empty list"
-errDuplicateVariables (v:vs) = spanInfoMessage v $
+errDuplicateVariables :: NonEmpty Ident -> Message
+errDuplicateVariables (v :| vs) = spanInfoMessage v $
   text (escName v) <+> text "occurs more than one in pattern at:" $+$
   nest 2 (vcat (map (ppPosition . getPosition) (v:vs)))
 
-errMultipleDataConstructor :: [Ident] -> Message
-errMultipleDataConstructor [] = internalError
-  "SyntaxCheck.errMultipleDataDeclaration: empty list"
-errMultipleDataConstructor (i:is) = spanInfoMessage i $
+errMultipleDataConstructor :: NonEmpty Ident -> Message
+errMultipleDataConstructor (i :| is) = spanInfoMessage i $
   text "Multiple definitions for data/record constructor" <+> text (escName i)
   <+> text "at:" $+$
   nest 2 (vcat (map (ppPosition . getPosition) (i:is)))
 
-errMultipleDeclarations :: ModuleIdent -> [Ident] -> Message
-errMultipleDeclarations _ [] = internalError
-  "SyntaxCheck.errMultipleDeclarations: empty list"
-errMultipleDeclarations m (i:is) = spanInfoMessage i $
+errMultipleDeclarations :: ModuleIdent -> NonEmpty Ident -> Message
+errMultipleDeclarations m (i :| is) = spanInfoMessage i $
   text "Multiple declarations of" <+> text (escQualName (qualifyWith m i))
   $+$ text "Declared at:" $+$
   nest 2 (vcat (map (ppPosition . getPosition) (i:is)))
 
-errDuplicateTypeSig :: [Ident] -> Message
-errDuplicateTypeSig [] = internalError
-  "SyntaxCheck.errDuplicateTypeSig: empty list"
-errDuplicateTypeSig (v:vs) = spanInfoMessage v $
+errDuplicateTypeSig :: NonEmpty Ident -> Message
+errDuplicateTypeSig (v :| vs) = spanInfoMessage v $
   text "More than one type signature for" <+> text (escName v)
   <+> text "at:" $+$
   nest 2 (vcat (map (ppPosition . getPosition) (v:vs)))

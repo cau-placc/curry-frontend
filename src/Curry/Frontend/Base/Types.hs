@@ -140,8 +140,8 @@ unapplyType dflt ty = unapply ty []
     unapply (TypeArrow      ty1 ty2) tys  =
       (TypeConstructor qArrowId, ty1 : ty2 : tys)
     unapply (TypeConstrained tys tv) tys'
-      | dflt      = unapply (head tys) tys'
-      | otherwise = (TypeConstrained tys tv, tys')
+      | dflt, ty':_ <- tys = unapply ty' tys'
+      | otherwise         = (TypeConstrained tys tv, tys')
     unapply (TypeForall     tvs ty') tys  = (TypeForall tvs ty', tys)
 
 -- Checks if a type is a simple type variable.
@@ -852,8 +852,8 @@ fromType' :: [Ident] -> Type -> [CS.TypeExpr] -> CS.TypeExpr
 fromType' _   (TypeConstructor    tc) tys
   | isQTupleId tc && qTupleArity tc == length tys
     = CS.TupleType NoSpanInfo tys
-  | tc == qListId && length tys == 1
-    = CS.ListType NoSpanInfo (head tys)
+  | tc == qListId, [ty] <- tys
+    = CS.ListType NoSpanInfo ty
   | otherwise
   = foldl (CS.ApplyType NoSpanInfo) (CS.ConstructorType NoSpanInfo tc) tys
 fromType' tvs (TypeApply     ty1 ty2) tys =
@@ -864,7 +864,9 @@ fromType' tvs (TypeVariable       tv) tys =
 fromType' tvs (TypeArrow     ty1 ty2) tys =
   foldl (CS.ApplyType NoSpanInfo)
     (CS.ArrowType NoSpanInfo (fromType tvs ty1) (fromType tvs ty2)) tys
-fromType' tvs (TypeConstrained tys _) tys' = fromType' tvs (head tys) tys'
+fromType' _ (TypeConstrained [] _) _ = internalError
+  "Base.CurryTypes.fromType': empty TypeConstrained"
+fromType' tvs (TypeConstrained (ty:_) _) tys' = fromType' tvs ty tys'
 fromType' tvs (TypeForall    tvs' ty) tys
   | null tvs' = fromType' tvs ty tys
   | otherwise = foldl (CS.ApplyType NoSpanInfo)

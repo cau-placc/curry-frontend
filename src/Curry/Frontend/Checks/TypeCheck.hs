@@ -349,10 +349,10 @@ groupLabels ((x, y, z):xyzs) =
   where (xyzs', xyzs'') = partition ((x ==) . fst3) xyzs
 
 tcFieldLabels :: HasSpanInfo p => (Ident, p, [Type]) -> TCM ()
-tcFieldLabels (_, _, [])     = return ()
-tcFieldLabels (l, p, ty:tys) = when (any (ty /=) tys) $ do
+tcFieldLabels (l, p, ty:tys@(ty':_)) = when (any (ty /=) tys) $ do
   m <- getModuleIdent
-  report $ errIncompatibleLabelTypes p m l ty (head tys)
+  report $ errIncompatibleLabelTypes p m l ty ty'
+tcFieldLabels (_, _, _)              = return ()
 
 -- Defining Field Labels:
 -- Next the types of all field labels are added to the value environment.
@@ -565,9 +565,9 @@ rebindVars :: ModuleIdent -> ValueEnv -> [(Ident, Int, TypeScheme)] -> ValueEnv
 rebindVars m = foldr $ uncurry3 $ flip (rebindFun m) Nothing
 
 tcDeclVars :: Decl a -> TCM [(Ident, Int, TypeScheme)]
-tcDeclVars (FunctionDecl _ _ f eqs) = do
+tcDeclVars (FunctionDecl _ _ f (eq:_)) = do
   sigs <- getSigEnv
-  let n = eqnArity $ head eqs
+  let n = eqnArity eq
   case lookupTypeSig f sigs of
     Just qty -> do
       pty <- expandPoly qty
@@ -736,8 +736,8 @@ filterEqnType' lpls (Equation p (Just (PredType _ ty)) lhs rhs) =
 filterEqnType' _ eqn@(Equation _ Nothing _ _) = eqn
 
 declVars :: Decl PredType -> [(Ident, Int, TypeScheme)]
-declVars (FunctionDecl _ pty f eqs) =
-    [(f, eqnArity $ head eqs, typeScheme pty)]
+declVars (FunctionDecl _ pty f (eq:_)) =
+    [(f, eqnArity eq, typeScheme pty)]
 declVars (PatternDecl _ t _) = case t of
   VariablePattern _ pty v -> [(v, 0, typeScheme pty)]
   _ -> []
@@ -998,19 +998,19 @@ instance Binding a => Binding (Field a) where
 
 bindDeclArity :: ModuleIdent -> TCEnv -> ClassEnv -> SigEnv ->  Decl a
               -> ValueEnv -> ValueEnv
-bindDeclArity _ _     _      _    InfixDecl {}               = id
-bindDeclArity _ _     _      _    TypeSig {}                 = id
-bindDeclArity _ _     _      _    (FunctionDecl   _ _ f eqs) =
-  bindArity f (eqnArity $ head eqs)
-bindDeclArity m tcEnv clsEnv sigs (ExternalDecl        _ fs) =
+bindDeclArity _ _     _      _    InfixDecl {}                  = id
+bindDeclArity _ _     _      _    TypeSig {}                    = id
+bindDeclArity _ _     _      _    (FunctionDecl   _ _ f (eq:_)) =
+  bindArity f (eqnArity eq)
+bindDeclArity m tcEnv clsEnv sigs (ExternalDecl        _ fs)    =
   flip (foldr $ \(Var _ f) -> bindArity f $ arrowArity $ ty f) fs
   where ty = unpredType . expandPolyType OPred m tcEnv clsEnv . fromJust .
                flip lookupTypeSig sigs
-bindDeclArity _ _     _      _    (PatternDecl        _ t _) =
+bindDeclArity _ _     _      _    (PatternDecl        _ t _)    =
   flip (foldr bindVarArity) (bv t)
-bindDeclArity _ _     _      _    (FreeDecl            _ vs) =
+bindDeclArity _ _     _      _    (FreeDecl            _ vs)    =
   flip (foldr bindVarArity) (bv vs)
-bindDeclArity _ _     _      _    _                          =
+bindDeclArity _ _     _      _    _                             =
   internalError "TypeCheck.bindDeclArity"
 
 bindVarArity :: Ident -> ValueEnv -> ValueEnv
@@ -1063,10 +1063,13 @@ tcTopPDecl (i, InstanceDecl p li cx qcls tys ds) = do
   mid <- getModuleIdent
   ptys <- expandInst mid tcEnv <$> getClassEnv <*> return cx <*> return tys
   let origCls = getOrigName mid qcls tcEnv
-      clsQual = head $ filter isQualified $ reverseLookupByOrigName origCls tcEnv
-      qQualCls = qualQualify (fromJust $ qidModule clsQual) qcls
-  vpds' <- mapM (tcInstanceMethodPDecl qQualCls ptys) vpds
-  return (i,InstanceDecl p li cx qcls tys $ fromPDecls $ map untyped opds++vpds')
+  case filter isQualified $ reverseLookupByOrigName origCls tcEnv of
+    [] -> internalError $ "TypeCheck.tcTopPDecl: " ++
+            "No class found for instance declaration: " ++ show qcls
+    (clsQual:_) -> do
+      let qQualCls = qualQualify (fromJust $ qidModule clsQual) qcls
+      vpds' <- mapM (tcInstanceMethodPDecl qQualCls ptys) vpds
+      return (i,InstanceDecl p li cx qcls tys $ fromPDecls $ map untyped opds++vpds')
   where (vpds, opds) = partition (isValueDecl . snd) $ toPDecls ds
 tcTopPDecl _ = internalError "TypeCheck.tcTopDecl"
 

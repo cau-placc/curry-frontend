@@ -119,13 +119,13 @@ trInstanceDecl _ = return []
 -- the one from the value.
 trInstanceMethodDecl
   :: QualIdent -> [TypeExpr] -> Decl PredType -> GAC CFuncDecl
-trInstanceMethodDecl qcls tys (FunctionDecl _ _ f eqs) = do
+trInstanceMethodDecl qcls tys (FunctionDecl _ _ f eqs@(eq:_)) = do
   uacy <- S.gets untypedAcy
   qty <- if uacy
            then return $ QualTypeExpr NoSpanInfo [] $
                            ConstructorType NoSpanInfo prelUntyped
            else getQualType' (qualifyLike qcls $ unRenameIdent f)
-  CFunc <$> trLocalIdent f <*> pure (eqnArity $ head eqs) <*> pure Public
+  CFunc <$> trLocalIdent f <*> pure (eqnArity eq) <*> pure Public
         <*> trInstanceMethodType tys qty <*> mapM trEquation eqs
 trInstanceMethodDecl _ _ _ = internalError "GenAbstractCurry.trInstanceMethodDecl"
 
@@ -215,9 +215,9 @@ trInfixDecl (InfixDecl _ fix mprec ops) = mapM trInfix (reverse ops)
 trInfixDecl _ = return []
 
 trFuncDecl :: Bool -> Decl PredType -> GAC [CFuncDecl]
-trFuncDecl global (FunctionDecl  _ pty f eqs)
+trFuncDecl global (FunctionDecl  _ pty f eqs@(eq:_))
   =   (\f' a v ty rs -> [CFunc f' a v ty rs])
-  <$> trFuncName global f <*> pure (eqnArity $ head eqs) <*> getVisibility f
+  <$> trFuncName global f <*> pure (eqnArity eq) <*> getVisibility f
   <*> getQualType f pty <*> mapM trEquation eqs
 trFuncDecl global (ExternalDecl         _ vs)
   =   T.forM vs $ \(Var pty f) -> CFunc

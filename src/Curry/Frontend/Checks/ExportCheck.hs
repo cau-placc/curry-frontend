@@ -29,6 +29,7 @@ import           Prelude hiding ((<>))
 import           Control.Monad              (unless)
 import qualified Control.Monad.State as S   (State, runState, gets, modify)
 import           Data.List                  (nub, union)
+import           Data.List.NonEmpty         (NonEmpty (..))
 import qualified Data.Map            as Map ( Map, elems, empty, insert
                                             , insertWith, lookup, toList )
 import           Data.Maybe                 (fromMaybe)
@@ -444,16 +445,14 @@ errModuleNotImported :: ModuleIdent -> Message
 errModuleNotImported m = spanInfoMessage m $ hsep $ map text
   ["Module", escModuleName m, "not imported"]
 
-errMultipleName :: [Ident] -> Message
+errMultipleName :: NonEmpty Ident -> Message
 errMultipleName = errMultiple "name"
 
-errMultipleType :: [Ident] -> Message
+errMultipleType :: NonEmpty Ident -> Message
 errMultipleType = errMultiple "type"
 
-errMultiple :: String -> [Ident] -> Message
-errMultiple _    []     = internalError $
-  currentModuleName ++ ".errMultiple: empty list"
-errMultiple what (i:is) = spanInfoMessage i $
+errMultiple :: String -> NonEmpty Ident -> Message
+errMultiple what (i :| is) = spanInfoMessage i $
   text "Multiple exports of" <+> text what <+> text (escName i) <+> text "at:"
   $+$ nest 2 (vcat (map showPos (i:is)))
   where showPos = text . showLine . getPosition

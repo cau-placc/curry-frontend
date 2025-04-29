@@ -12,6 +12,7 @@
     This module provides functionality for extracting free variables
     with qualified annotations from expressions and declarations.
 -}
+{-# LANGUAGE TupleSections #-}
 module Curry.Frontend.Base.AnnotExpr (QualAnnotExpr (..)) where
 
 import qualified Data.Set  as Set (fromList, notMember)
@@ -56,10 +57,10 @@ instance QualAnnotExpr CondExpr where
   qafv m (CondExpr _ g e) = qafv m g ++ qafv m e
 
 instance QualAnnotExpr Expression where
-  qafv _ (Literal             _ _ _) = []
+  qafv _ (Literal {})                = []
   qafv m (Variable           _ ty v) =
-    maybe [] (return . (\v' -> (ty, v'))) $ localIdent m v
-  qafv _ (Constructor         _ _ _) = []
+    maybe [] (return . (ty,)) $ localIdent m v
+  qafv _ (Constructor {})            = []
   qafv m (Paren                 _ e) = qafv m e
   qafv m (Typed               _ e _) = qafv m e
   qafv m (Record           _ _ _ fs) = concatMap (qafvField m) fs
@@ -102,9 +103,9 @@ instance QualAnnotExpr InfixOp where
   qafv _ (InfixConstr _ _ ) = []
 
 instance QualAnnotExpr Pattern where
-  qafv _ (LiteralPattern           _ _ _) = []
-  qafv _ (NegativePattern          _ _ _) = []
-  qafv _ (VariablePattern          _ _ _) = []
+  qafv _ (LiteralPattern  {})             = []
+  qafv _ (NegativePattern {})             = []
+  qafv _ (VariablePattern {})             = []
   qafv m (ConstructorPattern    _ _ _ ts) = concatMap (qafv m) ts
   qafv m (InfixPattern       _ _ t1 _ t2) = qafv m t1 ++ qafv m t2
   qafv m (ParenPattern               _ t) = qafv m t
@@ -114,13 +115,13 @@ instance QualAnnotExpr Pattern where
   qafv m (AsPattern                _ _ t) = qafv m t
   qafv m (LazyPattern                _ t) = qafv m t
   qafv m (FunctionPattern      _ ty f ts) =
-    maybe [] (return . (\f' -> (ty', f'))) (localIdent m f) ++
+    maybe [] (return . (ty',)) (localIdent m f) ++
       concatMap (qafv m) ts
-    where ty' = foldr TypeArrow ty $ map typeOf ts
+    where ty' = foldr (TypeArrow . typeOf) ty ts
   qafv m (InfixFuncPattern _ ty t1 op t2) =
-    maybe [] (return . (\op' -> (ty', op'))) (localIdent m op) ++
+    maybe [] (return . (ty',)) (localIdent m op) ++
       concatMap (qafv m) [t1, t2]
-    where ty' = foldr TypeArrow ty $ map typeOf [t1, t2]
+    where ty' = foldr (TypeArrow . typeOf) ty [t1, t2]
 
 filterBv :: QuantExpr e => e -> [(Type, Ident)] -> [(Type, Ident)]
 filterBv e = filter ((`Set.notMember` Set.fromList (bv e)) . snd)

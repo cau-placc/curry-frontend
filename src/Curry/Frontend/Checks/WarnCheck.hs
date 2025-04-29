@@ -31,6 +31,8 @@ import           Data.Maybe
   (catMaybes, fromMaybe, listToMaybe, isJust)
 import           Data.List
   ((\\), intersect, intersectBy, nub, sort, unionBy)
+import           Data.List.NonEmpty
+  (NonEmpty(..))
 import           Data.Tuple.Extra
   (snd3)
 
@@ -55,7 +57,6 @@ import Curry.Frontend.Env.TypeConstructor
                                       ( TCEnv, TypeInfo (..), lookupTypeInfo
                                       , qualLookupTypeInfo, getOrigName )
 import Curry.Frontend.Env.Value       ( ValueEnv, ValueInfo (..), qualLookupValue )
-
 import Curry.Frontend.CompilerOpts    ( WarnFlag(..), WarnOpts(..) )
 
 -- Find potentially incorrect code in a Curry program and generate warnings
@@ -577,13 +578,11 @@ warnModuleNameClash mid = spanInfoMessage mid $ hsep $ map text
   ["The module alias", escModuleName mid
   , "overlaps with the current module name"]
 
-warnAliasNameClash :: [ModuleIdent] -> Message
-warnAliasNameClash []         = internalError
-  "WarnCheck.warnAliasNameClash: empty list"
-warnAliasNameClash mids = spanInfoMessage (head mids) $ text
-  "Overlapping module aliases" $+$ nest 2 (vcat (map myppAlias mids))
-  where myppAlias mid =
-          ppLine (getPosition mid) <> text ":" <+> text (escModuleName mid)
+warnAliasNameClash :: NonEmpty ModuleIdent -> Message
+warnAliasNameClash (mid :| mids) = spanInfoMessage mid $ text
+  "Overlapping module aliases" $+$ nest 2 (vcat (map myppAlias (mid:mids)))
+  where myppAlias mid' =
+          ppLine (getPosition mid') <> text ":" <+> text (escModuleName mid')
 
 -- -----------------------------------------------------------------------------
 -- Check for overlapping/unreachable and non-exhaustive case alternatives

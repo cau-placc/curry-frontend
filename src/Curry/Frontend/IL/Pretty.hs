@@ -82,7 +82,7 @@ ppType :: Int -> Type -> Doc
 ppType p (TypeConstructor tc tys)
   | isQTupleId tc                    = parens
     (fsep (punctuate comma (map (ppType 0) tys)))
-  | tc == qListId && length tys == 1 = brackets (ppType 0 (head tys))
+  | tc == qListId, [ty] <- tys       = brackets (ppType 0 ty)
   | otherwise                        = parenIf (p > 1 && not (null tys))
     (ppQIdent tc <+> fsep (map (ppType 2) tys))
 ppType _ (TypeVariable      n) = ppTypeVar n

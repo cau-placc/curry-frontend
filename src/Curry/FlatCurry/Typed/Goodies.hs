@@ -27,6 +27,8 @@ module Curry.FlatCurry.Typed.Goodies
   , module Curry.FlatCurry.Goodies
   ) where
 
+import Control.Arrow (first, second)
+
 import Curry.FlatCurry.Goodies ( Update
                                , trType, typeName, typeVisibility, typeParams
                                , typeConsDecls, typeSyn, isTypeSyn
@@ -319,7 +321,7 @@ allVarsInTRule = trTRule (\args body -> args ++ allVars body) (\_ _ -> [])
 
 -- |rename all variables in rule
 rnmAllVarsInTRule :: Update TRule VarIndex
-rnmAllVarsInTRule f = updTRule id (map (\(a, b) -> (f a, b))) (rnmAllVars f) id
+rnmAllVarsInTRule f = updTRule id (map (first f)) (rnmAllVars f) id
 
 -- |update all qualified names in rule
 updQNamesInTRule :: Update TRule QName
@@ -417,44 +419,44 @@ caseBranches _              = error "Curry.FlatCurry.Typed.Goodies.caseBranches:
 -- |is expression a variable?
 isTVarE :: TExpr -> Bool
 isTVarE e = case e of
-  TVarE _ _ -> True
-  _ -> False
+  TVarE {} -> True
+  _        -> False
 
 -- |is expression a literal expression?
 isTLit :: TExpr -> Bool
 isTLit e = case e of
-  TLit _ _ -> True
-  _ -> False
+  TLit {} -> True
+  _       -> False
 
 -- |is expression combined?
 isTComb :: TExpr -> Bool
 isTComb e = case e of
-  TComb _ _ _ _ -> True
-  _ -> False
+  TComb {} -> True
+  _        -> False
 
 -- |is expression a let expression?
 isTLet :: TExpr -> Bool
 isTLet e = case e of
-  TLet _ _ -> True
-  _ -> False
+  TLet {} -> True
+  _       -> False
 
 -- |is expression a declaration of free variables?
 isTFree :: TExpr -> Bool
 isTFree e = case e of
-  TFree _ _ -> True
-  _ -> False
+  TFree {} -> True
+  _        -> False
 
 -- |is expression an or-expression?
 isTOr :: TExpr -> Bool
 isTOr e = case e of
-  TOr _ _ -> True
-  _ -> False
+  TOr {} -> True
+  _      -> False
 
 -- |is expression a case expression?
 isTCase :: TExpr -> Bool
 isTCase e = case e of
-  TCase _ _ _ -> True
-  _ -> False
+  TCase {} -> True
+  _        -> False
 
 -- |transform expression
 trTExpr  :: (TypeExpr -> VarIndex -> b)
@@ -472,7 +474,7 @@ trTExpr var lit comb lt fr oR cas branch typed expr = case expr of
   TVarE ty n            -> var ty n
   TLit ty l             -> lit ty l
   TComb ty ct name args -> comb ty ct name (map f args)
-  TLet bs e             -> lt (map (\(v, x) -> (v, f x)) bs) (f e)
+  TLet bs e             -> lt (map (second f) bs) (f e)
   TFree vs e            -> fr vs (f e)
   TOr e1 e2             -> oR (f e1) (f e2)
   TCase ct e bs         -> cas ct (f e) (map (\ (TBranch p e') -> branch p (f e')) bs)
@@ -548,7 +550,7 @@ allVars e = trTExpr var lit comb lt fr (.) cas branch typ e []
   var a v = (:) (v, a)
   lit = const (const id)
   comb _ _ _ = foldr (.) id
-  lt bs e' = e' . foldr (.) id (map (\(n,ns) -> (n:) . ns) bs)
+  lt bs e' = e' . foldr ((.) . (\(n,ns) -> (n:) . ns)) id bs
   fr vs e' = (vs++) . e'
   cas _ e' bs = e' . foldr (.) id bs
   branch pat e' = (args pat ++) . e'
@@ -562,14 +564,14 @@ rnmAllVars f = trTExpr var TLit TComb lt fr TOr TCase branch TTyped
  where
    var a = TVarE a . f
    lt = TLet . map (\((n, b), e) -> ((f n, b), e))
-   fr = TFree . map (\(b, c) -> (f b, c))
-   branch = TBranch . updTPatArgs (map (\(a, b) -> (f a, b)))
+   fr = TFree . map (first f)
+   branch = TBranch . updTPatArgs (map (first f))
 
 -- |update all qualified names in expression
 updQNames :: Update TExpr QName
 updQNames f = trTExpr TVarE TLit comb TLet TFree TOr TCase branch TTyped
  where
-  comb ty ct name args = TComb ty ct (f name) args
+  comb ty ct name = TComb ty ct (f name)
   branch = TBranch . updTPatCons f
 
 -- TBranchExpr ----------------------------------------------------------------

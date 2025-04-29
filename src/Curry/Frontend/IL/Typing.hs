@@ -36,7 +36,8 @@ instance Typeable Expression where
   typeOf (Apply e _) = case typeOf e of
     TypeArrow _ ty -> ty
     _ -> internalError "IL.Typing.typeOf: application"
-  typeOf (Case _ _ as) = typeOf $ head as
+  typeOf (Case _ _ []) = internalError "IL.Typing.typeOf: empty case"
+  typeOf (Case _ _ (a:_)) = typeOf a
   typeOf (Or e _) = typeOf e
   typeOf (Exist _ _ e) = typeOf e
   typeOf (Let _ e) = typeOf e

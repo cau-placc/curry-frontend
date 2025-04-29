@@ -70,7 +70,7 @@ data CurryProg = CurryProg MName [MName] (Maybe CDefaultDecl) [CClassDecl]
     deriving (Eq, Read, Show)
 
 -- |Default declaration.
-data CDefaultDecl = CDefaultDecl [CTypeExpr]
+newtype CDefaultDecl = CDefaultDecl [CTypeExpr]
     deriving (Eq, Read, Show)
 
 -- |Definitions of type classes.
@@ -175,7 +175,7 @@ data CFieldDecl = CField QName CVisibility CTypeExpr
 type CConstraint = (QName, [CTypeExpr])
 
 -- |The type for representing a context.
-data CContext = CContext [CConstraint]
+newtype CContext = CContext [CConstraint]
   deriving (Eq, Read, Show)
 
 -- |The type for representing a functional dependency of a type class.

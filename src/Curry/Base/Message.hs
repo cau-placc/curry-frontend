@@ -98,18 +98,18 @@ ppError = ppAs "Error"
 
 -- |Pretty print a 'Message' with a given key
 ppAs :: String -> Message -> Doc
-ppAs key (Message mbSpanInfo txt _) = (hsep $ filter (not . isEmpty) [spanPP, keyPP]) $$ nest 4 txt
+ppAs key (Message mbSpanInfo txt _) = hsep (filter (not . isEmpty) [spanPP, keyPP]) $$ nest 4 txt
   where
-  spanPP = ppCompactSpan $ getSrcSpan $ mbSpanInfo
+  spanPP = ppCompactSpan $ getSrcSpan mbSpanInfo
   keyPP = if null key then empty else text key <> colon
 
 -- |Pretty print a list of 'Message's by vertical concatenation
 ppMessages :: (Message -> Doc) -> [Message] -> Doc
-ppMessages ppFun = foldr (\m ms -> text "" $+$ m $+$ ms) empty . map ppFun
+ppMessages ppFun = foldr ((\m ms -> text "" $+$ m $+$ ms) . ppFun) empty
 
 -- |Pretty print a list of 'Message's with previews by vertical concatenation
 ppMessagesWithPreviews :: (Message -> Doc) -> [Message] -> IO Doc
-ppMessagesWithPreviews ppFun = (fmap $ foldr (\m ms -> text "" $+$ m $+$ ms) empty) . mapM ppFunWithPreview
+ppMessagesWithPreviews ppFun = fmap (foldr (\m ms -> text "" $+$ m $+$ ms) empty) . mapM ppFunWithPreview
   where ppFunWithPreview m = do preview <- case m of
                                   Message (SpanInfo sp _) _ _ -> ppSpanPreview sp
                                   _                           -> return empty

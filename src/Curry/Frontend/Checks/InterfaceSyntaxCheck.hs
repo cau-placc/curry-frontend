@@ -22,10 +22,11 @@
 -}
 module Curry.Frontend.Checks.InterfaceSyntaxCheck (intfSyntaxCheck) where
 
-import           Prelude hiding ((<>))
+import           Prelude hiding ((<>), head)
 import           Control.Monad            (filterM, liftM, liftM2, when)
 import qualified Control.Monad.State as S
 import           Data.List                (nub, partition)
+import           Data.List.NonEmpty       (head)
 import qualified Data.Map as Map          (Map, empty, insert, lookup)
 import qualified Data.Set as Set          ( Set, fromList, isSubsetOf, size
                                           , toAscList, union)
@@ -195,12 +196,13 @@ checkInstanceType inst =
   when (any isAnonId (typeVars inst) || containsForall inst) $
     report $ errIllegalInstanceType inst
 
-
--- take from Leif-Erik Krueger
+-- taken from Leif-Erik Krueger
 checkQualType :: QualTypeExpr -> ISC QualTypeExpr
 checkQualType (QualTypeExpr spi cx ty) = do
-  (cx', ty') <- checkQualTypes cx [ty]
-  return $ QualTypeExpr spi cx' (head ty')
+  (cx', tys) <- checkQualTypes cx [ty]
+  case tys of
+    []    -> internalError "Checks.InterfaceSyntaxCheck.checkQualType"
+    ty':_ -> return $ QualTypeExpr spi cx' ty'
 
 -- taken from Leif-Erik Krueger
 checkQualTypes :: Context -> [TypeExpr] -> ISC (Context, [TypeExpr])

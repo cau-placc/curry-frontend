@@ -116,5 +116,5 @@ localNestEnv (LocalEnv _ env) = Map.toList env
 -- Returns wether the variable is bound on the bottom (meaning non-top) scope
 qualInLocalNestEnv :: QualIdent -> NestEnv a -> Bool
 qualInLocalNestEnv x (GlobalEnv  env) = qualElemTopEnv x env
-qualInLocalNestEnv x (LocalEnv _ env) =    (not (isQualified x))
+qualInLocalNestEnv x (LocalEnv _ env) =    not (isQualified x)
                                         && Map.member (unqualify x) env

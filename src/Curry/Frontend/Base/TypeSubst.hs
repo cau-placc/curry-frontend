@@ -72,8 +72,8 @@ instance SubstType TypeScheme where
     ForAll n (subst (foldr unbindSubst sigma [0 .. n-1]) ty)
 
 instance SubstType ValueInfo where
-  subst _     dc@(DataConstructor  _ _ _ _) = dc
-  subst _     nc@(NewtypeConstructor _ _ _) = nc
+  subst _     dc@(DataConstructor       {}) = dc
+  subst _     nc@(NewtypeConstructor    {}) = nc
   subst theta (Value             v cm a ty) = Value v cm a (subst theta ty)
   subst theta (Label                l r ty) = Label l r (subst theta ty)
 

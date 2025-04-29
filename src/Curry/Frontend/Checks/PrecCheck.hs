@@ -24,6 +24,7 @@ module Curry.Frontend.Checks.PrecCheck (precCheck) where
 import           Control.Monad            (unless, when)
 import qualified Control.Monad.State as S (State, runState, gets, modify)
 import           Data.List                (partition)
+import           Data.List.NonEmpty       (NonEmpty (..))
 
 import Curry.Base.Ident
 import Curry.Base.Position
@@ -33,7 +34,7 @@ import Curry.Base.Pretty
 import Curry.Syntax
 
 import Curry.Frontend.Base.Expr
-import Curry.Frontend.Base.Messages       (Message, spanInfoMessage, internalError)
+import Curry.Frontend.Base.Messages       (Message, spanInfoMessage)
 import Curry.Frontend.Base.Utils          (findMultiples)
 
 import Curry.Frontend.Env.OpPrec          (OpPrecEnv, OpPrec (..), PrecInfo (..)
@@ -490,11 +491,9 @@ errUndefinedOperator :: Ident -> Message
 errUndefinedOperator op = spanInfoMessage op $ hsep $ map text
   ["No definition for", escName op, "in this scope"]
 
-errMultiplePrecedence :: [Ident] -> Message
-errMultiplePrecedence []       = internalError
-  "PrecCheck.errMultiplePrecedence: empty list"
-errMultiplePrecedence (op:ops) = spanInfoMessage op $
-  (hsep $ map text ["More than one fixity declaration for", escName op, "at"])
+errMultiplePrecedence :: NonEmpty Ident -> Message
+errMultiplePrecedence (op :| ops) = spanInfoMessage op $
+  hsep (map text ["More than one fixity declaration for", escName op, "at"])
   $+$ nest 2 (vcat (map (ppPosition . getPosition) (op:ops)))
 
 errInvalidParse :: String -> Ident -> QualIdent -> Message

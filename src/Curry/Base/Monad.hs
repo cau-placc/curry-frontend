@@ -76,7 +76,7 @@ warnMessage msg = warnMessages [msg]
 
 -- |Warning with a list of messages describing the cause(s) of the warnings.
 warnMessages :: Monad m => [Message] -> CYT m ()
-warnMessages msgs = tell msgs
+warnMessages = tell
 
 -- |Warnings or failures, depending on whether -Werror is set.
 warnOrFailMessages :: Monad m => WarnOpts -> [Message] -> CYT m ()
@@ -86,7 +86,7 @@ warnOrFailMessages opts msgs | null msgs          = return ()
 
 -- |Execute a monadic action, but ignore any warnings it issues
 silent :: Monad m => CYT m a -> CYT m a
-silent act = censor (const []) act
+silent = censor (const [])
 
 -- |Warning with a source code position and a `String` indicating
 -- the cause of the warning.

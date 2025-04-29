@@ -48,6 +48,7 @@ import Curry.Frontend.Base.Utils (findMultiples)
 import Curry.Frontend.Env.Class
 import Curry.Frontend.Env.Instance
 import Curry.Frontend.Env.TypeConstructor
+import Data.List.NonEmpty (NonEmpty (..))
 
 instanceCheck :: [KnownExtension] -> ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> [Decl a]
               -> (InstEnv, [Message])
@@ -204,9 +205,9 @@ bindInstance tcEnv clsEnv (InstanceDecl p _ cx qcls inst ds) = do
     bindInstInfo (getOrigName m qcls tcEnv, itys)
                     (p, m, if term then ipls else [], impls [] ds)
   where impls is [] = is
-        impls is (FunctionDecl _ _ f eqs:ds')
+        impls is (FunctionDecl _ _ f (eq:_):ds')
           | f' `elem` map fst is = impls is ds'
-          | otherwise            = impls ((f', eqnArity $ head eqs) : is) ds'
+          | otherwise            = impls ((f', eqnArity eq) : is) ds'
           where f' = unRenameIdent f
         impls _ _ = internalError "InstanceCheck.bindInstance.impls"
 bindInstance _     _      _                                = ok
@@ -684,12 +685,10 @@ isDeriveMode _          = False
 -- Error messages
 -- ---------------------------------------------------------------------------
 
-errMultipleInstances :: TCEnv -> [InstSource] -> Message
-errMultipleInstances _     []                       = internalError
-  "InstanceCheck.errMultipleInstances: Empty instance list"
-errMultipleInstances tcEnv iss@(InstSource spi i _ : _) = spanInfoMessage spi $
+errMultipleInstances :: TCEnv -> NonEmpty InstSource -> Message
+errMultipleInstances tcEnv (is@(InstSource spi i _) :| iss) = spanInfoMessage spi $
   text "Multiple instances for the same class" <+> text typeText $+$
-    nest 2 (vcat (map (ppInstSource tcEnv) iss))
+    nest 2 (vcat (map (ppInstSource tcEnv) (is:iss)))
   where typeText = case length (snd i) of 0 -> ""
                                           1 -> "and type"
                                           _ -> "and types"

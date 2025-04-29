@@ -53,7 +53,8 @@ instance Typeable PredType where
 
 instance Typeable a => Typeable (Rhs a) where
   typeOf (SimpleRhs  _ _ e _ ) = typeOf e
-  typeOf (GuardedRhs _ _ es _) = head [typeOf e | CondExpr _ _ e <- es]
+  typeOf (GuardedRhs _ _ [] _) = internalError "Base.Typing.typeOf: empty guarded rhs"
+  typeOf (GuardedRhs _ _ (CondExpr _ _ e : _) _) = typeOf e
 
 instance Typeable a => Typeable (Pattern a) where
   typeOf (LiteralPattern _ a _) = typeOf a
@@ -102,7 +103,8 @@ instance Typeable a => Typeable (Expression a) where
   typeOf (Let _ _ _ e) = typeOf e
   typeOf (Do _ _ _ e) = typeOf e
   typeOf (IfThenElse _ _ e _) = typeOf e
-  typeOf (Case _ _ _ _ as) = typeOf $ head as
+  typeOf (Case _ _ _ _ []) = internalError "Base.Typing.typeOf: empty case alternative"
+  typeOf (Case _ _ _ _ (a:_)) = typeOf a
 
 instance Typeable a => Typeable (Alt a) where
   typeOf (Alt _ _ rhs) = typeOf rhs
@@ -308,12 +310,12 @@ bindPattern t vEnv = bindLocalVars (filter unbound $ patternVars t) vEnv
 
 -- TODO : correct this if necessary for the new label of function decls
 declVars :: (Eq t, Typeable t, ValueType t) => Decl t -> [(Ident, Int, t)]
-declVars InfixDecl {}               = []
-declVars TypeSig {}                 = []
-declVars (FunctionDecl  _ ty f eqs) = [(f, eqnArity $ head eqs, ty)]
-declVars (PatternDecl        _ t _) = patternVars t
-declVars (FreeDecl            _ vs) = [(v, 0, ty) | Var ty v <- vs]
-declVars _                          = internalError "Base.Typing.declVars"
+declVars InfixDecl {}                  = []
+declVars TypeSig {}                    = []
+declVars (FunctionDecl  _ ty f (eq:_)) = [(f, eqnArity eq, ty)]
+declVars (PatternDecl        _ t _)    = patternVars t
+declVars (FreeDecl            _ vs)    = [(v, 0, ty) | Var ty v <- vs]
+declVars _                             = internalError "Base.Typing.declVars"
 
 patternVars :: (Eq t, Typeable t, ValueType t) => Pattern t -> [(Ident, Int, t)]
 patternVars LiteralPattern {}              = []
