@@ -1,5 +1,5 @@
 image:
-  name: "haskell:9.2.5"
+  name: "haskell:9.6"
   entrypoint: [""]
 
 stages:

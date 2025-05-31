@@ -27,6 +27,7 @@ import Data.Binary
 import GHC.Generics
 
 import Curry.Base.Position
+import Curry.Base.Pretty
 import Curry.Base.Span
 
 data SpanInfo = SpanInfo
@@ -35,6 +36,9 @@ data SpanInfo = SpanInfo
     }
     | NoSpanInfo
   deriving (Eq, Ord, Read, Show, Generic, Binary)
+
+instance Pretty SpanInfo where
+  pPrint = pPrint . getSrcSpan
 
 spanInfo :: Span -> [Span] -> SpanInfo
 spanInfo = SpanInfo

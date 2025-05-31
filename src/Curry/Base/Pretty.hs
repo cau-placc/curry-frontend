@@ -40,6 +40,8 @@ class Pretty a where
   pPrintList :: [a] -> Doc
   pPrintList = brackets . fsep . punctuate comma . map (pPrintPrec 0)
 
+  {-# MINIMAL pPrintPrec | pPrint #-}
+  
 instance Pretty a => Pretty (Set.Set a) where
   pPrint = parens . list . map pPrint . Set.toAscList
 

@@ -1,8 +1,8 @@
 {- |
     Module      :  $Header$
     Description :  Abstract syntax for conditional compiling
-    Copyright   :  (c) 2017        Finn Teegen
-                       2017 - 2023 Kai-Oliver Prott
+    Copyright   :  (c) 2017-2024   Kai-Oliver Prott
+                       2017        Finn Teegen
     License     :  BSD-3-clause
 
     Maintainer  :  kpr@informatik.uni-kiel.de

@@ -29,7 +29,7 @@ module Curry.Syntax.Type
   , ImportDecl (..), ImportSpec (..), Import (..), Qualified
     -- * Interface
   , Interface (..), IImportDecl (..), Arity, IDecl (..), KindExpr (..)
-  , IMethodDecl (..), IMethodImpl
+  , OriginPragma (..), IMethodDecl (..), IMethodImpl
     -- * Declarations
   , Decl (..), Precedence, Infix (..), ConstrDecl (..), NewConstrDecl (..)
   , FieldDecl (..)
@@ -38,7 +38,7 @@ module Curry.Syntax.Type
   , Literal (..), Pattern (..), Expression (..), InfixOp (..)
   , Statement (..), CaseType (..), Alt (..), Field (..), Var (..)
     -- * Type classes
-  , Context, Constraint (..), InstanceType
+  , Context, Constraint (..), InstanceType, FunDep (..)
     -- * Goals
   , Goal (..)
   ) where
@@ -114,11 +114,11 @@ data Import
 -- Note that an interface function declaration additionaly contains the
 -- function arity (= number of parameters) in order to generate
 -- correct FlatCurry function applications.
-data Interface = Interface ModuleIdent [IImportDecl] [IDecl]
+data Interface = Interface ModuleIdent [IImportDecl] [IDecl] (Maybe OriginPragma)
     deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Interface import declaration
-data IImportDecl = IImportDecl Position ModuleIdent
+data IImportDecl = IImportDecl Position ModuleIdent (Maybe OriginPragma)
     deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Arity of a function
@@ -126,15 +126,19 @@ type Arity = Int
 
 -- |Interface declaration
 data IDecl
-  = IInfixDecl      Position Infix Precedence QualIdent
-  | HidingDataDecl  Position QualIdent (Maybe KindExpr) [Ident]
-  | IDataDecl       Position QualIdent (Maybe KindExpr) [Ident] [ConstrDecl]  [Ident]
-  | INewtypeDecl    Position QualIdent (Maybe KindExpr) [Ident] NewConstrDecl [Ident]
-  | ITypeDecl       Position QualIdent (Maybe KindExpr) [Ident] TypeExpr
-  | IFunctionDecl   Position QualIdent (Maybe Ident) Arity QualTypeExpr DetExpr
-  | HidingClassDecl Position Context QualIdent (Maybe KindExpr) Ident [Ident]
-  | IClassDecl      Position Context QualIdent (Maybe KindExpr) Ident [IMethodDecl] [Ident]
-  | IInstanceDecl   Position Context QualIdent InstanceType [IMethodImpl] (Maybe ModuleIdent)
+  = IInfixDecl      Position Infix Precedence QualIdent (Maybe OriginPragma)
+  | HidingDataDecl  Position QualIdent (Maybe KindExpr) [Ident] (Maybe OriginPragma)
+  | IDataDecl       Position QualIdent (Maybe KindExpr) [Ident] [ConstrDecl]  [Ident] (Maybe OriginPragma)
+  | INewtypeDecl    Position QualIdent (Maybe KindExpr) [Ident] NewConstrDecl [Ident] (Maybe OriginPragma)
+  | ITypeDecl       Position QualIdent (Maybe KindExpr) [Ident] TypeExpr (Maybe OriginPragma)
+  | IFunctionDecl   Position QualIdent (Maybe [Ident]) Arity QualTypeExpr DetExpr (Maybe OriginPragma)
+  | HidingClassDecl Position Context QualIdent (Maybe KindExpr) [Ident] [FunDep] (Maybe OriginPragma)
+  | IClassDecl      Position Context QualIdent (Maybe KindExpr) [Ident] [FunDep] [IMethodDecl] [Ident] (Maybe OriginPragma)
+  | IInstanceDecl   Position Context QualIdent [InstanceType] [IMethodImpl] (Maybe ModuleIdent) (Maybe OriginPragma)
+    deriving (Eq, Read, Show, Generic, Binary)
+
+-- |Interface origin pragma.
+data OriginPragma = OriginPragma SpanInfo SpanInfo -- ^ origin pragma
     deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Class methods
@@ -147,6 +151,7 @@ type IMethodImpl = (Ident, Maybe Arity, DetExpr)
 -- |Kind expressions
 data KindExpr
   = Star
+  | ConstraintKind
   | ArrowKind KindExpr KindExpr
     deriving (Eq, Read, Show, Generic, Binary)
 
@@ -156,19 +161,19 @@ data KindExpr
 
 -- |Declaration in a module
 data Decl a
-  = InfixDecl        SpanInfo Infix (Maybe Precedence) [Ident]                   -- infixl 5 (op), `fun`
-  | DataDecl         SpanInfo Ident [Ident] [ConstrDecl] [QualIdent]             -- data C a b = C1 a | C2 b deriving (D, ...)
-  | ExternalDataDecl SpanInfo Ident [Ident]                                      -- external data C a b
-  | NewtypeDecl      SpanInfo Ident [Ident] NewConstrDecl [QualIdent]            -- newtype C a b = C a b deriving (D, ...)
-  | TypeDecl         SpanInfo Ident [Ident] TypeExpr                             -- type C a b = D a b
-  | TypeSig          SpanInfo [Ident] QualTypeExpr                               -- f, g :: Bool
-  | FunctionDecl     SpanInfo a Ident [Equation a]                               -- f True = 1 ; f False = 0
-  | ExternalDecl     SpanInfo [Var a]                                            -- f, g external
-  | PatternDecl      SpanInfo (Pattern a) (Rhs a)                                -- Just x = ...
-  | FreeDecl         SpanInfo [Var a]                                            -- x, y free
-  | DefaultDecl      SpanInfo [TypeExpr]                                         -- default (Int, Float)
-  | ClassDecl        SpanInfo LayoutInfo Context Ident Ident [Decl a]            -- class C a => D a where {TypeSig|InfixDecl|FunctionDecl}
-  | InstanceDecl     SpanInfo LayoutInfo Context QualIdent InstanceType [Decl a] -- instance C a => M.D (N.T a b c) where {FunctionDecl}
+  = InfixDecl        SpanInfo Infix (Maybe Precedence) [Ident]                     -- infixl 5 (op), `fun`
+  | DataDecl         SpanInfo Ident [Ident] [ConstrDecl] [QualIdent]               -- data C a b = C1 a | C2 b deriving (D, ...)
+  | ExternalDataDecl SpanInfo Ident [Ident]                                        -- external data C a b
+  | NewtypeDecl      SpanInfo Ident [Ident] NewConstrDecl [QualIdent]              -- newtype C a b = C a b deriving (D, ...)
+  | TypeDecl         SpanInfo Ident [Ident] TypeExpr                               -- type C a b = D a b
+  | TypeSig          SpanInfo [Ident] QualTypeExpr                                 -- f, g :: Bool
+  | FunctionDecl     SpanInfo  a Ident [Equation a]                                -- f True = 1 ; f False = 0
+  | ExternalDecl     SpanInfo [Var a]                                              -- f, g external
+  | PatternDecl      SpanInfo (Pattern a) (Rhs a)                                  -- Just x = ...
+  | FreeDecl         SpanInfo [Var a]                                              -- x, y free
+  | DefaultDecl      SpanInfo [TypeExpr]                                           -- default (Int, Float)
+  | ClassDecl        SpanInfo LayoutInfo Context Ident [Ident] [FunDep] [Decl a]   -- class C a => D a b | a -> b where {TypeSig|InfixDecl|FunctionDecl}
+  | InstanceDecl     SpanInfo LayoutInfo Context QualIdent [InstanceType] [Decl a] -- instance C a => M.D (N.T a b c) where {FunctionDecl}
   | DetSig           SpanInfo [Ident] DetExpr                                    -- det f, g :: D -> D
     deriving (Eq, Read, Show, Generic, Binary, Functor)
 
@@ -237,18 +242,27 @@ data DetExpr = DetDetExpr SpanInfo
 
 type Context = [Constraint]
 
-data Constraint = Constraint SpanInfo QualIdent TypeExpr
+data Constraint = Constraint SpanInfo QualIdent [TypeExpr]
     deriving (Eq, Read, Show, Generic, Binary)
 
 type InstanceType = TypeExpr
+
+data FunDep = FunDep SpanInfo [Ident] [Ident]
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- ---------------------------------------------------------------------------
 -- Functions
 -- ---------------------------------------------------------------------------
 
 -- |Function defining equation
-data Equation a = Equation SpanInfo (Lhs a) (Rhs a)
-    deriving (Eq, Read, Show, Generic, Binary, Functor)
+--  Equations are now annotated with a type.
+--  The type is stored in a Maybe because there are some points where equations
+--  are generated and I wanted to change only as few things as possible.
+--  Nothing is annotated if an equation is generated after finishing Type check.
+--  otherwise, the equations are annotated with the type that is inferred for them
+--  during Type check.
+data Equation a = Equation SpanInfo (Maybe a) (Lhs a) (Rhs a)
+    deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Left-hand-side of an 'Equation' (function identifier and patterns)
 data Lhs a
@@ -397,8 +411,8 @@ instance HasSpanInfo (Decl a) where
   getSpanInfo (PatternDecl      sp _ _)     = sp
   getSpanInfo (FreeDecl         sp _)       = sp
   getSpanInfo (DefaultDecl      sp _)       = sp
-  getSpanInfo (ClassDecl        sp _ _ _ _ _) = sp
-  getSpanInfo (InstanceDecl     sp _ _ _ _ _) = sp
+  getSpanInfo (ClassDecl        sp _ _ _ _ _ _) = sp
+  getSpanInfo (InstanceDecl     sp _ _ _ _ _)   = sp
   getSpanInfo (DetSig           sp _ _)     = sp
 
   setSpanInfo sp (InfixDecl _ fix prec ops) = InfixDecl sp fix prec ops
@@ -412,16 +426,18 @@ instance HasSpanInfo (Decl a) where
   setSpanInfo sp (PatternDecl _ t rhs) = PatternDecl sp t rhs
   setSpanInfo sp (FreeDecl _ vs) = FreeDecl sp vs
   setSpanInfo sp (DefaultDecl _ tys) = DefaultDecl sp tys
-  setSpanInfo sp (ClassDecl _ li cx cls clsvar ds) = ClassDecl sp li cx cls clsvar ds
+  setSpanInfo sp (ClassDecl _ li cx cls clsvars fds ds) = ClassDecl sp li cx cls clsvars fds ds
   setSpanInfo sp (InstanceDecl _ li cx qcls inst ds) = InstanceDecl sp li cx qcls inst ds
   setSpanInfo sp (DetSig _ fs det) = DetSig sp fs det
 
   updateEndPos d@(InfixDecl _ _ _ ops) =
     let i' = last ops
     in setEndPosition (incr (getPosition i') (identLength i' - 1)) d
-  updateEndPos d@(DataDecl _ _ _ _ (c:cs)) =
-    let i' = last (c:cs)
-    in setEndPosition (incr (getPosition i') (qIdentLength i' - 1)) d
+  updateEndPos d@(DataDecl (SpanInfo _ ss@(_:_)) _ _ _ cs@(_:_)) =
+    let i' = last cs
+        endPosQual = incr (getPosition i') (qIdentLength i' - 1)
+        endPosSp   = end (last ss)
+    in setEndPosition (max endPosQual endPosSp) d
   updateEndPos d@(DataDecl _ _ _ (c:cs) _) =
     setEndPosition (getSrcSpanEnd (last (c:cs))) d
   updateEndPos d@(DataDecl _ _ (i:is) _ _) =
@@ -456,27 +472,31 @@ instance HasSpanInfo (Decl a) where
   updateEndPos d@(DefaultDecl (SpanInfo _ ss) _) =
     setEndPosition (end (last ss)) d
   updateEndPos d@(DefaultDecl _ _) = d
-  updateEndPos d@(ClassDecl _ _ _ _ _ (d':ds)) =
+  updateEndPos d@(ClassDecl _ _ _ _ _ _ (d':ds)) =
     setEndPosition (getSrcSpanEnd (last (d':ds))) d
-  updateEndPos d@(ClassDecl (SpanInfo _ ss) _ _ _ _ _) =
-    setEndPosition (end (last ss)) d
-  updateEndPos d@(ClassDecl _ _ _ _ _ _) = d
+  updateEndPos d@(ClassDecl spi _ _ cls clsvars fds _) =
+    let sipEnd = map end $ take 1 $ reverse $ getSrcInfoPoints spi
+        oEnd = last $ map getSrcSpanEnd (cls : clsvars) ++ map getSrcSpanEnd fds
+        ends = filter (/= NoPos) $ oEnd : sipEnd
+    in if null ends then d else setEndPosition (maximum ends) d
   updateEndPos d@(InstanceDecl _ _ _ _ _ (d':ds)) =
     setEndPosition (getSrcSpanEnd (last (d':ds))) d
-  updateEndPos d@(InstanceDecl (SpanInfo _ ss) _ _ _ _ _) =
-    setEndPosition (end (last ss)) d
-  updateEndPos d@(InstanceDecl _ _ _ _ _ _) = d
+  updateEndPos d@(InstanceDecl spi _ _ qcls inst _) =
+    let sipEnd = map end $ take 1 $ reverse $ getSrcInfoPoints spi
+        oEnd = last $ getSrcSpanEnd qcls : map getSrcSpanEnd inst
+        ends = filter (/= NoPos) $ oEnd : sipEnd
+    in if null ends then d else setEndPosition (maximum ends) d
   updateEndPos d@(DetSig _ _ det) =
     setEndPosition (getSrcSpanEnd det) d
 
-  getLayoutInfo (ClassDecl _ li _ _ _ _) = li
+  getLayoutInfo (ClassDecl _ li _ _ _ _ _) = li
   getLayoutInfo (InstanceDecl _ li _ _ _ _) = li
   getLayoutInfo _ = WhitespaceLayout
 
 instance HasSpanInfo (Equation a) where
-  getSpanInfo (Equation spi _ _) = spi
-  setSpanInfo spi (Equation _ lhs rhs) = Equation spi lhs rhs
-  updateEndPos e@(Equation _ _ rhs) =
+  getSpanInfo (Equation spi _ _ _) = spi
+  setSpanInfo spi (Equation _ a lhs rhs) = Equation spi a lhs rhs
+  updateEndPos e@(Equation _ _ _ rhs) =
     setEndPosition (getSrcSpanEnd rhs) e
 
 instance HasSpanInfo ModulePragma where
@@ -672,11 +692,22 @@ instance HasSpanInfo DetExpr where
 
 instance HasSpanInfo Constraint where
   getSpanInfo (Constraint sp _ _) = sp
-  setSpanInfo sp (Constraint _ qid ty) = Constraint sp qid ty
+  setSpanInfo sp (Constraint _ qid tys) = Constraint sp qid tys
   updateEndPos c@(Constraint (SpanInfo _ (s:ss)) _ _) =
     setEndPosition (end (last (s:ss))) c
-  updateEndPos c@(Constraint _ _ ty) =
-    setEndPosition (getSrcSpanEnd ty) c
+  updateEndPos c@(Constraint _ _ (t:ts)) =
+    setEndPosition (getSrcSpanEnd (last (t:ts))) c
+  updateEndPos c@(Constraint _ qid _) =
+    setEndPosition (incr (getPosition qid) (qIdentLength qid - 1)) c
+
+instance HasSpanInfo FunDep where
+  getSpanInfo (FunDep sp _ _) = sp
+  setSpanInfo sp (FunDep _ ltvs rtvs) = FunDep sp ltvs rtvs
+  updateEndPos fd@(FunDep _ _ (rtv:rtvs)) =
+    setEndPosition (getSrcSpanEnd (last (rtv:rtvs))) fd
+  updateEndPos fd@(FunDep (SpanInfo _ (s:ss)) _ _) =
+    setEndPosition (end (last (s:ss))) fd
+  updateEndPos fd = fd
 
 instance HasSpanInfo (Lhs a) where
   getSpanInfo (FunLhs sp _ _)   = sp
@@ -1013,6 +1044,10 @@ instance HasPosition Constraint where
   getPosition = getStartPosition
   setPosition = setStartPosition
 
+instance HasPosition FunDep where
+  getPosition = getStartPosition
+  setPosition = setStartPosition
+
 instance HasPosition FieldDecl where
   getPosition = getStartPosition
   setPosition = setStartPosition
@@ -1058,5 +1093,4 @@ instance HasPosition (InfixOp a) where
 
   setPosition p (InfixOp     a q) = InfixOp     a (setPosition p q)
   setPosition p (InfixConstr a q) = InfixConstr a (setPosition p q)
-
 {- HLINT ignore "Use record patterns"-}

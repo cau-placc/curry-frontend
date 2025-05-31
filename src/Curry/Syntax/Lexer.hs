@@ -12,6 +12,7 @@
     Stability   :  experimental
     Portability :  portable
 -}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Curry.Syntax.Lexer
   ( -- * Data types for tokens
     Token (..), Category (..), Attributes (..)
@@ -93,6 +94,8 @@ instance Symbol Token where
   dist _ (Token Id_primitive       _) = (0,  8)
   dist _ (Token Id_qualified       _) = (0,  8)
   dist _ (Token PragmaHiding       _) = (0,  9)
+  dist _ (Token Id_Constraint      _) = (0,  9)
+  dist _ (Token PragmaOrigin       _) = (0,  9)
   dist _ (Token PragmaLanguage     _) = (0, 11)
   dist _ (Token Id                 a) = distAttr False a
   dist _ (Token QId                a) = distAttr False a
@@ -212,6 +215,7 @@ data Category
   -- special identifiers
   | Id_as
   | Id_ccall
+  | Id_Constraint
   | Id_forall
   | Id_hiding
   | Id_interface
@@ -228,6 +232,7 @@ data Category
   -- pragmas
   | PragmaLanguage -- {-# LANGUAGE
   | PragmaOptions  -- {-# OPTIONS
+  | PragmaOrigin   -- {-# ORIGIN
   | PragmaHiding   -- {-# HIDING
   | PragmaMethod   -- {-# METHOD
   | PragmaModule   -- {-# MODULE
@@ -358,6 +363,7 @@ instance Show Token where
   showsPrec _ (Token KW_where           _) = showsEscaped "where"
   showsPrec _ (Token Id_as              _) = showsSpecialIdent "as"
   showsPrec _ (Token Id_ccall           _) = showsSpecialIdent "ccall"
+  showsPrec _ (Token Id_Constraint      _) = showsSpecialIdent "Constraint"
   showsPrec _ (Token Id_forall          _) = showsSpecialIdent "forall"
   showsPrec _ (Token Id_hiding          _) = showsSpecialIdent "hiding"
   showsPrec _ (Token Id_interface       _) = showsSpecialIdent "interface"
@@ -366,6 +372,7 @@ instance Show Token where
   showsPrec _ (Token PragmaLanguage     _) = showString "{-# LANGUAGE"
   showsPrec _ (Token PragmaOptions      a) = showString "{-# OPTIONS"
                                            . shows a
+  showsPrec _ (Token PragmaOrigin       _) = showString "{-# ORIGIN"
   showsPrec _ (Token PragmaHiding       _) = showString "{-# HIDING"
   showsPrec _ (Token PragmaMethod       _) = showString "{-# METHOD"
   showsPrec _ (Token PragmaModule       _) = showString "{-# MODULE"
@@ -407,7 +414,7 @@ idTok :: Category -> [String] -> String -> Token
 idTok t mIdent ident = Token t
   IdentAttributes { modulVal = mIdent, sval = ident }
 
--- |Construct a 'Token' for the options pragma
+-- |Construct a 'Token' for an options Pragma with the given tool name (if known) and arguments
 pragmaOptionsTok :: Maybe String -> String -> Token
 pragmaOptionsTok mbTool s = Token PragmaOptions
   OptionsAttributes { toolVal = mbTool, toolArgs = s }
@@ -483,18 +490,20 @@ keywords = Map.fromList
 -- |Map of keywords and special identifiers
 keywordsSpecialIds :: Map.Map String Category
 keywordsSpecialIds = Map.union keywords $ Map.fromList
-  [ ("as"       , Id_as       )
-  , ("ccall"    , Id_ccall    )
-  , ("forall"   , Id_forall   )
-  , ("hiding"   , Id_hiding   )
-  , ("interface", Id_interface)
-  , ("primitive", Id_primitive)
-  , ("qualified", Id_qualified)
+  [ ("as"        , Id_as        )
+  , ("ccall"     , Id_ccall     )
+  , ("Constraint", Id_Constraint)
+  , ("forall"    , Id_forall    )
+  , ("hiding"    , Id_hiding    )
+  , ("interface" , Id_interface )
+  , ("primitive" , Id_primitive )
+  , ("qualified" , Id_qualified )
   ]
 
 pragmas :: Map.Map String Category
 pragmas = Map.fromList
   [ ("language", PragmaLanguage)
+  , ("origin"  , PragmaOrigin  )
   , ("options" , PragmaOptions )
   , ("hiding"  , PragmaHiding  )
   , ("method"  , PragmaMethod  )

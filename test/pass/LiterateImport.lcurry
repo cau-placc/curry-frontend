@@ -1,0 +1,6 @@
+This is a literate Curry module:
+
+> module LiterateImport where
+> import LiterateExport
+> g :: Bool
+> g = testExp

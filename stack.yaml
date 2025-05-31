@@ -1,6 +1,6 @@
-resolver: lts-20.26
+resolver: lts-23.19
 packages:
   - .
 extra-deps:
-  - set-extra-1.4.1
+  - set-extra-1.4.2
 allow-different-user: true

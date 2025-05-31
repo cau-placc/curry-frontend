@@ -26,6 +26,8 @@ module Curry.FlatCurry.Annotated.Goodies
   , module Curry.FlatCurry.Goodies
   ) where
 
+import Control.Arrow (first, second)
+
 import Curry.FlatCurry.Goodies ( Update
                                , trType, typeName, typeVisibility, typeParams
                                , typeConsDecls, typeSyn, isTypeSyn
@@ -236,7 +238,7 @@ aFuncRHS f | not (isExternal f) = orCase (aFuncBody f)
  where
   orCase e
     | isAOr e = concatMap orCase (orExps e)
-    | isACase e = concatMap orCase (map aBranchAExpr (caseBranches e))
+    | isACase e = concatMap (orCase . aBranchAExpr) (caseBranches e)
     | otherwise = [e]
 
 -- |rename all variables in function
@@ -266,7 +268,7 @@ trARule _ ext (AExternal a s) = ext a s
 
 -- |get rules annotation
 aRuleAnnot :: ARule a -> a
-aRuleAnnot = trARule (\a _ _ -> a) (\a _ -> a)
+aRuleAnnot = trARule (\a _ _ -> a) const
 
 -- |get rules arguments if it's not external
 aRuleArgs :: ARule a -> [(VarIndex, a)]
@@ -312,7 +314,7 @@ updARuleBody f = updARule id id f id
 
 -- |update rules external declaration
 updARuleExtDecl :: Update (ARule a) String
-updARuleExtDecl f = updARule id id id f
+updARuleExtDecl = updARule id id id
 
 -- Auxiliary Functions
 
@@ -322,7 +324,7 @@ allVarsInARule = trARule (\_ args body -> args ++ allVars body) (\_ _ -> [])
 
 -- |rename all variables in rule
 rnmAllVarsInARule :: Update (ARule a) VarIndex
-rnmAllVarsInARule f = updARule id (map (\(a, b) -> (f a, b))) (rnmAllVars f) id
+rnmAllVarsInARule f = updARule id (map (first f)) (rnmAllVars f) id
 
 -- |update all qualified names in rule
 updQNamesInARule :: Update (ARule a) QName
@@ -432,44 +434,44 @@ caseBranches _                = error
 -- |is expression a variable?
 isAVar :: AExpr a -> Bool
 isAVar e = case e of
-  AVar _ _ -> True
-  _ -> False
+  AVar {} -> True
+  _       -> False
 
 -- |is expression a literal expression?
 isALit :: AExpr a -> Bool
 isALit e = case e of
-  ALit _ _ -> True
-  _ -> False
+  ALit {} -> True
+  _       -> False
 
 -- |is expression combined?
 isAComb :: AExpr a -> Bool
 isAComb e = case e of
-  AComb _ _ _ _ -> True
-  _ -> False
+  AComb { } -> True
+  _         -> False
 
 -- |is expression a let expression?
 isALet :: AExpr a -> Bool
 isALet e = case e of
-  ALet _ _ _ -> True
-  _ -> False
+  ALet {} -> True
+  _       -> False
 
 -- |is expression a declaration of free variables?
 isAFree :: AExpr a -> Bool
 isAFree e = case e of
-  AFree _ _ _ -> True
-  _ -> False
+  AFree{} -> True
+  _       -> False
 
 -- |is expression an or-expression?
 isAOr :: AExpr a -> Bool
 isAOr e = case e of
-  AOr _ _ _ -> True
-  _ -> False
+  AOr {} -> True
+  _      -> False
 
 -- |is expression a case expression?
 isACase :: AExpr a -> Bool
 isACase e = case e of
-  ACase _ _ _ _ -> True
-  _ -> False
+  ACase {} -> True
+  _        -> False
 
 -- |transform expression
 trAExpr  :: (a -> VarIndex -> b)
@@ -487,8 +489,8 @@ trAExpr var lit comb lt fr oR cas branch typed expr = case expr of
   AVar a n             -> var a n
   ALit a l             -> lit a l
   AComb a ct name args -> comb a ct name (map f args)
-  ALet a bs e          -> lt a (map (\(v, x) -> (v, f x)) bs) (f e)
   AFree a vs e         -> fr a vs (f e)
+  ALet a bs e          -> lt a (map (second f) bs) (f e)
   AOr a e1 e2          -> oR a (f e1) (f e2)
   ACase a ct e bs      -> cas a ct (f e) (map (\ (ABranch p e') -> branch p (f e')) bs)
   ATyped a e ty        -> typed a (f e) ty
@@ -563,10 +565,10 @@ allVars e = trAExpr var lit comb lt fr (const (.)) cas branch typ e []
   var a v = (:) (v, a)
   lit = const (const id)
   comb _ _ _ = foldr (.) id
-  lt _ bs e' = e' . foldr (.) id (map (\(n,ns) -> (n:) . ns) bs)
+  lt _ bs e' = e' . foldr ((.) . (\(n,ns) -> (n:) . ns)) id bs
   fr _ vs e' = (vs++) . e'
   cas _ _ e' bs = e' . foldr (.) id bs
-  branch pat e' = ((args pat)++) . e'
+  branch pat e' = (args pat++) . e'
   typ _ = const
   args pat | isConsPattern pat = aPatArgs pat
            | otherwise = []
@@ -577,15 +579,15 @@ rnmAllVars f = trAExpr var ALit AComb lt fr AOr ACase branch ATyped
  where
    var a = AVar a . f
    lt a = ALet a . map (\((n, b), e) -> ((f n, b), e))
-   fr a = AFree a . map (\(b, c) -> (f b, c))
-   branch = ABranch . updAPatArgs (map (\(a, b) -> (f a, b)))
+   fr a = AFree a . map (first f)
+   branch = ABranch . updAPatArgs (map (first f))
 
 -- |update all qualified names in expression
 updQNames :: Update (AExpr a) QName
 updQNames f = trAExpr AVar ALit comb ALet AFree AOr ACase branch ATyped
  where
-  comb a ct (name, a') args = AComb a ct (f name, a') args
-  branch = ABranch . updAPatCons (\(q, a) -> (f q, a))
+  comb a ct (name, a') = AComb a ct (f name, a')
+  branch = ABranch . updAPatCons (first f)
 
 -- ABranchExpr ----------------------------------------------------------------
 
@@ -597,7 +599,7 @@ trABranch branch (ABranch pat e) = branch pat e
 
 -- |get pattern from branch expression
 aBranchAPattern :: ABranchExpr a -> APattern a
-aBranchAPattern = trABranch (\pat _ -> pat)
+aBranchAPattern = trABranch const
 
 -- |get expression from branch expression
 aBranchAExpr :: ABranchExpr a -> AExpr a
@@ -630,7 +632,7 @@ trAPattern _ lpat (ALPattern a l) = lpat a l
 
 -- |get annotation from pattern
 aPatAnnot :: APattern a -> a
-aPatAnnot = trAPattern (\a _ _ -> a) (\a _ -> a)
+aPatAnnot = trAPattern (\a _ _ -> a) const
 
 -- |get name from constructor pattern
 aPatCons :: APattern a -> (QName, a)
@@ -676,7 +678,7 @@ updAPatArgs f = updAPattern id id f id
 
 -- |update literal of pattern
 updAPatLiteral :: (Literal -> Literal) -> APattern a -> APattern a
-updAPatLiteral f = updAPattern id id id f
+updAPatLiteral = updAPattern id id id
 
 -- Auxiliary Functions
 

@@ -24,7 +24,10 @@ module Curry.Syntax.Pretty
 import Prelude hiding ((<>))
 
 import Curry.Base.Ident
+import Curry.Base.Position (Position (..))
 import Curry.Base.Pretty
+import Curry.Base.Span (Span (..))
+import Curry.Base.SpanInfo (SpanInfo (..))
 
 import Curry.Syntax.Type
 import Curry.Syntax.Utils (opName)
@@ -110,19 +113,20 @@ instance Pretty (Decl a) where
   pPrint (FreeDecl       _ vs) = list (map pPrint vs) <+> text "free"
   pPrint (DefaultDecl   _ tys) =
     text "default" <+> parenList (map (pPrintPrec 0) tys)
-  pPrint (ClassDecl _ _ cx cls clsvar ds) =
-    ppClassInstHead "class" cx (ppIdent cls) (ppIdent clsvar) <+>
+  pPrint (ClassDecl _ _ cx cls clsvars funDeps ds) =
+    ppClassInstHead "class" cx (ppIdent cls) (map ppIdent clsvars) <+>
+      ppIf (not $ null funDeps) (vbar <+> list (map pPrint funDeps)) <+>
       ppIf (not $ null ds) (text "where") $$
       ppIf (not $ null ds) (indent $ ppBlock ds)
   pPrint (InstanceDecl _ _ cx qcls inst ds) =
-    ppClassInstHead "instance" cx (ppQIdent qcls) (ppInstanceType inst) <+>
+    ppClassInstHead "instance" cx (ppQIdent qcls) (map ppInstanceType inst) <+>
       ppIf (not $ null ds) (text "where") $$
       ppIf (not $ null ds) (indent $ ppBlock ds)
   pPrint (DetSig _ vs dty) =
     list (map ppIdent vs) <+> text ":?" <+> pPrintPrec 0 dty
 
-ppClassInstHead :: String -> Context -> Doc -> Doc -> Doc
-ppClassInstHead kw cx cls ty = text kw <+> ppContext cx <+> cls <+> ty
+ppClassInstHead :: String -> Context -> Doc -> [Doc] -> Doc
+ppClassInstHead kw cx cls tys = text kw <+> ppContext cx <+> cls <+> hsep tys
 
 ppContext :: Context -> Doc
 ppContext []  = empty
@@ -130,10 +134,15 @@ ppContext [c] = pPrint c <+> darrow
 ppContext cs  = parenList (map pPrint cs) <+> darrow
 
 instance Pretty Constraint where
-  pPrint (Constraint _ qcls ty) = ppQIdent qcls <+> pPrintPrec 2 ty
+  pPrint (Constraint _ qcls tys) = ppQIdent qcls <+>
+    hsep (map (pPrintPrec 2) tys)
 
 ppInstanceType :: InstanceType -> Doc
 ppInstanceType = pPrintPrec 2
+
+instance Pretty FunDep where
+  pPrint (FunDep _ ltvs rtvs) =
+    hsep (map ppIdent ltvs) <+> rarrow <+> hsep (map ppIdent rtvs)
 
 ppDeriving :: [QualIdent] -> Doc
 ppDeriving []     = empty
@@ -172,7 +181,7 @@ ppQuantifiedVars tvs
   | otherwise = text "forall" <+> hsep (map ppIdent tvs) <+> char '.'
 
 instance Pretty (Equation a) where
-  pPrint (Equation _ lhs rhs) = ppRule (pPrint lhs) equals rhs
+  pPrint (Equation _ _ lhs rhs) = ppRule (pPrint lhs) equals rhs
 
 instance Pretty (Lhs a) where
   pPrint (FunLhs   _ f ts) =
@@ -198,53 +207,73 @@ ppLocalDefs ds
 -- ---------------------------------------------------------------------------
 
 instance Pretty Interface where
-  pPrint (Interface m is ds) =
+  pPrint (Interface m is ds o) =
     text "interface" <+> ppMIdent m <+> text "where" <+> lbrace
       $$ vcat (punctuate semi $ map pPrint is ++ map pPrint ds)
       $$ rbrace
+      $$ maybe empty pPrint o
 
 instance Pretty IImportDecl where
-  pPrint (IImportDecl _ m) = text "import" <+> ppMIdent m
+  pPrint (IImportDecl _ m o) =
+    text "import" <+> ppMIdent m
+      $$ maybe empty pPrint o
 
 instance Pretty IDecl where
-  pPrint (IInfixDecl   _ fix p op) = ppPrec fix (Just p) <+> ppQInfixOp op
-  pPrint (HidingDataDecl _ tc k tvs) =
-    text "hiding" <+> ppITypeDeclLhs "data" tc k tvs
-  pPrint (IDataDecl   _ tc k tvs cs hs) =
+  pPrint (IInfixDecl _ fix p op o) =
+    ppPrec fix (Just p) <+> ppQInfixOp op $$
+    maybe empty pPrint o
+  pPrint (HidingDataDecl _ tc k tvs o) =
+    text "hiding" <+> ppITypeDeclLhs "data" tc k tvs $$
+    maybe empty pPrint o
+  pPrint (IDataDecl _ tc k tvs cs hs o) =
     sep (ppITypeDeclLhs "data" tc k tvs :
       map indent (zipWith (<+>) (equals : repeat vbar) (map pPrint cs)) ++
-      [indent (ppHiding hs)])
-  pPrint (INewtypeDecl _ tc k tvs nc hs) =
+      [indent (ppHiding hs)]) $$
+    maybe empty pPrint o
+  pPrint (INewtypeDecl _ tc k tvs nc hs o) =
     sep [ ppITypeDeclLhs "newtype" tc k tvs <+> equals
         , indent (pPrint nc)
         , indent (ppHiding hs)
-        ]
-  pPrint (ITypeDecl _ tc k tvs ty) =
-    sep [ppITypeDeclLhs "type" tc k tvs <+> equals,indent (pPrintPrec 0 ty)]
-  pPrint (IFunctionDecl _ f cm a ty dty) =
-    sep [ ppQIdent f, maybePP (ppPragma "METHOD" . ppIdent) cm
+        ] $$
+    maybe empty pPrint o
+  pPrint (ITypeDecl _ tc k tvs ty o) =
+    sep [ppITypeDeclLhs "type" tc k tvs <+> equals,indent (pPrintPrec 0 ty)] $$
+    maybe empty pPrint o
+  pPrint (IFunctionDecl _ f cm a ty dty o) =
+    sep [ ppQIdent f, maybePP (ppPragma "METHOD" . hsep . map ppIdent) cm
         , int a
-        , text "::", pPrintPrec 0 ty
-        , text ":?", pPrintPrec 0 dty ]
-  pPrint (HidingClassDecl _ cx qcls k clsvar ids) = text "hiding" <+>
-    ppClassInstHead "class" cx (ppQIdentWithKind qcls k) (ppIdent clsvar) <+> text "where" <+>
-      lbrace $$
-      vcat (punctuate semi $ map (indent . ppIdent) ids) $$
-      rbrace
-  pPrint (IClassDecl _ cx qcls k clsvar ms hs) =
-    ppClassInstHead "class" cx (ppQIdentWithKind qcls k) (ppIdent clsvar) <+>
-      lbrace $$
-      vcat (punctuate semi $ map (indent . pPrint) ms) $$
-      rbrace <+> ppHiding hs
-  pPrint (IInstanceDecl _ cx qcls inst impls m) =
-    ppClassInstHead "instance" cx (ppQIdent qcls) (ppInstanceType inst) <+>
+        , text "::", pPrintPrec 0 ty 
+        , text ":?", pPrintPrec 0 dty
+        ] $$
+    maybe empty pPrint o
+  pPrint (HidingClassDecl _ cx qcls k clsvars funDeps o) =
+    text "hiding" <+>
+    ppClassInstHead "class" cx (ppQIdentWithKind qcls k) (map ppIdent clsvars)
+    <+> ppIf (not $ null funDeps) (vbar <+> list (map pPrint funDeps)) $$
+    maybe empty pPrint o
+  pPrint (IClassDecl _ cx qcls k clsvars funDeps ms hs o) =
+    ppClassInstHead "class" cx (ppQIdentWithKind qcls k) (map ppIdent clsvars)
+    <+> ppIf (not $ null funDeps) (vbar <+> list (map pPrint funDeps))
+    <+> lbrace $$
+        vcat (punctuate semi $ map (indent . pPrint) ms) $$
+        rbrace <+> ppHiding hs $$
+    maybe empty pPrint o
+  pPrint (IInstanceDecl _ cx qcls inst impls m o) =
+    ppClassInstHead "instance" cx (ppQIdent qcls) (map ppInstanceType inst) <+>
       lbrace $$
       vcat (punctuate semi $ map (indent . ppIMethodImpl) impls) $$
-      rbrace <+> maybePP (ppPragma "MODULE" . ppMIdent) m
+      rbrace <+> maybePP (ppPragma "MODULE" . ppMIdent) m $$
+    maybe empty pPrint o
 
 ppITypeDeclLhs :: String -> QualIdent -> Maybe KindExpr -> [Ident] -> Doc
 ppITypeDeclLhs kw tc k tvs =
   text kw <+> ppQIdentWithKind tc k <+> hsep (map ppIdent tvs)
+
+instance Pretty OriginPragma where
+  pPrint (OriginPragma _ spi) = case spi of
+    SpanInfo (Span f (Position _ l1 c1) (Position _ l2 c2)) _
+      -> ppPragma "ORIGIN" $ hsep (pPrint f : map pPrint [l1, c1, l2, c2])
+    _ -> empty
 
 instance Pretty IMethodDecl where
   pPrint (IMethodDecl _ f a qty ddty mdty) =
@@ -275,6 +304,7 @@ ppHiding hs
 
 instance Pretty KindExpr where
   pPrintPrec _ Star              = char '*'
+  pPrintPrec _ ConstraintKind    = text "Constraint"
   pPrintPrec p (ArrowKind k1 k2) =
     parenIf (p > 0) (fsep (ppArrowKind (ArrowKind k1 k2)))
     where
