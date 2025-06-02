@@ -11,7 +11,7 @@
     The compiler maintains information about all type classes in an environment
     that maps type classes to their arity, a sorted list of their direct super
     classes, their functional dependencies, and all their associated class
-    methods with additional flags stating 
+    methods with additional flags stating
       a) whether an default implementation has been provided or not.
       b) whether the method is visible.
     For both the type class identifier and the list of
@@ -28,6 +28,7 @@ module Curry.Frontend.Env.Class
   , deleteVarFunDep, renameVarFunDep, renameFunDep, removeTrivialFunDeps
   , getRhsOnLhsMatch, funDepCoverage, funDepCoveragePredList, ambiguousTypeVars
   , minPredList, maxPredList, impliedPredicatesList, toFunDepMap
+  , getDeterminismAnnotation
   ) where
 
 import           Data.Containers.ListUtils (nubOrd)
@@ -54,9 +55,9 @@ import Curry.Frontend.Base.Messages (internalError)
 -- Type Synonyms
 -- ---------------------------------------------------------------------------
 
-type Flags = (Bool, Bool)
-
-type ClassInfo = (Int, [Pred], [FunDep], [(Ident, Flags)])
+type HasDefaultImpl = Bool
+type IsVisible = Bool
+type ClassInfo = (Int, [Pred], [FunDep], [(Ident, (HasDefaultImpl, IsVisible, Maybe DetScheme))])
 
 -- The list represents the type variables of the superclass from left to right.
 -- The integers within this list are the indices of these variables in the
@@ -138,10 +139,10 @@ classMethods cls clsEnv = case lookupClassInfo cls clsEnv of
   Just (_, _, _, ms) -> map fst ms
   _ -> internalError $ "Env.Classes.classMethods: " ++ show cls
 
-flags :: QualIdent -> Ident -> ClassEnv -> Flags
+flags :: QualIdent -> Ident -> ClassEnv -> (HasDefaultImpl, IsVisible)
 flags cls f clsEnv = case lookupClassInfo cls clsEnv of
   Just (_, _, _, ms) -> case lookup f ms of
-    Just dflt -> dflt
+    Just (dflt, vis, _) -> (dflt, vis)
     Nothing -> internalError $ "Env.Classes.flags: " ++ show f
   _ -> internalError $ "Env.Classes.flags: " ++ show cls
 
@@ -150,6 +151,13 @@ hasDefaultImpl cls f clsEnv = fst $ flags cls f clsEnv
 
 isVisibleMethod :: QualIdent -> Ident -> ClassEnv -> Bool
 isVisibleMethod cls f clsEnv = snd $ flags cls f clsEnv
+
+getDeterminismAnnotation :: QualIdent -> Ident -> ClassEnv -> Maybe DetScheme
+getDeterminismAnnotation cls f clsEnv = case lookupClassInfo cls clsEnv of
+  Just (_, _ , _, ms) -> case lookup f $ map (\(i, (_, _, d)) -> (i, d)) ms of
+    Just d -> d
+    Nothing -> internalError $ "Env.Classes.getDeterminismAnnotation: " ++ show f
+  _ -> internalError $ "Env.Classes.getDeterminismAnnotation: " ++ show cls
 
 -- ---------------------------------------------------------------------------
 -- Super Class Application

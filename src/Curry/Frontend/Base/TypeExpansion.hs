@@ -14,15 +14,16 @@
 module Curry.Frontend.Base.TypeExpansion
   ( module Curry.Frontend.Base.TypeExpansion
   ) where
-import Curry.Base.Ident
-import Curry.Syntax
 
 import Data.List (nub)
+import GHC.Stack (HasCallStack)
+
+import Curry.Base.Ident
+import Curry.Syntax
 
 import Curry.Frontend.Base.Messages
 import Curry.Frontend.Base.Types
 import Curry.Frontend.Base.TypeSubst
-
 import Curry.Frontend.Env.Class
 import Curry.Frontend.Env.TypeConstructor
 

@@ -71,6 +71,7 @@ import Curry.Frontend.Env.Interface
 import Curry.Frontend.Env.OpPrec
 import Curry.Frontend.Env.TypeConstructor
 import Curry.Frontend.Env.Value
+import Curry.Frontend.Env.Determinism
 
 data DTState = DTState
   { moduleIdent :: ModuleIdent
@@ -1040,7 +1041,7 @@ dictTransIDecl m _    _      (IDataDecl      p tc k tvs cs hs o) =
   [IDataDecl p tc k tvs (map (dictTransIConstrDecl m tvs) cs) hs o]
 dictTransIDecl _ _    _      d@INewtypeDecl {}                 = [d]
 dictTransIDecl _ _    _      d@ITypeDecl {}                    = [d]
-dictTransIDecl m vEnv _      (IFunctionDecl         _ f _ _ _ o) =
+dictTransIDecl m vEnv _      (IFunctionDecl         _ f _ _ _ _ o) =
   [iFunctionDeclFromValue m vEnv o (qualQualify m f)]
 dictTransIDecl _ _    _      (HidingClassDecl p _ cls k tvs _ o) =
   [HidingDataDecl p (qDictTypeId cls) (fmap (`ArrowKind` Star) k) tvs o]

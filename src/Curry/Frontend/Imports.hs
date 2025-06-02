@@ -41,8 +41,8 @@ import Curry.Frontend.Env.ModuleAlias (importAliases, initAliasEnv)
 import Curry.Frontend.Env.OpPrec
 import Curry.Frontend.Env.TypeConstructor
 import Curry.Frontend.Env.Value ( ValueInfo(..), toVisible, Visibility(..) )
+import Curry.Frontend.Env.Determinism
 
-import Env.Determinism
 importModules :: Monad m => Module a -> InterfaceEnv -> [ImportDecl]
               -> CYT m CompilerEnv
 importModules mdl@(Module _ _ _ mid _ _ _) iEnv expImps

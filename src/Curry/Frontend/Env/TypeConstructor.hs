@@ -57,7 +57,7 @@ module Curry.Frontend.Env.TypeConstructor
 import Prelude hiding ((<>))
 
 import Curry.Base.Ident
-import Curry.Base.Pretty (Pretty(..), blankLine)
+import Curry.Base.Pretty
 
 import Curry.Frontend.Base.Kinds
 import Curry.Frontend.Base.Messages (internalError)

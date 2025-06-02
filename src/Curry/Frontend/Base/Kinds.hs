@@ -21,9 +21,9 @@
 
 module Curry.Frontend.Base.Kinds where
 
-import Curry.Base.Pretty (Pretty(..))
+import Curry.Base.Pretty
 import Curry.Syntax.Type (KindExpr (..))
-import Curry.Syntax.Pretty ()
+import Curry.Syntax.Pretty
 
 -- A kind is either *, which is the kind of a value's type, a kind
 -- variable, or an arrow kind. Kind variables are used internally during
@@ -110,6 +110,3 @@ fromClassKind k n | k == simpleClassKind n = Nothing
 
 ppKind :: Kind -> Doc
 ppKind = pPrintPrec 0 . fromKind
-
-instance Pretty Kind where
-  pPrint = pPrintPrec 0 . fromKind

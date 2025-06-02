@@ -68,7 +68,7 @@ import Curry.Frontend.Env.TypeConstructor
                                       , qualLookupTypeInfo, getOrigName )
 import Curry.Frontend.Env.Value       ( ValueEnv, ValueInfo (..), qualLookupValue )
 import Curry.Frontend.CompilerOpts    ( WarnFlag(..), WarnOpts(..) )
-import Checks.DeterminismCheck (applyDetType)
+import Curry.Frontend.Checks.DeterminismCheck (applyDetType)
 
 -- Find potentially incorrect code in a Curry program and generate warnings
 -- for the following issues:

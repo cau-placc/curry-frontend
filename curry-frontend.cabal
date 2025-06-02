@@ -58,9 +58,9 @@ library
     , binary          ^>= 0.8
     , time            ^>= 1.12
     , parsec          ^>= 3.1
+    , deepseq         ^>= 1.5
   exposed-modules:
       Curry.AbstractCurry
-    , Checks.DeterminismCheck
     , Curry.AbstractCurry.Files
     , Curry.AbstractCurry.Type
     , Curry.Base.Ident
@@ -106,6 +106,7 @@ library
     , Curry.Frontend.Base.Typing
     , Curry.Frontend.Base.Utils
     , Curry.Frontend.Checks
+    , Curry.Frontend.Checks.DeterminismCheck
     , Curry.Frontend.Checks.CaseModeCheck
     , Curry.Frontend.Checks.DeriveCheck
     , Curry.Frontend.Checks.ExportCheck
@@ -126,6 +127,7 @@ library
     , Curry.Frontend.CurryBuilder
     , Curry.Frontend.CurryDeps
     , Curry.Frontend.Env.Class
+    , Curry.Frontend.Env.Determinism
     , Curry.Frontend.Env.Instance
     , Curry.Frontend.Env.Interface
     , Curry.Frontend.Env.ModuleAlias

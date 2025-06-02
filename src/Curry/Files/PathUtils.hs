@@ -30,8 +30,6 @@ import qualified Control.Exception    as C (IOException, handle)
 import           Data.List                 (isPrefixOf, isSuffixOf)
 import           Data.Time                 (UTCTime)
 import qualified Data.ByteString.Lazy as B (ByteString, writeFile)
-import           Data.List                 (isPrefixOf, isSuffixOf)
-import           Data.Time                 (UTCTime)
 import           System.FilePath
 import           System.Directory
 import           System.IO

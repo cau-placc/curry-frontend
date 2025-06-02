@@ -92,7 +92,7 @@ values (IDataDecl       _ tc _ _ cs hs o) =
 values (INewtypeDecl    _ tc _ _ nc hs o) =
   cidents (applyOriginPragma o tc) [nconstrId nc] hs ++
   lidents (applyOriginPragma o tc) [(l, [c]) | NewRecordDecl _ c (l, _) <- [nc]] hs
-values (IFunctionDecl        _ f _ _ _ o) = [Var (applyOriginPragma o f) []]
+values (IFunctionDecl      _ f _ _ _ _ o) = [Var (applyOriginPragma o f) []]
 values (IClassDecl _ _ cls _ _ _ ms hs o) = midents (applyOriginPragma o cls) (map imethod ms) hs
 values _                                  = []
 

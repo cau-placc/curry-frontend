@@ -96,7 +96,7 @@ instance Equiv IDecl where
       hs1 `eqvSet` hs2 && o1 == o2
   ITypeDecl _ tc1 k1 tvs1 ty1 o1 =~= ITypeDecl _ tc2 k2 tvs2 ty2 o2
     = tc1 == tc2 && k1 `eqvKindExpr` k2 && tvs1 == tvs2 && ty1 == ty2 && o1 == o2
-  IFunctionDecl _ f1 cm1 n1 qty1 o1 =~= IFunctionDecl _ f2 cm2 n2 qty2 o2
+  IFunctionDecl _ f1 cm1 n1 qty1 dty1 o1 =~= IFunctionDecl _ f2 cm2 n2 qty2 dty2 o2
     = f1 == f2 && cm1 == cm2 && n1 == n2 && qty1 == qty2 && o1 == o2 && dty1 == dty2
   HidingClassDecl _ cx1 cls1 k1 tvs1 fds1 o1 =~= HidingClassDecl _ cx2 cls2 k2 tvs2 fds2 o2
     = cx1 == cx2 && cls1 == cls2 && k1 `eqvClassKindExpr` k2 && tvs1 == tvs2 &&
@@ -158,8 +158,8 @@ instance FixInterface IDecl where
     INewtypeDecl p tc k vs (fix tcs nc) hs o
   fix tcs (ITypeDecl p tc k vs ty o) =
     ITypeDecl p tc k vs (fix tcs ty) o
-  fix tcs (IFunctionDecl p f cm n qty o) =
-    IFunctionDecl p f cm n (fix tcs qty) o
+  fix tcs (IFunctionDecl p f cm n qty dty o) =
+    IFunctionDecl p f cm n (fix tcs qty) dty o
   fix tcs (HidingClassDecl p cx cls k tvs fds o) =
     HidingClassDecl p (fix tcs cx) cls k tvs fds o
   fix tcs (IClassDecl p cx cls k tvs fds ms hs o) =
@@ -213,7 +213,7 @@ typeConstructors ds = [tc | (QualIdent _ Nothing tc) <- foldr tyCons [] ds]
         tyCons (IDataDecl      _ tc _ _ _ _ o) tcs = applyOriginPragma o tc : tcs
         tyCons (INewtypeDecl   _ tc _ _ _ _ o) tcs = applyOriginPragma o tc : tcs
         tyCons (ITypeDecl        _ tc _ _ _ o) tcs = applyOriginPragma o tc : tcs
-        tyCons (IFunctionDecl     _ _ _ _ _ _) tcs = tcs
+        tyCons (IFunctionDecl   _ _ _ _ _ _ _) tcs = tcs
         tyCons (HidingClassDecl _ _ _ _ _ _ _) tcs = tcs
         tyCons (IClassDecl  _ _ _ _ _ _ _ _ _) tcs = tcs
         tyCons (IInstanceDecl   _ _ _ _ _ _ _) tcs = tcs

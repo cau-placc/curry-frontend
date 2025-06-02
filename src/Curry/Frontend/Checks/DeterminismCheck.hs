@@ -47,7 +47,7 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TupleSections     #-}
-module Checks.DeterminismCheck (determinismCheck, applyDetType) where
+module Curry.Frontend.Checks.DeterminismCheck (determinismCheck, applyDetType) where
 
 import Prelude hiding ( (<>) )
 import Control.Arrow ( second )
@@ -62,25 +62,26 @@ import Data.Maybe ( fromMaybe, mapMaybe, catMaybes )
 import Data.Set ( Set )
 import qualified Data.Set as Set
 
-import Base.Messages ( Message, internalError, spanInfoMessage )
-import Base.SCC ( scc )
-import Base.TopEnv (origName)
-import Base.TypeExpansion (expandType)
-import Base.Types
-import Base.TypeSubst ( idSubst, subst )
-import Base.Typing ( patternVars, typeOf, matchType )
-import Base.Utils ( fst3, fth4, fst4 )
-import Checks.TypeCheck ( checkFailablePattern )
+import Curry.Frontend.Base.Messages ( Message, internalError, spanInfoMessage )
+import Curry.Base.SCC ( scc )
+import Curry.Base.TopEnv (origName)
+import Curry.Base.TypeExpansion (expandType)
+import Curry.Base.Types
+import Curry.Base.TypeSubst ( idSubst, subst )
+import Curry.Base.Typing ( patternVars, typeOf, matchType )
+import Curry.Base.Utils ( fst3, fth4, fst4 )
+import Curry.Frontend.Checks.TypeCheck ( checkFailablePattern )
 import Curry.Base.Ident
 import Curry.Base.Pretty ( Pretty(..), render, vcat, text, (<+>), (<>), colon, hsep )
 import Curry.Base.SpanInfo ( SpanInfo(..), HasSpanInfo (..) )
 import Curry.Syntax.Type
 import Curry.Syntax.Utils ( field2Tuple )
-import Env.Class ( ClassEnv, lookupClassInfo )
-import Env.Determinism
-import Env.Instance ( InstEnv, lookupInstInfo )
-import Env.TypeConstructor ( TCEnv, lookupTypeInfo, TypeInfo (..), rebindTypeInfo, qualLookupTypeInfo )
-import Env.Value ( qualLookupValue, qualLookupValueUnique, ValueInfo(..), ValueEnv )
+import Curry.Frontend.Env.Class ( ClassEnv, lookupClassInfo )
+import Curry.Frontend.Env.Determinism
+import Curry.Frontend.Env.Instance ( InstEnv, lookupInstExact )
+import Curry.Frontend.Env.TypeConstructor
+  ( TCEnv, lookupTypeInfo, TypeInfo (..), rebindTypeInfo, qualLookupTypeInfo )
+import Curry.Frontend.Env.Value ( qualLookupValue, qualLookupValueUnique, ValueInfo(..), ValueEnv )
 import Debug.Trace
 
 determinismCheck :: ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv -> InstEnv -> DetEnv
@@ -185,7 +186,7 @@ dataIdents :: InstEnv -> ModuleIdent -> TCEnv -> Ident -> [Ident] -> [Ident] -> 
 dataIdents iE mid tcE tc args fields clss =
   map (QI . qualifyWith mid) fields ++
   concatMap (instIdent mid tcE ty)
-    case lookupInstInfo (qDataId, qualifyWith mid tc) iE of
+    case lookupInstExact (qDataId, qualifyWith mid tc) iE of
       Just _ -> qDataId : clss
       _      -> clss
   where
@@ -448,7 +449,7 @@ checkDerive tc tys clss = do
           where qcls | isQualified qcls' = qcls'
                      | otherwise         = qualifyWith mid (unqualify qcls')
         _ -> internalError $ "DeterminismCheck.checkDerive: " ++ show cls ++ " not found"
-  let clss' = case lookupInstInfo (qDataId, qualifyWith mid tc) iE of
+  let clss' = case lookupInstExact (qDataId, qualifyWith mid tc) iE of
                 Just _  -> qDataId : clss
                 Nothing -> clss
   info <- concat <$> mapM go clss'

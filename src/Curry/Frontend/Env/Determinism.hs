@@ -19,19 +19,21 @@
     during the determinism inference and check.
 -}
 {-# LANGUAGE FlexibleInstances    #-}
-module Env.Determinism where
+module Curry.Frontend.Env.Determinism
+  (module Curry.Frontend.Env.Determinism, DetScheme(..))
+  where
 
 import Prelude hiding ( (<>) )
 import Data.Map ( Map )
 import qualified Data.Map as Map
 
-import Base.Messages ( internalError )
-import Base.TopEnv (origName)
-import Base.Types ( DetScheme(..) )
 import Curry.Base.Ident
+import Curry.Frontend.Base.Types
 import Curry.Base.Pretty ( Pretty(..), parens, dot, (<+>), (<>) )
 import Curry.Syntax ( TypeExpr(..), InstanceType )
-import Env.TypeConstructor (TCEnv, qualLookupTypeInfo)
+import Curry.Frontend.Base.Messages ( internalError )
+import Curry.Frontend.Base.TopEnv (origName)
+import Curry.Frontend.Env.TypeConstructor (TCEnv, qualLookupTypeInfo)
 
 type DetEnv = Map IdentInfo DetScheme
 

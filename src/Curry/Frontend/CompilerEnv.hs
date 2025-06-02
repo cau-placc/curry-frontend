@@ -29,6 +29,7 @@ import Curry.Frontend.Env.ModuleAlias (AliasEnv, initAliasEnv)
 import Curry.Frontend.Env.OpPrec
 import Curry.Frontend.Env.TypeConstructor
 import Curry.Frontend.Env.Value
+import Curry.Frontend.Env.Determinism
 
 type CompEnv a = (CompilerEnv, a)
 

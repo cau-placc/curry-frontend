@@ -403,7 +403,6 @@ bindClass m tcEnv clsEnv (ClassDecl _ _ cx cls tvs fds ds) =
         ar = length tvs
         sclss = expandClassContext m tcEnv tvs cx
         fds' = map (toFunDep tvs) fds
-        ms = map (\f -> (f, (f `elem` fs, False))) $ concatMap methods ds
         mths = concatMap methods ds
         dSigs = concatMap detSigs ds
         mthsD = map (\mthd -> (mthd, lookup mthd dSigs)) mths

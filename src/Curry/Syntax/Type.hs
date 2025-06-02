@@ -262,7 +262,7 @@ data FunDep = FunDep SpanInfo [Ident] [Ident]
 --  otherwise, the equations are annotated with the type that is inferred for them
 --  during Type check.
 data Equation a = Equation SpanInfo (Maybe a) (Lhs a) (Rhs a)
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Read, Show, Generic, Binary, Functor)
 
 -- |Left-hand-side of an 'Equation' (function identifier and patterns)
 data Lhs a

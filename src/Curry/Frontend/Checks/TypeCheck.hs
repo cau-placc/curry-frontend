@@ -34,7 +34,7 @@
    variable is used.
 -}
 {-# LANGUAGE TupleSections #-}
-module Curry.Frontend.Checks.TypeCheck (typeCheck) where
+module Curry.Frontend.Checks.TypeCheck (typeCheck, checkFailablePattern) where
 
 import Prelude hiding ((<>))
 import           Control.Arrow       ( first )

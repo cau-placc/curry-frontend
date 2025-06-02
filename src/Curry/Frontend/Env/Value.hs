@@ -25,7 +25,7 @@
 module Curry.Frontend.Env.Value
   ( ValueEnv, ValueInfo (..)
   , bindGlobalInfo, bindFun, qualBindFun, rebindFun, unbindFun
-  , lookupValue, qualLookupValue, qualLookupValueUnique, initDCEnv 
+  , lookupValue, qualLookupValue, qualLookupValueUnique, initDCEnv
   , ValueType (..), bindLocalVars, bindLocalVar
   , Visibility(..), toVisible, isVisible
   ) where
@@ -34,7 +34,7 @@ import Prelude hiding ((<>))
 import Control.Monad (zipWithM)
 
 import Curry.Base.Ident
-import Curry.Base.Pretty (Pretty(..))
+import Curry.Base.Pretty
 
 import Curry.Frontend.Base.Messages (internalError)
 import Curry.Frontend.Base.TopEnv
@@ -42,7 +42,7 @@ import Curry.Frontend.Base.Types
 import Curry.Frontend.Base.Utils ((++!))
 
 
--- Used to distinguish between imported and hidden class methods. 
+-- Used to distinguish between imported and hidden class methods.
 data Visibility = Visible | Hidden
   deriving (Eq, Show)
 

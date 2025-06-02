@@ -29,18 +29,12 @@ module Curry.Frontend.Env.OpPrec
   ) where
 
 import Data.Maybe        (fromMaybe)
-import Text.PrettyPrint  ( (<+>), integer )
+import Text.PrettyPrint
 
-import Base.TopEnv
 import Curry.Base.Ident
 import Curry.Base.Pretty (Pretty(..))
 import Curry.Syntax.Type (Infix (..))
-
 import Curry.Frontend.Base.TopEnv
-
-import Data.Maybe        (fromMaybe)
-
-import Text.PrettyPrint
 
 -- |Operator precedence.
 data OpPrec = OpPrec Infix Precedence

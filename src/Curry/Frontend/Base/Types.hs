@@ -44,6 +44,9 @@ module Curry.Frontend.Base.Types
     -- * Representation of quantification
   , TypeScheme (..), monoType, polyType, typeScheme
   , rawType
+    -- * Determinism types
+  , CS.DetExpr(..), DetScheme(..), toDetExpr, toDetType, toDetSchema, abstractDetScheme
+  , substDetTy, detTypeVars
     -- * Predefined types
   , arrowType, unitType, predUnitType, boolType, predBoolType, charType
   , intType, predIntType, floatType, predFloatType, stringType, predStringType
@@ -354,9 +357,6 @@ unqualifyPred m = modifyPred $
 -- element of a method's predicate set, thus making it very easy to remove it.
 
 type PredSet = Set.Set Pred
-
-instance Pretty a => Pretty (Set.Set a) where
-  pPrint = parens . list . map pPrint . Set.toAscList
 
 type LPredSet = Set.Set LPred
 
@@ -930,3 +930,80 @@ ppPredType m = pPrint . fromQualPredType m identSupply
 
 ppTypeScheme :: ModuleIdent -> TypeScheme -> Doc
 ppTypeScheme m (ForAll _ pty) = ppPredType m pty
+
+-- ---------------------------------------------------------------------------
+-- Determinism types
+-- ---------------------------------------------------------------------------
+
+type VarIndex = Integer
+
+data DetType = VarTy VarIndex
+             | Det
+             | DetArrow DetType DetType
+             | Any
+  deriving (Eq, Ord, Show)
+
+data DetScheme = Forall [VarIndex] DetType
+  deriving (Eq, Ord, Show)
+
+toDetExpr :: DetScheme -> CS.DetExpr
+toDetExpr (Forall _ ty) = tyToDetExpr ty
+
+tyToDetExpr :: DetType -> CS.DetExpr
+tyToDetExpr (VarTy v) = CS.VarDetExpr NoSpanInfo $
+  -- clamp down to the maximum Int value
+  identSupply !! fromInteger (min v (fromIntegral (maxBound :: Int)))
+tyToDetExpr Det = CS.DetDetExpr NoSpanInfo
+tyToDetExpr Any = CS.AnyDetExpr NoSpanInfo
+tyToDetExpr (DetArrow ty1 ty2) = CS.ArrowDetExpr NoSpanInfo (tyToDetExpr ty1) (tyToDetExpr ty2)
+
+toDetType :: CS.DetExpr -> DetScheme
+toDetType = abstractDetScheme . toDetSchema . fst . go Map.empty
+  where
+    go s (CS.VarDetExpr _ v) = case Map.lookup v s of
+      Just ty -> (ty, s)
+      Nothing -> ( VarTy (fromIntegral $ Map.size s)
+                 , Map.insert v (VarTy (fromIntegral $ Map.size s)) s )
+    go s (CS.DetDetExpr _) = (Det, s)
+    go s (CS.AnyDetExpr _) = (Any, s)
+    go s (CS.ParenDetExpr _ ty) = go s ty
+    go s (CS.ArrowDetExpr _ ty1 ty2) = (DetArrow ty1' ty2', s'')
+      where (ty1', s') = go s ty1
+            (ty2', s'') = go s' ty2
+
+toDetSchema :: DetType -> DetScheme
+toDetSchema = Forall []
+
+abstractDetScheme :: DetScheme -> DetScheme
+abstractDetScheme (Forall _ ty) =
+  Forall [0 .. fromIntegral (Map.size subst) - 1] (ty `substDetTy` subst)
+  where
+    vars = nub (detTypeVars ty)
+    subst = Map.fromList $ zip vars (map VarTy [0..])
+
+substDetTy :: DetType -> Map.Map VarIndex DetType -> DetType
+substDetTy (VarTy v) subst = case Map.lookup v subst of
+  Nothing -> VarTy v
+  Just ty -> ty
+substDetTy (DetArrow ty1 ty2) subst = DetArrow (substDetTy ty1 subst) (substDetTy ty2 subst)
+substDetTy ty _ = ty
+
+detTypeVars :: DetType -> [VarIndex]
+detTypeVars (VarTy v) = [v]
+detTypeVars (DetArrow ty1 ty2) = detTypeVars ty1 ++ detTypeVars ty2
+detTypeVars _ = []
+
+-- ---------------------------------------------------------------------------
+-- Pretty printing
+-- ---------------------------------------------------------------------------
+
+instance Pretty DetScheme where
+  pPrint (Forall [] ty) = pPrint ty
+  pPrint (Forall vs ty) = text "forall" <+> hsep (map (pPrint . VarTy) vs) <> dot <+> pPrint ty
+
+instance Pretty DetType where
+  pPrintPrec _ (VarTy v) = pPrint $ tyToDetExpr (VarTy v)
+  pPrintPrec _ Det = text "Det"
+  pPrintPrec _ Any = text "Any"
+  pPrintPrec p (DetArrow ty1 ty2) = parenIf (p > 0) $
+    pPrintPrec 1 ty1 <+> text "->" <+> pPrintPrec 0 ty2

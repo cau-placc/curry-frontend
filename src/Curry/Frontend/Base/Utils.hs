@@ -58,18 +58,6 @@ curry3 f x y z = f (x,y,z)
 uncurry3 :: (a -> b -> c -> d) -> (a, b, c) -> d
 uncurry3 f (x, y, z) = f x y z
 
-fst4 :: (a, b, c, d) -> a
-fst4 (x, _, _, _) = x
-
-snd4 :: (a, b, c, d) -> b
-snd4 (_, y, _, _) = y
-
-thd4 :: (a, b, c, d) -> c
-thd4 (_, _, z, _) = z
-
-fth4 :: (a, b, c, d) -> d
-fth4 (_, _, _, w) = w
-
 curry4 :: ((a, b, c, d) -> e) -> a -> b -> c -> d -> e
 curry4 f x y z w = f (x,y,z,w)
 
