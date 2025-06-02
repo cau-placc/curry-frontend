@@ -211,7 +211,10 @@ checkGroup ds = do
   let constraints = Set.unions constraintsList
   lcl <- gets localDetEnv
   solved <- solveConstraints constraints
-  let res = Map.map abstractDetScheme $ extractTopDetEnv $ mapNestDetEnv (`substDetSchema` solved) lcl
+  -- monomorphize the resulting type for now
+  let res = Map.map (monoDetScheme . abstractDetScheme)
+                $ extractTopDetEnv
+                $ mapNestDetEnv (`substDetSchema` solved) lcl
   -- By unioning with the old environment to the right, we make sure that
   -- we retain any signatures that were already present, such as user supplied ones.
   -- This ensures that we do not get follow up errors from incorrect function definitions.
@@ -946,7 +949,7 @@ doSolve :: Map VarIndex DetType             -- ^ Substitution
         -> Map VarIndex (Set DetConstraint) -- ^ Re-runnable AppliedType constraints
         -> Set DetConstraint                -- ^ Constraints
         -> EquivM s VarIndex VarIndex (Map VarIndex DetType)
-doSolve current reRun constraints = trace (render $ pPrint (constraints, map (\(x,y) -> (VarTy x, y)) $ Map.toList current)) case Set.minView constraints of
+doSolve current reRun constraints = case Set.minView constraints of
   Nothing -> mkSubstitution current
   Just (c, cs) -> case c of
     EqualType v (VarTy w)
@@ -980,7 +983,6 @@ doSolve current reRun constraints = trace (render $ pPrint (constraints, map (\(
         then doSolve (extendSubst (max d1 d2) Any current) reRun cs
         else case (Map.lookup d1 current, Map.lookup d2 current) of
           (Just dty1, Just dty2) ->
-            trace (render $ pPrint ("uni", dty2, (map (`substDetTy` current) tys), applyDetType dty2 (map (`substDetTy` current) tys))) $
             let vs = d1 : d2 : vars tys
                 (dty1', cs') = unify dty1 (applyDetType dty2 (map (`substDetTy` current) tys)) cs
                 reRun' = foldr (\v' -> Map.insertWith Set.union v' (Set.singleton c))
@@ -1073,7 +1075,7 @@ moreSpecific :: DetType -> DetType -> Maybe (Map VarIndex DetType)
 moreSpecific ty (VarTy v) = Just (Map.singleton v ty)
 moreSpecific (VarTy v) ty = Just (Map.singleton v ty)
 moreSpecific (DetArrow ty1 ty2) (DetArrow ty1' ty2') = do
-  s1 <- ty1' `moreSpecific` ty1
+  s1 <- ty1' `lessSpecific` ty1
   s2 <- ty2 `moreSpecific` ty2'
   return (Map.union s1 s2)
 moreSpecific Det Any = Just Map.empty
@@ -1091,7 +1093,7 @@ moreSpecific _ _ = Nothing
 lessSpecific :: DetType -> DetType -> Maybe (Map VarIndex DetType)
 lessSpecific ty (VarTy v) = Just (Map.singleton v ty)
 lessSpecific (DetArrow ty1 ty2) (DetArrow ty1' ty2') = do
-  s1 <- ty1' `lessSpecific` ty1
+  s1 <- ty1' `moreSpecific` ty1
   s2 <- ty2 `lessSpecific` ty2'
   return (Map.union s1 s2)
 lessSpecific Any Det = Just Map.empty

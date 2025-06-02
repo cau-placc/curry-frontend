@@ -26,7 +26,8 @@ import Curry.Base.Span        hiding (file) -- clash with Position.file
 import Curry.Base.SpanInfo
 
 import Curry.Syntax.Extension
-import Curry.Syntax.Lexer (Token (..), Category (..), Attributes (..), lexer)
+import Curry.Syntax.Lexer
+  (Token (..), Category (..), Attributes (..), tokenSpecialIds, lexer)
 import Curry.Syntax.Type
 
 -- |Parse a 'Module'
@@ -442,16 +443,18 @@ arrowDetExpr = mkArrow <$> tokenSpan RightArrow
 -- and then convert them later.
 detExpr0 :: Parser a Token DetExpr
 detExpr0 =  (pExpr <$> spanPosition <*> parensSp detExpr)
-        <|> (vExpr <$> spanPosition <*> tyvar)
+        <|> dParser <|> ndParser
   where
     pExpr sp1 (dty, sp2, sp3) = updateEndPos $
       ParenDetExpr (spanInfo sp1 [sp2, sp3]) dty
     dExpr sp = DetDetExpr (spanInfo sp [sp])
     ndExpr sp = AnyDetExpr (spanInfo sp [sp])
-    vExpr sp tv = case idName tv of
-      "Det" -> dExpr sp
-      "Any" -> ndExpr sp
-      _     -> updateEndPos $ VarDetExpr (spanInfo sp []) tv
+    dParser = dExpr <$> tokenSpan Id_Det
+    ndParser = ndExpr <$> tokenSpan Id_Any
+    -- vExpr sp tv = case idName tv of
+    --   "Det" -> dExpr sp
+    --   "Any" -> ndExpr sp
+    --   _     -> updateEndPos $ VarDetExpr (spanInfo sp []) tv
 
 typeSig :: Parser a Token (([Ident],[Span]) -> Span -> Decl ())
 typeSig = sig <$> tokenSpan DoubleColon <*> qualType
@@ -1304,14 +1307,14 @@ anonIdent = (`setSpanInfo` anonId) . fromSrcSpanBoth <$> tokenSpan Underscore
 
 mIdent :: Parser a Token ModuleIdent
 mIdent = mIdent' <$> spanPosition <*>
-     tokens [Id,QId,Id_as,Id_ccall,Id_forall,Id_hiding,
-             Id_interface,Id_primitive,Id_qualified]
+     tokens [Id,QId,Id_as,Id_ccall,Id_forall,Id_hiding, Id_Det,
+             Id_interface,Id_primitive,Id_qualified, Id_Any]
   where mIdent' sp a = ModuleIdent (fromSrcSpanBoth sp) (modulVal a ++ [sval a])
 
 ident :: Parser a Token Ident
 ident = (\ sp t -> setSpanInfo (fromSrcSpanBoth sp) (mkIdent (sval t)))
-          <$> spanPosition <*> tokens [Id,Id_as,Id_ccall,Id_forall,Id_hiding,
-                                       Id_interface,Id_primitive,Id_qualified]
+          <$> spanPosition <*> tokens [Id,Id_as,Id_ccall,Id_forall,Id_hiding, Id_Det,
+                                       Id_interface,Id_primitive,Id_qualified, Id_Any]
 
 qIdent :: Parser a Token QualIdent
 qIdent = qualify <$> ident <|> qIdentWith QId

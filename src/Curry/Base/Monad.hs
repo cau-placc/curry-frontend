@@ -49,12 +49,12 @@ runCYM = runIdentity . runExceptT . runWriterT
 -- |Run an `IO`-based Curry compiler action in the `IO` monad,
 -- yielding either a list of errors or a result in case of success.
 runCYIOIgnWarn :: CYIO a -> IO (Either [Message] a)
-runCYIOIgnWarn = runExceptT . (liftM fst) . runWriterT
+runCYIOIgnWarn = runExceptT . (fmap fst) . runWriterT
 
 -- |Run an pure Curry compiler action,
 -- yielding either a list of errors or a result in case of success.
 runCYMIgnWarn :: CYM a -> Either [Message] a
-runCYMIgnWarn = runIdentity . runExceptT . (liftM fst) . runWriterT
+runCYMIgnWarn = runIdentity . runExceptT . (fmap fst) . runWriterT
 
 -- |Failing action with a message describing the cause of failure.
 failMessage :: Monad m => Message -> CYT m a

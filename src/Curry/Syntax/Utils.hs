@@ -36,8 +36,6 @@ module Curry.Syntax.Utils
   , shortenModuleAST
   ) where
 
-import Control.Monad.State
-
 import Curry.Base.Ident
 import Curry.Base.SpanInfo
 import Curry.Files.Filenames (takeBaseName)
@@ -66,7 +64,7 @@ isTopDecl = not . isBlockDecl
 
 -- |Is the declaration a block declaration?
 isBlockDecl :: Decl a -> Bool
-isBlockDecl = liftM3 ((.) (||) . (||)) isInfixDecl isTypeSig isValueDecl
+isBlockDecl d = isInfixDecl d || isTypeSig d || isValueDecl d
 
 -- |Is the declaration an infix declaration?
 isInfixDecl :: Decl a -> Bool
@@ -93,7 +91,7 @@ isClassDecl _                       = False
 
 -- |Is the declaration a type or a class declaration?
 isTypeOrClassDecl :: Decl a -> Bool
-isTypeOrClassDecl = liftM2 (||) isTypeDecl isClassDecl
+isTypeOrClassDecl d = isTypeDecl d || isClassDecl d
 
 -- |Is the declaration an instance declaration?
 isInstanceDecl :: Decl a -> Bool

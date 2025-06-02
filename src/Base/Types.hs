@@ -47,7 +47,7 @@ module Base.Types
   , TypeScheme (..), monoType, polyType, typeScheme
     -- * Representation of determinism types
   , toDetExpr, toDetType, toDetSchema
-  , abstractDetScheme, substDetTy, detTypeVars
+  , abstractDetScheme, monoDetScheme, substDetTy, detTypeVars
   , DetScheme (..), DetType(..), VarIndex
   , rawType
     -- * Predefined types
@@ -721,6 +721,11 @@ abstractDetScheme (Forall _ ty) =
   where
     vars = nub (detTypeVars ty)
     subst = Map.fromList $ zip vars (map VarTy [0..])
+
+monoDetScheme :: DetScheme -> DetScheme
+monoDetScheme (Forall vs ty) =
+  Forall [] (ty `substDetTy` subst)
+  where subst = Map.fromList $ zip vs (repeat Det)
 
 substDetTy :: DetType -> Map.Map VarIndex DetType -> DetType
 substDetTy (VarTy v) subst = case Map.lookup v subst of

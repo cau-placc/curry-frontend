@@ -1658,13 +1658,13 @@ f $ x = f x
 
 --- Right-associative application with strict evaluation of its argument
 --- to head normal form.
-($!) :? (a -> b) -> a -> b
+($!) :? (Det -> Det) -> Det -> Det
 ($!) :: (a -> b) -> a -> b
 ($!) external
 
 --- Right-associative application with strict evaluation of its argument
 --- to normal form.
-($!!) :? (a -> b) -> a -> b
+($!!) :? (Det -> Det) -> Det -> Det
 ($!!) :: (a -> b) -> a -> b
 ($!!) external
 
@@ -1675,7 +1675,7 @@ f $# x = f $! (ensureNotFree x)
 
 --- Right-associative application with strict evaluation of its argument
 --- to ground normal form.
-($##) :? (a -> b) -> a -> b
+($##) :? (Det -> Det) -> Det -> Det
 ($##) :: (a -> b) -> a -> b
 ($##) external
 

@@ -15,7 +15,7 @@
 module Curry.Syntax.Lexer
   ( -- * Data types for tokens
     Token (..), Category (..), Attributes (..)
-
+  , tokenSpecialIds
     -- * lexing functions
   , lexSource, lexer, fullLexer
   ) where
@@ -27,7 +27,7 @@ import Data.Char
   )
 import Data.List (intercalate)
 import qualified Data.Map as Map
-  (Map, union, lookup, findWithDefault, fromList)
+  (Map, union, elems, lookup, findWithDefault, fromList)
 
 import Curry.Base.LexComb
 import Curry.Base.Position
@@ -92,6 +92,8 @@ instance Symbol Token where
   dist _ (Token Id_interface       _) = (0,  8)
   dist _ (Token Id_primitive       _) = (0,  8)
   dist _ (Token Id_qualified       _) = (0,  8)
+  dist _ (Token Id_Det             _) = (0,  2)
+  dist _ (Token Id_Any             _) = (0,  2)
   dist _ (Token PragmaHiding       _) = (0,  9)
   dist _ (Token PragmaLanguage     _) = (0, 11)
   dist _ (Token Id                 a) = distAttr False a
@@ -217,6 +219,8 @@ data Category
   | Id_interface
   | Id_primitive
   | Id_qualified
+  | Id_Det
+  | Id_Any
 
   -- special operators
   | SymDot      -- .
@@ -363,6 +367,8 @@ instance Show Token where
   showsPrec _ (Token Id_interface       _) = showsSpecialIdent "interface"
   showsPrec _ (Token Id_primitive       _) = showsSpecialIdent "primitive"
   showsPrec _ (Token Id_qualified       _) = showsSpecialIdent "qualified"
+  showsPrec _ (Token Id_Det             _) = showsSpecialIdent "Det"
+  showsPrec _ (Token Id_Any             _) = showsSpecialIdent "Any"
   showsPrec _ (Token PragmaLanguage     _) = showString "{-# LANGUAGE"
   showsPrec _ (Token PragmaOptions      a) = showString "{-# OPTIONS"
                                            . shows a
@@ -490,7 +496,12 @@ keywordsSpecialIds = Map.union keywords $ Map.fromList
   , ("interface", Id_interface)
   , ("primitive", Id_primitive)
   , ("qualified", Id_qualified)
+  , ("Det"      , Id_Det      )
+  , ("Any"      , Id_Any      )
   ]
+
+tokenSpecialIds :: [Category]
+tokenSpecialIds = Map.elems keywordsSpecialIds
 
 pragmas :: Map.Map String Category
 pragmas = Map.fromList
@@ -653,8 +664,8 @@ lexRightBrace cont sp s bol ctxt = cont (tok RightBrace) sp s bol (drop 1 ctxt)
 -- Lex an identifier
 lexIdent :: (Token -> P a) -> P a
 lexIdent cont sp s = maybe (lexOptQual cont (token Id) [ident]) (cont . token)
-                          (Map.lookup ident keywordsSpecialIds)
-                          (incrSpan sp $ length ident) rest
+                           (Map.lookup ident keywordsSpecialIds)
+                           (incrSpan sp $ length ident) rest
   where (ident, rest) = span isIdentChar s
         token t       = idTok t [] ident
 

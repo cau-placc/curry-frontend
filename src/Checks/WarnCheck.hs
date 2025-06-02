@@ -867,12 +867,15 @@ getTyCons tc = do
         [DataType     _ _ cs] -> Right cs
         [RenamingType _ _ nc] -> Right $ [nc]
         _                     -> Left $ "Checks.WarnCheck.getTyCons: " ++ show tc ++ ' ' : show ti ++ '\n' : show tcEnv
-      csResult = getTyCons' (qualLookupTypeInfo tc tcEnv)
-             <|> getTyCons' (qualLookupTypeInfo tc' tcEnv)
-             <|> getTyCons' (lookupTypeInfo (unqualify tc) tcEnv) -- Fall back on unqualified lookup if qualified doesn't work
+      csResult =  getTyCons' (qualLookupTypeInfo tc tcEnv)
+             <||> getTyCons' (qualLookupTypeInfo tc' tcEnv)
+             <||> getTyCons' (lookupTypeInfo (unqualify tc) tcEnv) -- Fall back on unqualified lookup if qualified doesn't work
   case csResult of
     Right cs -> return cs
     Left err -> internalError err
+  where
+    Left _  <||> r = r
+    Right x <||> _ = Right x
 
 -- |Resugar the exhaustive patterns previously desugared at 'simplifyPat'.
 tidyExhaustivePats :: ExhaustivePats -> WCM ExhaustivePats

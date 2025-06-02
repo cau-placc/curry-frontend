@@ -134,6 +134,8 @@ showToken (Token Id_hiding      _) = "Id_hiding"
 showToken (Token Id_interface   _) = "Id_interface"
 showToken (Token Id_primitive   _) = "Id_primitive"
 showToken (Token Id_qualified   _) = "Id_qualified"
+showToken (Token Id_Det         _) = "Id_Det"
+showToken (Token Id_Any         _) = "Id_Any"
 -- special operators
 showToken (Token SymDot         _) = "SymDot"
 showToken (Token SymMinus       _) = "SymMinus"
