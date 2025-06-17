@@ -8,14 +8,11 @@
     Stability   : experimental
     Portability : portable
 
-    This library contains a version of FlatCurry's abstract syntax tree
-    modified so that it is polymorphic in the type of annotations.
-
-    Most of the time, these annotations are used to store information about
-    the type of a syntax node.
-
-    For more information about the abstract syntax tree of `FlatCurry`,
-    see the documentation of the respective module.
+    This module defines the annotated data structures for FlatCurry programs.
+    These structures include annotated versions of programs, function declarations,
+    rules, expressions, patterns, and branches. The annotations are used to store
+    additional information for each element in the program, making it more flexible
+    for further processing.
 -}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveFunctor  #-}

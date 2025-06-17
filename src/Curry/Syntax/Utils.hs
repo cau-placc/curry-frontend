@@ -15,7 +15,9 @@
     This module provides some utility functions for working with the
     abstract syntax tree of Curry.
 -}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Curry.Syntax.Utils
   ( hasLanguageExtension, knownExtensions
   , isTopDecl, isBlockDecl
@@ -24,7 +26,7 @@ module Curry.Syntax.Utils
   , isFunctionDecl, isExternalDecl, patchModuleId
   , isVariablePattern
   , isVariableType, isSimpleType
-  , typeConstr, typeVariables, varIdent
+  , typeConstr, typeVariables, containsForall, varIdent
   , flatLhs, eqnArity, fieldLabel, fieldTerm, field2Tuple, opName
   , funDecl, mkEquation, simpleRhs, patDecl, varDecl, constrPattern, caseAlt
   , mkLet, mkVar, mkCase, mkLambda
@@ -34,13 +36,16 @@ module Curry.Syntax.Utils
   , recordLabels, nrecordLabels
   , methods, detSigs, impls, imethod, imethodArity, imethodDefaultDetType, imethodDetTypeAnn
   , shortenModuleAST
+  , ApplyOriginPragma (..), MkOriginPragma (..)
   ) where
 
 import Curry.Base.Ident
+import Curry.Base.Span (Span(..))
 import Curry.Base.SpanInfo
 import Curry.Files.Filenames (takeBaseName)
 import Curry.Syntax.Extension
 import Curry.Syntax.Type
+import System.Directory (canonicalizePath)
 
 -- |Check whether a 'Module' has a specific 'KnownExtension' enabled by a pragma
 hasLanguageExtension :: Module a -> KnownExtension -> Bool
@@ -86,8 +91,8 @@ isDefaultDecl _                 = False
 
 -- |Is the declaration a class declaration?
 isClassDecl :: Decl a -> Bool
-isClassDecl (ClassDecl _ _ _ _ _ _) = True
-isClassDecl _                       = False
+isClassDecl (ClassDecl _ _ _ _ _ _ _) = True
+isClassDecl _                         = False
 
 -- |Is the declaration a type or a class declaration?
 isTypeOrClassDecl :: Decl a -> Bool
@@ -159,7 +164,7 @@ typeConstr (VariableType       _ _) =
 typeConstr (ForallType       _ _ _) =
   error "Curry.Syntax.Utils.typeConstr: forall type"
 
--- |Return the list of variables occuring in a type expression.
+-- |Return the list of variables occurring in a type expression.
 typeVariables :: TypeExpr -> [Ident]
 typeVariables (ConstructorType       _ _) = []
 typeVariables (ApplyType       _ ty1 ty2) = typeVariables ty1 ++ typeVariables ty2
@@ -169,6 +174,18 @@ typeVariables (ListType             _ ty) = typeVariables ty
 typeVariables (ArrowType       _ ty1 ty2) = typeVariables ty1 ++ typeVariables ty2
 typeVariables (ParenType            _ ty) = typeVariables ty
 typeVariables (ForallType        _ vs ty) = vs ++ typeVariables ty
+
+-- |Checks if a type expression contains a `forall'-expression
+--   taken from Leif-Erik Krueger
+containsForall :: TypeExpr -> Bool
+containsForall (ConstructorType     _ _) = False
+containsForall (ApplyType     _ ty1 ty2) = containsForall ty1 || containsForall ty2
+containsForall (VariableType        _ _) = False
+containsForall (TupleType         _ tys) = any containsForall tys
+containsForall (ListType           _ ty) = containsForall ty
+containsForall (ArrowType     _ ty1 ty2) = containsForall ty1 || containsForall ty2
+containsForall (ParenType          _ ty) = containsForall ty
+containsForall (ForallType        _ _ _) = True
 
 -- |Return the identifier of a variable.
 varIdent :: Var a -> Ident
@@ -188,7 +205,7 @@ flatLhs lhs = flat lhs []
 
 -- |Return the arity of an equation.
 eqnArity :: Equation a -> Int
-eqnArity (Equation _ lhs _) = length $ snd $ flatLhs lhs
+eqnArity (Equation _ _ lhs _) = length $ snd $ flatLhs lhs
 
 -- |Select the label of a field
 fieldLabel :: Field a -> QualIdent
@@ -262,6 +279,21 @@ imethodDefaultDetType (IMethodDecl _ _ _ _ d _ ) = d
 imethodDetTypeAnn :: IMethodDecl -> Maybe DetExpr
 imethodDetTypeAnn (IMethodDecl _ _ _ _ _ d) = d
 
+class ApplyOriginPragma o a where
+  applyOriginPragma :: o -> a -> a
+
+instance ApplyOriginPragma OriginPragma Ident where
+  applyOriginPragma (OriginPragma _ spi') = setSpanInfo spi'
+
+instance ApplyOriginPragma OriginPragma ModuleIdent where
+  applyOriginPragma (OriginPragma _ spi') = setSpanInfo spi'
+
+instance ApplyOriginPragma OriginPragma QualIdent where
+  applyOriginPragma o q = q { qidIdent = applyOriginPragma o (qidIdent q) }
+
+instance ApplyOriginPragma o a => ApplyOriginPragma (Maybe o) a where
+  applyOriginPragma = maybe id applyOriginPragma
+
 --------------------------------------------------------
 -- constructing elements of the abstract syntax tree
 --------------------------------------------------------
@@ -270,7 +302,8 @@ funDecl :: SpanInfo -> a -> Ident -> [Pattern a] -> Expression a -> Decl a
 funDecl spi a f ts e = FunctionDecl spi a f [mkEquation spi f ts e]
 
 mkEquation :: SpanInfo -> Ident -> [Pattern a] -> Expression a -> Equation a
-mkEquation spi f ts e = Equation spi (FunLhs NoSpanInfo f ts) (simpleRhs NoSpanInfo e)
+mkEquation spi f ts e =
+  Equation spi Nothing (FunLhs NoSpanInfo f ts) (simpleRhs NoSpanInfo e)
 
 simpleRhs :: SpanInfo -> Expression a -> Rhs a
 simpleRhs spi e = SimpleRhs spi WhitespaceLayout e []
@@ -307,6 +340,23 @@ unapply :: Expression a -> [Expression a] -> (Expression a, [Expression a])
 unapply (Apply _ e1 e2) es = unapply e1 (e2 : es)
 unapply e               es = (e, es)
 
+class MkOriginPragma a where
+  mkOriginPragma :: MonadIO m => a -> m OriginPragma
+
+instance MkOriginPragma Ident where
+  mkOriginPragma = fmap (OriginPragma NoSpanInfo) . canonicalSpanInfo
+
+instance MkOriginPragma ModuleIdent where
+  mkOriginPragma = fmap (OriginPragma NoSpanInfo) . canonicalSpanInfo
+
+instance MkOriginPragma QualIdent where
+  mkOriginPragma = mkOriginPragma . qidIdent
+
+canonicalSpanInfo :: (MonadIO m, HasSpanInfo a) => a -> m SpanInfo
+canonicalSpanInfo x = case getSpanInfo x of
+  SpanInfo (Span f s e) sps -> do f' <- liftIO $ canonicalizePath f
+                                  return $ SpanInfo (Span f' s e) sps
+  spi                       -> return spi
 
 --------------------------------------------------------
 -- Shorten Module
@@ -326,8 +376,8 @@ instance ShortenAST (Module a) where
 instance ShortenAST (Decl a) where
   shortenAST (FunctionDecl spi a idt _) =
     FunctionDecl spi a idt []
-  shortenAST (ClassDecl spi li cx cls tyv ds) =
-    ClassDecl spi li cx cls tyv (map shortenAST ds)
-  shortenAST (InstanceDecl spi li cx cls tyv ds) =
-    InstanceDecl spi li cx cls tyv (map shortenAST ds)
+  shortenAST (ClassDecl spi li cx cls tvs fds ds) =
+    ClassDecl spi li cx cls tvs fds (map shortenAST ds)
+  shortenAST (InstanceDecl spi li cx cls tvs ds) =
+    InstanceDecl spi li cx cls tvs (map shortenAST ds)
   shortenAST d = d

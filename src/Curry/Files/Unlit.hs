@@ -106,19 +106,15 @@ progLines fn cs = zipWithM checkAdjacency (Blank 0 : cs) cs where
 -- |Compute an appropiate error message
 reportBlank :: FilePath -> Int -> String -> CYM a
 reportBlank f l cause = failMessageAt (pos2Span $ Position f l 1) msg
-  where msg = concat [ "When reading literate source: "
-                     , "Program line is " ++ cause ++ " by comment line."
-                     ]
+  where msg = "When reading literate source: Program line is " ++
+              cause ++
+              " by comment line."
 
 reportMissingEnd :: FilePath -> Int -> CYM a
 reportMissingEnd f l = failMessageAt (pos2Span $ Position f (l+1) 1) msg
-  where msg = concat [ "When reading literate source: "
-                     , "Missing '\\end{code}' at the end of file."
-                     ]
+  where msg = "When reading literate source: Missing '\\end{code}' at the end of file."
 
 
 reportSpurious :: FilePath -> Int -> String -> CYM a
 reportSpurious f l cause = failMessageAt (pos2Span $ Position f l 1) msg
-  where msg = concat [ "When reading literate source: "
-                     , "Spurious '" ++ cause ++ "'."
-                     ]
+  where msg = "When reading literate source: Spurious '" ++ cause ++ "'."

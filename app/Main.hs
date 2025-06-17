@@ -14,13 +14,14 @@
 -}
 module Main (main) where
 
+import Control.Monad (unless)
 import Curry.Base.Monad (runCYIO)
 
-import Base.Messages
-import Files.FrontendPath (frontendGreeting, frontendVersion)
+import Curry.Frontend.Base.Messages
+import Curry.Frontend.Files.FrontendPath (frontendGreeting, frontendVersion)
 
-import CurryBuilder     (buildCurry)
-import CompilerOpts     (Options (..), FrontendMode (..), getCompilerOpts, usage)
+import Curry.Frontend.CurryBuilder       (buildCurry)
+import Curry.Frontend.CompilerOpts       (Options (..), FrontendMode (..), getCompilerOpts, usage)
 
 -- |The command line tool frontend
 main :: IO ()
@@ -34,9 +35,9 @@ runFrontend (prog, opts, files, errs) = case optMode opts of
   ModeNumericVersion   -> printNumericVersion
   ModeMake | not (null errs) -> badUsage prog errs
            | null files      -> badUsage prog ["No input files"]
-           | otherwise       -> runCYIO (mapM_ (buildCurry opts) files) >>=
-                                either abortWithMessages continueWithMessages
-  where continueWithMessages = warnOrAbort (optWarnOpts opts) . snd
+           | otherwise       -> do (res, ws) <- runCYIO (mapM_ (buildCurry opts) files)
+                                   unless (null ws) $ warnOrAbort (optWarnOpts opts) ws
+                                   either abortWithMessages return res
 
 -- |Print the usage information of the command line tool
 printUsage :: String -> IO ()

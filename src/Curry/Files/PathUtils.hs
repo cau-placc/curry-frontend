@@ -27,9 +27,9 @@ module Curry.Files.PathUtils
   ) where
 
 import qualified Control.Exception    as C (IOException, handle)
-import qualified Data.ByteString.Lazy as B (ByteString, writeFile)
 import           Data.List                 (isPrefixOf, isSuffixOf)
 import           Data.Time                 (UTCTime)
+import qualified Data.ByteString.Lazy as B (ByteString, writeFile)
 import           System.FilePath
 import           System.Directory
 import           System.IO
@@ -136,7 +136,7 @@ checkVersion expected src = case lines src of
     Just v | v == expected -> Right (unlines ls)
            | otherwise     -> Left $ "Expected version `" ++ expected
                                      ++ "', but found version `" ++ v ++ "'"
-    _                      -> Left $ "No version found"
+    _                      -> Left "No version found"
 
   where
     getVersion s | "{- " `isPrefixOf` s && " -}" `isSuffixOf` s
@@ -170,7 +170,8 @@ tryWriteFile fn contents = do
  where
   issueWarning :: C.IOException -> IO ()
   issueWarning _ = do
-    putStrLn $ "*** Warning: cannot update file `" ++ fn ++ "' (update ignored)"
+    hPutStrLn stderr $
+      "*** Warning: cannot update file `" ++ fn ++ "' (update ignored)"
     return ()
   writeFileUTF8 :: FilePath -> String -> IO ()
   writeFileUTF8 fn' str =
@@ -189,5 +190,6 @@ tryWriteBinaryFile fn contents = do
  where
   issueWarning :: C.IOException -> IO ()
   issueWarning _ = do
-    putStrLn $ "*** Warning: cannot update file `" ++ fn ++ "' (update ignored)"
+    hPutStrLn stderr $
+      "*** Warning: cannot update file `" ++ fn ++ "' (update ignored)"
     return ()

@@ -30,8 +30,8 @@ showModule m = showsModule m "\n"
 showsModule :: Show a => Module a -> ShowS
 showsModule (Module spi li ps mident espec imps decls)
   = showsString "Module "
-  . showsLayoutInfo li . space
   . showsSpanInfo spi . space
+  . showsLayoutInfo li . space
   . showsList (\p -> showsPragma p . newline) ps . space
   . showsModuleIdent mident . newline
   . showsMaybe showsExportSpec espec . newline
@@ -47,7 +47,7 @@ showsPragma (LanguagePragma pos exts)
 showsPragma (OptionsPragma pos mbTool args)
   = showsString "(OptionsPragma "
   . showsSpanInfo pos . space
-  . showsMaybe shows mbTool
+  . showsMaybe showsTool mbTool
   . shows args
   . showsString ")"
 
@@ -61,6 +61,16 @@ showsExtension (UnknownExtension p s)
   = showsString "(UnknownExtension "
   . showsSpanInfo p . space
   . shows s
+  . showString ")"
+
+showsTool :: Tool -> ShowS
+showsTool (KnownTool t)
+  = showsString "(KnownTool "
+  . shows t
+  . showString ")"
+showsTool (UnknownTool t)
+  = showsString "(UnknownTool "
+  . shows t
   . showString ")"
 
 showsExportSpec :: ExportSpec -> ShowS
@@ -204,13 +214,14 @@ showsDecl (DefaultDecl spi types)
   . showsSpanInfo spi . space
   . showsList showsTypeExpr types
   . showsString ")"
-showsDecl (ClassDecl spi li context cls clsvar decls)
+showsDecl (ClassDecl spi li context cls clsvars funDeps decls)
   = showsString "(ClassDecl "
   . showsSpanInfo spi . space
   . showsLayoutInfo li . space
   . showsContext context . space
   . showsIdent cls . space
-  . showsIdent clsvar . space
+  . showsList showsIdent clsvars . space
+  . showsList showsFunDep funDeps . space
   . showsList showsDecl decls
   . showsString ")"
 showsDecl (InstanceDecl spi li context qcls inst decls)
@@ -219,7 +230,7 @@ showsDecl (InstanceDecl spi li context qcls inst decls)
   . showsLayoutInfo li . space
   . showsContext context . space
   . showsQualIdent qcls . space
-  . showsInstanceType inst . space
+  . showsList showsInstanceType inst . space
   . showsList showsDecl decls
   . showsString ")"
 showsDecl (DetSig spi vs dty)
@@ -232,15 +243,23 @@ showsContext :: Context -> ShowS
 showsContext = showsList showsConstraint
 
 showsConstraint :: Constraint -> ShowS
-showsConstraint (Constraint spi qcls ty)
+showsConstraint (Constraint spi qcls tys)
   = showsString "(Constraint "
   . showsSpanInfo spi . space
   . showsQualIdent qcls . space
-  . showsTypeExpr ty
+  . showsList showsTypeExpr tys
   . showsString ")"
 
 showsInstanceType :: InstanceType -> ShowS
 showsInstanceType = showsTypeExpr
+
+showsFunDep :: FunDep -> ShowS
+showsFunDep (FunDep spi ltvs rtvs)
+  = showsString "(FunDep "
+  . showsSpanInfo spi . space
+  . showsList showsIdent ltvs . space
+  . showsList showsIdent rtvs
+  . showsString ")"
 
 showsConsDecl :: ConstrDecl -> ShowS
 showsConsDecl (ConstrDecl spi ident types)
@@ -365,9 +384,10 @@ showsDetExpr (VarDetExpr spi ident)
   . showsString ")"
 
 showsEquation :: Show a => Equation a -> ShowS
-showsEquation (Equation spi lhs rhs)
+showsEquation (Equation spi a lhs rhs)
   = showsString "(Equation "
   . showsSpanInfo spi . space
+  . showsPrec 11 a . space
   . showsLhs lhs . space
   . showsRhs rhs
   . showsString ")"
