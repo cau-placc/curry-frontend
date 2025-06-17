@@ -73,8 +73,8 @@ toConstrDecl (NewRecordDecl p c (l, ty)) =
 
 constrArity :: ConstrDecl -> Int
 constrArity (ConstrDecl  _ _ tys) = length tys
-constrArity (ConOpDecl   _ _ _ _) = 2
-constrArity c@(RecordDecl  _ _ _) = length $ recordLabels c
+constrArity (ConOpDecl       {} ) = 2
+constrArity c@(RecordDecl    {} ) = length $ recordLabels c
 
 -- ---------------------------------------------------------------------------
 -- Error messages

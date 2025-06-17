@@ -148,13 +148,13 @@ inlineFun :: InlineEnv -> SpanInfo -> Maybe Type -> Lhs Type -> Rhs Type
 inlineFun env p ma lhs rhs = do
   m <- getModuleIdent
   case rhs of
-    SimpleRhs _ _ (Let _ _ [FunctionDecl _ _ f' eqs'] e) _
+    SimpleRhs _ _ (Let _ _ [FunctionDecl _ _ f' eqs'@(eq:_ )] e) _
       | -- @f'@ is not recursive
         f' `notElem` qfv m eqs'
         -- @f'@ does not perform any pattern matching
         && and [all isVariablePattern ts1 | Equation _ _ (FunLhs _ _ ts1) _ <- eqs']
       -> do
-        let a = eqnArity $ head eqs'
+        let a = eqnArity eq
             (n, vs', e') = etaReduce 0 [] (reverse (snd $ flatLhs lhs)) e
         if  -- the eta-reduced rhs of @f@ is a call to @f'@
             setSpanInfo NoSpanInfo e' == Variable NoSpanInfo (typeOf e') (qualify f')

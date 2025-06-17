@@ -13,6 +13,7 @@
 -}
 module Curry.Frontend.CompilerEnv where
 
+import           Data.Bifunctor  (bimap)
 import qualified Data.Map as Map (Map, fromList, keys, toList)
 
 import Curry.Base.Ident    (ModuleIdent, moduleName)
@@ -84,7 +85,7 @@ showCompilerEnv env allBinds simpleEnv = show $ vcat
   , header "Values             " $ ppAL simpleEnv $ bindings $ valueEnv  env
   ]
   where
-  header hdr content = hang (text hdr <+> colon) 4 content
+  header hdr = hang (text hdr <+> colon) 4
   bindings = if allBinds then allBindings else allLocalBindings
 
 -- |Pretty print a 'Map'
@@ -106,7 +107,7 @@ ppAL False = ppALShow
 ppALShow :: (Show a, Show b) => [(a, b)] -> Doc
 ppALShow xs = vcat
         $ map (\(a,b) -> text (pad a keyWidth) <+> equals <+> text b) showXs
-  where showXs   = map (\(a,b) -> (show a, show b)) xs
+  where showXs   = map (bimap show show) xs
         keyWidth = maximum (0 : map (length .fst) showXs)
         pad s n  = take n (s ++ repeat ' ')
 

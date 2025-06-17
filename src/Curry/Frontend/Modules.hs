@@ -25,8 +25,9 @@ module Curry.Frontend.Modules
   , writeTokens, writeComments, writeParsed, writeHtml, writeAST, writeShortAST
   ) where
 
+import           Control.Arrow            (first, second)
 import qualified Control.Exception as C   (catch, IOException)
-import           Control.Monad            (liftM, unless, when)
+import           Control.Monad            (void, unless, when)
 import           Data.Char                (toUpper)
 import qualified Data.Map          as Map (elems, lookup)
 import qualified Data.ByteString.Lazy as ByteString
@@ -73,6 +74,7 @@ import Curry.Frontend.Interfaces (loadInterfaces)
 import Curry.Frontend.TokenStream (showTokenStream, showCommentTokenStream)
 import Curry.Frontend.Transformations
 
+
 -- The function 'compileModule' is the main entry-point of this
 -- module for compiling a Curry source module. Depending on the command
 -- line options, it will emit either FlatCurry code or AbstractCurry code
@@ -97,8 +99,9 @@ compileModule opts m fn = do
   writeParsed   opts mdl
   let qmdl = qual mdl
   writeHtml     opts qmdl
-  writeAST      opts (fst  mdl, fmap (const ()) (snd  mdl))
-  writeShortAST opts (fst qmdl, fmap (const ()) (snd qmdl))
+  let voided = second void mdl
+  writeAST      opts voided
+  writeShortAST opts voided
   mdl' <- expandExports opts mdl
   qmdl' <- dumpWith opts CS.showModule pPrint DumpQualified $ qual mdl'
   writeAbstractCurry opts qmdl'
@@ -234,7 +237,7 @@ importSyntaxCheck :: Monad m => InterfaceEnv -> CS.Module a -> CYT m [CS.ImportD
 importSyntaxCheck iEnv (CS.Module _ _ _ _ _ imps _) = mapM checkImportDecl imps
   where
   checkImportDecl (CS.ImportDecl p m q asM is) = case Map.lookup m iEnv of
-    Just intf -> CS.ImportDecl p m q asM `liftM` importCheck intf is
+    Just intf -> CS.ImportDecl p m q asM <$> importCheck intf is
     Nothing   -> internalError $ "Modules.importModules: no interface for "
                                     ++ show m
 
@@ -325,7 +328,7 @@ writeParsed opts (env, mdl) = when srcTarget $ liftIO $
 
 writeHtml :: Options -> CompEnv (CS.Module a) -> CYIO ()
 writeHtml opts (env, mdl) = when htmlTarget $
-  source2html opts (moduleIdent env) (map (\(sp, tok) -> (span2Pos sp, tok)) (tokens env)) mdl
+  source2html opts (moduleIdent env) (map (first span2Pos) (tokens env)) mdl
   where htmlTarget = Html `elem` optTargetTypes opts
 
 writeInterface :: Options -> CompilerEnv -> CS.Interface -> CYIO ()

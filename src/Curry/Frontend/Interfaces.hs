@@ -27,6 +27,7 @@ module Curry.Frontend.Interfaces (loadInterfaces) where
 import           Prelude hiding ((<>))
 import           Control.Monad               (unless)
 import qualified Control.Monad.State    as S (StateT, execStateT, gets, modify)
+import           Data.List.NonEmpty          (NonEmpty(..))
 import qualified Data.Map               as M (insert, member)
 
 import           Curry.Base.Ident
@@ -90,7 +91,7 @@ loadInterfaces paths (Module _ _ _ m _ is _) = do
 loadInterface :: HasPosition a => [ModuleIdent] -> (a, ModuleIdent)
               -> IntfLoader ()
 loadInterface ctxt (_, m)
-  | m `elem` ctxt = report [errCyclicImport $ m : takeWhile (/= m) ctxt]
+  | m `elem` ctxt = report [errCyclicImport $ m :| takeWhile (/= m) ctxt]
   | otherwise     = do
     isLoaded <- loaded m
     unless isLoaded $ do
@@ -133,15 +134,13 @@ errWrongInterface m n = spanInfoMessage m $
   <> comma <+> text "but found" <+> text (moduleName n)
 
 -- Error message for a cyclic import.
-errCyclicImport :: [ModuleIdent] -> Message
-errCyclicImport []  = internalError "Interfaces.errCyclicImport: empty list"
-errCyclicImport [m] = spanInfoMessage m $
+errCyclicImport :: NonEmpty ModuleIdent -> Message
+errCyclicImport    (m :| []) = spanInfoMessage m $
   text "Recursive import for module" <+> text (moduleName m)
-errCyclicImport ms  = spanInfoMessage (head ms) $
+errCyclicImport ms@(m :| _)  = spanInfoMessage m $
   text "Cyclic import dependency between modules"
   <+> hsep (punctuate comma (map text inits)) <+> text "and" <+> text lastm
   where
-  (inits, lastm)         = splitLast $ map moduleName ms
-  splitLast []           = internalError "Interfaces.splitLast: empty list"
-  splitLast (x : [])     = ([]  , x)
-  splitLast (x : y : ys) = (x : xs, z) where (xs, z) = splitLast (y : ys)
+  (inits, lastm)          = splitLast $ fmap moduleName ms
+  splitLast (x :| [])     = ([]  , x)
+  splitLast (x :| y : ys) = (x : xs, z) where (xs, z) = splitLast (y :| ys)

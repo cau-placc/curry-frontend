@@ -64,7 +64,7 @@ checkModule (Module _ _ ps _ _ _ _) = mapM_ checkPragma ps
 
 checkPragma :: ModulePragma -> EXCM ()
 checkPragma (LanguagePragma _ exts) = mapM_ checkExtension exts
-checkPragma (OptionsPragma  _  _ _) = ok
+checkPragma (OptionsPragma     {} ) = ok
 
 checkExtension :: Extension -> EXCM ()
 checkExtension (KnownExtension   _ e) = enableExtensions $ Set.singleton e

@@ -74,26 +74,26 @@ isBlockDecl d = isInfixDecl d || isTypeSig d || isValueDecl d
 
 -- |Is the declaration an infix declaration?
 isInfixDecl :: Decl a -> Bool
-isInfixDecl (InfixDecl _ _ _ _) = True
-isInfixDecl _                   = False
+isInfixDecl (InfixDecl {}) = True
+isInfixDecl _              = False
 
 -- |Is the declaration a type declaration?
 isTypeDecl :: Decl a -> Bool
-isTypeDecl (DataDecl     _ _ _ _ _) = True
-isTypeDecl (ExternalDataDecl _ _ _) = True
-isTypeDecl (NewtypeDecl  _ _ _ _ _) = True
-isTypeDecl (TypeDecl       _ _ _ _) = True
-isTypeDecl _                        = False
+isTypeDecl (DataDecl         {}) = True
+isTypeDecl (ExternalDataDecl {}) = True
+isTypeDecl (NewtypeDecl      {}) = True
+isTypeDecl (TypeDecl         {}) = True
+isTypeDecl _                     = False
 
 -- |Is the declaration a default declaration?
 isDefaultDecl :: Decl a -> Bool
-isDefaultDecl (DefaultDecl _ _) = True
-isDefaultDecl _                 = False
+isDefaultDecl (DefaultDecl {}) = True
+isDefaultDecl _                = False
 
 -- |Is the declaration a class declaration?
 isClassDecl :: Decl a -> Bool
-isClassDecl (ClassDecl _ _ _ _ _ _ _) = True
-isClassDecl _                         = False
+isClassDecl (ClassDecl {}) = True
+isClassDecl _              = False
 
 -- |Is the declaration a type or a class declaration?
 isTypeOrClassDecl :: Decl a -> Bool
@@ -101,35 +101,35 @@ isTypeOrClassDecl d = isTypeDecl d || isClassDecl d
 
 -- |Is the declaration an instance declaration?
 isInstanceDecl :: Decl a -> Bool
-isInstanceDecl (InstanceDecl _ _ _ _ _ _) = True
-isInstanceDecl _                          = False
+isInstanceDecl (InstanceDecl {}) = True
+isInstanceDecl _                 = False
 
 -- |Is the declaration a type signature?
 isTypeSig :: Decl a -> Bool
-isTypeSig (TypeSig           _ _ _) = True
-isTypeSig _                         = False
+isTypeSig (TypeSig {}) = True
+isTypeSig _            = False
 
 -- |Is the declaration a value declaration?
 isValueDecl :: Decl a -> Bool
-isValueDecl (FunctionDecl    _ _ _ _) = True
-isValueDecl (ExternalDecl        _ _) = True
-isValueDecl (PatternDecl       _ _ _) = True
-isValueDecl (FreeDecl            _ _) = True
-isValueDecl _                         = False
+isValueDecl (FunctionDecl {}) = True
+isValueDecl (ExternalDecl {}) = True
+isValueDecl (PatternDecl  {}) = True
+isValueDecl (FreeDecl     {}) = True
+isValueDecl _                 = False
 
 -- |Is the declaration a function declaration?
 isFunctionDecl :: Decl a -> Bool
-isFunctionDecl (FunctionDecl _ _ _ _) = True
-isFunctionDecl _                      = False
+isFunctionDecl (FunctionDecl {}) = True
+isFunctionDecl _                 = False
 
 -- |Is the declaration an external declaration?
 isExternalDecl :: Decl a -> Bool
-isExternalDecl (ExternalDecl _ _) = True
-isExternalDecl _                  = False
+isExternalDecl (ExternalDecl {}) = True
+isExternalDecl _                 = False
 
 -- |Is the pattern semantically equivalent to a variable pattern?
 isVariablePattern :: Pattern a -> Bool
-isVariablePattern (VariablePattern _ _ _) = True
+isVariablePattern (VariablePattern    {}) = True
 isVariablePattern (ParenPattern    _   t) = isVariablePattern t
 isVariablePattern (AsPattern       _ _ t) = isVariablePattern t
 isVariablePattern (LazyPattern     _   _) = True
@@ -150,7 +150,7 @@ isSimpleType (TupleType    _  tys) = all isVariableType tys
 isSimpleType (ListType      _  ty) = isVariableType ty
 isSimpleType (ArrowType _ ty1 ty2) = isVariableType ty1 && isVariableType ty2
 isSimpleType (ParenType     _  ty) = isSimpleType ty
-isSimpleType (ForallType    _ _ _) = False
+isSimpleType (ForallType       {}) = False
 
 -- |Return the qualified type constructor of a type expression.
 typeConstr :: TypeExpr -> QualIdent
@@ -158,11 +158,11 @@ typeConstr (ConstructorType   _ tc) = tc
 typeConstr (ApplyType       _ ty _) = typeConstr ty
 typeConstr (TupleType        _ tys) = qTupleId (length tys)
 typeConstr (ListType           _ _) = qListId
-typeConstr (ArrowType        _ _ _) = qArrowId
+typeConstr (ArrowType           {}) = qArrowId
 typeConstr (ParenType         _ ty) = typeConstr ty
 typeConstr (VariableType       _ _) =
   error "Curry.Syntax.Utils.typeConstr: variable type"
-typeConstr (ForallType       _ _ _) =
+typeConstr (ForallType          {}) =
   error "Curry.Syntax.Utils.typeConstr: forall type"
 
 -- |Return the list of variables occurring in a type expression.
@@ -186,7 +186,7 @@ containsForall (TupleType         _ tys) = any containsForall tys
 containsForall (ListType           _ ty) = containsForall ty
 containsForall (ArrowType     _ ty1 ty2) = containsForall ty1 || containsForall ty2
 containsForall (ParenType          _ ty) = containsForall ty
-containsForall (ForallType        _ _ _) = True
+containsForall (ForallType           {}) = True
 
 -- |Return the identifier of a variable.
 varIdent :: Var a -> Ident
@@ -243,13 +243,13 @@ nconstrType (NewRecordDecl _ _ (_, ty)) = ty
 
 -- | Get record label identifiers of a constructor declaration
 recordLabels :: ConstrDecl -> [Ident]
-recordLabels (ConstrDecl   _ _ _) = []
-recordLabels (ConOpDecl _ _ _  _) = []
+recordLabels (ConstrDecl      {}) = []
+recordLabels (ConOpDecl       {}) = []
 recordLabels (RecordDecl  _ _ fs) = [l | FieldDecl _ ls _ <- fs, l <- ls]
 
 -- | Get record label identifier of a newtype constructor declaration
 nrecordLabels :: NewConstrDecl -> [Ident]
-nrecordLabels (NewConstrDecl _ _ _     ) = []
+nrecordLabels (NewConstrDecl         {}) = []
 nrecordLabels (NewRecordDecl _ _ (l, _)) = [l]
 
 -- | Get the declared method identifiers of a type class method declaration

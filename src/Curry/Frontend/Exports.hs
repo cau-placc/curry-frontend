@@ -176,10 +176,12 @@ constrDecl m _ tvs (RecordConstr c ls tys) =
     fs   = zipWith (FieldDecl NoSpanInfo . return) ls tys'
 
 newConstrDecl :: ModuleIdent -> [Ident] -> DataConstr -> NewConstrDecl
-newConstrDecl m tvs (DataConstr c tys)
-  = NewConstrDecl NoSpanInfo c (fromQualType m tvs (head tys))
-newConstrDecl m tvs (RecordConstr c ls tys)
-  = NewRecordDecl NoSpanInfo c (head ls, fromQualType m tvs (head tys))
+newConstrDecl m tvs (DataConstr c (ty:_))
+  = NewConstrDecl NoSpanInfo c (fromQualType m tvs ty)
+newConstrDecl m tvs (RecordConstr c (l:_) (ty:_))
+  = NewRecordDecl NoSpanInfo c (l, fromQualType m tvs ty)
+newConstrDecl _ _ _ =
+  internalError "Exports.newConstrDecl: not enough types in constructor"
 
 -- When exporting a class method, we have to remove the implicit class
 -- constraint. Due to the sorting of the predicate set, this is fortunately very
@@ -412,7 +414,7 @@ closeInterface m tcEnv clsEnv inEnv tvs is inExps (d:ds) = do
                   II instId -> iInstDecl m inEnv tvs instId
   hs <- hiddenTypes m tcEnv clsEnv tvs d'
   let es             = getExportedInsts (updateInstExports m i inExps)
-      (inExps', ds') = (ds ++) <$> ((hs ++) <$> es)
+      (inExps', ds') = (ds ++) . (hs ++) <$> es
   if | i == IOther       ->
        (d':) <$> closeInterface m tcEnv clsEnv inEnv tvs is inExps ds'
      | i `Set.member` is -> closeInterface m tcEnv clsEnv inEnv tvs is inExps ds

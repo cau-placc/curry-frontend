@@ -208,12 +208,8 @@ instance FixInterface TypeExpr where
 
 typeConstructors :: [IDecl] -> [Ident]
 typeConstructors ds = [tc | (QualIdent _ Nothing tc) <- foldr tyCons [] ds]
-  where tyCons (IInfixDecl          _ _ _ _ _) tcs = tcs
-        tyCons (HidingDataDecl     _ tc _ _ o) tcs = applyOriginPragma o tc : tcs
+  where tyCons (HidingDataDecl     _ tc _ _ o) tcs = applyOriginPragma o tc : tcs
         tyCons (IDataDecl      _ tc _ _ _ _ o) tcs = applyOriginPragma o tc : tcs
         tyCons (INewtypeDecl   _ tc _ _ _ _ o) tcs = applyOriginPragma o tc : tcs
         tyCons (ITypeDecl        _ tc _ _ _ o) tcs = applyOriginPragma o tc : tcs
-        tyCons (IFunctionDecl     _ _ _ _ _ _) tcs = tcs
-        tyCons (HidingClassDecl _ _ _ _ _ _ _) tcs = tcs
-        tyCons (IClassDecl  _ _ _ _ _ _ _ _ _) tcs = tcs
-        tyCons (IInstanceDecl   _ _ _ _ _ _ _) tcs = tcs
+        tyCons _                               tcs = tcs

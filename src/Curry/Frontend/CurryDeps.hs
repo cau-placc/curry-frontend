@@ -19,10 +19,11 @@
 module Curry.Frontend.CurryDeps
   ( Source (..), flatDeps, deps, flattenDeps, sourceDeps, moduleDeps ) where
 
-import           Prelude hiding ((<>))
-import           Control.Monad   (foldM)
-import           Data.List       (isSuffixOf, nub)
-import qualified Data.Map as Map (Map, empty, insert, lookup, toList)
+import           Prelude     hiding ((<>))
+import           Control.Monad      (foldM)
+import           Data.List          (isSuffixOf, nub)
+import           Data.List.NonEmpty (NonEmpty(..))
+import qualified Data.Map    as Map (Map, empty, insert, lookup, toList)
 
 import Curry.Base.Ident
 import Curry.Base.Monad
@@ -165,30 +166,29 @@ flattenDeps = fdeps . sortDeps
   fdeps :: [[(ModuleIdent, Source)]] -> ([(ModuleIdent, Source)], [Message])
   fdeps = foldr checkdep ([], [])
 
-  checkdep []    (srcs, errs)                         = (srcs      , errs      )
-  checkdep [src] (srcs, errs) | isRecursiveImport src = (srcs      , err : errs)
-                              | otherwise             = (src : srcs, errs      )
-    where err = errCyclicImport (idents src)
-  checkdep dep   (srcs, errs)                         = (srcs      , err : errs)
-    where err = errCyclicImport $ map fst dep
+  checkdep []          (srcs, errs) = (srcs      , errs      )
+  checkdep [src@(m,_)] (srcs, errs)
+      | isRecursiveImport src       = (srcs      , err : errs)
+      | otherwise                   = (src : srcs, errs      )
+    where err = errCyclicImport (m :| [])
+  checkdep (d:ds)   (srcs, errs)    = (srcs      , err : errs)
+    where err = errCyclicImport $ fmap fst (d :| ds)
 
 errMissingFile :: FilePath -> Message
 errMissingFile fn = message $ sep $ map text [ "Missing file:", fn ]
 
 errWrongModule :: ModuleIdent -> ModuleIdent -> Message
-errWrongModule m m' = message $ sep $
+errWrongModule m m' = message $ sep
   [ text "Expected module for", text (moduleName m) <> comma
   , text "but found", text (moduleName m') ]
 
-errCyclicImport :: [ModuleIdent] -> Message
-errCyclicImport []       = internalError "CurryDeps.errCyclicImport: empty list"
-errCyclicImport [m]      = spanInfoMessage m $ sep $ map text
+errCyclicImport :: NonEmpty ModuleIdent -> Message
+errCyclicImport    (m :| []) = spanInfoMessage m $ sep $ map text
   [ "Recursive import for module", moduleName m ]
-errCyclicImport ms@(m:_) = spanInfoMessage m $ sep $
+errCyclicImport ms@(m :| _ ) = spanInfoMessage m $ sep $
   text "Cyclic import dependency between modules" : punctuate comma inits
   ++ [text "and", lastm]
   where
-  (inits, lastm)     = splitLast $ map (text . moduleName) ms
-  splitLast []       = internalError "CurryDeps.splitLast: empty list"
-  splitLast (x : []) = ([]    , x)
-  splitLast (x : xs) = (x : ys, y) where (ys, y) = splitLast xs
+  (inits, lastm)     = splitLast $ fmap (text . moduleName) ms
+  splitLast (x :| [])     = ([]    , x)
+  splitLast (x :| y : xs) = (x : ys, z) where (ys, z) = splitLast (y :| xs)
