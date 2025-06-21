@@ -22,7 +22,7 @@ jobs:
       - name: Run make
         env:
           STACKROOT: /tmp/stack
-        run: make
+        run: make STACKROOT=$STACKROOT
 
   test:
     runs-on: ubuntu-latest
@@ -42,4 +42,4 @@ jobs:
       - name: Run tests
         env:
           STACKROOT: /tmp/stack
-        run: make runtests
+        run: make runtests STACKROOT=$STACKROOT
