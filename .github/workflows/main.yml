@@ -10,8 +10,19 @@ jobs:
     container:
       image: haskell:latest
     steps:
-      - uses: actions/checkout@v3
-      - run: make
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure Stack root directory
+        env:
+          STACK_ROOT: /tmp/stack
+        run: |
+          mkdir -p $STACK_ROOT
+
+      - name: Run make
+        env:
+          STACK_ROOT: /tmp/stack
+        run: make
 
   test:
     runs-on: ubuntu-latest
@@ -19,5 +30,16 @@ jobs:
       image: haskell:latest
     needs: make
     steps:
-      - uses: actions/checkout@v3
-      - run: make runtests
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure Stack root directory
+        env:
+          STACK_ROOT: /tmp/stack
+        run: |
+          mkdir -p $STACK_ROOT
+
+      - name: Run tests
+        env:
+          STACK_ROOT: /tmp/stack
+        run: make runtests
