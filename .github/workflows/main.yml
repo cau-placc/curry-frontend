@@ -24,6 +24,16 @@ jobs:
           STACKROOT: /tmp/stack
         run: make STACKROOT=$STACKROOT
 
+      - name: Upload Stack cache and build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: stack-cache
+          path: |
+            /tmp/stack
+            .stack-work
+            bin
+          retention-days: 1
+
   test:
     runs-on: ubuntu-latest
     container:
@@ -38,6 +48,12 @@ jobs:
           STACKROOT: /tmp/stack
         run: |
           mkdir -p $STACKROOT
+
+      - name: Download Stack cache and build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: stack-cache
+          path: /
 
       - name: Run tests
         env:
