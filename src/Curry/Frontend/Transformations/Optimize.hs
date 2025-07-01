@@ -61,6 +61,11 @@ optimizeExpr (Letrec bds e) = without (map (\(Binding i _) -> i) bds) $ do
 optimizeExpr (Typed e t) = Typed <$> optimizeExpr e <*> return t
 optimizeExpr e = return e
 
+-- | Optimize a case expression.
+-- If the scrutinee is a known constructor, it desugars the case expression
+-- by inlining the constructor's arguments into the body of the matching alternative.
+-- Otherwise, it leaves the case expression unchanged.
+-- This optimization is controlled by the 'optCaseOfKnown' option.
 optimizeCase :: Eval -> Expression -> [Alt] -> Reader OptEnv Expression
 optimizeCase ct e1 alts = do
   env <- ask
@@ -90,6 +95,11 @@ optimizeCase ct e1 alts = do
       e'' <- without (constrVars conT) $ optimizeExpr e'
       return $ Alt conT e''
 
+-- | Optimize a 'Let' expression.
+-- If the bound variable is used only once in the body, it inlines the variable.
+-- If it is used more than once, it keeps the 'Let' expression.
+-- If the variable is never used, it removes the 'Let' expression.
+-- This optimization is controlled by the 'optInlineLet' option.
 optimizeLet :: Ident -> Expression -> Expression -> Reader OptEnv Expression
 optimizeLet i e1 e2 = without [i] $ do
   env <- ask
@@ -114,6 +124,12 @@ optimizeLet i e1 e2 = without [i] $ do
 data Occ = Never | Once | More
   deriving (Eq, Show)
 
+-- | Get the occurrence of a variable in an expression.
+-- It returns 'Never' if the variable is not used,
+-- 'Once' if it is used exactly once,
+-- and 'More' if it is used more than once.
+-- This function is used to determine whether to inline a variable in a 'Let' expression.
+-- It needs the substitution environment to resolve variable references correctly.
 getOccurrence :: Ident -> Expression -> Reader OptEnv Occ
 getOccurrence i (Variable ty i') = substVar ty i' >>= \case
   Variable  _ i'' | i'' == i -> return Once
@@ -143,6 +159,10 @@ getOccurrence i (Letrec bds e) = do
 getOccurrence i (Typed e _) = getOccurrence i e
 getOccurrence _ _ = return Never
 
+-- | Add two occurrences together.
+-- It is lazy in the second argument,
+-- meaning that it will not evaluate the second occurrence if the first one is 'More'.
+-- This is useful for combining occurrences from different parts of an expression.
 addM :: Reader OptEnv Occ -> Reader OptEnv Occ -> Reader OptEnv Occ
 addM r1 r2 = do
   o1 <- r1
