@@ -15,6 +15,7 @@
     - Inline single-use variables in 'Let' expressions
     - Desugar case expressions where the scrutinee is of a known constructor
 -}
+{-# LANGUAGE LambdaCase #-}
 module Curry.Frontend.Transformations.Optimize (optimize) where
 
 import Data.List            (find)
@@ -93,7 +94,7 @@ optimizeLet :: Ident -> Expression -> Expression -> Reader OptEnv Expression
 optimizeLet i e1 e2 = without [i] $ do
   env <- ask
   if not (optInlineLet (opts env))
-    then Let . Binding i <$> optimizeExpr e1 <*> optimizeExpr e2
+    then Let . Binding i <$> optimizeExpr e2 <*> optimizeExpr e1
     else do
       occ <- getOccurrence i e2
       case occ of
@@ -114,8 +115,10 @@ data Occ = Never | Once | More
   deriving (Eq, Show)
 
 getOccurrence :: Ident -> Expression -> Reader OptEnv Occ
-getOccurrence i (Variable _ i') | i == i' = return Once
-getOccurrence i (Variable ty i') = substVar ty i' >>= getOccurrence i
+getOccurrence i (Variable ty i') = substVar ty i' >>= \case
+  Variable  _ i'' | i'' == i -> return Once
+  Variable _ _               -> return Never
+  e                          -> getOccurrence i e
 getOccurrence i (Apply e1 e2) = addM (getOccurrence i e1) (getOccurrence i e2)
 getOccurrence i (Case _ e alts) = addM (getOccurrence i e) $
   foldrM (\(Alt conT e') acc -> addM (return acc) (without
