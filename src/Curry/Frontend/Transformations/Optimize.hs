@@ -49,6 +49,7 @@ optimize o (Module mid imp ds) = Module mid imp (map optimizeDecl ds)
     optimizeDecl d = d
 
 optimizeExpr :: Expression ->  Reader OptEnv Expression
+optimizeExpr (Variable ty i) = substVar ty i
 optimizeExpr (Apply e1 e2) = Apply <$> optimizeExpr e1 <*> optimizeExpr e2
 optimizeExpr (Case ct e alts) = optimizeCase ct e alts
 optimizeExpr (Or e1 e2) = Or <$> optimizeExpr e1 <*> optimizeExpr e2
@@ -104,7 +105,10 @@ optimizeLet :: Ident -> Expression -> Expression -> Reader OptEnv Expression
 optimizeLet i e1 e2 = without [i] $ do
   env <- ask
   if not (optInlineLet (opts env))
-    then Let . Binding i <$> optimizeExpr e2 <*> optimizeExpr e1
+    then do
+      e1' <- optimizeExpr e1
+      e2' <- optimizeExpr e2
+      return $ Let (Binding i e1') e2'
     else do
       occ <- getOccurrence i e2
       case occ of
