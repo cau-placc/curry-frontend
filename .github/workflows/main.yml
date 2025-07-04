@@ -9,13 +9,13 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: haskell:latest
+    env:
+      STACKROOT: /tmp/stack
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Configure Stack root directory
-        env:
-          STACKROOT: /tmp/stack
         run: |
           mkdir -p $STACKROOT
 
@@ -29,12 +29,5 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-stack-
 
-      - name: Run make
-        env:
-          STACKROOT: /tmp/stack
-        run: make STACKROOT=$STACKROOT
-
-      - name: Run tests
-        env:
-          STACKROOT: /tmp/stack
-        run: make runtests STACKROOT=$STACKROOT
+      - name: Build and test
+        run: make build-and-test STACKROOT=$STACKROOT
