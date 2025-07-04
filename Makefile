@@ -42,3 +42,7 @@ cleanall: cleaninstall
 .PHONY: runtests
 runtests:
 	$(STACK) test
+
+.PHONY: build-and-test
+build-and-test: STACK := $(STACK) --test
+build-and-test: frontend
