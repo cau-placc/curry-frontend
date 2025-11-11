@@ -24,8 +24,6 @@
 
 module Curry.FlatCurry.Goodies where
 
-import Control.Arrow (first, second)
-
 import Curry.FlatCurry.Type
 
 -- |Update of a type's component
@@ -741,8 +739,8 @@ missingCombArgs = missingArgs . combType
   missingArgs :: CombType -> Int
   missingArgs = trCombType 0 id 0 id
 
--- |get indices of varoables in let declaration
-letBinds :: Expr -> [(VarIndex,Expr)]
+-- |get indices of variables in let declaration
+letBinds :: Expr -> [(VarIndex, TypeExpr, Expr)]
 letBinds (Let vs _) = vs
 letBinds _          = error $ "Curry.FlatCurry.Goodies.letBinds: " ++
                               "no let expression"
@@ -755,7 +753,7 @@ letBody _         = error $ "Curry.FlatCurry.Goodies.letBody: " ++
 
 -- |get variable indices from declaration of free variables
 freeVars :: Expr -> [VarIndex]
-freeVars (Free vs _) = vs
+freeVars (Free vs _) = map fst vs
 freeVars _           = error $ "Curry.FlatCurry.Goodies.freeVars: " ++
                                "no declaration of free variables"
 
@@ -836,21 +834,21 @@ isCase e = case e of
 
 -- |transform expression
 trExpr  :: (VarIndex -> a)
-        -> (Literal -> a)
-        -> (CombType -> QName -> [a] -> a)
-        -> ([(VarIndex, a)] -> a -> a)
-        -> ([VarIndex] -> a -> a)
-        -> (a -> a -> a)
-        -> (CaseType -> a -> [b] -> a)
-        -> (Pattern -> a -> b)
-        -> (a -> TypeExpr -> a)
-        -> Expr
-        -> a
+  -> (Literal -> a)
+  -> (CombType -> QName -> [a] -> a)
+  -> ([(VarIndex, TypeExpr, a)] -> a -> a)
+  -> ([(VarIndex, TypeExpr)] -> a -> a)
+  -> (a -> a -> a)
+  -> (CaseType -> a -> [b] -> a)
+  -> (Pattern -> a -> b)
+  -> (a -> TypeExpr -> a)
+  -> Expr
+  -> a
 trExpr var lit comb lt fr oR cas branch typed expr = case expr of
   Var n             -> var n
   Lit l             -> lit l
   Comb ct name args -> comb ct name (map f args)
-  Let bs e          -> lt (map (second f) bs) (f e)
+  Let bs e          -> lt (map (\(v,ty,e') -> (v,ty,f e')) bs) (f e)
   Free vs e         -> fr vs (f e)
   Or e1 e2          -> oR (f e1) (f e2)
   Case ct e bs      -> cas ct (f e) (map (\ (Branch p e') -> branch p (f e')) bs)
@@ -873,11 +871,11 @@ updCombs :: (CombType -> QName -> [Expr] -> Expr) -> Expr -> Expr
 updCombs comb = trExpr Var Lit comb Let Free Or Case Branch Typed
 
 -- |update all let expressions in given expression
-updLets :: ([(VarIndex,Expr)] -> Expr -> Expr) -> Expr -> Expr
+updLets :: ([(VarIndex, TypeExpr, Expr)] -> Expr -> Expr) -> Expr -> Expr
 updLets lt = trExpr Var Lit Comb lt Free Or Case Branch Typed
 
 -- |update all free declarations in given expression
-updFrees :: ([VarIndex] -> Expr -> Expr) -> Expr -> Expr
+updFrees :: ([(VarIndex, TypeExpr)] -> Expr -> Expr) -> Expr -> Expr
 updFrees fr = trExpr Var Lit Comb Let fr Or Case Branch Typed
 
 -- |update all or expressions in given expression
@@ -926,8 +924,8 @@ allVars :: Expr -> [VarIndex]
 allVars e = trExpr (:) (const id) comb lt fr (.) cas branch const e []
  where
   comb _ _ = foldr (.) id
-  lt bs e' = e' . foldr ((.) . (\ (n,ns) -> (n:) . ns)) id bs
-  fr vs e' = (vs++) . e'
+  lt bs e' = e' . foldr ((.) . (\ (n,_,ns) -> (n:) . ns)) id bs
+  fr vs e' = (map fst vs++) . e'
   cas _ e' bs = e' . foldr (.) id bs
   branch pat e' = (args pat++) . e'
   args pat | isConsPattern pat = patArgs pat
@@ -935,9 +933,9 @@ allVars e = trExpr (:) (const id) comb lt fr (.) cas branch const e []
 
 -- |rename all variables (also in patterns) in expression
 rnmAllVars :: Update Expr VarIndex
-rnmAllVars f = trExpr (Var . f) Lit Comb lt (Free . map f) Or Case branch Typed
+rnmAllVars f = trExpr (Var . f) Lit Comb lt (Free . map (\(v,ty) -> (f v, ty))) Or Case branch Typed
  where
-   lt = Let . map (first f)
+   lt = Let . map (\(v,ty,e) -> (f v, ty, e))
    branch = Branch . updPatArgs (map f)
 
 -- |update all qualified names in expression

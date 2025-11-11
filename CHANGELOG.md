@@ -1,6 +1,16 @@
 Change log for curry-frontend
 =============================
 
+Unreleased
+==========
+
+  Breaking changes for library users
+  ----------------------------------
+
+  * FlatCurry `Expr` now annotates local variables with types:
+    - `Free [(VarIndex, TypeExpr)]` (was `[VarIndex]`),
+    - `Let [(VarIndex, TypeExpr, Expr)]` (was `[(VarIndex, Expr)]`).
+
 Version 3.0.0
 =============
 

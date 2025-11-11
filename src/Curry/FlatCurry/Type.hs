@@ -273,9 +273,9 @@ data Expr
   --  with @n <= arity f@
   | Comb CombType QName [Expr]
   -- |Introduction of free local variables for an expression
-  | Free [VarIndex] Expr
+  | Free [(VarIndex, TypeExpr)] Expr
   -- |Local let-declarations
-  | Let [(VarIndex, Expr)] Expr
+  | Let [(VarIndex, TypeExpr, Expr)] Expr
   -- |Disjunction of two expressions
   -- (resulting from overlapping left-hand sides)
   | Or Expr Expr
