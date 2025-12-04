@@ -2,7 +2,7 @@ Change log for curry-frontend
 =============================
 
 Version 3.1.0
-==========
+=============
 
   Features
   --------
