@@ -1,6 +1,39 @@
 Change log for curry-frontend
 =============================
 
+Version 3.1.0
+=============
+
+  Features
+  --------
+  * Added support for attaching quick fix suggestions to error messages.
+    - Implemented quick fixes for unused variable warnings.
+    - Implemented quick fixes for case mode warnings.
+    - Implemented quick fixes for errors from missing function implementations.
+    - Implemented quick fixes for missing field warnings.
+  * The case mode of variables is now checked before the type checker, to improve
+    error messages related to wrongly (de-)capitalized names.
+
+  Bug fixes
+  ---------
+  * Fixed some instances where lazy pattern matches were discarded during desugaring.
+
+
+  Breaking changes for library users
+  ----------------------------------
+
+  * FlatCurry `Expr` now annotates local variables with types:
+    - `Free [(VarIndex, TypeExpr)]` (was `[VarIndex]`),
+    - `Let [(VarIndex, TypeExpr, Expr)]` (was `[(VarIndex, Expr)]`).
+
+  Library updates
+  ---------------
+  * Bumped stack resolver to 23.19
+
+  CI changes
+  ----------
+  * Switched to GitHub CI
+
 Version 3.0.0
 =============
 

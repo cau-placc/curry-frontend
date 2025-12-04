@@ -133,7 +133,7 @@ instance Pretty Expr where
   pPrintPrec p (Free    vs e)
     | null vs             = pPrintPrec p e
     | otherwise           = parenIf (p > 0) $ sep
-                            [ text "let" <+> list (map ppVarIndex vs)
+                            [ text "let" <+> list (map ppFreeVar vs)
                                          <+> text "free"
                             , text "in"  <+> pPrintPrec 0 e
                             ]
@@ -174,12 +174,16 @@ ppComb p qn es      = parenIf (p > 0)
                     $ hsep (ppPrefixOp qn : map (pPrintPrec 1) es)
 
 -- |pretty-print a list of declarations
-ppDecls :: [(VarIndex, Expr)] -> Doc
+ppDecls :: [(VarIndex, TypeExpr, Expr)] -> Doc
 ppDecls = vcat . map ppDecl
 
 -- |pretty-print a single declaration
-ppDecl :: (VarIndex, Expr) -> Doc
-ppDecl (v, e) = ppVarIndex v <+> equals <+> pPrintPrec 0 e
+ppDecl :: (VarIndex, TypeExpr, Expr) -> Doc
+ppDecl (v, ty, e) = ppVarIndex v <+> text "::" <+> pPrintPrec 0 ty
+                                 <+> equals <+> pPrintPrec 0 e
+
+ppFreeVar :: (VarIndex, TypeExpr) -> Doc
+ppFreeVar (v, ty) = ppVarIndex v <+> text "::" <+> pPrintPrec 0 ty
 
 instance Pretty CaseType where
   pPrint Rigid = text "case"
