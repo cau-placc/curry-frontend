@@ -32,7 +32,7 @@ Version 3.1.0
 
   CI changes
   ----------
-  * Switched to Github CI
+  * Switched to GitHub CI
 
 Version 3.0.0
 =============
