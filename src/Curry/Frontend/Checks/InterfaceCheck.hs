@@ -65,6 +65,7 @@ import Curry.Frontend.Base.Types
 import Curry.Frontend.Base.Kinds
 
 import Curry.Frontend.Env.Class
+import Curry.Frontend.Env.Determinism
 import Curry.Frontend.Env.Instance
 import Curry.Frontend.Env.OpPrec
 import Curry.Frontend.Env.TypeConstructor
@@ -153,7 +154,7 @@ checkImport (ITypeDecl _ tc k tvs ty _) = do
         = Just ok
       check _ = Nothing
   checkTypeInfo "synonym type" check tc tc
-checkImport (IFunctionDecl _ f (Just tv) n ty dty _) = do
+checkImport (IFunctionDecl _ f (Just tvs) n ty dty _) = do
   m <- getModuleIdent
   let check (Value f' cm' n' (ForAll _ ty')) =
         f == f' && isJust cm' && n' == n &&
@@ -170,11 +171,13 @@ checkImport (IFunctionDecl _ f Nothing n ty dty _) = do
       check _ = False
       checkD dty' = toDetType dty == dty'
   checkValueInfo "function" check f f
-checkImport (HidingClassDecl _ cx cls k _) = do
+  checkDetInfo "function" checkD f f
+checkImport (HidingClassDecl _ cx cls k clsvars funDeps _) = do
   clsEnv <- getClassEnv
   let check (TypeClass cls' k' _)
-        | cls == cls' && toKind' k 0 == k' &&
-          [cls'' | Constraint _ cls'' _ <- cx] == superClasses cls' clsEnv
+        | cls == cls' && toClassKind k (length clsvars) == k' &&
+          toPredList clsvars OPred cx == superClasses cls' clsEnv &&
+          map (toFunDep clsvars) funDeps == classFunDeps cls' clsEnv
         = Just ok
       check _ = Nothing
   checkTypeInfo "hidden type class" check cls cls
@@ -189,13 +192,13 @@ checkImport (IClassDecl _ cx cls k clsvars funDeps ms _ _) = do
                      , toDetType <$> imethodDetTypeAnn m)) ms ==
             map (\f -> (methodName f, methodArity f
                        , methodDefaultDet f, methodDetSchemeAnn f)) fs
-        = Just $ mapM_ (checkMethodImport cls clsvar) ms
+        = Just $ mapM_ (checkMethodImport cls clsvars) ms
       check _ = Nothing
   checkTypeInfo "type class" check cls cls
 checkImport (IInstanceDecl _ cx cls tys is m _) =
-  checkInstInfo check cls (cls, typeConstr ty) m
+  checkInstInfo check cls (cls, tys') m
   where PredTypes ps tys' = toPredTypes [] OPred cx tys
-        check ps' is' = ps == ps' && sort is == sort is' && sort (map transDet is) == sort (map transDet is')
+        check ps' is' = ps == ps' && sort (map transDet is) == sort (map transDet is')
         transDet (a, b, dty) = (a, b, toDetType dty)
 
 checkConstrImport :: QualIdent -> [Ident] -> ConstrDecl -> IC ()
@@ -248,7 +251,7 @@ safeHead [] = Nothing
 safeHead (x:_) = Just x
 
 checkMethodImport :: QualIdent -> [Ident] -> IMethodDecl -> IC ()
-checkMethodImport qcls clsvars (IMethodDecl _ f _ qty ddty mdty) =
+checkMethodImport qcls clsvars (IMethodDecl _ f _ qty ddty mdty) = do
   checkValueInfo "method" check f qf
   checkDetInfo "method" checkD f qf
   checkMaybeDetInfo "method" checkM qcls f qf
@@ -280,9 +283,9 @@ checkTypeInfo what check p tc = do
         _    -> internalError "checkTypeInfo"
   checkImported checkInfo tc
 
-checkInstInfo :: HasSpanInfo s => (PredSet -> [(Ident, Maybe Int, DetExpr)] -> Bool) -> s -> InstIdent
+checkInstInfo :: HasSpanInfo s => (PredList -> [(Ident, Maybe Int, DetExpr)] -> Bool) -> s -> InstIdent
               -> Maybe ModuleIdent -> IC ()
-checkInstInfo check p i@(qcls, qtc) mm = do
+checkInstInfo check p i@(qcls, tys) mm = do
   inEnv <- getInstEnv
   let checkInfo m _ = case lookupInstExact i inEnv of
         Just (_, m', ps, is)
@@ -295,15 +298,9 @@ checkInstInfo check p i@(qcls, qtc) mm = do
   where
     getDetInfo (i', arity) = do
       dEnv <- getDetEnv
-      let qtc' = case qidIdent qtc of
-            tc | tc == listId  -> qualQualify preludeMIdent qtc
-               | tc == arrowId -> qualQualify preludeMIdent qtc
-               | tc == unitId  -> qualQualify preludeMIdent qtc
-               | isTupleId tc  -> qualQualify preludeMIdent qtc
-               | otherwise     -> qtc
-      case Map.lookup (II qcls qtc' (qualifyLike qcls i')) dEnv of
+      case Map.lookup (II qcls (qualifyLike qcls i') tys) dEnv of
         Just d' -> return (i', Just arity, toDetExpr d')
-        Nothing -> internalError $ "checkInstInfo" ++ render (pPrint (i', qcls, qtc))
+        Nothing -> internalError $ "checkInstInfo" ++ render (pPrint (i', qcls, tys))
 
 checkValueInfo :: HasSpanInfo a => String -> (ValueInfo -> Bool) -> a
                -> QualIdent -> IC ()

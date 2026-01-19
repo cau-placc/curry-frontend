@@ -23,10 +23,11 @@
 module Curry.Frontend.Checks.InterfaceSyntaxCheck (intfSyntaxCheck) where
 
 import           Prelude hiding ((<>), head)
-import           Control.Monad            (filterM, unless, when)
+import           Control.Monad            (filterM, when)
 import qualified Control.Monad.State as S
 import           Data.List                (nub, partition)
 import           Data.List.NonEmpty       (head)
+import           Data.Maybe               (fromMaybe)
 import qualified Data.Map as Map          (Map, empty, insert, lookup)
 import qualified Data.Set as Set          ( Set, fromList, isSubsetOf, size
                                           , toAscList, union)
@@ -34,7 +35,7 @@ import qualified Data.Set as Set          ( Set, fromList, isSubsetOf, size
 import Curry.Frontend.Base.Expr
 import Curry.Frontend.Base.Messages       (Message, spanInfoMessage, internalError)
 import Curry.Frontend.Base.TopEnv
-import Curry.Frontend.Base.Utils          (findMultiples)
+import Curry.Frontend.Base.Utils          (findMultiples, fst3)
 
 import           Curry.Frontend.Env.TypeConstructor
 import           Curry.Frontend.Env.Type
@@ -77,7 +78,7 @@ intfSyntaxCheck (Interface n is ds o) = (Interface n is ds' o, reverse $ errors 
 -- The latter must not occur in type expressions in interfaces.
 
 bindType :: IDecl -> TypeEnv -> TypeEnv
-bindType (IInfixDecl              _ _ _ _ _) = id
+bindType (IInfixDecl {})                    = id
 bindType (HidingDataDecl        _ tc _ _ o) = qualBindTopEnv tc' (Data tc' [])
   where tc' = applyOriginPragma o tc
 bindType (IDataDecl        _ tc _ _ cs _ o) = qualBindTopEnv tc' $ Data tc' (map constrId cs)
@@ -86,12 +87,12 @@ bindType (INewtypeDecl     _ tc _ _ nc _ o) = qualBindTopEnv tc' $ Data tc' [nco
   where tc' = applyOriginPragma o tc
 bindType (ITypeDecl           _ tc _ _ _ o) = qualBindTopEnv tc' (Alias tc')
   where tc' = applyOriginPragma o tc
-bindType (IFunctionDecl         _ _ _ _ _ _) = id
+bindType (IFunctionDecl {})                 = id
 bindType (HidingClassDecl  _ _ cls _ _ _ o) = qualBindTopEnv cls' $ Class cls' []
   where cls' = applyOriginPragma o cls
 bindType (IClassDecl _ _ cls _ _ _ ms hs o) = qualBindTopEnv cls' $ Class cls' (filter (`notElem` hs) (map imethod ms))
   where cls' = applyOriginPragma o cls
-bindType (IInstanceDecl      _ _ _ _ _ _ _) = id
+bindType (IInstanceDecl                 {}) = id
 
 -- Adds all information regarding functional dependencies to the simple
 -- class env
@@ -125,8 +126,8 @@ checkIDecl (INewtypeDecl p tc k tvs nc hs o) = do
 checkIDecl (ITypeDecl p tc k tvs ty o) = do
   checkTypeLhs tvs
   (\ty' -> ITypeDecl p tc k tvs ty' o) <$> checkClosedType tvs ty
-checkIDecl (IFunctionDecl p f cm n qty o) =
-  (\qty' -> IFunctionDecl p f cm n qty' o) <$> checkQualType qty
+checkIDecl (IFunctionDecl p f cm n qty dty o) =
+  (\qty' -> IFunctionDecl p f cm n qty' dty o) <$> checkQualType qty
 checkIDecl (HidingClassDecl p cx qcls k clsvars funDeps o) = do
   checkTypeVars "hiding class declaration" clsvars
   cx' <- checkClosedContext clsvars cx
@@ -143,7 +144,7 @@ checkIDecl (IInstanceDecl p cx qcls inst is m o) = do
   checkClass qcls
   (cx', inst') <- checkQualTypes cx inst
   mapM_ checkInstanceType inst'
-  mapM_ (report . errMultipleImplementation . head) $ findMultiples $ map fst is
+  mapM_ (report . errMultipleImplementation . head) $ findMultiples $ map fst3 is
   return $ IInstanceDecl p cx' qcls inst' is m o
 
 checkHiddenType :: QualIdent -> [Ident] -> [Ident] -> ISC ()
@@ -187,8 +188,8 @@ checkNewConstrDecl tvs (NewRecordDecl p c (l, ty)) = do
   return $ NewRecordDecl p c (l, ty')
 
 checkIMethodDecl :: IMethodDecl -> ISC IMethodDecl
-checkIMethodDecl (IMethodDecl p f a qty) =
-  IMethodDecl p f a <$> checkQualType qty
+checkIMethodDecl (IMethodDecl p f a qty ddty mdty) =
+  (\qty' -> IMethodDecl p f a qty' ddty mdty) <$> checkQualType qty
 
 -- taken from Leif-Erik Krueger
 checkInstanceType :: InstanceType -> ISC ()
@@ -226,8 +227,7 @@ checkConstraint :: Constraint -> ISC Constraint
 checkConstraint c@(Constraint spi qcls tys) = do
   checkClass qcls
   when (any containsForall tys) $ report $ errIllegalConstraint c
-  Constraint spi qcls `liftM` mapM checkType tys
-
+  Constraint spi qcls <$> mapM checkType tys
 
 checkClosedFunDep :: [Ident] -> FunDep -> ISC Bool
 checkClosedFunDep clsvars (FunDep _ ltvs rtvs) = do
@@ -331,9 +331,7 @@ funDepCoverage cx tvs = do
 
 
 lookupFunDeps :: QualIdent -> SimpleClassEnv -> [CE.FunDep]
-lookupFunDeps qcls simpleClsEnv = case Map.lookup qcls simpleClsEnv of
-  Nothing  -> []
-  Just fds -> fds
+lookupFunDeps qcls simpleClsEnv = fromMaybe [] (Map.lookup qcls simpleClsEnv)
 
 filterIndices :: [a] -> [Int] -> [a]
 filterIndices xs is = filterIndices' xs is 0

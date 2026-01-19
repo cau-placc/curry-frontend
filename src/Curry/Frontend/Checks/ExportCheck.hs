@@ -153,9 +153,9 @@ checkThing' f tcExport = do
   case qualLookupValueUnique m f tyEnv of
     []  -> justTcOr errUndefinedName
     [v] -> case v of
-      Value _ _ _ _ -> ok
-      Label   _ _ _ -> report $ errOutsideTypeLabel f (getTc v)
-      _             -> justTcOr $ flip errOutsideTypeConstructor (getTc v)
+      Value {} -> ok
+      Label {} -> report $ errOutsideTypeLabel f (getTc v)
+      _        -> justTcOr $ flip errOutsideTypeConstructor (getTc v)
     fs  -> report (errAmbiguousName f fs)
   where
   justTcOr errFun = maybe (report $ errFun f) (const ok) tcExport
@@ -194,17 +194,17 @@ checkTypeAll tc = do
   m     <- getModuleIdent
   tcEnv <- getTyConsEnv
   case qualLookupTypeInfoUnique m tc tcEnv of
-    []                   -> report (errUndefinedTypeOrClass tc)
-    [DataType     _ _ _] -> ok
-    [RenamingType _ _ _] -> ok
-    [TypeClass    _ _ _] -> ok
-    [_]                  -> report (errNonDataTypeOrTypeClass tc)
-    ts                   -> report (errAmbiguousType tc ts)
+    []                 -> report (errUndefinedTypeOrClass tc)
+    [DataType     {} ] -> ok
+    [RenamingType {} ] -> ok
+    [TypeClass    {} ] -> ok
+    [_]                -> report (errNonDataTypeOrTypeClass tc)
+    ts                 -> report (errAmbiguousType tc ts)
 
 checkModule :: ModuleIdent -> ECM ()
 checkModule em = do
-  isLocal   <- (em ==)         <$> getModuleIdent
-  isForeign <- (Set.member em) <$> getImportedModules
+  isLocal   <- (em ==)       <$> getModuleIdent
+  isForeign <- Set.member em <$> getImportedModules
   unless (isLocal || isForeign) $ report $ errModuleNotImported em
 
 -- Check whether two entities of the same kind (type or constructor/function)
@@ -237,7 +237,7 @@ checkNonUniqueness es = map errMultipleType (findMultiples types )
 expand :: ModuleIdent -> AliasEnv -> TCEnv -> ValueEnv -> Maybe ExportSpec
        -> [Export]
 expand m aEnv tcEnv tyEnv spec
-  = fst $ runECM ((joinExports . canonExports tcEnv) <$> expandSpec spec)
+  = fst $ runECM (joinExports . canonExports tcEnv <$> expandSpec spec)
                  m aEnv tcEnv tyEnv
 
 -- While checking all export specifications, the compiler expands
@@ -309,8 +309,8 @@ expandTypeAll tc = do
 
 expandModule :: ModuleIdent -> ECM [Export]
 expandModule em = do
-  isLocal   <- (em ==)         <$> getModuleIdent
-  isForeign <- (Set.member em) <$> getImportedModules
+  isLocal   <- (em ==)       <$> getModuleIdent
+  isForeign <- Set.member em <$> getImportedModules
   locals    <- if isLocal   then expandLocalModule       else return []
   foreigns  <- if isForeign then expandImportedModule em else return []
   return $ locals ++ foreigns
@@ -400,9 +400,9 @@ joinType export                     _ = internalError $
   currentModuleName ++ ".joinType: " ++ show export
 
 joinFun :: Export -> Set.Set QualIdent -> Set.Set QualIdent
-joinFun (Export           _ f) fs = f `Set.insert` fs
-joinFun (ExportTypeWith _ _ _) fs = fs
-joinFun export                  _ = internalError $
+joinFun (Export         _ f) fs = f `Set.insert` fs
+joinFun (ExportTypeWith {} ) fs = fs
+joinFun export                _ = internalError $
   currentModuleName ++ ".joinFun: " ++ show export
 
 -- ---------------------------------------------------------------------------
@@ -412,14 +412,14 @@ joinFun export                  _ = internalError $
 elements :: TypeInfo -> [Ident]
 elements (DataType      _ _ cs) = visibleElems cs
 elements (RenamingType   _ _ c) = visibleElems [c]
-elements (AliasType    _ _ _ _) = []
+elements (AliasType        {} ) = []
 elements (TypeClass     _ _ ms) = visibleMethods ms
 elements (TypeVar            _) =
   error "Checks.ExportCheck.elements: type variable"
 
 -- get visible constructor and label identifiers for given constructor
 visibleElems :: [DataConstr] -> [Ident]
-visibleElems cs = map constrIdent cs ++ (nub (concatMap recLabels cs))
+visibleElems cs = map constrIdent cs ++ nub (concatMap recLabels cs)
 
 -- get class method names
 visibleMethods :: [ClassMethod] -> [Ident]
@@ -462,10 +462,10 @@ errNonDataTypeOrTypeClass tc = spanInfoMessage tc $ hsep $ map text
   [escQualName tc, "is not a data type or type class"]
 
 errOutsideTypeConstructor :: QualIdent -> QualIdent -> Message
-errOutsideTypeConstructor c tc = errOutsideTypeExport "Data constructor" c tc
+errOutsideTypeConstructor = errOutsideTypeExport "Data constructor"
 
 errOutsideTypeLabel :: QualIdent -> QualIdent -> Message
-errOutsideTypeLabel l tc = errOutsideTypeExport "Label" l tc
+errOutsideTypeLabel = errOutsideTypeExport "Label"
 
 errOutsideTypeExport :: String -> QualIdent -> QualIdent -> Message
 errOutsideTypeExport what q tc = spanInfoMessage q

@@ -84,8 +84,8 @@ findCurry opts s = do
 makeCurry :: Options -> [(ModuleIdent, Source)] ->  CYIO ()
 makeCurry opts srcs = mapM_ process' (zip [1 ..] srcs)
   where
-  total    = length srcs
-  tgtDir m = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
+  total  = length srcs
+  tgtDir = addOutDirModule (optUseOutDir opts) (optOutDir opts)
 
   process' :: (Int, (ModuleIdent, Source)) -> CYIO ()
   process' (n, (m, Source fn ps is)) = do
@@ -160,14 +160,17 @@ process opts idx m fn deps
   | optForce opts = compile
   | otherwise     = smake (tgtDir (interfName fn) : destFiles) deps compile skip
   where
-  skip    = status opts $ compMessage idx (9, 16) "Skipping" m (fn, head destFiles)
+  skip    = status opts $ compMessage idx (9, 16) "Skipping" m (fn, destFile0)
   compile = do
-    status opts $ compMessage idx (9, 16) "Compiling" m (fn, head destFiles)
+    status opts $ compMessage idx (9, 16) "Compiling" m (fn, destFile0)
     compileModule opts m fn
 
   tgtDir = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
 
-  destFiles = [ gen fn | (t, gen) <- nameGens, t `elem` optTargetTypes opts]
+  (destFile0, destFiles) =
+    case [ gen fn | (t, gen) <- nameGens, t `elem` optTargetTypes opts] of
+      [] -> error "No output destination found"
+      (x:xs) -> (x, x:xs)
   nameGens  =
     [ (Tokens              , tgtDir . tokensName         )
     , (Comments            , tgtDir . commentsName       )

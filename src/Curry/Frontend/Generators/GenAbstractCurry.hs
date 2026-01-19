@@ -40,6 +40,8 @@ import Curry.Frontend.Base.TypeSubst
 
 import Curry.Frontend.Env.Value       (ValueEnv, ValueInfo (..), qualLookupValue)
 import Curry.Frontend.Env.OpPrec      (mkPrec)
+import Curry.Frontend.Env.TypeConstructor (TCEnv)
+import Curry.Frontend.Env.Determinism (DetEnv, toInstanceIdent, IdentInfo (..))
 
 import Curry.Frontend.CompilerEnv
 
@@ -80,12 +82,12 @@ trDefaultDecl (DefaultDecl _ tys) = (\tys' -> [CDefaultDecl tys'])
   <$> mapM trTypeExpr tys
 trDefaultDecl _                   = return []
 
-trClassDecl :: Decl PredType -> GAC [CClassDecl]
+trClassDecl :: Decl (PredType, DetType) -> GAC [CClassDecl]
 trClassDecl (ClassDecl _ _ cx cls tvs fds ds) =
   (\cls' v' cx' tvs' fds' ds' -> [CClass cls' v' cx' tvs' fds' ds'])
     <$> trGlobalIdent cls <*> getTypeVisibility cls <*> trContext cx
     <*> mapM getTVarIndex tvs <*> mapM trFunDep fds
-    <*> concatMapM (trClassMethodDecl sigs fs) ds
+    <*> concatMapM (trClassMethodDecl cls sigs fs) ds
   where fs = [f | FunctionDecl _ _ f _ <- ds]
         sigs = signatures ds
 trClassDecl _ = return []
@@ -124,15 +126,16 @@ trInstanceDecl _ = return []
 
 -- Again, we use the equation's arity for function declarations instead of
 -- the one from the value.
-trInstanceMethodDecl :: QualIdent -> TypeExpr -> Decl (PredType, DetType) -> GAC CFuncDecl
+trInstanceMethodDecl :: QualIdent -> [InstanceType] -> Decl (PredType, DetType)
+                     -> GAC CFuncDecl
 trInstanceMethodDecl qcls tys (FunctionDecl _ _ f eqs@(eq:_)) = do
   uacy <- S.gets untypedAcy
   qty <- if uacy
            then return $ QualTypeExpr NoSpanInfo [] $
                            ConstructorType NoSpanInfo prelUntyped
            else getQualType' (qualifyLike qcls $ unRenameIdent f)
-  CFunc <$> trLocalIdent f <*> pure (eqnArity $ head eqs) <*> pure Public
-        <*> trInstanceMethodType ty qty <*> getInstDetType qcls ty f <*> mapM trEquation eqs
+  CFunc <$> trLocalIdent f <*> pure (eqnArity eq) <*> pure Public
+        <*> trInstanceMethodType tys qty <*> getInstDetType qcls (map (toType []) tys) f <*> mapM trEquation eqs
 trInstanceMethodDecl _ _ _ = internalError "GenAbstractCurry.trInstanceMethodDecl"
 
 -- Transforms a class method type into an instance method's type by replacing
@@ -221,9 +224,9 @@ trInfixDecl (InfixDecl _ fix mprec ops) = mapM trInfix (reverse ops)
 trInfixDecl _ = return []
 
 trFuncDecl :: Bool -> Decl (PredType, DetType) -> GAC [CFuncDecl]
-trFuncDecl global (FunctionDecl  _ (pty, dty) f eqs)
+trFuncDecl global (FunctionDecl  _ (pty, dty) f eqs@(eq:_))
   =   (\f' a v ty dy rs -> [CFunc f' a v ty dy rs])
-  <$> trFuncName global f <*> pure (eqnArity $ head eqs)
+  <$> trFuncName global f <*> pure (eqnArity eq)
   <*> getVisibility f <*> getQualType f pty
   <*> (if global then getDetType f else return $ trDetType dty)
   <*> mapM trEquation eqs
@@ -247,8 +250,8 @@ trFuncName :: Bool -> Ident -> GAC QName
 trFuncName global = if global then trGlobalIdent else trLocalIdent
 
 trEquation :: Equation (PredType, DetType) -> GAC CRule
-trEquation (Equation _ lhs rhs) = inNestedScope
-                                $ CRule <$> trLhs lhs <*> trRhs rhs
+trEquation (Equation _ _ lhs rhs) = inNestedScope
+                                  $ CRule <$> trLhs lhs <*> trRhs rhs
 
 trLhs :: Lhs a -> GAC [CPattern]
 trLhs = mapM trPat . snd . flatLhs
@@ -279,7 +282,7 @@ insertDeclLhs s@(TypeSig {})             = do
 insertDeclLhs _                          = return ()
 
 trLocalDecl :: Decl (PredType, DetType) -> GAC [CLocalDecl]
-trLocalDecl f@(FunctionDecl    _ _ _ _) = map CLocalFunc <$> trFuncDecl False f
+trLocalDecl f@FunctionDecl {}           = map CLocalFunc <$> trFuncDecl False f
 trLocalDecl f@(ExternalDecl        _ _) = map CLocalFunc <$> trFuncDecl False f
 trLocalDecl (PatternDecl       _ p rhs) = (\p' rhs' -> [CLocalPat p' rhs'])
                                           <$> trPat p <*> trRhs rhs
@@ -579,12 +582,12 @@ getClassDetType cls f = do
     Just (Forall _ dty) -> return $ trDetType dty
     Nothing  -> internalError $ "GenAbstractCurry.getClassDetType: " ++ show f
 
-getInstDetType :: QualIdent -> TypeExpr -> Ident -> GAC CDetType
-getInstDetType qcls' ty f = do
+getInstDetType :: QualIdent -> [Type] -> Ident -> GAC CDetType
+getInstDetType qcls' tys f = do
   e <- S.get
   let mid = moduleId e
       qcls = qualQualify mid qcls'
-  case Map.lookup (toInstanceIdent mid (tcEnv e) qcls ty (QI $ qualifyLike qcls f)) (dEnv e) of
+  case Map.lookup (toInstanceIdent qcls tys (QI $ qualifyLike qcls f)) (dEnv e) of
     Just (Forall _ dty) -> return $ trDetType dty
     Nothing  -> internalError $ "GenAbstractCurry.getInstDetType: " ++ show f
 

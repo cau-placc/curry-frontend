@@ -43,7 +43,6 @@ import Curry.Frontend.Base.Expr
 import Curry.Frontend.Base.Messages               (internalError)
 import Curry.Frontend.Base.Types                  ( charType, floatType
                                                   , intType, stringType
-                                                  , toType
                                                   )
 import qualified Curry.Frontend.Base.Types as CS
 import Curry.Frontend.Base.Subst
@@ -208,7 +207,9 @@ completeConsAlts addFail ea ce alts = do
               TypeConstructor qid tys
                 -> TypeConstructor qid $ map TypeVariable [0 .. length tys - 1]
               _ -> internalError "CaseCompletion.completeConsAlt: not a type constructor"
-  patTy   = let Alt pat _ = head consAlts in typeOf pat
+  patTy   = case consAlts of
+              Alt pat _ : _ ->  typeOf pat
+              _             -> internalError "CaseCompletion.completeConsAlt: no constructor patterns"
   tySubst = matchType dataTy patTy idSubst
 
   -- generate a new constructor pattern
@@ -253,11 +254,13 @@ completeConsAlts addFail ea ce alts = do
 --                                    False -> <default_expr>
 -- If the default expression is missing, @failed@ is used instead.
 completeLitAlts :: Eval -> Expression -> [Alt] -> CCM Expression
-completeLitAlts ea ce alts = do
+completeLitAlts _  _  []             = internalError
+  "CaseCompletion.completeLitAlts: empty alternative list"
+completeLitAlts ea ce alts@(alt:_) = do
   x <- freshIdent
   mkBinding x ce <$> nestedCases x alts
   where
-  nestedCases _ []              = return $ failedExpr (typeOf $ head alts)
+  nestedCases _ []              = return $ failedExpr (typeOf alt)
   nestedCases x (Alt p ae : as) = case p of
     LiteralPattern ty l  -> do
       as' <- nestedCases x as
@@ -426,10 +429,11 @@ getComplConstrs (Module mid _ ds) menv tcEnv cs@(c:_)
 -- Find complementary constructors within the declarations of the
 -- current module
 getCCFromDecls :: [QualIdent] -> [Decl] -> [(QualIdent, [Type])]
-getCCFromDecls cs ds = complementary cs cinfos
+getCCFromDecls []     _  = []
+getCCFromDecls (c:cs) ds = complementary cs cinfos
   where
   cinfos = map constrInfo
-         $ maybe [] extractConstrDecls (find (`declares` head cs) ds)
+         $ maybe [] extractConstrDecls (find (`declares` c) ds)
 
   decl `declares` qid = case decl of
     DataDecl    _ _ cs' -> any (`declaresConstr` qid) cs'
@@ -445,10 +449,11 @@ getCCFromDecls cs ds = complementary cs cinfos
 -- Find complementary constructors within the module environment
 getCCFromIDecls :: ModuleIdent -> [QualIdent] -> TCEnv -> CS.Interface
                 -> [(QualIdent, [Type])]
-getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds _) = complementary cs cinfos
+getCCFromIDecls _   []     _     _                       = []
+getCCFromIDecls mid (c:cs) tcEnv (CS.Interface _ _ ds _) = complementary cs cinfos
   where
   cinfos = map (uncurry constrInfo)
-         $ maybe [] extractConstrDecls (find (`declares` head cs) ds)
+         $ maybe [] extractConstrDecls (find (`declares` c) ds)
 
   decl `declares` qid = case decl of
     CS.IDataDecl    _ _ _ _ cs' _ _ -> any (`declaresConstr` qid) cs'

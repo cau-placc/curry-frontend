@@ -12,6 +12,7 @@
     This module contains the generation of a type-annotated 'FlatCurry'
     program term for a given module in the intermediate language.
 -}
+{-# LANGUAGE TupleSections #-}
 module Curry.Frontend.Generators.GenAnnotatedFlatCurry (genAnnotatedFlatCurry) where
 
 import           Control.Monad              ((<=<))
@@ -34,7 +35,7 @@ import qualified Curry.Syntax as CS
 import Curry.Frontend.Base.Messages       (internalError)
 import Curry.Frontend.Base.NestEnv        ( NestEnv, emptyEnv, bindNestEnv, lookupNestEnv
                                           , nestEnv, unnestEnv )
-import Curry.Frontend.Base.Types
+import Curry.Frontend.Base.Types          (Type)
 
 import Curry.Frontend.CompilerEnv
 import Curry.Frontend.Env.TypeConstructor (TCEnv)
@@ -145,7 +146,7 @@ patchPrelude p@(AProg n _ ts fs os)
 primTypes :: [TypeDecl]
 primTypes =
   [ Type arrow Public [(0, KStar), (1, KStar)] []
-  , Type unit Public [] [(Cons unit 0 Public [])]
+  , Type unit Public [] [Cons unit 0 Public []]
   , Type nil Public [(0, KStar)] [ Cons nil  0 Public []
                                  , Cons cons 2 Public [TVar 0, TCons nil [TVar 0]]
                                  ]
@@ -231,7 +232,7 @@ getModuleIdent = S.gets modIdent
 
 -- Retrieve imports
 getImports :: [ModuleIdent] -> FlatState [String]
-getImports imps = (nub . map moduleName . (imps ++)) <$> S.gets imports
+getImports imps = S.gets ((nub . map moduleName . (imps ++)) . imports)
 
 -- -----------------------------------------------------------------------------
 -- Stateful part, used for translation of rules and expressions
@@ -252,7 +253,7 @@ inNestedEnv act = do
 -- Generates a new variable index for an identifier
 newVar :: IL.Type -> Ident -> FlatState (VarIndex, TypeExpr)
 newVar ty i = do
-  idx <- (+1) <$> S.gets nextVar
+  idx <- S.gets ((+1) . nextVar)
   S.modify $ \ s -> s { nextVar = idx, varMap = bindNestEnv i idx (varMap s) }
   ty' <- trType ty
   return (idx, ty')
@@ -386,14 +387,14 @@ trAExpr (IL.Exist       v ty e) = inNestedEnv $ do
   e' <- trAExpr e
   ty' <- trType (IL.typeOf e)
   return $ case e' of AFree ty'' vs e'' -> AFree ty'' (v' : vs) e''
-                      _                 -> AFree ty'  (v' : []) e'
+                      _                 -> AFree ty'  [v']      e'
 trAExpr (IL.Let (IL.Binding v b) e) = inNestedEnv $ do
   v' <- newVar (IL.typeOf b) v
   b' <- trAExpr b
   e' <- trAExpr e
   ty' <- trType $ IL.typeOf e
   return $ case e' of ALet ty'' bs e'' -> ALet ty'' ((v', b'):bs) e''
-                      _                -> ALet ty'  ((v', b'):[]) e'
+                      _                -> ALet ty'  [(v', b')]    e'
 trAExpr (IL.Letrec   bs e) = inNestedEnv $ do
   let (vs, es) = unzip [ ((IL.typeOf b, v), b) | IL.Binding v b <- bs]
   ALet <$> trType (IL.typeOf e)
@@ -430,7 +431,7 @@ trPat :: IL.ConstrTerm -> FlatState (APattern TypeExpr)
 trPat (IL.LiteralPattern        ty l) = ALPattern <$> trType ty <*> trLiteral l
 trPat (IL.ConstructorPattern ty c vs) = do
   qty <- trType $ foldr (IL.TypeArrow . fst) ty vs
-  APattern  <$> trType ty <*> ((\q -> (q, qty)) <$> trQualIdent c) <*> mapM (uncurry newVar) vs
+  APattern  <$> trType ty <*> ((, qty) <$> trQualIdent c) <*> mapM (uncurry newVar) vs
 trPat (IL.VariablePattern        _ _) = internalError "GenTypeAnnotatedFlatCurry.trPat"
 
 -- Convert a case type
@@ -521,7 +522,7 @@ instance Normalize a => Normalize (ARule a) where
   normalize (AExternal ty    s) = flip AExternal s <$> normalize ty
 
 normalizeTuple :: Normalize b => (a, b) -> NormState (a, b)
-normalizeTuple (a, b) = (,) <$> pure a <*> normalize b
+normalizeTuple (a, b) = (,) a <$> normalize b
 
 instance Normalize a => Normalize (AExpr a) where
   normalize (AVar  ty       v) = flip AVar  v  <$> normalize ty

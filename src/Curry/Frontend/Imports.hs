@@ -34,6 +34,7 @@ import Curry.Frontend.Base.TopEnv
 import Curry.Frontend.Base.Types
 import Curry.Frontend.Base.TypeSubst
 
+import Curry.Frontend.CompilerEnv
 import Curry.Frontend.Env.Class
 import Curry.Frontend.Env.Instance
 import Curry.Frontend.Env.Interface
@@ -103,12 +104,12 @@ importInterface m q is (Interface mid _ ds o) env = env'
   where
   mid' = applyOriginPragma o mid
   env' = env
-    { opPrecEnv = importEntities (precs  mid) m q vs id              ds $ opPrecEnv env
-    , tyConsEnv = importEntities (types  mid) m q ts (importData vs) ds $ tyConsEnv env
-    , valueEnv  = importEntities (values mid) m q vs id              ds $ valueEnv  env
-    , classEnv  = importClasses   mid                                ds $ classEnv  env
-    , instEnv   = importInstances mid                                ds $ instEnv   env
-    , detEnv    = importDetEnv    mid                                ds $ detEnv    env
+    { opPrecEnv = importEntities (precs  mid') m q vs id              ds $ opPrecEnv env
+    , tyConsEnv = importEntities (types  mid') m q ts (importData vs) ds $ tyConsEnv env
+    , valueEnv  = importEntities (values mid') m q vs id              ds $ valueEnv  env
+    , classEnv  = importClasses   mid'                                ds $ classEnv  env
+    , instEnv   = importInstances mid'                                ds $ instEnv   env
+    , detEnv    = importDetEnv    mid'                                ds $ detEnv    env
     }
   ts = isVisible addType  is
   vs = isVisible addValue is
@@ -161,21 +162,19 @@ importMethod isVisible' mthd
 importClasses :: ModuleIdent -> [IDecl] -> ClassEnv -> ClassEnv
 importClasses m ds ce = foldr (bindClass dsMap m) ce ds
   where
-    dsMap = Map.fromList [(i, d) | d@(IFunctionDecl _ i _ _ _ _) <- ds]
+    dsMap = Map.fromList [(i, d) | d@(IFunctionDecl _ i _ _ _ _ _) <- ds]
 
 bindClass :: Map.Map QualIdent IDecl -> ModuleIdent -> IDecl -> ClassEnv -> ClassEnv
-bindClass dsMap m (HidingClassDecl _ cx cls _ _ ids) =
-  bindClassInfo (applyOriginPragma o (qualQualify m cls)) (sclss, ms)
-  where qcls = qualQualify m cls
-        sclss = map (\(Constraint _ scls _) -> qualQualify m scls) cx
-        ms = map (\i -> (i, False, False, getDet i)) ids
-        getDet i = case Map.lookup (qualifyLike qcls i) dsMap of
-          Just (IFunctionDecl _ _ _ _ _ de) -> Just $ toDetType de
-          _                                 -> internalError "Imports.bindClass"
-bindClass _ m (IClassDecl _ cx cls _ _ ds ids) =
+bindClass dsMap m (HidingClassDecl p cx cls k tvs fds o) =
+  bindClass dsMap m (IClassDecl p cx cls k tvs fds [] [] o)
+bindClass _ m (IClassDecl _ cx cls _ tvs fds ds ids o) =
   bindClassInfo (applyOriginPragma o (qualQualify m cls)) (ar, sclss, fds', ms)
-  where sclss = map (\(Constraint _ scls _) -> qualQualify m scls) cx
-        ms = map (\d -> (imethod d, isJust $ imethodArity d, isVis d, toDetType <$> imethodDetTypeAnn d)) ds
+  where ar = length tvs
+        sclss = toQualPredList m tvs OPred cx
+        fds' = map (toFunDep tvs) fds
+        -- Add all methods to the class environment, but remember which
+        -- methods are visible in the module.
+        ms = map (\d -> (imethod d, (isJust $ imethodArity d, isVis d, toDetType <$> imethodDetTypeAnn d))) ds
         isVis (IMethodDecl _ idt _ _ _ _) = idt `notElem` ids
 bindClass _ _ _ = id
 
@@ -184,7 +183,8 @@ importInstances m = flip $ foldr (bindInstance m)
 
 bindInstance :: ModuleIdent -> IDecl -> InstEnv -> InstEnv
 bindInstance m (IInstanceDecl _ cx qcls tys is mm o) =
-  bindInstInfo (applyOriginPragma o (qualQualify m qcls), tys') (NoSpanInfo, fromMaybe m mm, ps, is)
+  bindInstInfo (applyOriginPragma o (qualQualify m qcls), tys')
+    (NoSpanInfo, fromMaybe m mm, ps, mapMaybe (\(f, a, _) -> fmap (f,) a) is)
   where PredTypes ps tys' = toQualPredTypes m [] OPred cx tys
 bindInstance _ _ = id
 
@@ -192,15 +192,15 @@ importDetEnv :: ModuleIdent -> [IDecl] -> DetEnv -> DetEnv
 importDetEnv m = flip $ foldr (bindDetEnv m)
 
 bindDetEnv :: ModuleIdent -> IDecl -> DetEnv -> DetEnv
-bindDetEnv m (IClassDecl _ _ cls _ _ ds _) dEnv =
+bindDetEnv m (IClassDecl _ _ cls _ _ _ ds _ _) dEnv =
   foldr (bindDetEnvClass m cls) dEnv ds
-bindDetEnv m (IInstanceDecl _ _ cls ty ds _) dEnv =
+bindDetEnv m (IInstanceDecl _ _ cls ty ds _ _) dEnv =
   foldr (bindDetEnvInstance m cls ty) dEnv ds
-bindDetEnv m (IFunctionDecl _ f _ _ _ dty) dEnv =
+bindDetEnv m (IFunctionDecl _ f _ _ _ dty _) dEnv =
   Map.insert (QI (qualQualify m f)) (toDetType dty) dEnv
-bindDetEnv m (IDataDecl _ _ _ _ cs _) dEnv =
+bindDetEnv m (IDataDecl _ _ _ _ cs _ _) dEnv =
   foldr (bindDetEnvConstr m) dEnv cs
-bindDetEnv m (INewtypeDecl _ _ _ _ nc _) dEnv =
+bindDetEnv m (INewtypeDecl _ _ _ _ nc _ _) dEnv =
   bindDetEnvConstr m nc dEnv
 bindDetEnv _ _ dEnv = dEnv
 
@@ -226,9 +226,9 @@ bindDetEnvClass :: ModuleIdent -> QualIdent -> IMethodDecl -> DetEnv -> DetEnv
 bindDetEnvClass m cls (IMethodDecl _ f _ _ ddty _) =
   Map.insert (CI (qualQualify m cls) (qualifyWith m f)) (toDetType ddty)
 
-bindDetEnvInstance :: ModuleIdent -> QualIdent -> TypeExpr -> IMethodImpl -> DetEnv -> DetEnv
+bindDetEnvInstance :: ModuleIdent -> QualIdent -> [InstanceType] -> IMethodImpl -> DetEnv -> DetEnv
 bindDetEnvInstance m cls ty (f, _, ddty) =
-  Map.insert (II qcls (qualQualify m (typeConstr ty)) (qualifyLike qcls f)) (toDetType ddty)
+  Map.insert (II qcls (qualifyLike qcls f) (map (toType []) ty)) (toDetType ddty)
   where qcls = qualQualify m cls
 -- ---------------------------------------------------------------------------
 -- Building the initial environment
@@ -270,8 +270,8 @@ types m (ITypeDecl _ tc k tvs ty o) =
   [typeCon aliasType o m tc k tvs (toQualType m tvs ty)]
   where
     aliasType tc' k' = AliasType tc' k' (length tvs)
-types m (IClassDecl _ _ qcls k tvs _ ds _ o) =
-  [typeCls o m qcls k tvs (map mkMethod ds)]
+types m (IClassDecl _ _ qcls k tvs _ ds ids o) =
+  [typeCls o m qcls k tvs (map mkMethod $ filter isVis ds)]
   where
     isVis (IMethodDecl _ f _ _ _ _) = f `notElem` ids
     mkMethod (IMethodDecl _ f a qty ddty mdty) = ClassMethod f a (qualifyPredType m $
@@ -316,9 +316,9 @@ values m (INewtypeDecl _ tc _ tvs nc hs o) =
       [recLabel m tc' tvs ty' (l, [c], lty) | l `notElem` hs]
   where tc' = applyOriginPragma o $ qualQualify m tc
         ty' = constrType tc' tvs
-values m (IFunctionDecl _ f Nothing a qty o) =
+values m (IFunctionDecl _ f Nothing a qty _ o) =
   [Value (applyOriginPragma o (qualQualify m f)) Nothing a (typeScheme (toQualPredType m [] OPred qty))]
-values m (IFunctionDecl _ f (Just tvs) _ qty@(QualTypeExpr _ cx _) o) =
+values m (IFunctionDecl _ f (Just tvs) _ qty@(QualTypeExpr _ cx _) _ o) =
   let mcls = case cx of []                      -> Nothing
                         Constraint _ qcls _ : _ -> Just (Visible, qcls)
   in [Value (applyOriginPragma o (qualQualify m f)) mcls 0 (typeScheme (toQualPredType m tvs ICC qty))]
@@ -370,7 +370,7 @@ constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)
 
 classMethod :: ModuleIdent -> QualIdent -> [Ident] -> [Ident] -> IMethodDecl
             -> ValueInfo
-classMethod m qcls tvs hs (IMethodDecl _ f _ qty) =
+classMethod m qcls tvs hs (IMethodDecl _ f _ qty _ _) =
   Value (qualifyLike qcls f) mcls 0 $
     typeScheme $ qualifyPredType m $ toMethodType qcls tvs qty
   where
@@ -434,13 +434,13 @@ qualifyLocal currentEnv initEnv = currentEnv
 -- an interface.
 
 importInterfaceIntf :: Interface -> CompilerEnv -> CompilerEnv
-importInterfaceIntf (Interface m _ ds) env = env
-  { opPrecEnv = importEntitiesIntf m (precs  m)       ds $ opPrecEnv env
-  , tyConsEnv = importEntitiesIntf m (hiddenTypes  m) ds $ tyConsEnv env
-  , valueEnv  = importEntitiesIntf m (values m)       ds $ valueEnv  env
-  , classEnv  = importClasses      m                  ds $ classEnv  env
-  , instEnv   = importInstances    m                  ds $ instEnv   env
-  , detEnv    = importDetEnv       m                  ds $ detEnv    env
+importInterfaceIntf (Interface m _ ds o) env = env
+  { opPrecEnv = importEntitiesIntf m' (precs  m')       ds $ opPrecEnv env
+  , tyConsEnv = importEntitiesIntf m' (hiddenTypes  m') ds $ tyConsEnv env
+  , valueEnv  = importEntitiesIntf m' (values m')       ds $ valueEnv  env
+  , classEnv  = importClasses      m'                   ds $ classEnv  env
+  , instEnv   = importInstances    m'                   ds $ instEnv   env
+  , detEnv    = importDetEnv       m'                   ds $ detEnv    env
   }
   where m' = applyOriginPragma o m
 

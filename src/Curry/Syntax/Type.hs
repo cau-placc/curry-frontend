@@ -218,7 +218,7 @@ data TypeExpr
   | ArrowType       SpanInfo TypeExpr TypeExpr
   | ParenType       SpanInfo TypeExpr
   | ForallType      SpanInfo [Ident] TypeExpr
-    deriving (Eq, Read, Show, Generic, Binary)
+    deriving (Eq, Ord, Read, Show, Generic, Binary)
 
 -- |Qualified type expressions
 data QualTypeExpr = QualTypeExpr SpanInfo Context TypeExpr

@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name:          curry-frontend
-version:       3.0.0
+version:       3.1.0
 synopsis:      Compile the functional logic language Curry to several
                intermediate formats
 description:   The Curry front end consists of the executable program
@@ -59,6 +59,7 @@ library
     , time            ^>= 1.12
     , parsec          ^>= 3.1
     , deepseq         ^>= 1.5
+    , equivalence     ^>= 0.4
   exposed-modules:
       Curry.AbstractCurry
     , Curry.AbstractCurry.Files

@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    container:
+      image: haskell:latest
+    env:
+      STACKROOT: /tmp/stack
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure Stack root directory
+        run: |
+          mkdir -p $STACKROOT
+
+      - name: Cache Stack dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            /tmp/stack
+            .stack-work
+          key: ${{ runner.os }}-stack-${{ hashFiles('stack.yaml', 'curry-frontend.cabal') }}
+          restore-keys: |
+            ${{ runner.os }}-stack-
+
+      - name: Build and test
+        run: make build-and-test STACKROOT=$STACKROOT

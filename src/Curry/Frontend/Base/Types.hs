@@ -3,24 +3,34 @@
     Description :  Internal representation of types
     Copyright   :  (c) 2002 - 2004 Wolfgang Lux
                                    Martin Engelke
+                       2011 - 2014 Björn Peemöller(c)
                        2015        Jan Tikovsky
-                       2016        Finn Teegen
+                       2016 - 2022 Finn Teegen
+                       2023        Kai-Oliver Prott
     License     :  BSD-3-clause
 
-    Maintainer  :  bjp@informatik.uni-kiel.de
+    Maintainer  :  kpr@informatik.uni-kiel.de
     Stability   :  experimental
     Portability :  portable
 
-   This module modules provides the definitions for the internal
-   representation of types in the compiler along with some helper functions.
+    This module modules provides the definitions for the internal
+    representation of types in the compiler along with some helper functions.
+    It also exports the functions 'toType', 'toTypes', and 'fromType'
+    which convert Curry type expressions into types and vice versa.
+    The functions 'qualifyType' and 'unqualifyType' add and remove
+    module qualifiers in a type, respectively.
+
+    When Curry type expression are converted with 'toType' or 'toTypes',
+    type variables are assigned ascending indices in the order of their
+    occurrence. It is possible to pass a list of additional type variables
+    to both functions which are assigned indices before those variables
+    occurring in the type. This allows preserving the order of type variables
+    in the left hand side of a type declaration.
 -}
-
--- TODO: Use MultiParamTypeClasses ?
-{-# OPTIONS_GHC -Wno-orphans #-}
-
+{-# LANGUAGE TupleSections #-}
 module Curry.Frontend.Base.Types
   ( -- * Representation of types
-    Type (..), applyType, unapplyType, rootOfType
+    Type (..), applyType, unapplyType, rootOfType, rootOfTypeMaybe
   , isTypeVariable, isAppliedTypeVariable
   , isArrowType, arrowArity, arrowArgs, arrowBase, arrowUnapply
   , IsType (..), typeConstrs, removeTypeConstrained
@@ -43,14 +53,12 @@ module Curry.Frontend.Base.Types
   , ClassMethod (..), methodName, methodArity, methodType
     -- * Representation of quantification
   , TypeScheme (..), monoType, polyType, typeScheme
+  , rawType
     -- * Representation of determinism types
   , toDetExpr, toDetType, toDetSchema
   , abstractDetScheme, monoDetScheme, substDetTy, detTypeVars
-  , DetScheme (..), DetType(..), VarIndex
-  , rawType
-    -- * Determinism types
-  , CS.DetExpr(..), DetScheme(..), toDetExpr, toDetType, toDetSchema, abstractDetScheme
-  , substDetTy, detTypeVars
+  , methodDefaultDet, methodDetSchemeAnn
+  , CS.DetExpr(..), DetScheme (..), DetType(..), VarIndex
     -- * Predefined types
   , arrowType, unitType, predUnitType, boolType, predBoolType, charType
   , intType, predIntType, floatType, predFloatType, stringType, predStringType
@@ -74,6 +82,7 @@ import           Data.List (nub, partition, (\\))
 import           Data.Maybe (fromMaybe)
 import qualified Data.Set.Extra as Set
 import qualified Data.Map as Map
+import           GHC.Stack (HasCallStack)
 
 import qualified Curry.Syntax as CS
 import Curry.Base.Ident
@@ -121,9 +130,6 @@ data Type
   | TypeForall [Int] Type
   deriving (Eq, Ord, Show)
 
-instance Pretty Type where
-  pPrint = pPrintPrec 0 . fromType identSupply
-
 -- The function 'applyType' applies a type to a list of argument types,
 -- whereas applications of the function type constructor to two arguments
 -- are converted into an arrow type. The function 'unapplyType' decomposes
@@ -167,11 +173,15 @@ isAppliedTypeVariable = isTypeVariable . fst . unapplyType False
 -- The function 'rootOfType' returns the name of the type constructor at the
 -- root of a type. This function must not be applied to a type whose root is
 -- a type variable or a skolem type.
+rootOfType :: HasCallStack => Type -> QualIdent
+rootOfType ty = case rootOfTypeMaybe ty of
+  Just tc -> tc
+  Nothing -> internalError $ "Base.Types.rootOfType: " ++ show ty
 
-rootOfType :: Type -> QualIdent
-rootOfType ty = case fst (unapplyType True ty) of
-  TypeConstructor tc -> tc
-  _ -> internalError $ "Base.Types.rootOfType: " ++ show ty
+rootOfTypeMaybe :: Type -> Maybe QualIdent
+rootOfTypeMaybe ty = case fst (unapplyType True ty) of
+  TypeConstructor tc -> Just tc
+  _ -> Nothing
 
 -- The function 'isArrowType' checks whether a type is a function
 -- type t_1 -> t_2 -> ... -> t_n. The function 'arrowArity' computes
@@ -283,9 +293,6 @@ qualifyTC m tc | isPrimTypeId tc = tc
 
 data Pred = Pred PredIsICC QualIdent [Type]
   deriving (Eq, Ord, Show)
-
-instance Pretty Pred where
-  pPrint = pPrint . fromPred identSupply
 
 -- Short for: data PredicateIsImplicitClassConstraint = ImplicitClassConstraint
 --                                                    | OtherPredicate
@@ -512,9 +519,6 @@ unqualifyPredList m = map (unqualifyPred m)
 data PredType = PredType [Pred] Type
   deriving (Eq, Show)
 
-instance Pretty PredType where
-  pPrint = pPrint . fromPredType identSupply
-
 -- When enumarating the type variables and skolems of a predicated type, we
 -- consider the type variables occurring in the predicate set after the ones
 -- occurring in the type itself.
@@ -563,13 +567,6 @@ data DataConstr = DataConstr   Ident [Type]
                 | RecordConstr Ident [Ident] [Type]
   deriving (Eq, Show)
 
-instance Pretty DataConstr where
-  pPrint (DataConstr i tys)      = pPrint i <+> hsep (map pPrint tys)
-  pPrint (RecordConstr i ls tys) =     pPrint i
-                                   <+> braces (hsep (punctuate comma pLs))
-    where
-      pLs = zipWith (\l ty -> pPrint l <+> colon <> colon <+> pPrint ty) ls tys
-
 constrIdent :: DataConstr -> Ident
 constrIdent (DataConstr     c _) = c
 constrIdent (RecordConstr c _ _) = c
@@ -596,24 +593,28 @@ tupleData = [DataConstr (tupleId n) (take n tvs) | n <- [2 ..]]
 
 -- The type 'ClassMethod' is used to represent class methods introduced
 -- by class declarations. The 'Maybe Int' denotes the arity of the provided
--- default implementation.
+-- default implementation and the first 'Maybe Int' denotes the determinism annotation of the method's default implementation.
+-- It is Nothing before all determinism info has been checked.
+-- The second 'Maybe DetScheme' denotes the determinism
+-- annotation of the method if it exists.
 
-data ClassMethod = ClassMethod Ident (Maybe Int) PredType
+data ClassMethod = ClassMethod Ident (Maybe Int) PredType (Maybe DetScheme) (Maybe DetScheme)
   deriving (Eq, Show)
 
-instance Pretty ClassMethod where
-  pPrint (ClassMethod f mar pty) =     pPrint f
-                                   <>  text "/" <> int (fromMaybe 0 mar)
-                                   <+> colon <> colon <+> pPrint pty
-
 methodName :: ClassMethod -> Ident
-methodName (ClassMethod f _ _) = f
+methodName (ClassMethod f _ _ _ _) = f
 
 methodArity :: ClassMethod -> Maybe Int
-methodArity (ClassMethod _ a _) = a
+methodArity (ClassMethod _ a _ _ _) = a
 
 methodType :: ClassMethod -> PredType
-methodType (ClassMethod _ _ pty) = pty
+methodType (ClassMethod _ _ pty _ _) = pty
+
+methodDefaultDet :: ClassMethod -> Maybe DetScheme
+methodDefaultDet (ClassMethod _ _ _ det _) = det
+
+methodDetSchemeAnn :: ClassMethod -> Maybe DetScheme
+methodDetSchemeAnn (ClassMethod _ _ _ _ ann) = ann
 
 -- ---------------------------------------------------------------------------
 -- Quantification
@@ -625,9 +626,6 @@ methodType (ClassMethod _ _ pty) = pty
 -- numbers of quantified type variables in the 'ForAll' constructor.
 
 data TypeScheme = ForAll Int PredType deriving (Eq, Show)
-
-instance Pretty TypeScheme where
-  pPrint (ForAll _ ty) = pPrint ty
 
 instance IsType TypeScheme where
   typeVars (ForAll _ pty) = [tv | tv <- typeVars pty, tv < 0]
@@ -728,7 +726,7 @@ predefTypes =
         b = TypeVariable 1
 
 -- ---------------------------------------------------------------------------
--- Curry Types
+-- Functions on types and Curry syntax types
 -- ---------------------------------------------------------------------------
 
 enumTypeVars :: (Expr a, QuantExpr a) => [Ident] -> a -> Map.Map Ident Int
@@ -956,6 +954,9 @@ toDetExpr (Forall _ ty) = tyToDetExpr ty
 tyToDetExpr :: DetType -> CS.DetExpr
 tyToDetExpr (VarTy v) = CS.VarDetExpr NoSpanInfo $
   -- clamp down to the maximum Int value
+  -- clamp down to the maximum Int value
+
+  -- clamp down to the maximum Int value
   identSupply !! fromInteger (min v (fromIntegral (maxBound :: Int)))
 tyToDetExpr Det = CS.DetDetExpr NoSpanInfo
 tyToDetExpr Any = CS.AnyDetExpr NoSpanInfo
@@ -988,7 +989,7 @@ abstractDetScheme (Forall _ ty) =
 monoDetScheme :: DetScheme -> DetScheme
 monoDetScheme (Forall vs ty) =
   Forall [] (ty `substDetTy` subst)
-  where subst = Map.fromList $ zip vs (repeat Det)
+  where subst = Map.fromList $ map (, Det) vs
 
 substDetTy :: DetType -> Map.Map VarIndex DetType -> DetType
 substDetTy (VarTy v) subst = case Map.lookup v subst of
@@ -1016,3 +1017,28 @@ instance Pretty DetType where
   pPrintPrec _ Any = text "Any"
   pPrintPrec p (DetArrow ty1 ty2) = parenIf (p > 0) $
     pPrintPrec 1 ty1 <+> text "->" <+> pPrintPrec 0 ty2
+
+instance Pretty Type where
+  pPrint = pPrintPrec 0 . fromType identSupply
+
+instance Pretty Pred where
+  pPrint = pPrint . fromPred identSupply
+
+instance Pretty PredType where
+  pPrint = pPrint . fromPredType identSupply
+
+instance Pretty DataConstr where
+  pPrint (DataConstr i tys)      = pPrint i <+> hsep (map pPrint tys)
+  pPrint (RecordConstr i ls tys) =     pPrint i
+                                   <+> braces (hsep (punctuate comma pLs))
+    where
+      pLs = zipWith (\l ty -> pPrint l <+> colon <> colon <+> pPrint ty) ls tys
+
+instance Pretty ClassMethod where
+  pPrint (ClassMethod f mar pty ddty mdty) = pPrint f
+    <>  text "/" <> int (fromMaybe 0 mar)
+    <+> colon <> colon <+> pPrint pty
+    <+> colon <> colon <+> pPrint ddty <> comma <> pPrint mdty
+
+instance Pretty TypeScheme where
+  pPrint (ForAll _ ty) = pPrint ty

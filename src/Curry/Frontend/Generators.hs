@@ -34,7 +34,7 @@ import qualified Curry.Frontend.Generators.GenAnnotatedFlatCurry
 import qualified Curry.Frontend.Generators.GenTypedFlatCurry
                                                 as GTFC (genTypedFlatCurry)
 
-import           Curry.Frontend.Base.Types              (Type, PredType)
+import           Curry.Frontend.Base.Types              (Type, PredType, DetType)
 
 import           Curry.Frontend.CompilerEnv             (CompilerEnv (..))
 import qualified Curry.Frontend.IL              as IL   (Module)

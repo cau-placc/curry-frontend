@@ -30,10 +30,6 @@ import qualified Data.Map as Map
 import Curry.Base.Ident
 import Curry.Frontend.Base.Types
 import Curry.Base.Pretty ( Pretty(..), parens, dot, (<+>), (<>) )
-import Curry.Syntax ( TypeExpr(..), InstanceType )
-import Curry.Frontend.Base.Messages ( internalError )
-import Curry.Frontend.Base.TopEnv (origName)
-import Curry.Frontend.Env.TypeConstructor (TCEnv, qualLookupTypeInfo)
 
 type DetEnv = Map IdentInfo DetScheme
 
@@ -79,13 +75,13 @@ flattenNestDetEnv (LocalEnv env lcl) = Map.union lcl (flattenNestDetEnv env)
 
 data IdentInfo = QI QualIdent
                -- class, tycon, method (only for known instances with the given type constructor)
-               | II QualIdent QualIdent QualIdent
+               | II QualIdent QualIdent [Type] -- class, method, instance type
                | CI QualIdent QualIdent -- class, default method
   deriving (Eq, Ord, Show)
 
 identInfoFun :: IdentInfo -> QualIdent
 identInfoFun (QI meth) = meth
-identInfoFun (II _ _ meth) = meth
+identInfoFun (II _ meth _) = meth
 identInfoFun (CI _ meth) = meth
 
 toClassIdent :: QualIdent -> IdentInfo -> IdentInfo
@@ -95,35 +91,14 @@ toClassIdent cls (QI qid) = CI cls (qid' { qidIdent = (qidIdent qid') { idUnique
             Just _  -> qid
 toClassIdent _ ii = ii
 
-toInstanceIdent :: ModuleIdent -> TCEnv -> QualIdent -> InstanceType -> IdentInfo -> IdentInfo
-toInstanceIdent mid tcE cls ty ii = case toInstanceIdentMaybe mid tcE cls ty ii of
-  Just ii' -> ii'
-  Nothing  -> internalError (show ty ++ " is not a constructor type")
-
-toInstanceIdentMaybe :: ModuleIdent -> TCEnv -> QualIdent -> InstanceType -> IdentInfo -> Maybe IdentInfo
-toInstanceIdentMaybe mid tcE cls ty (QI qid) = case ty of
-  ConstructorType _ tc ->
-    Just $ II qcls qtc (qid { qidIdent = (qidIdent qid) { idUnique = 0 }
-                            , qidModule = qidModule qcls })
+toInstanceIdent :: QualIdent -> [Type] -> IdentInfo -> IdentInfo
+toInstanceIdent cls instTys (QI qid) =
+  II qcls (qid { qidIdent = (qidIdent qid) { idUnique = 0 }
+                                      , qidModule = qidModule qcls }) instTys
     where
       qcls | isQualified cls = cls
            | otherwise       = qualifyLike qid (unqualify cls)
-      qtc = case qualLookupTypeInfo tc tcE of
-        [i] -> qualQualify mid (origName i)
-        _ | unqualify tc == listId   -> qualQualify preludeMIdent tc
-          | unqualify tc == unitId   -> qualQualify preludeMIdent tc
-          | unqualify tc == arrowId  -> qualQualify preludeMIdent tc
-          | isTupleId (unqualify tc) -> qualQualify preludeMIdent tc
-          | otherwise                -> internalError $ "Env.Determinism: " ++ show tc ++ " not found"
-  ListType sp _ -> toInstanceIdentMaybe mid tcE cls (ConstructorType sp qList) (QI qid)
-    where qList = qualifyWith preludeMIdent listId
-  TupleType sp args -> toInstanceIdentMaybe mid tcE cls (ConstructorType sp qTuple) (QI qid)
-    where qTuple = qualQualify preludeMIdent (qTupleId (length args))
-  ArrowType sp _ _ -> toInstanceIdentMaybe mid tcE cls (ConstructorType sp qArrowId) (QI qid)
-  ParenType _ ty' -> toInstanceIdentMaybe mid tcE cls ty' (QI qid)
-  ApplyType _ ty' _ -> toInstanceIdentMaybe mid tcE cls ty' (QI qid)
-  _ -> Nothing
-toInstanceIdentMaybe _ _ _ _ ii = Just ii
+toInstanceIdent _ _ ii = ii
 
 instance Pretty IdentInfo where
   pPrint (QI qid) = pPrint qid

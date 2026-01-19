@@ -14,7 +14,7 @@
 -}
 module Curry.Frontend.Checks.ImportSyntaxCheck(importCheck) where
 
-import           Control.Monad              (liftM, unless)
+import           Control.Monad              (unless)
 import qualified Control.Monad.State as S   (State, gets, modify, runState)
 import           Data.List                  (nub, union)
 import qualified Data.Map            as Map
@@ -172,18 +172,18 @@ runExpand expand m tcEnv tyEnv =
 
 expandSpecs :: Maybe ImportSpec -> ExpandM (Maybe ImportSpec)
 expandSpecs Nothing                 = return Nothing
-expandSpecs (Just (Importing p is)) = (Just . Importing p . concat) `liftM` mapM expandImport is
-expandSpecs (Just (Hiding    p is)) = (Just . Hiding    p . concat) `liftM` mapM expandHiding is
+expandSpecs (Just (Importing p is)) = Just . Importing p . concat <$> mapM expandImport is
+expandSpecs (Just (Hiding    p is)) = Just . Hiding    p . concat <$> mapM expandHiding is
 
 expandImport :: Import -> ExpandM [Import]
-expandImport (Import         spi x    ) =               expandThing    spi x
-expandImport (ImportTypeWith spi tc cs) = (:[]) `liftM` expandTypeWith spi tc cs
-expandImport (ImportTypeAll  spi tc   ) = (:[]) `liftM` expandTypeAll  spi tc
+expandImport (Import         spi x    ) =           expandThing    spi x
+expandImport (ImportTypeWith spi tc cs) = (:[]) <$> expandTypeWith spi tc cs
+expandImport (ImportTypeAll  spi tc   ) = (:[]) <$> expandTypeAll  spi tc
 
 expandHiding :: Import -> ExpandM [Import]
 expandHiding (Import         spi x    ) = expandHide spi x
-expandHiding (ImportTypeWith spi tc cs) = (:[]) `liftM` expandTypeWith spi tc cs
-expandHiding (ImportTypeAll  spi tc   ) = (:[]) `liftM` expandTypeAll  spi tc
+expandHiding (ImportTypeWith spi tc cs) = (:[]) <$> expandTypeWith spi tc cs
+expandHiding (ImportTypeAll  spi tc   ) = (:[]) <$> expandTypeAll  spi tc
 
 -- try to expand as type constructor
 expandThing :: SpanInfo -> Ident -> ExpandM [Import]
@@ -236,7 +236,7 @@ expandTypeWith :: SpanInfo -> Ident -> [Ident] -> ExpandM Import
 expandTypeWith spi tc cs = do
   m     <- getModuleIdent
   tcEnv <- getTyConsEnv
-  ImportTypeWith spi tc `liftM` case Map.lookup tc tcEnv of
+  ImportTypeWith spi tc <$> case Map.lookup tc tcEnv of
     Just (Data  _ xs) -> mapM (checkElement errUndefinedElement xs) cs
     Just (Class _ xs) -> mapM (checkElement errUndefinedMethod  xs) cs
     Just (Alias    _) -> report (errNonDataTypeOrTypeClass tc) >> return []
@@ -251,7 +251,7 @@ expandTypeAll :: SpanInfo -> Ident -> ExpandM Import
 expandTypeAll spi tc = do
   m     <- getModuleIdent
   tcEnv <- getTyConsEnv
-  ImportTypeWith spi tc `liftM` case Map.lookup tc tcEnv of
+  ImportTypeWith spi tc <$> case Map.lookup tc tcEnv of
     Just (Data _  xs) -> return xs
     Just (Class _ xs) -> return xs
     Just (Alias    _) -> report (errNonDataTypeOrTypeClass tc) >> return []

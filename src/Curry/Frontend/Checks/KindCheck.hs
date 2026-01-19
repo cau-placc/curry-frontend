@@ -148,7 +148,7 @@ instance HasType (Decl a) where
   fts m (ClassDecl       _ _ cx _ _ _ ds) = fts m cx . fts m ds
   fts m (InstanceDecl _ _ cx cls inst ds) =
     fts m cx . fts m cls . fts m inst . fts m ds
-  fts _ (DetSig                    _ _ _) = id
+  fts _ DetSig {}                         = id
 
 instance HasType ConstrDecl where
   fts m (ConstrDecl     _ _ tys) = fts m tys
@@ -345,13 +345,14 @@ bindKind m tcEnv' clsEnv tcEnv (ClassDecl _ _ _ cls tvs _ ds) =
     mkMethods (TypeSig _ fs qty) = map (mkMethod qty) fs
     mkMethods _                  = []
     mkMethod qty f = ClassMethod f (findArity f ds)
-                        (expandMethodType m tcEnv' clsEnv (qualify cls) tv qty)
+                        (expandMethodType m tcEnv' clsEnv (qualify cls) tvs qty)
                         Nothing
                         (findDetAnn f ds)
-    findArity _ []                                    = Nothing
-    findArity f (FunctionDecl _ _ f' (eq:_):_) | f == f' =
-      Just $ eqnArity eq
-    findArity f (_:ds')                               = findArity f ds'
+
+    findArity _ []      = Nothing
+    findArity f (FunctionDecl _ _ f' (eq:_):_)
+      | f == f'         = Just $ eqnArity eq
+    findArity f (_:ds') = findArity f ds'
 
     findDetAnn _ [] = Nothing
     findDetAnn f (DetSig _ fs ann:_) | f `elem` fs = Just (toDetType ann)
@@ -406,7 +407,7 @@ bindClass m tcEnv clsEnv (ClassDecl _ _ cx cls tvs fds ds) =
         mths = concatMap methods ds
         dSigs = concatMap detSigs ds
         mthsD = map (\mthd -> (mthd, lookup mthd dSigs)) mths
-        ms = map (\(f, mbd) -> (f, f `elem` fs, True, fmap toDetType mbd)) mthsD
+        ms = map (\(f, mbd) -> (f, (f `elem` fs, True, fmap toDetType mbd))) mthsD
         fs = concatMap impls ds
 bindClass _ _ clsEnv _ = clsEnv
 
@@ -485,7 +486,7 @@ kcDecl tcEnv clsEnv (InstanceDecl p _ cx qcls inst ds) = do
     where
       what = "instance declaration"
       doc = pPrint (InstanceDecl p WhitespaceLayout cx qcls inst [])
-kcDecl _ (DetSig _ _ _) = ok
+kcDecl _ _ DetSig {} = ok
 
 kcConstrDecl :: TCEnv -> ConstrDecl -> KCM ()
 kcConstrDecl tcEnv d@(ConstrDecl _ _ tys) = do

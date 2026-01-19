@@ -414,7 +414,7 @@ bindClassMethods' m tcEnv vEnv =
 
 bindClassMethod :: ModuleIdent -> QualIdent -> ClassMethod -> ValueEnv
                 -> ValueEnv
-bindClassMethod m cls (ClassMethod f _ ty) =
+bindClassMethod m cls (ClassMethod f _ ty _ _) =
   bindGlobalInfo (\qc tySc -> Value qc (Just (Visible, cls)) 0 tySc) m f (typeScheme ty)
 
 -- -----------------------------------------------------------------------------
@@ -1096,9 +1096,9 @@ tcInstanceMethodPDecl _ _ _ = internalError "TypeCheck.tcInstanceMethodPDecl"
 
 tcMethodPDecl :: QualIdent -> TypeScheme -> PDecl a
               -> TCM (PredType, TypeScheme, PDecl PredType)
-tcMethodPDecl qcls tySc (i, FunctionDecl p _ f eqs) = withLocalValueEnv $ do
+tcMethodPDecl qcls tySc (i, FunctionDecl p _ f eqs@(eq:_)) = withLocalValueEnv $ do
   m <- getModuleIdent
-  modifyValueEnv $ bindFun m f (Just (Visible, qcls)) (eqnArity $ head eqs) tySc
+  modifyValueEnv $ bindFun m f (Just (Visible, qcls)) (eqnArity eq) tySc
   (pls, (ty, pd)) <- tcFunctionPDecl i [] tySc p f eqs
   let what = "implementation of method " ++ escName f
   clsEnv <- getClassEnv
@@ -1603,40 +1603,42 @@ tcStmt p pls mTy st@(StmtBind spi t e) = do
   return ((pls5, Just ty), StmtBind spi t' e')
 
 checkFailableBind :: Pattern a -> TCM Bool
-checkFailableBind (ConstructorPattern _ _ idt ps   ) = do
-  tcEnv <- getTyConsEnv
+checkFailableBind p = checkFailablePattern <$> getTyConsEnv <*> pure p
+
+checkFailablePattern :: TCEnv -> Pattern a -> Bool
+checkFailablePattern tcEnv (ConstructorPattern _ _ idt ps   ) =
   case qualLookupTypeInfo idt tcEnv of
-    [RenamingType {}    ] -> or <$> mapM checkFailableBind ps -- or [] == False
+    [RenamingType {}    ] -> any (checkFailablePattern tcEnv) ps
     [DataType     _ _ cs]
-      | length cs == 1    -> or <$> mapM checkFailableBind ps
-      | otherwise         -> return True
-    _                     -> return True
-checkFailableBind (InfixPattern       _ _ p1 idt p2) = do
-  tcEnv <- getTyConsEnv
+      | length cs == 1    -> any (checkFailablePattern tcEnv) ps
+      | otherwise         -> True
+    _                     -> True
+checkFailablePattern tcEnv (InfixPattern       _ _ p1 idt p2) =
   case qualLookupTypeInfo idt tcEnv of
-    [RenamingType {}    ] -> (||) <$> checkFailableBind p1
-                                  <*> checkFailableBind p2
+    [RenamingType {}    ] -> checkFailablePattern tcEnv p1 ||
+                             checkFailablePattern tcEnv p2
     [DataType     _ _ cs]
-      | length cs == 1    -> (||) <$> checkFailableBind p1
-                                  <*> checkFailableBind p2
-      | otherwise         -> return True
-    _                     -> return True
-checkFailableBind (RecordPattern      _ _ idt fs   ) = do
-  tcEnv <- getTyConsEnv
+      | length cs == 1    -> checkFailablePattern tcEnv p1 ||
+                             checkFailablePattern tcEnv p2
+      | otherwise         -> True
+    _                     -> True
+checkFailablePattern tcEnv (RecordPattern      _ _ idt fs   ) =
   case qualLookupTypeInfo idt tcEnv of
-    [RenamingType {}    ] -> or <$> mapM (checkFailableBind . fieldContent) fs
+    [RenamingType {}    ] -> any (checkFailablePattern tcEnv . fieldContent) fs
     [DataType     _ _ cs]
-      | length cs == 1    -> or <$> mapM (checkFailableBind . fieldContent) fs
-      | otherwise         -> return True
-    _                     -> return True
+      | length cs == 1    -> any (checkFailablePattern tcEnv . fieldContent) fs
+      | otherwise         -> True
+    _                     -> True
   where fieldContent (Field _ _ c) = c
-checkFailableBind (TuplePattern       _       ps   ) =
-  or <$> mapM checkFailableBind ps
-checkFailableBind (AsPattern          _   _   p    ) = checkFailableBind p
-checkFailableBind (ParenPattern       _       p    ) = checkFailableBind p
-checkFailableBind (LazyPattern        _       _    ) = return False
-checkFailableBind VariablePattern {}                 = return False
-checkFailableBind _                                  = return True
+checkFailablePattern tcEnv (TuplePattern       _       ps   ) =
+  any (checkFailablePattern tcEnv) ps
+checkFailablePattern tcEnv (AsPattern          _   _   p    ) =
+  checkFailablePattern tcEnv p
+checkFailablePattern tcEnv (ParenPattern       _       p    ) =
+  checkFailablePattern tcEnv p
+checkFailablePattern _     LazyPattern {}                     = False
+checkFailablePattern _     VariablePattern {}                 = False
+checkFailablePattern _     _                                  = True
 
 tcInfixOp :: InfixOp a -> TCM (LPredList, Type, InfixOp PredType)
 tcInfixOp (InfixOp _ op) = do
@@ -1761,15 +1763,21 @@ unifyTypes _ (TypeConstrained tys1 tv1) (TypeConstrained tys2 tv2)
   | tv1  == tv2           = Right idSubst
   | tys1 == tys2          = Right (singleSubst tv1 (TypeConstrained tys2 tv2))
 unifyTypes m (TypeConstrained tys tv) ty =
-  foldr (choose . unifyTypes m ty) (Left (errIncompatibleTypes m ty (head tys)))
+  foldr (choose . unifyTypes m ty) (Left (errIncompatibleTypes m ty ty'))
         tys
   where choose (Left _) theta' = theta'
         choose (Right theta) _ = Right (bindSubst tv ty theta)
+        ty' = case tys of
+                []    -> internalError "TypeCheck.unifyTypes: empty constraint"
+                (t:_) -> t
 unifyTypes m ty (TypeConstrained tys tv) =
-  foldr (choose . unifyTypes m ty) (Left (errIncompatibleTypes m ty (head tys)))
+  foldr (choose . unifyTypes m ty) (Left (errIncompatibleTypes m ty ty'))
         tys
   where choose (Left _) theta' = theta'
         choose (Right theta) _ = Right (bindSubst tv ty theta)
+        ty' = case tys of
+                []    -> internalError "TypeCheck.unifyTypes: empty constraint"
+                (t:_) -> t
 unifyTypes _ (TypeConstructor tc1) (TypeConstructor tc2)
   | tc1 == tc2 = Right idSubst
 unifyTypes m (TypeApply ty11 ty12) (TypeApply ty21 ty22) =
@@ -1841,6 +1849,180 @@ reducePredSet reportPreds pls = do
     isReportable :: LPred -> Bool
     isReportable (LPred (Pred _ _ tys) _ _ _) = null (typeVars tys) ||
       reportPreds && not (all isAppliedTypeVariable tys) ||
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+
+      -- We additionally report predicates containing 'TypeConstrained's that have
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- not already been filtered out by 'isDefaultable', as they do not satisfy
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+      -- the defaulting restrictions described in a comment below.
+
       -- We additionally report predicates containing 'TypeConstrained's that have
       -- not already been filtered out by 'isDefaultable', as they do not satisfy
       -- the defaulting restrictions described in a comment below.
@@ -2109,8 +2291,11 @@ defaultTypeConstrainedDecl s (_, FunctionDecl _ _ _ eqn) =
 defaultTypeConstrainedDecl _ _ = idSubst
 
 defaultTypeConstrained :: Type -> TypeSubst -> TypeSubst
-defaultTypeConstrained (TypeConstrained tyOpts tv) =
-  bindSubst tv (head tyOpts)
+defaultTypeConstrained (TypeConstrained (tyOpt:_) tv) =
+  bindSubst tv tyOpt
+defaultTypeConstrained (TypeConstrained [] tv) =
+  internalError $ "TypeCheck.defaultTypeConstrained: " ++
+                  "Empty list of possible types in TypeConstrained for type variable " ++ show tv
 defaultTypeConstrained (TypeApply ty1 ty2) =
   defaultTypeConstrained ty1 . defaultTypeConstrained ty2
 defaultTypeConstrained (TypeArrow ty1 ty2) =

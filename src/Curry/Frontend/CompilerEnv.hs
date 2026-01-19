@@ -13,6 +13,7 @@
 -}
 module Curry.Frontend.CompilerEnv where
 
+import           Data.Bifunctor  (bimap)
 import qualified Data.Map as Map (Map, fromList, keys, toList)
 
 import Curry.Base.Ident    (ModuleIdent, moduleName)
@@ -110,7 +111,7 @@ ppAL False = ppALShow
 ppALShow :: (Show a, Show b) => [(a, b)] -> Doc
 ppALShow xs = vcat
         $ map (\(a,b) -> text (pad a keyWidth) <+> equals <+> text b) showXs
-  where showXs   = map (\(a,b) -> (show a, show b)) xs
+  where showXs   = map (bimap show show) xs
         keyWidth = maximum (0 : map (length .fst) showXs)
         pad s n  = take n (s ++ repeat ' ')
 

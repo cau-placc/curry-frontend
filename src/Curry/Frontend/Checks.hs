@@ -27,7 +27,7 @@ import qualified Curry.Frontend.Checks.SyntaxCheck       as SC  (syntaxCheck)
 import qualified Curry.Frontend.Checks.TypeCheck         as TC  (typeCheck)
 import qualified Curry.Frontend.Checks.TypeSyntaxCheck   as TSC (typeSyntaxCheck)
 import qualified Curry.Frontend.Checks.WarnCheck         as WC  (warnCheck)
-import qualified Checks.DeterminismCheck  as DC  (determinismCheck)
+import qualified Curry.Frontend.Checks.DeterminismCheck  as DC  (determinismCheck)
 
 import Curry.Base.Monad
 import Curry.Syntax (Module (..), Interface (..), ImportSpec)
@@ -183,5 +183,5 @@ expandExports _ (env, Module spi li ps m es is ds)
 
 -- |Check for warnings.
 warnCheck :: Options -> CompilerEnv -> Module (PredType, DetType) -> [Message]
-warnCheck opts env = WC.warnCheck (optWarnOpts opts) (optCaseMode opts)
+warnCheck opts env = WC.warnCheck (optWarnOpts opts)
   (aliasEnv env) (valueEnv env) (tyConsEnv env) (classEnv env)

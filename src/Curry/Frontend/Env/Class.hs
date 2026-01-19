@@ -20,10 +20,11 @@
 -}
 
 module Curry.Frontend.Env.Class
-  ( ClassEnv, initClassEnv
+  ( ClassEnv, HasDefaultImpl, IsVisible, initClassEnv
   , ClassInfo, SuperClassInfo, FunDep, bindClassInfo, mergeClassInfo
   , constraintToSuperClass, lookupClassInfo, superClasses, classFunDeps
-  , classMethods, hasDefaultImpl, isVisibleMethod, applySuperClass, allSuperClasses
+  , classMethods, allClassMethods, visibleClassMethods
+  , hasDefaultImpl, isVisibleMethod, applySuperClass, allSuperClasses
   , toFunDep, fromFunDep, getFunDepLhs, getFunDepRhs
   , deleteVarFunDep, renameVarFunDep, renameFunDep, removeTrivialFunDeps
   , getRhsOnLhsMatch, funDepCoverage, funDepCoveragePredList, ambiguousTypeVars
@@ -138,6 +139,16 @@ classMethods :: QualIdent -> ClassEnv -> [Ident]
 classMethods cls clsEnv = case lookupClassInfo cls clsEnv of
   Just (_, _, _, ms) -> map fst ms
   _ -> internalError $ "Env.Classes.classMethods: " ++ show cls
+
+visibleClassMethods :: QualIdent -> ClassEnv -> [Ident]
+visibleClassMethods cls clsEnv = case lookupClassInfo cls clsEnv of
+  Just (_, _, _, ms) -> map fst $ filter (\(_,(_,vis, _)) -> vis) ms
+  _ -> internalError $ "Env.Classes.visibleClassMethods: " ++ show cls
+
+allClassMethods :: QualIdent -> ClassEnv -> [Ident]
+allClassMethods cls clsEnv = case lookupClassInfo cls clsEnv of
+  Just (_, _, _, ms) -> map fst ms
+  _ -> internalError $ "Env.Classes.allClassMethods: " ++ show cls
 
 flags :: QualIdent -> Ident -> ClassEnv -> (HasDefaultImpl, IsVisible)
 flags cls f clsEnv = case lookupClassInfo cls clsEnv of
