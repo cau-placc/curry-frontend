@@ -430,7 +430,7 @@ getComplConstrs (Module mid _ ds) menv tcEnv cs@(c:_)
 -- current module
 getCCFromDecls :: [QualIdent] -> [Decl] -> [(QualIdent, [Type])]
 getCCFromDecls []     _  = []
-getCCFromDecls (c:cs) ds = complementary cs cinfos
+getCCFromDecls (c:cs) ds = complementary (c:cs) cinfos
   where
   cinfos = map constrInfo
          $ maybe [] extractConstrDecls (find (`declares` c) ds)
@@ -450,7 +450,7 @@ getCCFromDecls (c:cs) ds = complementary cs cinfos
 getCCFromIDecls :: ModuleIdent -> [QualIdent] -> TCEnv -> CS.Interface
                 -> [(QualIdent, [Type])]
 getCCFromIDecls _   []     _     _                       = []
-getCCFromIDecls mid (c:cs) tcEnv (CS.Interface _ _ ds _) = complementary cs cinfos
+getCCFromIDecls mid (c:cs) tcEnv (CS.Interface _ _ ds _) = complementary (c:cs) cinfos
   where
   cinfos = map (uncurry constrInfo)
          $ maybe [] extractConstrDecls (find (`declares` c) ds)

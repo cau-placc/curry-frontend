@@ -142,11 +142,11 @@ data OriginPragma = OriginPragma SpanInfo SpanInfo -- ^ origin pragma
     deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Class methods
-data IMethodDecl = IMethodDecl Position Ident (Maybe Arity) QualTypeExpr DetExpr (Maybe DetExpr)
+data IMethodDecl = IMethodDecl Position Ident (Maybe Arity) QualTypeExpr (Maybe DetExpr)
   deriving (Eq, Read, Show, Generic, Binary)
 
 -- |Class method implementations
-type IMethodImpl = (Ident, Maybe Arity, DetExpr)
+type IMethodImpl = (Ident, Maybe Arity)
 
 -- |Kind expressions
 data KindExpr

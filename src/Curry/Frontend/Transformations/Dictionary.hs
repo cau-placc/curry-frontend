@@ -535,8 +535,8 @@ dictTransDataConstr (RecordConstr c _ tys) =
 -- cleanup phase.
 
 dictTransClassMethod :: ClassMethod -> ClassMethod
-dictTransClassMethod (ClassMethod f a pty ddty mdty) =
-  ClassMethod f a' (predType ty) ddty mdty
+dictTransClassMethod (ClassMethod f a pty mdty) =
+  ClassMethod f a' (predType ty) mdty
   where a' = Just $ fromMaybe 0 a + arrowArity ty - arrowArity (unpredType pty)
         ty = transformPredType pty
 

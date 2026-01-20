@@ -146,7 +146,6 @@ library
     , Curry.Frontend.Html.CurryHtml
     , Curry.Frontend.Html.SyntaxColoring
     , Curry.Frontend.IL
-    , Curry.Frontend.IL.Pretty
     , Curry.Frontend.IL.ShowModule
     , Curry.Frontend.IL.Type
     , Curry.Frontend.IL.Typing

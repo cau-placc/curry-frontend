@@ -214,20 +214,21 @@ data TargetType
 
 -- |Warnings flags
 data WarnFlag
-  = WarnMultipleImports      -- ^ Warn for multiple imports
-  | WarnDisjoinedRules       -- ^ Warn for disjoined function rules
-  | WarnUnusedGlobalBindings -- ^ Warn for unused global bindings
-  | WarnUnusedBindings       -- ^ Warn for unused local bindings
-  | WarnNameShadowing        -- ^ Warn for name shadowing
-  | WarnImportNameShadowing  -- ^ Warn for shadowing of imported names
-  | WarnOverlapping          -- ^ Warn for overlapping rules/alternatives
-  | WarnIncompletePatterns   -- ^ Warn for incomplete pattern matching
-  | WarnMissingFields        -- ^ Warn for missing fields in record expressions
-  | WarnMissingSignatures    -- ^ Warn for missing type signatures
-  | WarnMissingMethods       -- ^ Warn for missing method implementations
-  | WarnOrphanInstances      -- ^ Warn for orphan instances
-  | WarnRedundantContext     -- ^ Warn for redundant context in type signatures
-  | WarnNondeterministicIO   -- ^ Warn for nondeterministic IO actions
+  = WarnMultipleImports       -- ^ Warn for multiple imports
+  | WarnDisjoinedRules        -- ^ Warn for disjoined function rules
+  | WarnUnusedGlobalBindings  -- ^ Warn for unused global bindings
+  | WarnUnusedBindings        -- ^ Warn for unused local bindings
+  | WarnNameShadowing         -- ^ Warn for name shadowing
+  | WarnImportNameShadowing   -- ^ Warn for shadowing of imported names
+  | WarnOverlapping           -- ^ Warn for overlapping rules/alternatives
+  | WarnIncompletePatterns    -- ^ Warn for incomplete pattern matching
+  | WarnMissingFields         -- ^ Warn for missing fields in record expressions
+  | WarnMissingSignatures     -- ^ Warn for missing type signatures
+  | WarnMissingMethods        -- ^ Warn for missing method implementations
+  | WarnOrphanInstances       -- ^ Warn for orphan instances
+  | WarnRedundantContext      -- ^ Warn for redundant context in type signatures
+  | WarnNondeterministicIO    -- ^ Warn for nondeterministic IO actions
+  | WarnMissingExternalDetSig -- ^ Warn for external decls without determinism sig
     deriving (Eq, Bounded, Enum, Show)
 
 -- |Warning flags enabled by default
@@ -236,7 +237,8 @@ stdWarnFlags =
   [ WarnMultipleImports   , WarnDisjoinedRules   --, WarnUnusedGlobalBindings
   , WarnUnusedBindings    , WarnNameShadowing    , WarnOverlapping
   , WarnIncompletePatterns, WarnMissingFields    , WarnMissingSignatures
-  , WarnMissingMethods    , WarnRedundantContext, WarnNondeterministicIO
+  , WarnMissingMethods    , WarnRedundantContext , WarnNondeterministicIO
+  , WarnMissingExternalDetSig
   ]
 
 -- |Description and flag of warnings flags
@@ -268,6 +270,8 @@ warnFlags =
     , "redundant context")
   , (WarnNondeterministicIO   , "nondeterministic-io"
     , "nondeterministic IO actions")
+  , (WarnMissingExternalDetSig, "external-det-sig"
+    , "external function without determinism signature")
   ]
 
 -- |Dump level
@@ -332,9 +336,9 @@ extensions =
     , "enable anonymous free variables"                      )
   , ( CPP                      , "CPP"
     , "run C preprocessor"                                   )
-  , (FlexibleContexts          , "FlexibleContexts"          
+  , (FlexibleContexts          , "FlexibleContexts"
     , "remove syntax restrictions on contexts"               )
-  , (FlexibleInstances         , "FlexibleInstances"         
+  , (FlexibleInstances         , "FlexibleInstances"
     , "remove syntax restrictions on instance declarations"  )
   , ( FunctionalDependencies   , "FunctionalDependencies"
     , "enable functional dependencies"                       )

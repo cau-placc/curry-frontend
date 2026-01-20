@@ -93,8 +93,6 @@ instance Symbol Token where
   dist _ (Token Id_interface       _) = (0,  8)
   dist _ (Token Id_primitive       _) = (0,  8)
   dist _ (Token Id_qualified       _) = (0,  8)
-  dist _ (Token Id_Det             _) = (0,  2)
-  dist _ (Token Id_Any             _) = (0,  2)
   dist _ (Token PragmaHiding       _) = (0,  9)
   dist _ (Token Id_Constraint      _) = (0,  9)
   dist _ (Token PragmaOrigin       _) = (0,  9)
@@ -223,8 +221,6 @@ data Category
   | Id_interface
   | Id_primitive
   | Id_qualified
-  | Id_Det
-  | Id_Any
 
   -- special operators
   | SymDot      -- .
@@ -373,8 +369,6 @@ instance Show Token where
   showsPrec _ (Token Id_interface       _) = showsSpecialIdent "interface"
   showsPrec _ (Token Id_primitive       _) = showsSpecialIdent "primitive"
   showsPrec _ (Token Id_qualified       _) = showsSpecialIdent "qualified"
-  showsPrec _ (Token Id_Det             _) = showsSpecialIdent "Det"
-  showsPrec _ (Token Id_Any             _) = showsSpecialIdent "Any"
   showsPrec _ (Token PragmaLanguage     _) = showString "{-# LANGUAGE"
   showsPrec _ (Token PragmaOptions      a) = showString "{-# OPTIONS"
                                            . shows a
@@ -503,8 +497,6 @@ keywordsSpecialIds = Map.union keywords $ Map.fromList
   , ("interface", Id_interface)
   , ("primitive", Id_primitive)
   , ("qualified", Id_qualified)
-  , ("Det"      , Id_Det      )
-  , ("Any"      , Id_Any      )
   ]
 
 tokenSpecialIds :: [Category]

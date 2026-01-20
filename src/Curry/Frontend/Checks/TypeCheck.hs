@@ -414,7 +414,7 @@ bindClassMethods' m tcEnv vEnv =
 
 bindClassMethod :: ModuleIdent -> QualIdent -> ClassMethod -> ValueEnv
                 -> ValueEnv
-bindClassMethod m cls (ClassMethod f _ ty _ _) =
+bindClassMethod m cls (ClassMethod f _ ty _) =
   bindGlobalInfo (\qc tySc -> Value qc (Just (Visible, cls)) 0 tySc) m f (typeScheme ty)
 
 -- -----------------------------------------------------------------------------

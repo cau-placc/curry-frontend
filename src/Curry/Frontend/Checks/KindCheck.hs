@@ -346,7 +346,6 @@ bindKind m tcEnv' clsEnv tcEnv (ClassDecl _ _ _ cls tvs _ ds) =
     mkMethods _                  = []
     mkMethod qty f = ClassMethod f (findArity f ds)
                         (expandMethodType m tcEnv' clsEnv (qualify cls) tvs qty)
-                        Nothing
                         (findDetAnn f ds)
 
     findArity _ []      = Nothing

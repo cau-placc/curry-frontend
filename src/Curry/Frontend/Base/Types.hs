@@ -55,9 +55,9 @@ module Curry.Frontend.Base.Types
   , TypeScheme (..), monoType, polyType, typeScheme
   , rawType
     -- * Representation of determinism types
-  , toDetExpr, toDetType, toDetSchema
+  , toDetExpr, toDetType, toDetSchema, unapplyDetType
   , abstractDetScheme, monoDetScheme, substDetTy, detTypeVars
-  , methodDefaultDet, methodDetSchemeAnn
+  , methodDetSchemeAnn
   , CS.DetExpr(..), DetScheme (..), DetType(..), VarIndex
     -- * Predefined types
   , arrowType, unitType, predUnitType, boolType, predBoolType, charType
@@ -77,6 +77,7 @@ module Curry.Frontend.Base.Types
   ) where
 
 import           Prelude hiding ((<>))
+import           Control.Arrow (first)
 import           Data.Function (on)
 import           Data.List (nub, partition, (\\))
 import           Data.Maybe (fromMaybe)
@@ -593,28 +594,22 @@ tupleData = [DataConstr (tupleId n) (take n tvs) | n <- [2 ..]]
 
 -- The type 'ClassMethod' is used to represent class methods introduced
 -- by class declarations. The 'Maybe Int' denotes the arity of the provided
--- default implementation and the first 'Maybe Int' denotes the determinism annotation of the method's default implementation.
--- It is Nothing before all determinism info has been checked.
--- The second 'Maybe DetScheme' denotes the determinism
+-- The 'Maybe DetScheme' denotes the determinism
 -- annotation of the method if it exists.
-
-data ClassMethod = ClassMethod Ident (Maybe Int) PredType (Maybe DetScheme) (Maybe DetScheme)
+data ClassMethod = ClassMethod Ident (Maybe Int) PredType  (Maybe DetScheme)
   deriving (Eq, Show)
 
 methodName :: ClassMethod -> Ident
-methodName (ClassMethod f _ _ _ _) = f
+methodName (ClassMethod f _ _ _) = f
 
 methodArity :: ClassMethod -> Maybe Int
-methodArity (ClassMethod _ a _ _ _) = a
+methodArity (ClassMethod _ a _ _) = a
 
 methodType :: ClassMethod -> PredType
-methodType (ClassMethod _ _ pty _ _) = pty
-
-methodDefaultDet :: ClassMethod -> Maybe DetScheme
-methodDefaultDet (ClassMethod _ _ _ det _) = det
+methodType (ClassMethod _ _ pty _) = pty
 
 methodDetSchemeAnn :: ClassMethod -> Maybe DetScheme
-methodDetSchemeAnn (ClassMethod _ _ _ _ ann) = ann
+methodDetSchemeAnn (ClassMethod _ _ _ ann) = ann
 
 -- ---------------------------------------------------------------------------
 -- Quantification
@@ -1003,6 +998,12 @@ detTypeVars (VarTy v) = [v]
 detTypeVars (DetArrow ty1 ty2) = detTypeVars ty1 ++ detTypeVars ty2
 detTypeVars _ = []
 
+unapplyDetType :: DetType -> ([DetType], DetType)
+unapplyDetType = first reverse . go []
+  where
+    go args (DetArrow ty1 ty2) = go (ty1:args) ty2
+    go args ty'                = (args, ty')
+
 -- ---------------------------------------------------------------------------
 -- Pretty printing
 -- ---------------------------------------------------------------------------
@@ -1035,10 +1036,10 @@ instance Pretty DataConstr where
       pLs = zipWith (\l ty -> pPrint l <+> colon <> colon <+> pPrint ty) ls tys
 
 instance Pretty ClassMethod where
-  pPrint (ClassMethod f mar pty ddty mdty) = pPrint f
+  pPrint (ClassMethod f mar pty mdty) = pPrint f
     <>  text "/" <> int (fromMaybe 0 mar)
     <+> colon <> colon <+> pPrint pty
-    <+> colon <> colon <+> pPrint ddty <> comma <> pPrint mdty
+    <+> colon <> colon <+> pPrint mdty
 
 instance Pretty TypeScheme where
   pPrint (ForAll _ ty) = pPrint ty

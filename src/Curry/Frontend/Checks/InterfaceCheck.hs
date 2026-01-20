@@ -48,6 +48,7 @@
 
 module Curry.Frontend.Checks.InterfaceCheck (interfaceCheck) where
 
+import           Control.Arrow            (second)
 import           Control.Monad            (unless)
 import qualified Control.Monad.State as S
 import           Data.List                (sort)
@@ -188,18 +189,16 @@ checkImport (IClassDecl _ cx cls k clsvars funDeps ms _ _) = do
           toPredList clsvars OPred cx == superClasses cls' clsEnv &&
           map (toFunDep clsvars) funDeps == classFunDeps cls' clsEnv &&
           map (\m -> (imethod m, imethodArity m
-                     , Just $ toDetType $ imethodDefaultDetType m
                      , toDetType <$> imethodDetTypeAnn m)) ms ==
             map (\f -> (methodName f, methodArity f
-                       , methodDefaultDet f, methodDetSchemeAnn f)) fs
+                       , methodDetSchemeAnn f)) fs
         = Just $ mapM_ (checkMethodImport cls clsvars) ms
       check _ = Nothing
   checkTypeInfo "type class" check cls cls
 checkImport (IInstanceDecl _ cx cls tys is m _) =
   checkInstInfo check cls (cls, tys') m
   where PredTypes ps tys' = toPredTypes [] OPred cx tys
-        check ps' is' = ps == ps' && sort (map transDet is) == sort (map transDet is')
-        transDet (a, b, dty) = (a, b, toDetType dty)
+        check ps' is' = ps == ps' && sort is == sort (map (second Just) is')
 
 checkConstrImport :: QualIdent -> [Ident] -> ConstrDecl -> IC ()
 checkConstrImport tc tvs (ConstrDecl _ c tys) = do
@@ -251,16 +250,14 @@ safeHead [] = Nothing
 safeHead (x:_) = Just x
 
 checkMethodImport :: QualIdent -> [Ident] -> IMethodDecl -> IC ()
-checkMethodImport qcls clsvars (IMethodDecl _ f _ qty ddty mdty) = do
+checkMethodImport qcls clsvars (IMethodDecl _ f _ qty mdty) = do
   checkValueInfo "method" check f qf
-  checkDetInfo "method" checkD f qf
   checkMaybeDetInfo "method" checkM qcls f qf
   where qf = qualifyLike qcls f
         check (Value f' cm' _ (ForAll _ pty)) =
           qf == f' && isJust cm' &&
           toMethodType qcls clsvars qty == pty
         check _ = False
-        checkD = (toDetType ddty ==)
         checkM = (fmap toDetType mdty ==)
 
 checkPrecInfo :: HasSpanInfo s => (PrecInfo -> Bool) -> s -> QualIdent -> IC ()
@@ -283,24 +280,17 @@ checkTypeInfo what check p tc = do
         _    -> internalError "checkTypeInfo"
   checkImported checkInfo tc
 
-checkInstInfo :: HasSpanInfo s => (PredList -> [(Ident, Maybe Int, DetExpr)] -> Bool) -> s -> InstIdent
+checkInstInfo :: HasSpanInfo s => (PredList -> [(Ident, Int)] -> Bool) -> s -> InstIdent
               -> Maybe ModuleIdent -> IC ()
-checkInstInfo check p i@(qcls, tys) mm = do
+checkInstInfo check p i mm = do
   inEnv <- getInstEnv
   let checkInfo m _ = case lookupInstExact i inEnv of
         Just (_, m', ps, is)
           | m /= m'   -> report $ errNoInstance p m i
           | otherwise -> do
-            is' <- mapM getDetInfo is
-            unless (check ps is') $ report $ errInstanceConflict p m i
+            unless (check ps is) $ report $ errInstanceConflict p m i
         Nothing -> report $ errNoInstance p m i
   checkImported checkInfo (maybe qualify qualifyWith mm anonId)
-  where
-    getDetInfo (i', arity) = do
-      dEnv <- getDetEnv
-      case Map.lookup (II qcls (qualifyLike qcls i') tys) dEnv of
-        Just d' -> return (i', Just arity, toDetExpr d')
-        Nothing -> internalError $ "checkInstInfo" ++ render (pPrint (i', qcls, tys))
 
 checkValueInfo :: HasSpanInfo a => String -> (ValueInfo -> Bool) -> a
                -> QualIdent -> IC ()

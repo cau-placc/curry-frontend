@@ -14,9 +14,12 @@
     The Curry parser is implemented using the (mostly) LL(1) parsing
     combinators implemented in 'Curry.Base.LLParseComb'.
 -}
+{-# LANGUAGE TupleSections #-}
 module Curry.Syntax.Parser
   ( parseSource, parseHeader, parsePragmas, parseInterface, parseGoal
   ) where
+
+import Control.Arrow (first)
 
 import Curry.Base.Ident
 import Curry.Base.Monad       (CYM)
@@ -27,7 +30,7 @@ import Curry.Base.SpanInfo
 
 import Curry.Syntax.Extension
 import Curry.Syntax.Lexer
-  (Token (..), Category (..), Attributes (..), tokenSpecialIds, lexer)
+  (Token (..), Category (..), Attributes (..), lexer)
 import Curry.Syntax.Type
 
 -- |Parse a 'Module'
@@ -118,8 +121,8 @@ export :: Parser a Token Export
 export =  qtycon <**> (tcExportWith <$> parensSp spec `opt` tcExport)
       <|> tcExport <$> qfun <\> qtycon
       <|> exportModule' <$> tokenSpan KW_module <*> modIdent
-  where spec =  (\sp      -> (ExportTypeAll    , [sp])) <$> tokenSpan DotDot
-            <|> (\(c, ss) -> (exportTypeWith' c,  ss )) <$> con `sepBySp` comma
+  where spec = (ExportTypeAll, ) . return <$> tokenSpan DotDot
+            <|> first exportTypeWith' <$> con `sepBySp` comma
         tcExport qtc = updateEndPos $ Export (fromSrcSpan (getSrcSpan qtc)) qtc
         tcExportWith ((spc, ss), sp1, sp2) qtc =
           updateEndPos $ setSrcInfoPoints (sp1 : (ss ++ [sp2])) $
@@ -170,8 +173,8 @@ importSpec =   spanPosition
 importSp :: Parser a Token Import
 importSp = tycon <**> (tcImportWith <$> parensSp spec `opt` tcImport)
       <|> tcImport <$> fun <\> tycon
-  where spec =  (\sp      -> (ImportTypeAll    , [sp])) <$> tokenSpan DotDot
-            <|> (\(c, ss) -> (importTypeWith' c,  ss )) <$> con `sepBySp` comma
+  where spec =  (ImportTypeAll, ) . return <$> tokenSpan DotDot
+            <|> first importTypeWith' <$> con `sepBySp` comma
         tcImport tc = updateEndPos $ Import (fromSrcSpan (getSrcSpan tc)) tc
         tcImportWith ((spc, ss), sp1, sp2) tc =
           updateEndPos $ setSrcInfoPoints (sp1 : (ss ++ [sp2])) $
@@ -279,7 +282,7 @@ iClassDecl = (\(sp, _, cx, (qcls, k), clsvars) (fds, _) ->
 iMethod :: Parser a Token IMethodDecl
 iMethod = IMethodDecl <$> position
                       <*> fun <*> option int <*-> token DoubleColon <*> qualType
-                                             <*-> token ColonQ <*> detExpr
+                                             <*-> token ColonQ
                                              <*> option iDefaultMethodDetType
 
   where iDefaultMethodDetType = token ColonQ <-*> detExpr
@@ -301,12 +304,8 @@ iInstanceDecl = (\(sp, _, cx, qcls, inst) ->
 
 -- |Parser for an interface method implementation
 iImpl :: Parser a Token IMethodImpl
-iImpl = mkIImpl <$> fun <*> ((impl <$> arity <*-> token ColonQ <*> detExpr)
-                        <|> (notImpl <$> (token Underscore <-*> token ColonQ <-*> detExpr)))
-  where
-    mkIImpl i f = f i
-    impl  a d i = (i, Just a , d)
-    notImpl d i = (i, Nothing, d)
+iImpl = (,) <$> fun <*> ((Just <$> arity)
+                         <|> (Nothing <$ token Underscore ))
 
 iModulePragma :: Parser a Token ModuleIdent
 iModulePragma = token PragmaModule <-*> modIdent <*-> token PragmaEnd
@@ -461,18 +460,16 @@ arrowDetExpr = mkArrow <$> tokenSpan RightArrow
 -- and then convert them later.
 detExpr0 :: Parser a Token DetExpr
 detExpr0 =  (pExpr <$> spanPosition <*> parensSp detExpr)
-        <|> dParser <|> ndParser
+        <|> (vExpr <$> spanPosition <*> tyvar)
   where
     pExpr sp1 (dty, sp2, sp3) = updateEndPos $
       ParenDetExpr (spanInfo sp1 [sp2, sp3]) dty
     dExpr sp = DetDetExpr (spanInfo sp [sp])
     ndExpr sp = AnyDetExpr (spanInfo sp [sp])
-    dParser = dExpr <$> tokenSpan Id_Det
-    ndParser = ndExpr <$> tokenSpan Id_Any
-    -- vExpr sp tv = case idName tv of
-    --   "Det" -> dExpr sp
-    --   "Any" -> ndExpr sp
-    --   _     -> updateEndPos $ VarDetExpr (spanInfo sp []) tv
+    vExpr sp tv = case idName tv of
+      "Det" -> dExpr sp
+      "Any" -> ndExpr sp
+      _     -> updateEndPos $ VarDetExpr (spanInfo sp []) tv
 
 typeSig :: Parser a Token (([Ident],[Span]) -> Span -> Decl ())
 typeSig = sig <$> tokenSpan DoubleColon <*> qualType
@@ -1117,7 +1114,7 @@ letExpr = mkLet <$>  tokenSpan KW_let <*> layout valueDecls
                 <*> (tokenSpan KW_in <?> "in expected") <*> expr
   where
     mkLet sp1 (ds, lay) sp2 e = updateEndPos $
-      Let (spanInfo sp1 [sp1, sp2])lay ds e
+      Let (spanInfo sp1 [sp1, sp2]) lay ds e
 
 doExpr :: Parser a Token (Expression ())
 doExpr = mkDo <$> tokenSpan KW_do <*> layout stmts
@@ -1335,14 +1332,14 @@ anonIdent = (`setSpanInfo` anonId) . fromSrcSpanBoth <$> tokenSpan Underscore
 
 mIdent :: Parser a Token ModuleIdent
 mIdent = mIdent' <$> spanPosition <*>
-     tokens [Id,QId,Id_as,Id_ccall,Id_forall,Id_hiding, Id_Det,
-             Id_interface,Id_primitive,Id_qualified, Id_Any]
+     tokens [Id,QId,Id_as,Id_ccall,Id_forall,Id_hiding,
+             Id_interface,Id_primitive,Id_qualified]
   where mIdent' sp a = ModuleIdent (fromSrcSpanBoth sp) (modulVal a ++ [sval a])
 
 ident :: Parser a Token Ident
 ident = (\ sp t -> setSpanInfo (fromSrcSpanBoth sp) (mkIdent (sval t)))
-          <$> spanPosition <*> tokens [Id,Id_as,Id_ccall,Id_forall,Id_hiding, Id_Det,
-                                       Id_interface,Id_primitive,Id_qualified, Id_Any]
+          <$> spanPosition <*> tokens [Id,Id_as,Id_ccall,Id_forall,Id_hiding,
+                                       Id_interface,Id_primitive,Id_qualified]
 
 qIdent :: Parser a Token QualIdent
 qIdent = qualify <$> ident <|> qIdentWith QId

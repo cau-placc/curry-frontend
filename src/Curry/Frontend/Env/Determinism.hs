@@ -27,9 +27,10 @@ import Prelude hiding ( (<>) )
 import Data.Map ( Map )
 import qualified Data.Map as Map
 
-import Curry.Base.Ident
-import Curry.Frontend.Base.Types
-import Curry.Base.Pretty ( Pretty(..), parens, dot, (<+>), (<>) )
+import Curry.Base.Ident ( QualIdent(..), Ident (..), ModuleIdent
+                        , qualifyLike, unqualify,  qualQualify )
+import Curry.Frontend.Base.Types ( DetScheme(..) )
+import Curry.Base.Pretty ( Pretty(..), (<+>) )
 
 type DetEnv = Map IdentInfo DetScheme
 
@@ -74,14 +75,11 @@ flattenNestDetEnv (Top env) = env
 flattenNestDetEnv (LocalEnv env lcl) = Map.union lcl (flattenNestDetEnv env)
 
 data IdentInfo = QI QualIdent
-               -- class, tycon, method (only for known instances with the given type constructor)
-               | II QualIdent QualIdent [Type] -- class, method, instance type
-               | CI QualIdent QualIdent -- class, default method
+               | CI QualIdent QualIdent -- class, method
   deriving (Eq, Ord, Show)
 
 identInfoFun :: IdentInfo -> QualIdent
 identInfoFun (QI meth) = meth
-identInfoFun (II _ meth _) = meth
 identInfoFun (CI _ meth) = meth
 
 toClassIdent :: QualIdent -> IdentInfo -> IdentInfo
@@ -91,18 +89,12 @@ toClassIdent cls (QI qid) = CI cls (qid' { qidIdent = (qidIdent qid') { idUnique
             Just _  -> qid
 toClassIdent _ ii = ii
 
-toInstanceIdent :: QualIdent -> [Type] -> IdentInfo -> IdentInfo
-toInstanceIdent cls instTys (QI qid) =
-  II qcls (qid { qidIdent = (qidIdent qid) { idUnique = 0 }
-                                      , qidModule = qidModule qcls }) instTys
-    where
-      qcls | isQualified cls = cls
-           | otherwise       = qualifyLike qid (unqualify cls)
-toInstanceIdent _ _ ii = ii
+qualifyIdentInfo :: ModuleIdent -> IdentInfo -> IdentInfo
+qualifyIdentInfo mid (QI meth) = QI (qualQualify mid meth)
+qualifyIdentInfo mid (CI cls meth) = CI (qualQualify mid cls) (qualQualify mid meth)
 
 instance Pretty IdentInfo where
   pPrint (QI qid) = pPrint qid
-  pPrint (II cls tc meth) = parens (pPrint cls <+> pPrint tc) <> dot <> pPrint meth
   pPrint (CI cls meth) = pPrint cls <+> pPrint meth
 
 instance Pretty DetEnv where

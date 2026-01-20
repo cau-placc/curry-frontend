@@ -163,8 +163,7 @@ determinismCheck _ (env, mdl@(Module a b c d e f _))
   where
     (dE, tE, ds', msgs) = DC.determinismCheck (moduleIdent env) (tyConsEnv env)
                                          (valueEnv env) (classEnv env)
-                                         (instEnv env) (detEnv env)
-                                         (extensions env) mdl
+                                         (detEnv env) (extensions env) mdl
 
 -- |Check the export specification
 exportCheck :: Monad m => Check m (Module a)

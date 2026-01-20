@@ -28,7 +28,6 @@ import qualified Data.Map   as Map ( Map, delete, fromListWith, lookup
 import           Data.Maybe        (mapMaybe)
 import qualified Data.Set   as Set ( Set, delete, empty, insert, fromList
                                    , member, toList )
-import           Text.PrettyPrint  (render)
 
 import Curry.Base.Position
 import Curry.Base.SpanInfo
@@ -44,7 +43,7 @@ import Curry.Frontend.Env.OpPrec          (OpPrecEnv, PrecInfo (..), OpPrec (..)
 import Curry.Frontend.Env.Instance
 import Curry.Frontend.Env.TypeConstructor (TCEnv, TypeInfo (..), clsKind, qualLookupTypeInfo)
 import Curry.Frontend.Env.Value           (ValueEnv, ValueInfo (..), qualLookupValue)
-import Curry.Frontend.Env.Determinism     (DetEnv, IdentInfo (..), lookupDetEnv)
+import Curry.Frontend.Env.Determinism     (DetEnv, lookupDetEnv)
 
 import Curry.Frontend.CompilerEnv
 import Curry.Frontend.CompilerOpts (Options (optOriginPragmas))
@@ -189,11 +188,9 @@ newConstrDecl _ _ _ =
 -- constraint. Due to the sorting of the predicate set, this is fortunately very
 -- easy. The implicit class constraint is marked with an 'ICC' flag, which
 -- causes it to always be the minimum element of the predicate set.
-
 methodDecl :: ModuleIdent -> [Ident] -> ClassMethod -> IMethodDecl
-methodDecl m tvs (ClassMethod f a (PredType pls ty) (Just ddty) mdty) = IMethodDecl NoPos f a
-  (fromQualPredType m tvs $ PredType (plDeleteMin pls) ty) (toDetExpr ddty) (fmap toDetExpr mdty)
-methodDecl _ _ _ = internalError "Exports.methodDecl: unknown determinism expression of method"
+methodDecl m tvs (ClassMethod f a (PredType pls ty) mdty) = IMethodDecl NoPos f a
+  (fromQualPredType m tvs $ PredType (plDeleteMin pls) ty) (fmap toDetExpr mdty)
 
 valueDecl
   :: ModuleIdent -> TCEnv -> ValueEnv -> DetEnv -> ClassEnv -> [Ident] -> Export -> [IDecl] -> EXPM [IDecl]
@@ -279,10 +276,10 @@ getExportedInsts inExps =
 
 -- Transforms an entry of the instance environment into an interface instance
 -- declaration.
-iInstDecl :: ModuleIdent -> InstEnv -> ClassEnv -> DetEnv -> [Ident] -> InstIdent -> EXPM IDecl
-iInstDecl m inEnv cEnv dEnv tvs instId@(cls, tys) = do
+iInstDecl :: ModuleIdent -> InstEnv -> ClassEnv -> [Ident] -> InstIdent -> EXPM IDecl
+iInstDecl m inEnv cEnv tvs instId@(cls, tys) = do
   o <- originPragma cls
-  return $ IInstanceDecl NoPos cx (qualUnqualify m cls) tys' (map getDetInfo allIs) mm o
+  return $ IInstanceDecl NoPos cx (qualUnqualify m cls) tys' allIs mm o
  where
   (_, m', ps, is) = case lookupInstExact instId inEnv of
                    Just instInfo -> instInfo
@@ -290,10 +287,6 @@ iInstDecl m inEnv cEnv dEnv tvs instId@(cls, tys) = do
                                 "find instance information for " ++ show instId
   allMthds = allClassMethods cls cEnv
   allIs = map (\i -> (i, lookup i is)) allMthds
-  getDetInfo (f, ma) = case Map.lookup (II cls (qualifyLike cls f) tys) dEnv of
-    Just dty -> (f, ma, toDetExpr dty)
-    Nothing -> internalError $ "Exports.iInstDecl: " ++
-      render (pPrint (cls, f))
   (cx, tys') = fromQualPredTypes m tvs $ PredTypes ps tys
   mm  = if m == m' then Nothing else Just m'
 
@@ -361,7 +354,7 @@ instance HasModule NewConstrDecl where
   modules (NewRecordDecl _ _ (_, ty)) = modules ty
 
 instance HasModule IMethodDecl where
-  modules (IMethodDecl _ _ _ qty _ _) = modules qty
+  modules (IMethodDecl _ _ _ qty _) = modules qty
 
 instance HasModule Constraint where
   modules (Constraint _ cls tys) = modules cls . modules tys
@@ -428,7 +421,7 @@ closeInterface :: ModuleIdent -> TCEnv -> ClassEnv -> InstEnv -> DetEnv -> [Iden
 closeInterface _ _ _ _ _ _ _ _ [] = return []
 closeInterface m tcEnv clsEnv inEnv dEnv tvs is inExps (d:ds) = do
   d' <- case d of EID d''    -> return d''
-                  EII instId -> iInstDecl m inEnv clsEnv dEnv tvs instId
+                  EII instId -> iInstDecl m inEnv clsEnv tvs instId
   hs <- hiddenTypes m tcEnv clsEnv tvs d'
   let es             = getExportedInsts (updateInstExports m i inExps)
       (inExps', ds') = (ds ++) . (hs ++) <$> es
@@ -522,7 +515,7 @@ instance HasType NewConstrDecl where
   usedTypes (NewRecordDecl _ _ (_, ty)) = usedTypes ty
 
 instance HasType IMethodDecl where
-  usedTypes (IMethodDecl _ _ _ qty _ _) = usedTypes qty
+  usedTypes (IMethodDecl _ _ _ qty _) = usedTypes qty
 
 instance HasType Constraint where
   usedTypes (Constraint _ cls tys) = (cls :) . usedTypes tys

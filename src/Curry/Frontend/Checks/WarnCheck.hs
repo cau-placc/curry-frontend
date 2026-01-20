@@ -33,7 +33,7 @@ import qualified Data.IntSet         as IntSet
 import           Data.Map
   (Map)
 import qualified Data.Map            as Map
-  (empty, insert, lookup, (!), fromList, union)
+  (empty, insert, lookup, (!), fromList, union, member)
 import           Data.Maybe
   (catMaybes, fromMaybe, listToMaybe, isJust)
 import           Data.List
@@ -89,6 +89,7 @@ warnCheck wOpts aEnv valEnv tcEnv clsEnv mdl
       checkModuleAlias is
       checkRedContext ds
       checkDeterministicIO ds
+      checkExternal ds
   where Module _ _ _ mid es is ds = mdl
 
 type ScopeEnv = NestEnv IdInfo
@@ -1439,10 +1440,26 @@ checkRedContextFieldExpr :: Field (Expression a) -> WCM ()
 checkRedContextFieldExpr (Field _ _ e) = checkRedContextExpr e
 
 -- ---------------------------------------------------------------------------
+-- Check that external functions have a determinism annotation
+-- ---------------------------------------------------------------------------
+
+checkExternal :: [Decl (PredType, DetType)] -> WCM ()
+checkExternal decls = warnFor WarnMissingExternalDetSig $ do
+  sigs <- getDetSignatures
+  let check (ExternalDecl spi vs) =
+        mapM_ (checkV spi) vs
+      check _ = return ()
+      checkV spi (Var _ ident) =
+        unless (ident `Map.member` sigs) $
+          report $ warnMissingExternalDetSig spi ident
+  mapM_ check decls
+
+
+-- ---------------------------------------------------------------------------
 -- Check that IO is used deterministically
 -- ---------------------------------------------------------------------------
 
--- We use MaybeT to olny throw the innermost warning for each declaration.
+-- We use MaybeT to only throw the innermost warning for each declaration.
 checkDeterministicIO :: [Decl (PredType, DetType)] -> WCM ()
 checkDeterministicIO = warnFor WarnNondeterministicIO .
   mapM_ (runMaybeT . checkDeterministicIODecl)
@@ -1757,3 +1774,10 @@ warnShadowing :: Ident -> Ident -> Message
 warnShadowing x v = spanInfoMessage x $
   text "Shadowing symbol" <+> text (escName x)
   <> comma <+> text "bound at:" <+> ppPosition (getPosition v)
+
+warnMissingExternalDetSig :: SpanInfo -> Ident -> Message
+warnMissingExternalDetSig spi ident =
+  spanInfoMessage spi $ vcat
+              [ text "External declaration for" <+> quotes (pPrint ident)
+                <+> text"implicitly assumed to be deterministic."
+              , text "Add a determinism signature to silence this warning"]

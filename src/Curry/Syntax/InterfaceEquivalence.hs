@@ -127,8 +127,8 @@ instance Equiv NewConstrDecl where
   _ =~= _ = False
 
 instance Equiv IMethodDecl where
-  IMethodDecl _ f1 a1 qty1 ddty1 mdty1  =~= IMethodDecl _ f2 a2 qty2 ddty2 mdty2
-    = f1 == f2 && a1 == a2 && qty1 == qty2 && ddty1 == ddty2 && mdty1 == mdty2
+  IMethodDecl _ f1 a1 qty1 mdty1  =~= IMethodDecl _ f2 a2 qty2 mdty2
+    = f1 == f2 && a1 == a2 && qty1 == qty2 && mdty1 == mdty2
 
 instance Equiv Ident where
   (=~=) = (==)
@@ -182,7 +182,7 @@ instance FixInterface NewConstrDecl where
   fix tcs (NewRecordDecl p c (i,ty)) = NewRecordDecl p c (i, fix tcs ty)
 
 instance FixInterface IMethodDecl where
-  fix tcs (IMethodDecl p f a qty ddty mdty) = IMethodDecl p f a (fix tcs qty) ddty mdty
+  fix tcs (IMethodDecl p f a qty mdty) = IMethodDecl p f a (fix tcs qty) mdty
 
 instance FixInterface QualTypeExpr where
   fix tcs (QualTypeExpr spi cx ty) = QualTypeExpr spi (fix tcs cx) (fix tcs ty)

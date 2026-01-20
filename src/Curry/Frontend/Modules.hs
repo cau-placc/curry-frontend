@@ -290,7 +290,7 @@ transModule opts mdl = do
   dumpCS :: Show a => DumpLevel -> CompEnv (CS.Module a)
          -> CYIO (CompEnv (CS.Module a))
   dumpCS = dumpWith opts CS.showModule pPrint
-  dumpIL = dumpWith opts IL.showModule IL.ppModule
+  dumpIL = dumpWith opts IL.showModule pPrint
 
 -- ---------------------------------------------------------------------------
 -- Writing output

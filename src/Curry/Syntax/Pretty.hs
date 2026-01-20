@@ -242,7 +242,7 @@ instance Pretty IDecl where
   pPrint (IFunctionDecl _ f cm a ty dty o) =
     sep [ ppQIdent f, maybePP (ppPragma "METHOD" . hsep . map ppIdent) cm
         , int a
-        , text "::", pPrintPrec 0 ty 
+        , text "::", pPrintPrec 0 ty
         , text ":?", pPrintPrec 0 dty
         ] $$
     maybe empty pPrint o
@@ -276,15 +276,14 @@ instance Pretty OriginPragma where
     _ -> empty
 
 instance Pretty IMethodDecl where
-  pPrint (IMethodDecl _ f a qty ddty mdty) =
+  pPrint (IMethodDecl _ f a qty mdty) =
     ppIdent f <+> maybePP int a <+> text "::" <+> pPrintPrec 0 qty
-                                <+> text ":?" <+> pPrintPrec 0 ddty
                                 <> case mdty of
                                       Nothing -> empty
                                       Just dty -> space <> text ":?" <+> pPrintPrec 0 dty
 
 ppIMethodImpl :: IMethodImpl -> Doc
-ppIMethodImpl (f, a, dty) = ppIdent f <+> ppMaybe a <+> text ":?" <+> pPrint dty
+ppIMethodImpl (f, a) = ppIdent f <+> ppMaybe a
   where ppMaybe Nothing = text "_"
         ppMaybe (Just a') = int a'
 

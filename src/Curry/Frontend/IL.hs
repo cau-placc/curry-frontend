@@ -14,10 +14,9 @@
 module Curry.Frontend.IL
   ( module Curry.Frontend.IL.Type
   , module Curry.Frontend.IL.Typing
-  , ppModule, showModule
+  , showModule
   ) where
 
-import Curry.Frontend.IL.Pretty     (ppModule)
 import Curry.Frontend.IL.ShowModule (showModule)
 import Curry.Frontend.IL.Type
 import Curry.Frontend.IL.Typing

@@ -66,7 +66,7 @@ import           Curry.Frontend.Env.Type
 typeSyntaxCheck
   :: [KnownExtension] -> TCEnv -> ClassEnv -> Module a -> (Module a, [Message])
 typeSyntaxCheck exts tcEnv clsEnv mdl@(Module _ _ _ m _ _ ds) =
-  case findMultiples $ map getIdent tcds of
+  case findMultiples $ concatMap impls tcds of
     [] -> case dfps of
             (df:dfs@(_:_)) -> (mdl, [errMultipleDefaultDeclarations (df:|dfs)])
             _              -> runTSCM (checkModule mdl) state
@@ -473,15 +473,6 @@ checkFunDepExt spi cls (_ : _) = do
 -- ---------------------------------------------------------------------------
 -- Auxiliary definitions
 -- ---------------------------------------------------------------------------
-
-getIdent :: Decl a -> Ident
-getIdent (DataDecl     _ tc _ _ _)   = tc
-getIdent (ExternalDataDecl _ tc _)   = tc
-getIdent (NewtypeDecl _ tc _ _ _)    = tc
-getIdent (TypeDecl _ tc _ _)         = tc
-getIdent (ClassDecl _ _ _ cls _ _ _) = cls
-getIdent _                           = internalError
-  "Checks.TypeSyntaxCheck.getIdent: no type or class declaration"
 
 isTypeSyn :: QualIdent -> TypeEnv -> Bool
 isTypeSyn tc tEnv = case qualLookupTypeKind tc tEnv of

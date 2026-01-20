@@ -50,7 +50,10 @@ module Curry.Frontend.IL.Type
   , Alt (..), Binding (..)
   ) where
 
+import Prelude hiding ((<>))
+
 import Curry.Base.Ident
+import Curry.Base.Pretty
 
 import Curry.Frontend.Base.Expr
 
@@ -154,3 +157,147 @@ instance Expr Alt where
   fv (Alt (ConstructorPattern _ _ vs) e) = filter (`notElem` map snd vs) (fv e)
   fv (Alt (VariablePattern       _ v) e) = filter (v /=) (fv e)
   fv (Alt _                           e) = fv e
+
+instance Pretty Module where
+  pPrint (Module m is ds) = sepByBlankLine
+    [ppHeader m, vcat (map ppImport is), sepByBlankLine (map pPrint ds)]
+
+ppHeader :: ModuleIdent -> Doc
+ppHeader m = text "module" <+> text (moduleName m) <+> text "where"
+
+ppImport :: ModuleIdent -> Doc
+ppImport m = text "import" <+> text (moduleName m)
+
+instance Pretty Decl where
+  pPrint (DataDecl                   tc ks cs) = sep $
+    text "data" <+> ppTypeLhs tc (length ks) :
+    map (nest 2)
+        (zipWith (<+>) (equals : repeat (char '|')) (map ppConstr cs))
+  pPrint (NewtypeDecl                tc ks nc) = sep $
+    text "newtype" <+> ppTypeLhs tc (length ks) :
+    [nest 2 (equals <+> ppNewConstr nc)]
+  pPrint (ExternalDataDecl              tc ks) =
+    text "external data" <+> ppTypeLhs tc (length ks)
+  pPrint (FunctionDecl             f vs ty e) = ppTypeSig f ty $$ sep
+    [ ppQIdent f <+> hsep (map (ppIdent . snd) vs) <+> equals
+    , nest 2 (ppExpr 0 e)]
+  pPrint (ExternalDecl f _ ty) = text "external" <+> ppTypeSig f ty
+
+ppTypeLhs :: QualIdent -> Int -> Doc
+ppTypeLhs tc n = ppQIdent tc <+> hsep (map text (take n typeVars))
+
+ppConstr :: ConstrDecl -> Doc
+ppConstr (ConstrDecl c tys) = ppQIdent c <+> fsep (map (pPrintPrec 2) tys)
+
+ppNewConstr :: NewConstrDecl -> Doc
+ppNewConstr (NewConstrDecl c ty) = ppQIdent c <+> fsep [pPrintPrec 2 ty]
+
+ppTypeSig :: QualIdent -> Type -> Doc
+ppTypeSig f ty = ppQIdent f <+> text "::" <+> pPrintPrec 0 ty
+
+instance Pretty Type where
+  pPrintPrec p (TypeConstructor tc tys)
+    | isQTupleId tc                    = parens
+      (fsep (punctuate comma (map (pPrintPrec 0) tys)))
+    | tc == qListId, [ty] <- tys       = brackets (pPrintPrec 0 ty)
+    | otherwise                        = parenIf (p > 1 && not (null tys))
+      (ppQIdent tc <+> fsep (map (pPrintPrec 2) tys))
+  pPrintPrec _ (TypeVariable      n) = ppTypeVar n
+  pPrintPrec p (TypeArrow   ty1 ty2) = parenIf (p > 0)
+                                  (fsep (ppArrow (TypeArrow ty1 ty2)))
+    where
+    ppArrow (TypeArrow ty1' ty2') = pPrintPrec 1 ty1' <+> text "->" : ppArrow ty2'
+    ppArrow ty                    = [pPrintPrec 0 ty]
+  pPrintPrec p (TypeForall ns ty)
+    | null ns   = pPrintPrec p ty
+    | otherwise = parenIf (p > 0) $ ppQuantifiedTypeVars ns <+> pPrintPrec 0 ty
+
+ppTypeVar :: Int -> Doc
+ppTypeVar n
+  | n >= 0    = text (typeVars !! n)
+  | otherwise = text ('_':show (-n))
+
+ppQuantifiedTypeVars :: [(Int, Kind)] -> Doc
+ppQuantifiedTypeVars ns
+  | null ns = empty
+  | otherwise = text "forall" <+> hsep (map (ppTypeVar . fst) ns) <> char '.'
+
+ppBinding :: Binding -> Doc
+ppBinding (Binding v expr) = sep
+  [ppIdent v <+> equals, nest 2 (ppExpr 0 expr)]
+
+ppAlt :: Alt -> Doc
+ppAlt (Alt pat expr) = sep
+  [ppConstrTerm pat <+> text "->", nest 2 (ppExpr 0 expr)]
+
+ppLiteral :: Literal -> Doc
+ppLiteral (Char  c) = text (show c)
+ppLiteral (Int   i) = integer i
+ppLiteral (Float f) = double f
+ppLiteral (String s) = text ("\"" ++ s ++ "\"")
+
+ppConstrTerm :: ConstrTerm -> Doc
+ppConstrTerm (LiteralPattern     _                    l) = ppLiteral l
+ppConstrTerm (ConstructorPattern _ c [(_, v1), (_, v2)])
+  | isQInfixOp c = ppIdent v1 <+> ppQInfixOp c <+> ppIdent v2
+ppConstrTerm (ConstructorPattern _ c                 vs)
+  | isQTupleId c = parens $ fsep (punctuate comma $ map (ppIdent . snd) vs)
+  | otherwise    = ppQIdent c <+> fsep (map (ppIdent . snd) vs)
+ppConstrTerm (VariablePattern    _                    v) = ppIdent v
+
+ppExpr :: Int -> Expression -> Doc
+ppExpr _ (Literal       _ l) = ppLiteral l
+ppExpr _ (Variable      _ v) = ppIdent v
+ppExpr _ (Function    _ f _) = ppQIdent f
+ppExpr _ (Constructor _ c _) = ppQIdent c
+ppExpr p (Apply (Apply (Function    _ f _) e1) e2)
+  | isQInfixOp f = ppInfixApp p e1 f e2
+ppExpr p (Apply (Apply (Constructor _ c _) e1) e2)
+  | isQInfixOp c = ppInfixApp p e1 c e2
+ppExpr p (Apply       e1 e2) = parenIf (p > 2) $ sep
+  [ppExpr 2 e1, nest 2 (ppExpr 3 e2)]
+ppExpr p (Case    ev e alts) = parenIf (p > 0) $
+  text "case" <+> ppEval ev <+> ppExpr 0 e <+> text "of"
+  $$ nest 2 (vcat $ map ppAlt alts)
+  where ppEval Rigid = text "rigid"
+        ppEval Flex  = text "flex"
+ppExpr p (Or          e1 e2) = parenIf (p > 0) $ sep
+  [nest 2 (ppExpr 0 e1), char '|', nest 2 (ppExpr 0 e2)]
+ppExpr p (Exist       v _ e) = parenIf (p > 0) $ sep
+  [text "let" <+> ppIdent v <+> text "free" <+> text "in", ppExpr 0 e]
+ppExpr p (Let           b e) = parenIf (p > 0) $ sep
+  [text "let" <+> ppBinding b <+> text "in",ppExpr 0 e]
+ppExpr p (Letrec       bs e) = parenIf (p > 0) $ sep
+  [text "letrec" <+> vcat (map ppBinding bs) <+> text "in", ppExpr 0 e]
+ppExpr p (Typed        e ty) = parenIf (p > 0) $ sep
+  [ppExpr 0 e, text "::", pPrintPrec 0 ty]
+
+ppInfixApp :: Int -> Expression -> QualIdent -> Expression -> Doc
+ppInfixApp p e1 op e2 = parenIf (p > 1) $ sep
+  [ppExpr 2 e1 <+> ppQInfixOp op, nest 2 (ppExpr 2 e2)]
+
+ppIdent :: Ident -> Doc
+ppIdent ident
+  | isInfixOp ident = parens (ppName ident)
+  | otherwise       = ppName ident
+
+ppQIdent :: QualIdent -> Doc
+ppQIdent ident
+  | isQInfixOp ident = parens (ppQual ident)
+  | otherwise        = ppQual ident
+
+ppQInfixOp :: QualIdent -> Doc
+ppQInfixOp op
+  | isQInfixOp op = ppQual op
+  | otherwise     = char '`' <> ppQual op <> char '`'
+
+ppName :: Ident -> Doc
+ppName x = text (idName x)
+
+ppQual :: QualIdent -> Doc
+ppQual x = text (qualName x)
+
+typeVars :: [String]
+typeVars = [mkTypeVar c i | i <- [0 .. ], c <- ['a' .. 'z']] where
+  mkTypeVar :: Char -> Int -> String
+  mkTypeVar c i = c : if i == 0 then [] else show i

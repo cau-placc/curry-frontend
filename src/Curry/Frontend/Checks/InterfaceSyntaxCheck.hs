@@ -35,7 +35,7 @@ import qualified Data.Set as Set          ( Set, fromList, isSubsetOf, size
 import Curry.Frontend.Base.Expr
 import Curry.Frontend.Base.Messages       (Message, spanInfoMessage, internalError)
 import Curry.Frontend.Base.TopEnv
-import Curry.Frontend.Base.Utils          (findMultiples, fst3)
+import Curry.Frontend.Base.Utils          (findMultiples)
 
 import           Curry.Frontend.Env.TypeConstructor
 import           Curry.Frontend.Env.Type
@@ -144,7 +144,7 @@ checkIDecl (IInstanceDecl p cx qcls inst is m o) = do
   checkClass qcls
   (cx', inst') <- checkQualTypes cx inst
   mapM_ checkInstanceType inst'
-  mapM_ (report . errMultipleImplementation . head) $ findMultiples $ map fst3 is
+  mapM_ (report . errMultipleImplementation . head) $ findMultiples $ map fst is
   return $ IInstanceDecl p cx' qcls inst' is m o
 
 checkHiddenType :: QualIdent -> [Ident] -> [Ident] -> ISC ()
@@ -188,8 +188,8 @@ checkNewConstrDecl tvs (NewRecordDecl p c (l, ty)) = do
   return $ NewRecordDecl p c (l, ty')
 
 checkIMethodDecl :: IMethodDecl -> ISC IMethodDecl
-checkIMethodDecl (IMethodDecl p f a qty ddty mdty) =
-  (\qty' -> IMethodDecl p f a qty' ddty mdty) <$> checkQualType qty
+checkIMethodDecl (IMethodDecl p f a qty mdty) =
+  (\qty' -> IMethodDecl p f a qty' mdty) <$> checkQualType qty
 
 -- taken from Leif-Erik Krueger
 checkInstanceType :: InstanceType -> ISC ()

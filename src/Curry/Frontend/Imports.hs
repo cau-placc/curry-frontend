@@ -175,7 +175,7 @@ bindClass _ m (IClassDecl _ cx cls _ tvs fds ds ids o) =
         -- Add all methods to the class environment, but remember which
         -- methods are visible in the module.
         ms = map (\d -> (imethod d, (isJust $ imethodArity d, isVis d, toDetType <$> imethodDetTypeAnn d))) ds
-        isVis (IMethodDecl _ idt _ _ _ _) = idt `notElem` ids
+        isVis (IMethodDecl _ idt _ _ _) = idt `notElem` ids
 bindClass _ _ _ = id
 
 importInstances :: ModuleIdent -> [IDecl] -> InstEnv -> InstEnv
@@ -184,7 +184,7 @@ importInstances m = flip $ foldr (bindInstance m)
 bindInstance :: ModuleIdent -> IDecl -> InstEnv -> InstEnv
 bindInstance m (IInstanceDecl _ cx qcls tys is mm o) =
   bindInstInfo (applyOriginPragma o (qualQualify m qcls), tys')
-    (NoSpanInfo, fromMaybe m mm, ps, mapMaybe (\(f, a, _) -> fmap (f,) a) is)
+    (NoSpanInfo, fromMaybe m mm, ps, mapMaybe (\(f, a) -> fmap (f,) a) is)
   where PredTypes ps tys' = toQualPredTypes m [] OPred cx tys
 bindInstance _ _ = id
 
@@ -194,8 +194,6 @@ importDetEnv m = flip $ foldr (bindDetEnv m)
 bindDetEnv :: ModuleIdent -> IDecl -> DetEnv -> DetEnv
 bindDetEnv m (IClassDecl _ _ cls _ _ _ ds _ _) dEnv =
   foldr (bindDetEnvClass m cls) dEnv ds
-bindDetEnv m (IInstanceDecl _ _ cls ty ds _ _) dEnv =
-  foldr (bindDetEnvInstance m cls ty) dEnv ds
 bindDetEnv m (IFunctionDecl _ f _ _ _ dty _) dEnv =
   Map.insert (QI (qualQualify m f)) (toDetType dty) dEnv
 bindDetEnv m (IDataDecl _ _ _ _ cs _ _) dEnv =
@@ -223,13 +221,10 @@ instance BindDetEnvConstr NewConstrDecl where
   bindDetEnvConstr _ _ = id
 
 bindDetEnvClass :: ModuleIdent -> QualIdent -> IMethodDecl -> DetEnv -> DetEnv
-bindDetEnvClass m cls (IMethodDecl _ f _ _ ddty _) =
+bindDetEnvClass m cls (IMethodDecl _ f _ _ (Just ddty)) =
   Map.insert (CI (qualQualify m cls) (qualifyWith m f)) (toDetType ddty)
+bindDetEnvClass _ _ _ = id
 
-bindDetEnvInstance :: ModuleIdent -> QualIdent -> [InstanceType] -> IMethodImpl -> DetEnv -> DetEnv
-bindDetEnvInstance m cls ty (f, _, ddty) =
-  Map.insert (II qcls (qualifyLike qcls f) (map (toType []) ty)) (toDetType ddty)
-  where qcls = qualQualify m cls
 -- ---------------------------------------------------------------------------
 -- Building the initial environment
 -- ---------------------------------------------------------------------------
@@ -273,10 +268,10 @@ types m (ITypeDecl _ tc k tvs ty o) =
 types m (IClassDecl _ _ qcls k tvs _ ds ids o) =
   [typeCls o m qcls k tvs (map mkMethod $ filter isVis ds)]
   where
-    isVis (IMethodDecl _ f _ _ _ _) = f `notElem` ids
-    mkMethod (IMethodDecl _ f a qty ddty mdty) = ClassMethod f a (qualifyPredType m $
+    isVis (IMethodDecl _ f _ _ _) = f `notElem` ids
+    mkMethod (IMethodDecl _ f a qty mdty) = ClassMethod f a (qualifyPredType m $
       normalize (length tvs) $ toMethodType qcls tvs qty)
-      (Just $ toDetType ddty) (fmap toDetType mdty)
+      (fmap toDetType mdty)
 types _ _ = []
 
 -- type constructors
@@ -370,7 +365,7 @@ constrType tc tvs = foldl (ApplyType NoSpanInfo) (ConstructorType NoSpanInfo tc)
 
 classMethod :: ModuleIdent -> QualIdent -> [Ident] -> [Ident] -> IMethodDecl
             -> ValueInfo
-classMethod m qcls tvs hs (IMethodDecl _ f _ qty _ _) =
+classMethod m qcls tvs hs (IMethodDecl _ f _ qty _) =
   Value (qualifyLike qcls f) mcls 0 $
     typeScheme $ qualifyPredType m $ toMethodType qcls tvs qty
   where

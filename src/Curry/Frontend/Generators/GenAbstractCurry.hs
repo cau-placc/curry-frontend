@@ -41,7 +41,7 @@ import Curry.Frontend.Base.TypeSubst
 import Curry.Frontend.Env.Value       (ValueEnv, ValueInfo (..), qualLookupValue)
 import Curry.Frontend.Env.OpPrec      (mkPrec)
 import Curry.Frontend.Env.TypeConstructor (TCEnv)
-import Curry.Frontend.Env.Determinism (DetEnv, toInstanceIdent, IdentInfo (..))
+import Curry.Frontend.Env.Determinism (DetEnv, IdentInfo (..), toClassIdent)
 
 import Curry.Frontend.CompilerEnv
 
@@ -135,7 +135,7 @@ trInstanceMethodDecl qcls tys (FunctionDecl _ _ f eqs@(eq:_)) = do
                            ConstructorType NoSpanInfo prelUntyped
            else getQualType' (qualifyLike qcls $ unRenameIdent f)
   CFunc <$> trLocalIdent f <*> pure (eqnArity eq) <*> pure Public
-        <*> trInstanceMethodType tys qty <*> getInstDetType qcls (map (toType []) tys) f <*> mapM trEquation eqs
+        <*> trInstanceMethodType tys qty <*> getInstDetType qcls f <*> mapM trEquation eqs
 trInstanceMethodDecl _ _ _ = internalError "GenAbstractCurry.trInstanceMethodDecl"
 
 -- Transforms a class method type into an instance method's type by replacing
@@ -582,12 +582,12 @@ getClassDetType cls f = do
     Just (Forall _ dty) -> return $ trDetType dty
     Nothing  -> internalError $ "GenAbstractCurry.getClassDetType: " ++ show f
 
-getInstDetType :: QualIdent -> [Type] -> Ident -> GAC CDetType
-getInstDetType qcls' tys f = do
+getInstDetType :: QualIdent -> Ident -> GAC CDetType
+getInstDetType qcls' f = do
   e <- S.get
   let mid = moduleId e
       qcls = qualQualify mid qcls'
-  case Map.lookup (toInstanceIdent qcls tys (QI $ qualifyLike qcls f)) (dEnv e) of
+  case Map.lookup (toClassIdent qcls (QI $ qualifyLike qcls f)) (dEnv e) of
     Just (Forall _ dty) -> return $ trDetType dty
     Nothing  -> internalError $ "GenAbstractCurry.getInstDetType: " ++ show f
 

@@ -34,7 +34,7 @@ module Curry.Syntax.Utils
   , constrId, nconstrId
   , nconstrType
   , recordLabels, nrecordLabels
-  , methods, detSigs, impls, imethod, imethodArity, imethodDefaultDetType, imethodDetTypeAnn
+  , methods, detSigs, impls, imethod, imethodArity, imethodDetTypeAnn
   , shortenModuleAST
   , ApplyOriginPragma (..), MkOriginPragma (..)
   ) where
@@ -70,7 +70,11 @@ isTopDecl = not . isBlockDecl
 
 -- |Is the declaration a block declaration?
 isBlockDecl :: Decl a -> Bool
-isBlockDecl d = isInfixDecl d || isTypeSig d || isValueDecl d
+isBlockDecl d = isInfixDecl d || isTypeSig d || isValueDecl d || isDetSig d
+
+isDetSig :: Decl a -> Bool
+isDetSig (DetSig {}) = True
+isDetSig _           = False
 
 -- |Is the declaration an infix declaration?
 isInfixDecl :: Decl a -> Bool
@@ -268,17 +272,14 @@ impls _                      = []
 
 -- | Get the declared method identifier of an interface method declaration
 imethod :: IMethodDecl -> Ident
-imethod (IMethodDecl _ f _ _ _ _) = f
+imethod (IMethodDecl _ f _ _ _) = f
 
 -- | Get the arity of an interface method declaration
 imethodArity :: IMethodDecl -> Maybe Int
-imethodArity (IMethodDecl _ _ a _ _ _) = a
-
-imethodDefaultDetType :: IMethodDecl -> DetExpr
-imethodDefaultDetType (IMethodDecl _ _ _ _ d _ ) = d
+imethodArity (IMethodDecl _ _ a _ _) = a
 
 imethodDetTypeAnn :: IMethodDecl -> Maybe DetExpr
-imethodDetTypeAnn (IMethodDecl _ _ _ _ _ d) = d
+imethodDetTypeAnn (IMethodDecl _ _ _ _ d) = d
 
 class ApplyOriginPragma o a where
   applyOriginPragma :: o -> a -> a
