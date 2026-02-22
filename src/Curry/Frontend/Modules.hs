@@ -99,9 +99,8 @@ compileModule opts m fn = do
   writeParsed   opts mdl
   let qmdl = qual mdl
   writeHtml     opts qmdl
-  let voided = second void mdl
-  writeAST      opts voided
-  writeShortAST opts voided
+  writeAST      opts (second void  mdl)
+  writeShortAST opts (second void qmdl)
   mdl' <- expandExports opts mdl
   qmdl' <- dumpWith opts CS.showModule pPrint DumpQualified $ qual mdl'
   writeAbstractCurry opts qmdl'
