@@ -23,7 +23,7 @@ module Curry.Syntax.Utils
   , isTopDecl, isBlockDecl
   , isTypeSig, infixOp, isTypeDecl, isValueDecl, isInfixDecl
   , isDefaultDecl, isClassDecl, isTypeOrClassDecl, isInstanceDecl
-  , isFunctionDecl, isExternalDecl, patchModuleId
+  , isFunctionDecl, isExternalDecl, isDetSig, patchModuleId
   , isVariablePattern
   , isVariableType, isSimpleType
   , typeConstr, typeVariables, containsForall, varIdent

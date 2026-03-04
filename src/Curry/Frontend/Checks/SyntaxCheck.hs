@@ -699,18 +699,22 @@ checkDecls bindDecl ds = do
   let dblVar = findDouble bvs
   onJust (report . errDuplicateDefinition) dblVar
   let mulTys = findMultiples tys
-  mapM_ (report . errDuplicateTypeSig) mulTys
+  mapM_ (report . errDuplicateTypeSig "type") mulTys
+  let mulDys = findMultiples dys
+  mapM_ (report . errDuplicateTypeSig "determinism") mulDys
   let missingTys = [v | ExternalDecl _ vs <- ds, Var _ v <- vs, v `notElem` tys]
   mapM_ (report . errNoTypeSig) missingTys
-  if isNothing dblVar && null mulTys && null missingTys
+  if isNothing dblVar && null mulTys && null missingTys && null mulDys
     then do
       modifyRenameEnv $ \env -> foldr bindDecl env (tds ++ vds)
       mapM (checkDeclRhs bvs) ds
     else return ds -- skip further checking
   where vds    = filter isValueDecl ds
         tds    = filter isTypeSig ds
+        dds    = filter isDetSig ds
         bvs    = concatMap vars vds
         tys    = concatMap vars tds
+        dys    = concatMap vars dds
         onJust = maybe ok
 
 -- -- ---------------------------------------------------------------------------
@@ -937,70 +941,7 @@ checkExpr p (Record     spi _ c fs) = checkRecordExpr p spi c fs
 checkExpr p (RecordUpdate spi e fs) = checkRecordUpdExpr p spi e fs
 checkExpr p (Tuple        spi   es) = Tuple spi <$> mapM (checkExpr p) es
 checkExpr p (List         spi a es) = List spi a <$> mapM (checkExpr p) es
-checkExpr p (ListCompr    spi e qs) = withLocalEnv $        flip (ListCompr spi) <$>
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
-  -- Note: must be flipped to insert qs into RenameEnv first
+checkExpr p (ListCompr    spi e qs) = withLocalEnv $ flip (ListCompr spi) <$>
   -- Note: must be flipped to insert qs into RenameEnv first
   mapM (checkStatement "list comprehension" p) qs <*> checkExpr p e
 checkExpr p (EnumFrom              spi e) = EnumFrom spi <$> checkExpr p e
@@ -1239,6 +1180,7 @@ vars (FunctionDecl    _ _ f _) = [f]
 vars (ExternalDecl       _ vs) = bv vs
 vars (PatternDecl       _ t _) = bv t
 vars (FreeDecl           _ vs) = bv vs
+vars (DetSig           _ fs _) = fs
 vars _                         = []
 
 recLabels :: Decl a -> [Ident]
@@ -1435,9 +1377,9 @@ errMultipleDeclarations m (i :| is) = spanInfoMessage i $
   $+$ text "Declared at:" $+$
   nest 2 (vcat (map (ppPosition . getPosition) (i:is)))
 
-errDuplicateTypeSig :: NonEmpty Ident -> Message
-errDuplicateTypeSig (v :| vs) = spanInfoMessage v $
-  text "More than one type signature for" <+> text (escName v)
+errDuplicateTypeSig :: String -> NonEmpty Ident -> Message
+errDuplicateTypeSig what (v :| vs) = spanInfoMessage v $
+  text "More than one" <+> text what <+> text "signature for" <+> text (escName v)
   <+> text "at:" $+$
   nest 2 (vcat (map (ppPosition . getPosition) (v:vs)))
 

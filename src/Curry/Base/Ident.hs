@@ -82,7 +82,7 @@ module Curry.Base.Ident
   , qShowsPrecId, qShowParenId, qShowStringId
   , qAndOpId, qEqOpId, qLeqOpId, qLtOpId, qOrOpId, qAppendOpId, qEqStringId, qDotOpId
   , qAValueId, qDataEqId
-  , qBindId, qFailId
+  , qBindId, qSequenceId, qFailId
   , qFromIntId, qFromFloatId, qNegateId
 
     -- * Extended functionality
@@ -988,6 +988,10 @@ qAppendOpId = qPreludeIdent appendOpId
 -- | 'QualIdent' for the '>>=' operator
 qBindId :: QualIdent
 qBindId = qPreludeIdent $ mkIdent ">>="
+
+-- | 'QualIdent' for the '>>' operator
+qSequenceId :: QualIdent
+qSequenceId = qPreludeIdent $ mkIdent ">>"
 
 -- | 'QualIdent' for the 'fail' method from the 'MonadFail' class
 qFailId :: QualIdent

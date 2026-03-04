@@ -932,7 +932,7 @@ ppTypeScheme m (ForAll _ pty) = ppPredType m pty
 -- Determinism types
 -- ---------------------------------------------------------------------------
 
-type VarIndex = Integer
+type VarIndex = Int
 
 data DetType = VarTy VarIndex
              | Det
@@ -947,12 +947,7 @@ toDetExpr :: DetScheme -> CS.DetExpr
 toDetExpr (Forall _ ty) = tyToDetExpr ty
 
 tyToDetExpr :: DetType -> CS.DetExpr
-tyToDetExpr (VarTy v) = CS.VarDetExpr NoSpanInfo $
-  -- clamp down to the maximum Int value
-  -- clamp down to the maximum Int value
-
-  -- clamp down to the maximum Int value
-  identSupply !! fromInteger (min v (fromIntegral (maxBound :: Int)))
+tyToDetExpr (VarTy v) = CS.VarDetExpr NoSpanInfo (identSupply !! v)
 tyToDetExpr Det = CS.DetDetExpr NoSpanInfo
 tyToDetExpr Any = CS.AnyDetExpr NoSpanInfo
 tyToDetExpr (DetArrow ty1 ty2) = CS.ArrowDetExpr NoSpanInfo (tyToDetExpr ty1) (tyToDetExpr ty2)

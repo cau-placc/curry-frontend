@@ -30,7 +30,7 @@ import qualified Data.Map as Map
 import Curry.Base.Ident ( QualIdent(..), Ident (..), ModuleIdent
                         , qualifyLike, unqualify,  qualQualify )
 import Curry.Frontend.Base.Types ( DetScheme(..) )
-import Curry.Base.Pretty ( Pretty(..), (<+>) )
+import Curry.Base.Pretty ( Pretty(..), (<+>), text, (<>) )
 
 type DetEnv = Map IdentInfo DetScheme
 
@@ -94,7 +94,7 @@ qualifyIdentInfo mid (QI meth) = QI (qualQualify mid meth)
 qualifyIdentInfo mid (CI cls meth) = CI (qualQualify mid cls) (qualQualify mid meth)
 
 instance Pretty IdentInfo where
-  pPrint (QI qid) = pPrint qid
+  pPrint (QI qid) = pPrint qid <> text "." <> text (show (idUnique (qidIdent qid)))
   pPrint (CI cls meth) = pPrint cls <+> pPrint meth
 
 instance Pretty DetEnv where
