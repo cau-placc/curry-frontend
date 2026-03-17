@@ -49,7 +49,7 @@ transformWith s p = show $ pPrint $ evalState (transform p) s
 
 convertError :: ParseError -> Message
 convertError err = posMessage pos $
-  foldr (($+$) . text) empty (tail $ lines $ show err)
+  foldr (($+$) . text) empty (drop 1 $ lines $ show err)
   where pos = Position (sourceName src) (sourceLine src) (sourceColumn src)
         src = errorPos err
 

@@ -26,6 +26,7 @@ import           Control.Monad.Extra         (concatMapM)
 import           Control.Monad.Reader        (Reader, asks, runReader)
 import Control.Monad.State                   (State, put, get, execState)
 import           Data.List                   (nub, partition)
+import           Data.List.NonEmpty          (NonEmpty (..))
 import           Data.Maybe                  (fromJust)
 import qualified Data.Map             as Map
 
@@ -75,9 +76,9 @@ getArity qid = do
     vEnv <- getValueEnv
     return $ case qualLookupValue qid vEnv of
       [DataConstructor  _ a _ _] -> a
-      [NewtypeConstructor _ _ _] -> 1
+      [NewtypeConstructor {}   ] -> 1
       [Value            _ _ a _] -> a
-      [Label              _ _ _] -> 1
+      [Label {}                ] -> 1
       _                          ->
         internalError $ "CurryToIL.getArity: " ++ show qid
 
@@ -180,7 +181,9 @@ transType tcEnv ty' = transType' ty' []
     transType' (TypeConstructor    tc) = IL.TypeConstructor tc
     transType' (TypeApply     ty1 ty2) = transType' ty1 . (transType' ty2 [] :)
     transType' (TypeVariable       tv) = foldl applyType' (IL.TypeVariable tv)
-    transType' (TypeConstrained tys _) = transType' (head tys)
+    transType' (TypeConstrained (ty: _) _) = transType' ty
+    transType' ty@(TypeConstrained [] _) =
+      internalError $ "CurryToIL.transType: empty list of constraints in type: " ++ show ty
     transType' (TypeArrow     ty1 ty2) =
       foldl applyType' (IL.TypeArrow (transType' ty1 []) (transType' ty2 []))
     transType' (TypeForall     tvs ty) =
@@ -222,8 +225,10 @@ transTVars tcEnv ty' =
     build :: Type -> IL.Kind -> State KIS ()
     build (TypeArrow     ty1 ty2) _ =
       build ty1 IL.KindStar >> build ty2 IL.KindStar
-    build (TypeConstrained tys _) k =
-      build (head tys) k
+    build (TypeConstrained (ty:_) _) k =
+      build ty k
+    build (TypeConstrained [] _) _ =
+      internalError $ "CurryToIL.transTVars: empty list of constraints in type: " ++ show ty'
     build (TypeForall       _ ty) k =
       build ty k
     build (TypeVariable       tv) k = do
@@ -305,7 +310,7 @@ unifyKind k1 k2 = error $ "Transformation.CurryToIL.unifyKind: " ++ show k1 ++ "
 -- computed for its first argument.
 
 trFunction :: Ident -> [Equation Type] -> TransM IL.Decl
-trFunction f eqs = do
+trFunction f eqs@(Equation _ _ lhs rhs : _) = do
   f' <- trQualify f
   tcEnv <- getTCEnv
   let tys = map typeOf ts
@@ -316,9 +321,9 @@ trFunction f eqs = do
   where
   -- vs are the variables needed for the function: _1, _2, etc.
   -- ws is an infinite list for introducing additional variables later
-  Equation _ _ lhs rhs = head eqs
   (_, ts) = flatLhs lhs
   (vs, ws) = splitAt (length ts) (argNames (mkIdent ""))
+trFunction _ _ = internalError "CurryToIL.trFunction: empty equation list"
 
 trEquation :: [Ident]       -- identifiers for the function's parameters
            -> [Ident]       -- infinite list of additional identifiers
@@ -339,7 +344,7 @@ type RenameEnv = Map.Map Ident Ident
 
 -- Construct a renaming of all variables inside the pattern to fresh identifiers
 bindRenameEnv :: Ident -> Pattern a -> RenameEnv -> RenameEnv
-bindRenameEnv _ (LiteralPattern        _ _ _) env = env
+bindRenameEnv _ LiteralPattern {}             env = env
 bindRenameEnv v (VariablePattern      _ _ v') env = Map.insert v' v env
 bindRenameEnv v (ConstructorPattern _ _ _ ts) env
   = foldr2 bindRenameEnv env (argNames v) ts
@@ -564,22 +569,23 @@ flexMatchInductive prefix v vs as'
 -- cannot be reached.
 
 rigidMatch :: [(IL.Type, Ident)] -> [Match] -> IL.Expression
-rigidMatch vs alts = rigidOptMatch (snd $ head alts) id vs (map prepare alts)
+rigidMatch _  []  = internalError "CurryToIL.rigidMatch: empty alternatives"
+rigidMatch vs alts@(alt:_) = rigidOptMatch (snd alt) id vs (fmap prepare (alt :| alts))
   where prepare (ts, e) = (id, ts, e)
 
 rigidOptMatch :: IL.Expression            -- default expression
               -> FunList (IL.Type, Ident) -- variables to be matched next
               -> [(IL.Type, Ident)]       -- variables to be matched afterwards
-              -> [Match']                 -- translated equations
+              -> NonEmpty Match'          -- translated equations
               -> IL.Expression
 -- if there are no variables left: return the default expression
 rigidOptMatch def _      []       _    = def
 rigidOptMatch def prefix (v : vs) alts
-  | isDemanded = rigidMatchDemanded prefix v vs alts'
-  | otherwise  = rigidOptMatch def (prefix . (v:)) vs (map skipPat' alts)
+  | isDemanded = rigidMatchDemanded prefix v vs (alt' : alts')
+  | otherwise  = rigidOptMatch def (prefix . (v:)) vs (fmap skipPat' alts)
   where
-  isDemanded   = not $ isVarMatch (head alts')
-  alts'        = map tagAlt' alts
+  isDemanded    = not $ isVarMatch alt'
+  alt' :| alts' = fmap tagAlt' alts
 
 -- Generate a case expression matching the demanded position.
 -- This algorithm constructs a branch for all contained patterns, where

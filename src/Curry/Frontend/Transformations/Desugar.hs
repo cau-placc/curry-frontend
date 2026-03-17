@@ -403,8 +403,9 @@ dsFunctionalPatterns p ts = do
   -- Return (declarations, constraints, desugared patterns)
   return (ds, concat (cs : css), ts2)
   where
-    mkTuple es | length es >= 2 = Tuple NoSpanInfo es
-               | otherwise      = head es
+    mkTuple [] = internalError "Desugar.dsFunctionalPatterns.mkTuple: empty list"
+    mkTuple [e] = e
+    mkTuple es = Tuple NoSpanInfo es
 
 dsFunctionalPatternsNonLinear :: [Ident] -> Pattern PredType
                               -> DsM ([((PredType, Ident), Pattern PredType)], Pattern PredType)
@@ -609,7 +610,9 @@ dsLiteralPat :: Bool -> PredType -> Literal -> Either (Pattern PredType) (Patter
 dsLiteralPat _ pty c@(Char _) = Right $ LiteralPattern NoSpanInfo pty c
 dsLiteralPat _ pty (Int i) =
   Right $ LiteralPattern NoSpanInfo pty (fixLiteral (unpredType pty))
-  where fixLiteral (TypeConstrained tys _) = fixLiteral (head tys)
+  where fixLiteral (TypeConstrained (ty:_) _) = fixLiteral ty
+        fixLiteral (TypeConstrained [] _) = internalError $
+          "Desugar.dsLiteralPat: no type constraint for literal pattern: " ++ show pty
         fixLiteral ty
           | ty == floatType = Float $ fromInteger i
           | otherwise = Int i
@@ -1022,14 +1025,18 @@ dsLiteral :: PredType -> Literal
           -> Either (Expression PredType) (Expression PredType)
 dsLiteral pty (Char c) = Right $ Literal NoSpanInfo pty $ Char c
 dsLiteral pty (Int i) = Right $ fixLiteral (unpredType pty)
-  where fixLiteral (TypeConstrained tys _) = fixLiteral (head tys)
+  where fixLiteral (TypeConstrained (ty : _) _) = fixLiteral ty
+        fixLiteral (TypeConstrained [] _) = internalError
+          "Desugar.dsLiteral: empty list of constraints"
         fixLiteral ty
           | ty == intType = Literal NoSpanInfo pty $ Int i
           | ty == floatType = Literal NoSpanInfo pty $ Float $ fromInteger i
           | otherwise = Apply NoSpanInfo (prelFromInt $ unpredType pty) $
                           Literal NoSpanInfo predIntType $ Int i
 dsLiteral pty f@(Float _) = Right $ fixLiteral (unpredType pty)
-  where fixLiteral (TypeConstrained tys _) = fixLiteral (head tys)
+  where fixLiteral (TypeConstrained (ty : _) _) = fixLiteral ty
+        fixLiteral (TypeConstrained [] _) = internalError
+          "Desugar.dsLiteral: empty list of constraints"
         fixLiteral ty
           | ty == floatType = Literal NoSpanInfo pty f
           | otherwise = Apply NoSpanInfo (prelFromFloat $ unpredType pty) $

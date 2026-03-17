@@ -109,8 +109,12 @@ hasDataInstance inst mid (NewtypeDecl p tc tvs _ _) =
 hasDataInstance _    _   _                          = False
 
 deriveDataInstance :: Decl PredType -> DVM (Decl PredType)
-deriveDataInstance (DataDecl    p tc tvs _ _) =
-  head <$> deriveInstances (DataDecl p tc tvs [] [qDataId])
+deriveDataInstance (DataDecl    _ tc tvs _ _) = do
+  m <- getModuleIdent
+  tcEnv <- getTyConsEnv
+  let otc = qualifyWith m tc
+      cis = constructors m otc tcEnv
+  deriveInstance otc tvs cis qDataId
 deriveDataInstance (NewtypeDecl p tc tvs _ _) =
   deriveDataInstance $ DataDecl p tc tvs [] []
 deriveDataInstance _                          =
@@ -256,13 +260,14 @@ leqOpExpr i1 es1 i2 es2
 -- Enumerations:
 
 deriveEnumMethods :: Type -> [ConstrInfo] -> PredList -> DVM [Decl PredType]
-deriveEnumMethods ty cis pls = sequence
-  [ deriveSuccOrPred succId ty cis (tail cis) pls
-  , deriveSuccOrPred predId ty (tail cis) cis pls
+deriveEnumMethods _ [] _ = internalError "Derive.deriveEnumMethods: empty constructor list"
+deriveEnumMethods ty cis@(ci:_) pls = sequence
+  [ deriveSuccOrPred succId ty cis (drop 1 cis) pls
+  , deriveSuccOrPred predId ty (drop 1 cis) cis pls
   , deriveToEnum ty cis pls
   , deriveFromEnum ty cis pls
   , deriveEnumFrom ty (last cis) pls
-  , deriveEnumFromThen ty (head cis) (last cis) pls
+  , deriveEnumFromThen ty ci (last cis) pls
   ]
 
 deriveSuccOrPred :: Ident -> Type -> [ConstrInfo] -> [ConstrInfo] -> PredList
@@ -345,8 +350,9 @@ enumFromThenExpr v1 v2 c1 c2 =
 -- Upper and Lower Bounds:
 
 deriveBoundedMethods :: Type -> [ConstrInfo] -> PredList -> DVM [Decl PredType]
-deriveBoundedMethods ty cis pls = sequence
-  [ deriveMaxOrMinBound qMinBoundId ty (head cis) pls
+deriveBoundedMethods _ [] _ = internalError "Derive.deriveBoundedMethods: empty constructor list"
+deriveBoundedMethods ty cis@(ci:_) pls = sequence
+  [ deriveMaxOrMinBound qMinBoundId ty ci pls
   , deriveMaxOrMinBound qMaxBoundId ty (last cis) pls
   ]
 
@@ -457,11 +463,13 @@ deriveReadsPrecFieldStmts r (pre, l, ty) = do
 deriveReadsPrecInfixConstrStmts
   :: Ident -> Precedence -> (PredType, Ident) -> [Type]
   -> DVM ([Statement PredType], [(PredType, Ident)], (PredType, Ident))
-deriveReadsPrecInfixConstrStmts c p r tys = do
-  (s, (stmt1, v1)) <- deriveReadsPrecReadsPrecStmt (p + 1) r $ head tys
+deriveReadsPrecInfixConstrStmts c p r (ty1:ty2:_) = do
+  (s, (stmt1, v1)) <- deriveReadsPrecReadsPrecStmt (p + 1) r ty1
   (t, stmt2) <- deriveReadsPrecLexStmt (idName c) s
-  (u, (stmt3, v2)) <- deriveReadsPrecReadsPrecStmt (p + 1) t $ head $ tail tys
+  (u, (stmt3, v2)) <- deriveReadsPrecReadsPrecStmt (p + 1) t ty2
   return ([stmt1, stmt2, stmt3], [v1, v2], u)
+deriveReadsPrecInfixConstrStmts _ _ _ _ =
+  internalError "Derive.deriveReadsPrecInfixConstrStmts: not enough types"
 
 deriveReadsPrecConstrStmts
   :: Ident -> (PredType, Ident) -> [Type]
@@ -546,11 +554,13 @@ showsPrecFieldExpr l v =
 
 showsPrecInfixConstrExpr :: Ident -> Precedence -> [Expression PredType]
                          -> Expression PredType
-showsPrecInfixConstrExpr c p vs = foldr1 prelDot
-  [ preludeShowsPrec (p + 1) $ head vs
+showsPrecInfixConstrExpr c p (vs1:vs2:_) = foldr1 prelDot
+  [ preludeShowsPrec (p + 1) vs1
   , preludeShowString $ ' ' : idName c ++ " "
-  , preludeShowsPrec (p + 1) $ head $ tail vs
+  , preludeShowsPrec (p + 1) vs2
   ]
+showsPrecInfixConstrExpr _ _ _ =
+  internalError "Derive.showsPrecInfixConstrExpr: not enough values"
 
 showsPrecConstrExpr :: Ident -> [Expression PredType] -> Expression PredType
 showsPrecConstrExpr c vs = foldr1 prelDot $

@@ -243,11 +243,13 @@ absFunDecl pre fvs lvs (FunctionDecl p ty f eqs) = do
   m <- getModuleIdent
   d <- absDecl pre lvs $ FunctionDecl p ty f' eqs'
   case d of
-    FunctionDecl _ _ _ eqs'' -> do
-      modifyValueEnv $ bindGlobalInfo
-        (\qf tySc -> Value qf Nothing (eqnArity $ head eqs') tySc) m f' $
-                    polyType ty''
-      return $ FunctionDecl p ty'' f' eqs''
+    FunctionDecl _ _ _ eqs''
+      | eq:_ <- eqs' -> do
+        modifyValueEnv $ bindGlobalInfo
+          (\qf tySc -> Value qf Nothing (eqnArity eq) tySc) m f' $
+                      polyType ty''
+        return $ FunctionDecl p ty'' f' eqs''
+      | otherwise -> internalError "Lift.absFunDecl: no equations"
     _ -> internalError "Lift.absFunDecl: not a function declaration"
   where f' = liftIdent pre f
         ty' = case eqs' of
