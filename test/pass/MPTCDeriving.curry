@@ -1,8 +1,10 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE DeterminismSignatures #-}
 
 module MPTCDeriving where
 
 class C a b where
+  showAB :? Det -> Det -> Det
   showAB :: a -> b -> String
 
 data Foo a b = Foo a b

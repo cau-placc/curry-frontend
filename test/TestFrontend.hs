@@ -186,16 +186,19 @@ failInfos = map (uncurry mkFailTest)
       , "Missing instance for Prelude.Data Test1"
       ]
     )
-  , ("DetSigFail",
-      [ "Incorrect determinism signature for instance method: someFuncDetSig"
-      , "Incorrect determinism signature for function definition: detF1"
-      , "Incorrect determinism signature for function definition: use5"
-      , "Incorrect determinism signature for function definition: use4"
-      , "Incorrect determinism signature for function definition: use3"
-      , "Incorrect determinism signature for function definition: use2"
-      , "Incorrect determinism signature for function definition: use1"
+  , ("DetTypes",
+      [ "Incorrect determinism signature for function definition: 'coinWrong'"
+      , "Incorrect determinism signature for function definition: 'coinProxyWrong'"
+      , "Incorrect determinism signature for function definition: 'test2'"
+      , "Incorrect determinism signature for function definition: '<>'"
+      , "Incorrect determinism signature for function definition: 'not'"
+      , "Incorrect determinism signature for instance method: 'a'"
+      , "Incorrect determinism signature for instance method: '==='"
+      , "Incorrect determinism signature for function definition: 'containerFunc1'"
+      , "Incorrect determinism signature for function definition: 'containerFunc1''"
       ]
     )
+  , ("DetTypesMoreThanOne", ["More than one determinism signature for `double'"])
   , ("DetSigNoExt", ["Unexpected determinism signature"])
   , ("ErrorMultipleSignature", ["More than one type signature for `f'"])
   , ("FD_TestSpec",
@@ -566,6 +569,7 @@ warnInfos = map (uncurry mkFailTest)
       [ "Top-level binding with no type signature:"
       , "  test :: Coerce Prelude.Char"
       ])
+  , ("NDIO", ["Potentially non-deterministic use of I/O"])
   , ("NonExhaustivePattern",
       [ "Pattern matches are non-exhaustive", "In a case alternative"
       , "In an equation for `test2'", "In an equation for `and'"

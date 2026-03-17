@@ -1,13 +1,12 @@
 --------------------------------------------------------------------------------
---- The standard prelude of Curry with type classes.
---- All exported functions, data types, type classes
---- and methods defined in this module are always
---- available in any Curry program.
----
---- @category general
+-- | The standard prelude of Curry.
+--   All exported functions, data types, type classes
+--   and methods defined in this module are always
+--   available in any Curry program.
 --------------------------------------------------------------------------------
-{-# LANGUAGE CPP #-}
-{-# OPTIONS_FRONTEND -Wno-incomplete-patterns -Wno-overlapping #-}
+{-# LANGUAGE CPP, DeterminismSignatures #-}
+{-# OPTIONS_FRONTEND -Wno-incomplete-patterns -Wno-overlapping -Wno-external-det-sig #-}
+{-# OPTIONS_FRONTEND --case-mode=free #-}
 
 module Prelude
   (
@@ -22,14 +21,14 @@ module Prelude
   , Show (..), ShowS, shows, showChar, showString, showParen, showTuple
   , Read (..), ReadS, reads, readParen, read, lex
   , Bounded (..), Enum (..)
-  -- ** Numerical Typeclasses
+  -- ** Numerical Type Classes
   , Num (..), Fractional (..), Real (..)
   , Integral (..), even, odd, fromIntegral, realToFrac, (^)
   , RealFrac (..), Floating (..), Monoid (..)
-  -- Type Constructor Classes
+  -- ** Type Constructor Classes
   , Functor (..), Applicative (..), Alternative (..)
   , Monad (..), MonadFail(..)
-  , liftM2, sequence, sequence_, mapM, mapM_
+  , (=<<), ap, liftM2, sequence, sequence_, mapM, mapM_
 
   -- * Operations on Characters
   , isUpper, isLower, isAlpha, isDigit, isAlphaNum
@@ -58,20 +57,14 @@ module Prelude
   , IOError (..), userError, ioError, catch
 
   -- * Constraint Programming
-  , Success, success, solve, doSolve, (=:=), (=:<=)
-#ifdef __PAKCS__
-  , constrEq, (=:<<=)
-#endif
+  , Success, success, solve, doSolve, (=:=), (=:<=), constrEq, (=:<<=)
   , (&), (&>)
 
   -- * Non-determinism
   , (?), anyOf, unknown
 
   -- * Internal Functions
-  , apply, cond
-#ifdef __PAKCS__
-  , letrec, failure
-#endif
+  , apply, cond, eqString
   , DET, PEVAL
   ) where
 
@@ -83,31 +76,35 @@ infixr 5 ++
 --++ The (:) operator is built-in syntax with the following fixity:
 --++ infixr 5 :
 infix  4 ==, /=, <, >, <=, >=
-infix  4 =:=, =:<=, ===, /==
-#ifdef __PAKCS__
-infix  4 =:<<=
-#endif
+infix  4 ===, /==, =:=, =:<=, =:<<=
 infix  4 `elem`, `notElem`
 infixl 4 <$, <$>, <*>, <*, *>
 infixl 3 <|>
 infixr 3 &&
 infixr 2 ||
 infixl 1 >>, >>=
+infixr 1 =<<
 infixr 0 ?, $, $!, $!!, $#, $##, `seq`, &, &>
 
+--- The externally defined type of characters.
 external data Char
 
+--- The externally defined type of integers.
 external data Int
 
+--- The externally defined type of float point numbers.
 external data Float
 
+--- The type of Boolean values.
 data Bool = False | True
 
+--- Ordering type. Useful as a result of comparison functions.
 data Ordering = LT | EQ | GT
 
-data Void
-
 ------------------------------------------------------------------------------
+--++ Predefined types which cannot be explicitly defined due to their
+--++ specific syntax:
+
 --++ data () = ()
 
 --++ data (a, b) = (a, b)
@@ -120,13 +117,30 @@ data Void
 
 --++ data (->) a b
 
+------------------------------------------------------------------------------
+-- | The class `Data` defines a strict equality operator `===`
+--   and a non-deterministic operation `aValue` which yields
+--   all values of the given type.
+--   To ensure that the operator `===` always corresponds to the
+--   syntactic equality of values and `aValue ` enumerates all values,
+--   instances of `Data` are automatically derived and cannot be
+--   defined in a valid Curry program.
+--   For data types contain functional values, `Data` instances
+--   are not derived.
+--   Free variables occurring in a valid program have always
+--   a `Data` context to ensure that possible
+--   values for the type of the free variable can be enumerated.
+--
+--   Note that the class `Data` is different from the class `Eq`,
+--   since the latter defines only an equivalence relation rather
+--   than syntactic equality.
 class Data a where
   (===)  :? Det -> Det -> Det
   (===)  :: a -> a -> Bool
   aValue :? Any
   aValue :: a
 
---- The negation of strict equality.
+-- | The negation of strict equality.
 (/==) :: Data a => a -> a -> Bool
 x /== y = not (x ===y)
 
@@ -185,24 +199,42 @@ instance (Data a, Data b, Data c, Data d, Data e, Data f, Data g) =>
     f1 === f2 && g1 === g2
   aValue = (aValue, aValue, aValue, aValue, aValue, aValue, aValue)
 
+-- Value generator for positive natural numbers.
+aValuePosNat :: Int
+aValuePosNat = 1 ? (2 * aValuePosNat) ? (2 * aValuePosNat + 1)
+
 -- Value generator for integers.
 aValueInt :: Int
-aValueInt = genPos 1 ? 0  ?  0 - genPos 1
- where
-  genPos n = n  ?  genPos (2 * n)  ?  genPos (2 * n + 1)
+aValueInt = aValuePosNat ? 0 ?  (0 - aValuePosNat)
 
--- Value generator for chars.
+-- Value generator for floats. It is simply implemented by guessing the
+-- two parts before and after the point. Could be replaced by other
+-- enumeration methods.
+aValueFloat :: Float
+aValueFloat = aValuePosFloat ? 0 ? (0 - aValuePosFloat)
+
+-- Value generator for positive floats. It is simply implemented by guessing
+-- the two parts before and after the point. Could be replaced by other
+-- enumeration methods.
+aValuePosFloat :: Float
+aValuePosFloat = fromInt aValuePosNat + nat2float 0.1 aValuePosNat
+ where
+  -- Transform a natural to float<1, e.g., nat2float 0.1 135 = 0.531
+  nat2float :: Float -> Int -> Float
+  nat2float m i =
+    if i == 0 then 0
+              else nat2float (m / 10) (i `div` 10) + m * fromInt (i `mod` 10)
+
+-- Value generator for characters.
 aValueChar :: Char
 aValueChar = foldr1 (?) [minBound .. maxBound]
 
--- Value generator for floats.
--- Since there is no good way to enumerate floats, a free variable
--- is returned.
-aValueFloat :: Float
-aValueFloat = x where x free
-
 ------------------------------------------------------------------------------
 
+--- The class `Eq` defines an equality (`==`) and an inequality (`/=`) method.
+--- Instances of this class should define an equivalence relationship
+--- on values. For basic data types, the instances are defined as
+--- syntactic equality of values.
 class Eq a where
   (==), (/=) :? Det -> Det -> Det
   (==), (/=) :: a -> a -> Bool
@@ -301,7 +333,17 @@ prim_eqFloat :: Float -> Float -> Bool
 prim_eqFloat external
 #endif
 
+-- | Equality on strings.
+--   This is a specialized implementation to avoid problems with KiCS2.
+eqString :: String -> String -> Bool
+eqString [] [] = True
+eqString [] (_:_) = False
+eqString (_:_) [] = False
+eqString (x:xs) (y:ys) = eqChar x y && eqString xs ys
 
+--- The class `Ord` defines operations to compare values of the given type
+--- with respect to a total ordering.
+--- A minimal instance definition for some type must define `<=` or `compare`.
 class Eq a => Ord a where
   compare :? Det -> Det -> Det
   compare :: a -> a -> Ordering
@@ -418,11 +460,19 @@ prim_ltEqFloat :: Float -> Float -> Bool
 prim_ltEqFloat external
 #endif
 
+--- The type synonym `ShowS` represents strings as difference lists.
+--- Composing functions of this type allows concatenation of lists
+--- in constant time.
 type ShowS = String -> String
 
+--- The class `Show` contains methods to transform values into
+--- a string representation.
 class Show a where
+  show :? Det -> Det
   show :: a -> String
+  showsPrec :? Det -> Det -> Det -> Det
   showsPrec :: Int -> a -> ShowS
+  showList :? Det -> Det -> Det
   showList :: [a] -> ShowS
 
   show x = shows x ""
@@ -482,6 +532,7 @@ showChar :: Char -> ShowS
 showChar = (:)
 
 --- Converts a string to a show function that prepends the string.
+showString :? Det -> Det -> Det
 showString :: String -> ShowS
 showString str s = foldr showChar s str
 
@@ -537,10 +588,20 @@ showFloatLiteral x = prim_showFloatLiteral $## x
 prim_showFloatLiteral :: Float -> String
 prim_showFloatLiteral external
 
+
+--- The type synonym `ReadS` represent a parser for values of type a.
+--- Such a parser is a function that takes a String and
+--- returns a list of possible parses as `(a,String)` pairs.
+--- Thus, if the result is the empty list, there is no parse, i.e.,
+--- the input string is not valid.
 type ReadS a = String -> [(a, String)]
 
+--- The class `Read` contains method to parse strings to return values
+--- corresponding to the textual representation as produced by `show`.
 class Read a where
+  readsPrec :? Det -> Det -> Det
   readsPrec :: Int -> ReadS a
+  readList :? Det -> Det
   readList :: ReadS [a]
 
   readList = readListDefault
@@ -646,6 +707,9 @@ instance Read Ordering where
       readParen False (\s -> [(EQ, t) | ("EQ", t) <- lex s]) r ++
       readParen False (\s -> [(GT, t) | ("GT", t) <- lex s]) r
 
+--- A parser to read data from a string.
+--- For instance, `reads "42" :: [(Int,String)]` returns `[(42,[])]`, and
+--- `reads "hello" :: [(Int,String)]` returns `[]`.
 reads :: Read a => ReadS a
 reads = readsPrec 0
 
@@ -657,6 +721,9 @@ readListDefault = readParen False (\r -> [pr | ("[",s) <- lex r, pr <- readl s])
                    [ (x : xs, v) | (",", t)  <- lex s, (x, u) <- reads t
                                  , (xs,v) <- readl' u ]
 
+--- `readParen True p` parses what `p` parses, but surrounded with parentheses.
+--- `readParen False p` parses what `p` parses, but the string to be parsed
+--- can be optionally with parentheses.
 readParen :: Bool -> ReadS a -> ReadS a
 readParen b g = if b then mandatory else optional
  where optional r = g r ++ mandatory r
@@ -668,10 +735,20 @@ readSigned p = readParen False read'
  where read' r = read'' r ++ [(-x, t) | ("-", s) <- lex r, (x, t) <- read'' s]
        read'' r = [(n, s) | (str, s) <- lex r, (n, "") <- p str]
 
+--- Reads data of the given type from a string.
+--- The operations fails if the data cannot be parsed.
+--- For instance `read "42" :: Int` evaluates to `42`,
+--- and `read "hello" :: Int` fails.
 read :: Read a => String -> a
 read s =  case [x | (x, t) <- reads s, ("", "") <- lex t] of
   [x] -> x
 
+--- Reads a single lexeme from the given string.
+--- Initial white space is discarded and the characters of the lexeme
+--- are returned. If the input string contains only white space,
+--- `lex` returns the empty string as lexeme.
+--- If there is no legal lexeme at the beginning of the input string,
+--- the operation fails, i.e., `[]` is returned.
 lex :: ReadS String
 lex xs = case xs of
   ""                  -> [("", "")]
@@ -753,7 +830,9 @@ readFloatLiteral s = prim_readFloatLiteral $## s
 prim_readFloatLiteral :: String -> [(Float, String)]
 prim_readFloatLiteral external
 
+--- Instances of the class `Bounded` are types with minmal and maximal values.
 class Bounded a where
+  minBound, maxBound :? Det
   minBound, maxBound :: a
 
 instance Bounded Char where
@@ -789,14 +868,24 @@ instance Bounded Ordering where
   maxBound = LT
   minBound = GT
 
+--- The class `Enum` provides methods to enumerate values of the given
+--- type in a sequential order.
+--- If a type is an instance of `Enum`, one can use the standard
+--- notation for arithmetic sequences to enumerate list of values.
 class Enum a where
-  succ :: a -> a
-  pred :: a -> a
+  succ, pred :? Det -> Det
+  succ, pred :: a -> a
+  toEnum :? Det -> Det
   toEnum :: Int -> a
+  fromEnum :? Det -> Det
   fromEnum :: a -> Int
+  enumFrom :? Det -> Det
   enumFrom :: a -> [a]
+  enumFromThen :? Det -> Det -> Det
   enumFromThen :: a -> a -> [a]
+  enumFromTo :? Det -> Det -> Det
   enumFromTo :: a -> a -> [a]
+  enumFromThenTo :? Det -> Det -> Det -> Det
   enumFromThenTo :: a -> a -> a -> [a]
 
   succ = toEnum . (+ 1) . fromEnum
@@ -862,6 +951,9 @@ instance Enum Ordering where
   enumFrom x = enumFromTo x GT
   enumFromThen x y = enumFromThenTo x y (if x <= y then GT else LT)
 
+--- The class of basic numeric values.
+--- For type wich are instances of `Num`, one can write values
+--- as integers which are converted by an implicit `fromInt` application.
 class Num a where
   (+), (-), (*) :? Det -> Det -> Det
   (+), (-), (*) :: a -> a -> a
@@ -929,7 +1021,6 @@ prim_minusInt external
 
 -- Multiplies two integers.
 timesInt :: Int -> Int -> Int
-timesInt :? Det -> Det -> Det
 #ifdef __KICS2__
 timesInt external
 #elif  __KMCC__ > 0
@@ -976,7 +1067,6 @@ prim_timesFloat external
 
 -- Negates a floating point number.
 negateFloat :: Float -> Float
-negateFloat :? Det -> Det
 #ifdef __KICS2__
 negateFloat external
 #elif  __KMCC__ > 0
@@ -990,7 +1080,6 @@ prim_negateFloat external
 
 -- Converts from integers to floating point numbers.
 intToFloat :: Int -> Float
-intToFloat :? Det -> Det
 #ifdef __KMCC__
 intToFloat external
 #else
@@ -1000,8 +1089,11 @@ prim_intToFloat :: Int -> Float
 prim_intToFloat external
 #endif
 
+--- The class `Fractional` defines numbers with a division operation.
 class Num a => Fractional a where
+  (/) :? Det -> Det -> Det
   (/) :: a -> a -> a
+  recip :? Det -> Det
   recip :: a -> a
   fromFloat :? Det -> Det
   fromFloat :: Float -> a
@@ -1024,7 +1116,9 @@ prim_divFloat :: Float -> Float -> Float
 prim_divFloat external
 #endif
 
+--- The class of real numbers which can be mapped to floats.
 class (Num a, Ord a) => Real a where
+  toFloat :? Det -> Det
   toFloat :: a -> Float
 
 instance Real Int where
@@ -1033,12 +1127,13 @@ instance Real Int where
 instance Real Float where
   toFloat x = x
 
-
+--- The class of `Integral` numbers supports integer division operators.
 class (Real a, Enum a) => Integral a where
-  div, mod :: a -> a -> a
-  quot, rem :: a -> a -> a
-  divMod :: a -> a -> (a, a)
-  quotRem :: a -> a -> (a, a)
+  div, mod, quot, rem :? Det -> Det -> Det
+  div, mod, quot, rem :: a -> a -> a
+  divMod, quotRem :? Det -> Det -> Det
+  divMod, quotRem :: a -> a -> (a, a)
+  toInt :? Det -> Det
   toInt :: a -> Int
 
   n `div` d = q
@@ -1127,12 +1222,13 @@ prim_remInt :: Int -> Int -> Int
 prim_remInt external
 #endif
 
+--- Instances of the class `RealFrac` supports extracting components
+--- of `Fractional` values.
 class (Real a, Fractional a) => RealFrac a where
+  properFraction :? Det -> Det
   properFraction :: Integral b => a -> (b, a)
-  truncate :: Integral b => a -> b
-  round :: Integral b => a -> b
-  ceiling :: Integral b => a -> b
-  floor :: Integral b => a -> b
+  truncate, round, ceiling, floor :? Det -> Det
+  truncate, round, ceiling, floor :: Integral b => a -> b
 
   truncate x = m
    where (m, _) = properFraction x
@@ -1179,13 +1275,22 @@ prim_roundFloat :: Float -> Int
 prim_roundFloat external
 #endif
 
+--- The class `Floating` defines `Fractional`s with
+--- trigonometric and hyperbolic and related functions.
 class Fractional a => Floating a where
+  pi :? Det
   pi :: a
+  exp, log, sqrt :? Det -> Det
   exp, log, sqrt :: a -> a
+  (**), logBase :? Det -> Det -> Det
   (**), logBase :: a -> a -> a
+  sin, cos, tan :? Det -> Det
   sin, cos, tan :: a -> a
+  asin, acos, atan :? Det -> Det
   asin, acos, atan :: a -> a
+  sinh, cosh, tanh :? Det -> Det
   sinh, cosh, tanh :: a -> a
+  asinh, acosh, atanh :? Det -> Det
   asinh, acosh, atanh :: a -> a
 
   sqrt x = x ** 0.5
@@ -1377,6 +1482,7 @@ prim_atanhFloat :: Float -> Float
 prim_atanhFloat external
 #endif
 
+--- Raises a number to a non-negative integer power.
 (^) :: (Num a, Integral b) => a -> b -> a
 x0 ^ y0 | y0 < 0    = error "Negative exponent"
         | y0 == 0   = 1
@@ -1390,9 +1496,14 @@ x0 ^ y0 | y0 < 0    = error "Negative exponent"
                   | y == 1 = x * z
                   | otherwise = g (x * x) (y `quot` 2) (x * z)
 
+--- The class `Monoid` defines types with an associative
+--- binary operation `mappend` having an identity `mempty`.
 class Monoid a where
+  mempty  :? Det
   mempty  :: a
+  mappend :? Det -> Det -> Det
   mappend :: a -> a -> a
+  mconcat :? Det -> Det
   mconcat :: [a] -> a
 
   mconcat = foldr mappend mempty
@@ -1429,6 +1540,9 @@ instance Monoid [a] where
   mconcat xss = [x | xs <- xss, x <- xs]
 
 instance Monoid b => Monoid (a -> b) where
+  -- mempty :? Det
+
+  -- mempty :? a -> Det
   mempty _ = mempty
   mappend f g x = f x `mappend` g x
 
@@ -1438,9 +1552,15 @@ instance Monoid Ordering where
   EQ `mappend` y = y
   GT `mappend` _ = GT
 
-
+--- The class `Functor` defines a general mapping of values contained
+--- in structures.
+--- A type constructor `f` is a Functor if it provides a function `fmap`
+--- which applies a function of type `(a -> b)` to all values contained
+--- in a structure of type `f a` yielding a structure of type `f b`.
 class Functor f where
+  fmap :? Det -> Det -> Det
   fmap :: (a -> b) -> f a -> f b
+  (<$) :? Det -> Det -> Det
   (<$) :: a -> f b -> f a
 
   (<$) = fmap . const
@@ -1451,15 +1571,24 @@ instance Functor [] where
 instance Functor ((->) r) where
   fmap = (.)
 
+--- Apply a function of type `(a -> b)`, given as the left argument,
+--- to a value of type `f a`, where `f` is a functor,
+--- to get a value of type `f b`.
+--- Basically, this is an infix operator version of `fmap`.
 (<$>) :: Functor f => (a -> b) -> f a -> f b
 (<$>) = fmap
 
-
+--- The class `Applicative` defines a functor structure
+--- with application operators to apply functions and argument
+--- contained in structure and combining their results back into a structure.
 class Functor f => Applicative f where
+  pure :? Det -> Det
   pure :: a -> f a
+  (<*>), (*>), (<*) :? Det -> Det -> Det
   (<*>) :: f (a -> b) -> f a -> f b
   (*>) :: f a -> f b -> f b
   (<*) :: f a -> f b -> f a
+  liftA2 :? (Det -> Det -> Det) -> Det -> Det -> Det
   liftA2 :: (a -> b -> c) -> f a -> f b -> f c
 
   (<*>) = liftA2 id
@@ -1478,22 +1607,24 @@ instance Applicative ((->) a) where
   (<*>) f g x = f x (g x)
   liftA2 q f g x = q (f x) (g x)
 
-
 -- | A monoid on applicative functors.
 --
 -- If defined, 'some' and 'many' should be the least solutions
 -- of the equations:
 --
--- * @'some' v = (:) '<$>' v '<*>' 'many' v@
+-- * `some v = (:) <$> v <*> many v`
 --
--- * @'many' v = 'some' v '<|>' 'pure' []@
+-- * `many v = some v <|> pure []`
 class Applicative f => Alternative f where
     -- | The identity of '<|>'
+    empty :? Det
     empty :: f a
     -- | An associative binary operation
+    (<|>) :? Det -> Det -> Det
     (<|>) :: f a -> f a -> f a
 
     -- | One or more.
+    some :? Det -> Det
     some :: f a -> f [a]
     some v = some_ v
       where
@@ -1501,6 +1632,7 @@ class Applicative f => Alternative f where
         some_ x = (:) <$> x <*> many_ x
 
     -- | Zero or more.
+    many :? Det -> Det
     many :: f a -> f [a]
     many v = many_ v
       where
@@ -1511,10 +1643,15 @@ instance Alternative [] where
     empty = []
     (<|>) = (++)
 
-
+--- The class `Monad` defines operators for the sequential composition
+--- of computations.
+--- For instances of `Monad`, the standard `do` notation can be used.
 class Applicative m => Monad m where
+  (>>=) :? Det -> (Det -> Det) -> Det
   (>>=) :: m a -> (a -> m b) -> m b
+  (>>) :? Det -> Det -> Det
   (>>) :: m a -> m b -> m b
+  return :? Det -> Det
   return :: a -> m a
 
   return = pure
@@ -1527,18 +1664,39 @@ instance Monad [] where
 instance Monad ((->) r) where
   f >>= k = \ r -> k (f r) r
 
+--- The class `MonadFail` adds a `fail` operation to a monadic structure.
 class Monad m => MonadFail m where
+  fail :? Det -> Det
   fail :: String -> m a
 
 instance MonadFail [] where
   fail _ = []
 
+--- Same as '>>=', but with the arguments interchanged.
+(=<<) :: Monad m => (a -> m b) -> m a -> m b
+f =<< x = x >>= f
+
+--- Promotes function application to a monad.
+--- For instance,
+---
+---     > pure not `ap` Just True
+---     Just False
+---
+--- This is useful to promote application of functions with larger arities
+--- to a monad, as 'liftM2' for arity `2`. For instance,
+---
+---     > pure (\x y z -> x + y * z) `ap` Just 7 `ap` Just 5 `ap` Just 7
+---     Just 42
 ap :: Monad m => m (a -> b) -> m a -> m b
 ap m1 m2 = do
   x1 <- m1
   x2 <- m2
   return (x1 x2)
 
+--- Promotes a binary function to a monad.
+--- The function arguments are scanned from left to right.
+--- For instance, `liftM2 (+) [1,2] [3,4]` evaluates to `[4,5,5,6]`, and
+--- `liftM2 (,) [1,2] [3,4]` evaluates to `[(1,3),(1,4),(2,3),(2,4)]`.
 liftM2 :: Monad m => (a1 -> a2 -> r) -> m a1 -> m a2 -> m r
 liftM2 f m1 m2 = do
   x1 <- m1
@@ -1561,7 +1719,7 @@ sequence_ = foldr (>>) (return ())
 mapM :: Monad m => (a -> m b) -> [a] -> m [b]
 mapM f = sequence . map f
 
---- Maps an monadic action function on a list of elements.
+--- Maps a monadic action function on a list of elements.
 --- The results of all monadic actions are ignored.
 mapM_ :: Monad m => (a -> m _) -> [a] -> m ()
 mapM_ f = sequence_ . map f
@@ -1623,6 +1781,8 @@ chr n | n < 0       = prim_chr 0
 prim_chr :: Int -> Char
 prim_chr external
 
+--- The type `String` is a type synonym for list of characters so that
+--- all list operations can be used on strings.
 type String = [Char]
 
 --- Breaks a string into a list of lines where a line is terminated at a
@@ -1649,8 +1809,8 @@ words s = let s1 = dropWhile isSpace s
 
 --- Concatenates a list of strings with a blank between two strings.
 unwords :: [String] -> String
-unwords ws = if ws == [] then []
-                         else foldr1 (\w s -> w ++ ' ' : s) ws
+unwords ws = if null ws then []
+                        else foldr1 (\w s -> w ++ ' ' : s) ws
 
 
 --- Right-associative application.
@@ -1659,13 +1819,11 @@ f $ x = f x
 
 --- Right-associative application with strict evaluation of its argument
 --- to head normal form.
-($!) :? (Det -> Det) -> Det -> Det
 ($!) :: (a -> b) -> a -> b
 ($!) external
 
 --- Right-associative application with strict evaluation of its argument
 --- to normal form.
-($!!) :? (Det -> Det) -> Det -> Det
 ($!!) :: (a -> b) -> a -> b
 ($!!) external
 
@@ -1676,7 +1834,6 @@ f $# x = f $! (ensureNotFree x)
 
 --- Right-associative application with strict evaluation of its argument
 --- to ground normal form.
-($##) :? (Det -> Det) -> Det -> Det
 ($##) :: (a -> b) -> a -> b
 ($##) external
 
@@ -1975,6 +2132,13 @@ lookup _ []          = Nothing
 lookup k ((x,y):xys) | k == x    = Just y
                      | otherwise = lookup k xys
 
+-- | The `Maybe` type can be used to represent optional values, i.e.,
+--   values which could also be absent.
+--   A value of type `Maybe a` either contains a value `v` of type `a`
+--   (which is represented as `Just v`), or it is empty
+--   (represented as `Nothing`).
+--   The type `Maybe` is useful to handle errors or exceptional situations
+--   in programs in order to avoid run-time errors.
 data Maybe a = Nothing | Just a
  deriving (Eq, Ord, Show, Read)
 
@@ -2011,10 +2175,15 @@ instance Monad Maybe where
 instance MonadFail Maybe where
   fail _ = Nothing
 
+--- The `maybe` function takes a default value, a function, and a `Maybe` value.
+--- If the `Maybe` value is `Nothing`, the default value is returned.
+--- Otherwise, the function is applied to the value inside the `Just`
+--- and the result is returned.
 maybe :: b -> (a -> b) -> Maybe a -> b
 maybe n _ Nothing  = n
 maybe _ f (Just x) = f x
 
+--- The `Either` type can be used to combine values of two different types.
 data Either a b = Left a
                 | Right b
   deriving (Eq, Ord, Show, Read)
@@ -2032,10 +2201,14 @@ instance Monad (Either a) where
   (Left e)  >>= _ = Left e
   (Right x) >>= f = f x
 
+--- Apply a case analysis to a value of the Either type.
+--- If the value is `Left x`, the first function is applied to `x`.
+--- If the value is `Right y`, the second function is applied to `y`.
 either :: (a -> c) -> (b -> c) -> Either a b -> c
 either left _     (Left  a) = left a
 either _    right (Right b) = right b
 
+--- The externally defined type of IO actions.
 external data IO _
 
 instance Monoid a => Monoid (IO a) where
@@ -2101,6 +2274,8 @@ putStrLn cs = putStr cs >> putChar '\n'
 print :: Show a => a -> IO ()
 print = putStrLn . show
 
+--- The `FilePath` is j type synonym for strings.
+--- It is useful to mark in type signatures if a file path is required.
 type FilePath = String
 
 --- An action that (lazily) reads a file and returns its contents.
@@ -2174,10 +2349,12 @@ ioError err = error (show err)
 catch :: IO a -> (IOError -> IO a) -> IO a
 catch external
 
-
+--- The type synonym for constraints. It is included for backward
+--- compatibility and should be no longer used.
 type Success = Bool
 
---- The always satisfiable constraint.
+--- The always satisfiable constraint. It is included for backward
+--- compatibility and should be no longer used.
 success :: Success
 success = True
 
@@ -2195,19 +2372,27 @@ doSolve b | b = return ()
 --- `(e1 =:= e2)` is satisfiable if both sides `e1` and `e2` can be
 --- reduced to a unifiable data term (i.e., a term without defined
 --- function symbols).
-(=:=) :: Data a => a -> a -> Bool
 #ifdef __PAKCS__
+(=:=) :: Data a => a -> a -> Bool
+x =:= y = constrEq x y
+#elif defined(__CURRY2GO__)
+(=:=) :: Data a => a -> a -> Bool
 x =:= y = constrEq x y
 #else
+(=:=) :: a -> a -> Bool
 (=:=) external
 #endif
 
 --- Internal operation to implement equational constraints.
 --- It is used by the strict equality optimizer but should not be used
 --- in regular programs.
-#ifdef __PAKCS__
 constrEq :: a -> a -> Bool
+#ifdef __PAKCS__
 constrEq external
+#elif defined(__CURRY2GO__)
+constrEq external
+#else
+constrEq x y = x =:= y
 #endif
 
 --- Non-strict equational constraint.
@@ -2220,29 +2405,42 @@ constrEq external
 --- The `Data` context is required since the resulting pattern might be
 --- non-linear so that it abbreviates some further equational constraints,
 --- see [Section 7](https://doi.org/10.1007/978-3-030-46714-2_15).
-(=:<=) :: Data a => a -> a -> Bool
 #ifdef __PAKCS__
+(=:<=) :: Data a => a -> a -> Bool
+x =:<= y = nonstrictEq x y
+#elif defined(__CURRY2GO__)
+(=:<=) :: Data a => a -> a -> Bool
 x =:<= y = nonstrictEq x y
 #else
+(=:<=) :: a -> a -> Bool
 (=:<=) external
 #endif
 
 #ifdef __PAKCS__
 nonstrictEq :: a -> a -> Bool
 nonstrictEq external
+#elif defined(__CURRY2GO__)
+nonstrictEq :: a -> a -> Bool
+nonstrictEq external
+#endif
 
 --- Non-strict equational constraint for linear functional patterns.
 --- Thus, it must be ensured that the first argument is always
---- (after evalutation by narrowing) a linear pattern. Experimental.
+--- (after evalutation by narrowing) a linear pattern.
+--- Experimental and only supported in PAKCS.
 (=:<<=) :: Data a => a -> a -> Bool
+#ifdef __PAKCS__
 x =:<<= y = unifEqLinear x y
 
+-- Internal implementation of `=:<<=`.
 unifEqLinear :: a -> a -> Bool
 unifEqLinear external
 
---- internal function to implement =:<=
+--- Internal operation used by PAKCS to implement `=:<=`.
 ifVar :: _ -> a -> a -> a
 ifVar external
+#else
+_ =:<<= _ = error "Prelude.=:<<= not supported!"
 #endif
 
 --- Concurrent conjunction.
@@ -2266,7 +2464,7 @@ _ ? y = y
 
 --- Returns non-deterministically any element of a list.
 anyOf :: [a] -> a
-anyOf = foldr1 (?)
+anyOf xs = foldr1 (?) xs
 
 --- Evaluates to a fresh free variable.
 unknown :: Data a => a
@@ -2291,17 +2489,6 @@ apply external
 -- Representation of conditional rules in FlatCurry.
 cond :: Bool -> a -> a
 cond external
-
-#ifdef __PAKCS__
--- `letrec ones (1 : ones)` binds `ones` to `1 : ones`.
-letrec :: a -> a -> Bool
-letrec external
-
--- Internal operation to implement failure reporting.
-failure :: _ -> _ -> _
-failure external
-#endif
-
 
 ----------------------------------------------------------------
 -- Extras used by specific Curry tools.
