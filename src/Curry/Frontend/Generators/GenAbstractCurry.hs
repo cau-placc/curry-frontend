@@ -17,6 +17,7 @@
 {-# LANGUAGE LambdaCase #-}
 module Curry.Frontend.Generators.GenAbstractCurry (genAbstractCurry) where
 
+import Control.Arrow                          ( first )
 import Control.Monad                          ( when )
 import Control.Monad.Extra                    ( liftM2, concatMapM )
 import qualified Control.Monad.State as S     (State, evalState, get, gets
@@ -113,7 +114,7 @@ trClassMethodDecl cls sigs _ (FunctionDecl _ _ f eqs) =
   (\f' a v ty rs dty -> [CFunc f' a v ty dty rs]) <$> trGlobalIdent f
   <*> pure (maybe 0 eqnArity $ Maybe.listToMaybe eqs)
   <*> getVisibility (unRenameIdent f)
-  <*> trQualTypeExpr (Maybe.fromJust $ lookup f sigs) <*> mapM trEquation eqs
+  <*> trQualTypeExpr (Maybe.fromJust $ lookup (unRenameIdent f) (map (first unRenameIdent) sigs)) <*> mapM trEquation eqs
   <*> getClassDetType cls f
 trClassMethodDecl _ _ _ _ = return []
 
@@ -576,7 +577,7 @@ getClassDetType cls f = do
   e <- S.get
   let mid = moduleId e
       qcls = qualifyWith mid cls
-  case Map.lookup (CI qcls (qualifyWith mid f)) (dEnv e) of
+  case Map.lookup (CI qcls (qualifyWith mid f { idUnique = 0 })) (dEnv e) of
     Just (Forall _ dty) -> return $ trDetType dty
     Nothing  -> internalError $ "GenAbstractCurry.getClassDetType: " ++ show f
 
