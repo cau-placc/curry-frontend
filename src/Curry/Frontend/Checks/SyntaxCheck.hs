@@ -243,7 +243,7 @@ noFuncDeps = FuncDeps Nothing Map.empty []
 inFunc :: Ident -> SCM a -> SCM a
 inFunc i scm = do
   m      <- getModuleIdent
-  global <- isNothing <$> S.gets (curGlobalFunc . funcDeps)
+  global <- S.gets (isNothing . curGlobalFunc . funcDeps)
   when global $ modifyFuncDeps $ \ fd -> fd { curGlobalFunc = Just (qualifyWith m i) }
   res    <- scm
   when global $ modifyFuncDeps $ \ fd -> fd { curGlobalFunc = Nothing }
@@ -269,11 +269,11 @@ addFuncPat fp = do
 
 -- |Return dependencies of global functions
 getGlobalDeps :: SCM GlobalDeps
-getGlobalDeps = globalDeps <$> S.gets funcDeps
+getGlobalDeps = S.gets (globalDeps . funcDeps)
 
 -- |Return used functional patterns
 getFuncPats :: SCM [(QualIdent, QualIdent)]
-getFuncPats = funcPats <$> S.gets funcDeps
+getFuncPats = S.gets (funcPats . funcDeps)
 
 
 -- A nested environment is used for recording information about the data
@@ -399,7 +399,7 @@ bindClassDecl (ClassDecl _ _ _ _ _ _ ds) = mapM_ bindClassMethod ds
 bindClassDecl _                          = ok
 
 bindClassMethod :: Decl a -> SCM ()
-bindClassMethod ts@(TypeSig _ _ _) = do
+bindClassMethod ts@TypeSig {} = do
   m <- getModuleIdent
   modifyRenameEnv $ bindFuncDecl False m ts
 bindClassMethod _ = ok
@@ -543,9 +543,9 @@ checkMethods qcls ms ds =
 
 updateClassAndInstanceDecls :: [Decl a] -> [Decl a] -> [Decl a] -> [Decl a]
 updateClassAndInstanceDecls [] [] ds = ds
-updateClassAndInstanceDecls (c:cs) is (ClassDecl _ _ _ _ _ _ _:ds) =
+updateClassAndInstanceDecls (c:cs) is (ClassDecl {} : ds) =
   c : updateClassAndInstanceDecls cs is ds
-updateClassAndInstanceDecls cs (i:is) (InstanceDecl _ _ _ _ _ _:ds) =
+updateClassAndInstanceDecls cs (i:is) (InstanceDecl {}: ds) =
   i : updateClassAndInstanceDecls cs is ds
 updateClassAndInstanceDecls cs is (d:ds) =
   d : updateClassAndInstanceDecls cs is ds
@@ -631,20 +631,7 @@ checkEqLhs pspi toplhs = do
       where f'    = renameIdent f k
             infos = qualLookupVar (qualifyWith m f) env
             left  = Left  (f', FunLhs spi f' ts)
-            right = Right $  -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end
-                -- use start from the parsed FunLhs and compute end
-                -- use start from the parsed FunLhs and compute end
-                -- use start from the parsed FunLhs and compute end
-                -- use start from the parsed FunLhs and compute end
-                -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end
-                -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end
-                -- use start from the parsed FunLhs and compute end
-                -- use start from the parsed FunLhs and compute end
-                -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end
-                -- use start from the parsed FunLhs and compute end
-                -- use start from the parsed FunLhs and compute end
-                -- use start from the parsed FunLhs and compute end  -- use start from the parsed FunLhs and compute end
-                -- use start from the parsed FunLhs and compute end
+            right = Right $  -- use start from the parsed FunLhs and compute end
               updateEndPos $ ConstructorPattern spi () (qualify f) ts
     OpLhs spi t1 op t2
       | not $ isDataConstr op env -> return left
@@ -668,7 +655,7 @@ checkEqLhs pspi toplhs = do
       case checked of
         Left (f', lhs') -> return $ Left (f', updateEndPos $ ApLhs spi lhs' ts)
         r               -> do report $ errNonVariable "curried definition" f
-                              return $ r
+                              return r
         where (f, _) = flatLhs lhs
 
 checkOpLhs :: Integer -> RenameEnv -> (Pattern a -> Pattern a)
@@ -768,9 +755,9 @@ checkLhs p (ApLhs   spi lhs ts) =
 -- @return Liste mit fehlerhaften Funktionsaufrufen
 
 checkParenPattern :: Maybe QualIdent -> Pattern a -> [(QualIdent, QualIdent)]
-checkParenPattern _ (LiteralPattern          _ _ _) = []
-checkParenPattern _ (NegativePattern         _ _ _) = []
-checkParenPattern _ (VariablePattern         _ _ _) = []
+checkParenPattern _ LiteralPattern  {}              = []
+checkParenPattern _ NegativePattern {}              = []
+checkParenPattern _ VariablePattern {}              = []
 checkParenPattern _ (ConstructorPattern   _ _ _ cs) =
   concatMap (checkParenPattern Nothing) cs
 checkParenPattern o (InfixPattern     _ _ t1 op t2) =
@@ -820,9 +807,9 @@ checkPattern p (LazyPattern             spi t) = do
   t' <- checkPattern p t
   banFPTerm "lazy pattern" p t'
   return (LazyPattern spi t')
-checkPattern _ (FunctionPattern     _ _ _ _) = internalError
+checkPattern _ FunctionPattern  {}             = internalError
   "SyntaxCheck.checkPattern: function pattern not defined"
-checkPattern _ (InfixFuncPattern  _ _ _ _ _) = internalError
+checkPattern _ InfixFuncPattern {}             = internalError
   "SyntaxCheck.checkPattern: infix function pattern not defined"
 
 checkConstructorPattern :: SpanInfo -> SpanInfo -> QualIdent -> [Pattern ()]
@@ -1064,9 +1051,9 @@ bindPattern s p t = do
   addBoundVariables True t'
 
 banFPTerm :: String -> SpanInfo -> Pattern a -> SCM ()
-banFPTerm _ _ (LiteralPattern           _ _ _) = ok
-banFPTerm _ _ (NegativePattern          _ _ _) = ok
-banFPTerm _ _ (VariablePattern          _ _ _) = ok
+banFPTerm _ _ LiteralPattern  {}               = ok
+banFPTerm _ _ NegativePattern {}               = ok
+banFPTerm _ _ VariablePattern {}               = ok
 banFPTerm s p (ConstructorPattern    _ _ _ ts) = mapM_ (banFPTerm s p) ts
 banFPTerm s p (InfixPattern       _ _ t1 _ t2) = mapM_ (banFPTerm s p) [t1, t2]
 banFPTerm s p (ParenPattern               _ t) = banFPTerm s p t
@@ -1076,10 +1063,10 @@ banFPTerm s p (TuplePattern              _ ts) = mapM_ (banFPTerm s p) ts
 banFPTerm s p (ListPattern             _ _ ts) = mapM_ (banFPTerm s p) ts
 banFPTerm s p (AsPattern                _ _ t) = banFPTerm s p t
 banFPTerm s p (LazyPattern                _ t) = banFPTerm s p t
-banFPTerm s p pat@(FunctionPattern    _ _ _ _)
- = report $ errUnsupportedFuncPattern s p pat
-banFPTerm s p pat@(InfixFuncPattern _ _ _ _ _)
- = report $ errUnsupportedFuncPattern s p pat
+banFPTerm s p pat@FunctionPattern  {}          =
+  report $ errUnsupportedFuncPattern s p pat
+banFPTerm s p pat@InfixFuncPattern {}          =
+  report $ errUnsupportedFuncPattern s p pat
 
 checkOp :: InfixOp a -> SCM (InfixOp a)
 checkOp op = do
