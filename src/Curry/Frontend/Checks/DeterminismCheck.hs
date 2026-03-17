@@ -114,7 +114,7 @@ determinismCheck mid tce ve ce de exts (Module _ _ _ _ _ _ ds) = flip evalState 
       let writtenSigs = sigs ds'
           allFunIds = map (\i -> i { idUnique = 0 }) (nub $ concatMap impls ds' ++ concatMap methods ds')
           allSigIds = Map.keys writtenSigs
-      in writtenSigs `Map.union` Map.fromList (map (mkFallbackFor mid ve) (allFunIds \\ allSigIds))
+      in writtenSigs `Map.union` Map.fromList (map (, AnyDetExpr NoSpanInfo) (allFunIds \\ allSigIds))
     initState = DS de (Top Map.empty) ve ce tce mid 0 [] sigMap extSet
 
 data DS = DS { detEnv :: TopDetEnv
@@ -182,15 +182,6 @@ declIdents _ _ = []
 
 dataIdents :: ModuleIdent -> [Ident] -> [IdentInfo]
 dataIdents mid = map (QI . qualifyWith mid)
-
-mkFallbackFor :: ModuleIdent -> ValueEnv -> Ident -> (Ident, DetExpr)
-mkFallbackFor mid vEnv i = case qualLookupValueUnique mid (qualify i) vEnv of
-  [Value _ _ _ ty] -> (i, mkAs (rawType ty))
-  _ -> internalError "mkFallbackFor: could not find identifier"
-  where
-    mkAs (TypeArrow ty1 ty2) = ArrowDetExpr NoSpanInfo (mkAs ty1) (mkAs ty2)
-    mkAs (TypeForall _ ty) = mkAs ty
-    mkAs _ = AnyDetExpr NoSpanInfo
 
 -- -----------------------------------------------------------------------------
 -- * Checking declaration groups and traversing the AST to generate constraints

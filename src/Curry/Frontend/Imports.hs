@@ -193,7 +193,8 @@ importDetEnv m = flip $ foldr (bindDetEnv m)
 
 bindDetEnv :: ModuleIdent -> IDecl -> DetEnv -> DetEnv
 bindDetEnv m (IClassDecl _ _ cls _ _ _ ds _ _) dEnv =
-  foldr (bindDetEnvClass m cls) dEnv ds
+  let m' = fromMaybe m (qidModule cls)
+  in foldr (bindDetEnvClass m' cls) dEnv ds
 bindDetEnv m (IFunctionDecl _ f _ _ _ dty _) dEnv =
   Map.insert (QI (qualQualify m f)) (toDetType dty) dEnv
 bindDetEnv m (IDataDecl _ _ _ _ cs _ _) dEnv =
@@ -221,9 +222,9 @@ instance BindDetEnvConstr NewConstrDecl where
   bindDetEnvConstr _ _ = id
 
 bindDetEnvClass :: ModuleIdent -> QualIdent -> IMethodDecl -> DetEnv -> DetEnv
-bindDetEnvClass m cls (IMethodDecl _ f _ _ (Just ddty)) =
-  Map.insert (CI (qualQualify m cls) (qualifyWith m f)) (toDetType ddty)
-bindDetEnvClass _ _ _ = id
+bindDetEnvClass m cls (IMethodDecl _ f _ _ mdty) =
+  Map.insert (CI (qualQualify m cls) (qualifyWith m (unRenameIdent f)))
+    (maybe (Forall [] Any) toDetType mdty)
 
 -- ---------------------------------------------------------------------------
 -- Building the initial environment

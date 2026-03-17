@@ -258,7 +258,7 @@ checkMethodImport qcls clsvars (IMethodDecl _ f _ qty mdty) = do
           qf == f' && isJust cm' &&
           toMethodType qcls clsvars qty == pty
         check _ = False
-        checkM = (fmap toDetType mdty ==)
+        checkM = (Just (maybe (Forall [] Any) toDetType mdty) ==)
 
 checkPrecInfo :: HasSpanInfo s => (PrecInfo -> Bool) -> s -> QualIdent -> IC ()
 checkPrecInfo check p op = do
