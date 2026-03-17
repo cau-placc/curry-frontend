@@ -304,7 +304,7 @@ checkDecl _      (InstanceDecl p _ cx cls ty ds) = do
         [TypeClass _ _ meths'] -> meths'
         _ -> internalError $ "Checks.WarnCheck.checkDecl: " ++ show cls
       go d@(FunctionDecl _ _ f _) = do
-        let hasSig = isJust $ find ((==f) . methodName) meths >>= methodDetSchemeAnn
+        let hasSig = isJust $ find ((== unRenameIdent f) . unRenameIdent . methodName) meths >>= methodDetSchemeAnn
         checkDecl hasSig d
       go d = checkDecl False d
   mapM_ go ds
@@ -1527,31 +1527,27 @@ checkDeterministicIOExpr (UnaryMinus _ e) =
 checkDeterministicIOExpr e@(Apply spi e1 e2) = do
   checkDeterministicIOExpr e1
   checkDeterministicIOExpr e2
-  let (PredType _ ty1', _) = bothTypesOf e1
+  let (PredType _ ty1, _) = bothTypesOf e1
       (PredType _ _, dty) = bothTypesOf e
-      ty1 = ty1'
   when (checkNDIOType ty1 dty) $ liftAndAbort $
     report $ warnNondeterministicIO spi "application"
 checkDeterministicIOExpr e@(InfixApply spi e1 op e2) = do
   checkDeterministicIOExpr e1
   checkDeterministicIOExpr e2
-  let (PredType _ ty1', _) = bothTypesOf op
+  let (PredType _ ty1, _) = bothTypesOf op
       (PredType _ _, dty) = bothTypesOf e
-      ty1 =ty1'
   when (checkNDIOType ty1 dty) $ liftAndAbort $
     report $ warnNondeterministicIO spi "infix application"
 checkDeterministicIOExpr e@(LeftSection spi e' op) = do
   checkDeterministicIOExpr e'
-  let (PredType _ ty1', _) = bothTypesOf op
+  let (PredType _ ty1, _) = bothTypesOf op
       (PredType _ _, dty) = bothTypesOf e
-      ty1 = ty1'
   when (checkNDIOType ty1 dty) $ liftAndAbort $
     report $ warnNondeterministicIO spi "left section"
 checkDeterministicIOExpr e@(RightSection spi op e') = do
   checkDeterministicIOExpr e'
-  let (PredType _ ty1', _) = bothTypesOf op
+  let (PredType _ ty1, _) = bothTypesOf op
       (PredType _ _, dty) = bothTypesOf e
-      ty1 = ty1'
   when (checkNDIOType ty1 dty) $ liftAndAbort $
     report $ warnNondeterministicIO spi "right section"
 checkDeterministicIOExpr (Lambda _ _ e) =
@@ -1737,7 +1733,7 @@ arrowUnapplyDetType ty = ([], ty)
 
 warnNondeterministicIO :: SpanInfo -> String -> Message
 warnNondeterministicIO spi s = spanInfoMessage spi $
-  text "Potentially nondeterministic use of I/O in" <+> text s
+  text "Potentially non-deterministic use of I/O in" <+> text s
   $+$ text "Consider encapsulating the offending sub-expressssion"
   $+$ text "or add a determinism signature to the applied function"
 
