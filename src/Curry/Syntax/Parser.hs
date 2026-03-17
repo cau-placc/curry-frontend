@@ -282,7 +282,6 @@ iClassDecl = (\(sp, _, cx, (qcls, k), clsvars) (fds, _) ->
 iMethod :: Parser a Token IMethodDecl
 iMethod = IMethodDecl <$> position
                       <*> fun <*> option int <*-> token DoubleColon <*> qualType
-                                             <*-> token ColonQ
                                              <*> option iDefaultMethodDetType
 
   where iDefaultMethodDetType = token ColonQ <-*> detExpr
@@ -596,7 +595,7 @@ defaultDecl = mkDefaultDecl <$> tokenSpan KW_default
 classInstHead :: Category -> Parser a Token b -> Parser a Token c
               -> Parser a Token (Span, [Span], Context, b, c)
 classInstHead kw cls ty = f <$> tokenSpan kw
-                            <*> optContext (,,) ((,) <$> cls <*> ty)
+                            <*> optContext ((,) <$> cls <*> ty)
   where f sp (cx, ss, (cls', ty')) = (sp, ss, cx, cls', ty')
 
 classDecl :: Parser a Token (Decl ())
@@ -631,12 +630,11 @@ instanceDecl = mkInstance
 -- Type classes
 -- ---------------------------------------------------------------------------
 
-optContext :: (Context -> [Span] -> a -> b)
-           -> Parser c Token a
-           -> Parser c Token b
-optContext f p = combine <$> context <*> tokenSpan DoubleArrow <*> p
-            <|?> f [] [] <$> p
-  where combine (ctx, ss) sp = f ctx (ss ++ [sp])
+optContext :: Parser c Token a
+           -> Parser c Token (Context, [Span], a)
+optContext p = combine <$> context <*> tokenSpan DoubleArrow <*> p
+            <|?> (,,) [] [] <$> p
+  where combine (ctx, ss) sp = (,,) ctx (ss ++ [sp])
 
 context :: Parser a Token (Context, [Span])
 context = (\c -> ([c], [])) <$> constraint
@@ -686,7 +684,7 @@ kind1 = Star <$-> token SymStar
 
 -- qualType ::= [context '=>']  type0
 qualType :: Parser a Token QualTypeExpr
-qualType = mkQualTypeExpr <$> spanPosition <*> optContext (,,) type0
+qualType = mkQualTypeExpr <$> spanPosition <*> optContext type0
   where mkQualTypeExpr sp (cx, ss, ty) = updateEndPos $
           QualTypeExpr (spanInfo sp ss) cx ty
 

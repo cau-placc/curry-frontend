@@ -490,13 +490,14 @@ keywords = Map.fromList
 -- |Map of keywords and special identifiers
 keywordsSpecialIds :: Map.Map String Category
 keywordsSpecialIds = Map.union keywords $ Map.fromList
-  [ ("as"       , Id_as       )
-  , ("ccall"    , Id_ccall    )
-  , ("forall"   , Id_forall   )
-  , ("hiding"   , Id_hiding   )
-  , ("interface", Id_interface)
-  , ("primitive", Id_primitive)
-  , ("qualified", Id_qualified)
+  [ ("as"        , Id_as        )
+  , ("ccall"     , Id_ccall     )
+  , ("Constraint", Id_Constraint)
+  , ("forall"    , Id_forall    )
+  , ("hiding"    , Id_hiding    )
+  , ("interface" , Id_interface )
+  , ("primitive" , Id_primitive )
+  , ("qualified" , Id_qualified )
   ]
 
 tokenSpecialIds :: [Category]
