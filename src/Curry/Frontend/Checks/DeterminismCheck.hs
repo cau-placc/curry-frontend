@@ -51,7 +51,7 @@
 module Curry.Frontend.Checks.DeterminismCheck (determinismCheck, applyDetType) where
 
 import Prelude hiding ( (<>) )
-import Control.Arrow ( first, second )
+import Control.Arrow ( second )
 import Control.Applicative ((<|>))
 import Control.Monad ( void, zipWithM, replicateM, forM_, forM, unless, mapAndUnzipM )
 import Control.Monad.State ( lift, evalStateT, runStateT, modify, get, gets, StateT )
@@ -190,7 +190,7 @@ dataIdents mid = map (QI . qualifyWith mid)
 checkGroup :: [(Decl PredType, Integer)] -> DM [(Decl (PredType, DetType), Integer)]
 checkGroup ds = do
   mid <- gets moduleIdent
-  lift $ traceIO (render $ pPrint (map fst ds))
+  -- lift $ traceIO (render $ pPrint (map fst ds))
 
   -- class methods without default method impl still need
   -- to be inserted into the environment as their respective signature (or "Any")
@@ -852,7 +852,7 @@ checkVar v i = do
 -- to a non-variable determinism type if one is known.
 solveConstraints :: Set DetConstraint -> DM (Map VarIndex DetType)
 solveConstraints constraints = do
-  lift $ traceIO ("Solving constraints: " ++ render (pPrint constraints))
+  -- lift $ traceIO ("Solving constraints: " ++ render (pPrint constraints))
   let groups = scc vars vars (Set.toList constraints)
   res <- Map.unions <$> mapM (solveGroup . Set.fromList) groups
   -- lift $ traceIO ("Solved constraints: " ++ render (pPrint (Map.toList res)))
@@ -884,8 +884,8 @@ solveGroup cs = do
       modify $ \s -> s { freshIdent = freshState' }
       return subst'
 
-instance Pretty (Map VarIndex DetType) where
-  pPrint = pPrint . fmap (first (identSupply!!)) . Map.toList
+-- instance Pretty (Map VarIndex DetType) where
+--   pPrint = pPrint . fmap (first (identSupply!!)) . Map.toList
 
 solveGroupWith :: Map VarIndex DetType -> Set DetConstraint -> GM (Map VarIndex DetType)
 solveGroupWith subst (Set.minView -> Nothing) = return subst
@@ -921,10 +921,10 @@ solveGroupWith subst (Set.minView -> Just (DirectedType d v dty2', cs)) = do
       applyRule dty1 (VarTy w') = solveGroupWith (extendSubst w' dty1 subst) cs
 
       applyRule dty1 dty2 = case specificityCheck dty1 dty2 of
-        Nothing    -> trace
-          ("Failed to solve constraint: " ++ render (pPrint (DirectedType d v dty2')) ++
-           "\nCurrent substitution: " ++ render (pPrint subst) ++
-           "\nRemaining constraints: " ++ render (pPrint cs)) $
+        Nothing    -> -- trace
+          -- ("Failed to solve constraint: " ++ render (pPrint (DirectedType d v dty2')) ++
+          --  "\nCurrent substitution: " ++ render (pPrint subst) ++
+          --  "\nRemaining constraints: " ++ render (pPrint cs)) $
           lift Nothing
         Just newCs -> solveGroupWith subst (Set.union newCs cs)
 
