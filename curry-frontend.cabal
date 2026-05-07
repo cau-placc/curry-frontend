@@ -59,6 +59,7 @@ library
     , time            ^>= 1.12
     , parsec          ^>= 3.1
     , deepseq         ^>= 1.5
+    , equivalence     ^>= 0.4
   exposed-modules:
       Curry.AbstractCurry
     , Curry.AbstractCurry.Files

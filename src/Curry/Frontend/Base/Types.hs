@@ -28,6 +28,7 @@
     in the left hand side of a type declaration.
 -}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE PatternSynonyms #-}
 module Curry.Frontend.Base.Types
   ( -- * Representation of types
     Type (..), applyType, unapplyType, rootOfType, rootOfTypeMaybe
@@ -58,7 +59,7 @@ module Curry.Frontend.Base.Types
   , toDetExpr, toDetType, toDetSchema, unapplyDetType
   , abstractDetScheme, monoDetScheme, substDetTy, detTypeVars
   , methodDetSchemeAnn
-  , CS.DetExpr(..), DetScheme (..), DetType(..), VarIndex
+  , CS.DetExpr(..), DetScheme (..), DetType(.., VarTy, SkolemTy), VarIndex
     -- * Predefined types
   , arrowType, unitType, predUnitType, boolType, predBoolType, charType
   , intType, predIntType, floatType, predFloatType, stringType, predStringType
@@ -79,7 +80,8 @@ module Curry.Frontend.Base.Types
 import           Prelude hiding ((<>))
 import           Control.Arrow (first)
 import           Data.Function (on)
-import           Data.List (nub, partition, (\\))
+import           Data.List (partition, (\\))
+import           Data.List.Extra (nubOrd)
 import           Data.Maybe (fromMaybe)
 import qualified Data.Set.Extra as Set
 import qualified Data.Map as Map
@@ -448,27 +450,27 @@ partitionPredList = partition $
 -- The set theoretical union of two predicateList
 -- TODO : check if this can be changed so that predicates are ordered by
 -- the order in a given type scheme.
-plUnion :: Eq a => [a] -> [a] -> [a]
-plUnion pl1 pl2 = nub (pl1 ++ pl2)
+plUnion :: Ord a => [a] -> [a] -> [a]
+plUnion pl1 pl2 = nubOrd (pl1 ++ pl2)
 
 -- Set-theoretical difference of two predicate lists
 plDifference :: Eq a => [a] -> [a] -> [a]
 plDifference = (\\)
 
 -- Insert an element into a predicate list and remove all duplicates afterwards
-plInsert :: Eq a => a -> [a] -> [a]
-plInsert pl pls = nub (pl:pls)
+plInsert :: Ord a => a -> [a] -> [a]
+plInsert pl pls = nubOrd (pl:pls)
 
 -- The list version of plUnion
-plUnions :: Eq a => [[a]] -> [a]
+plUnions :: Ord a => [[a]] -> [a]
 plUnions = foldr plUnion []
 
 -- concatMap for predicate lists
-plConcatMap :: Eq b => (a -> [b]) -> [a] -> [b]
+plConcatMap :: Ord b => (a -> [b]) -> [a] -> [b]
 plConcatMap f = plUnions . map f
 
 -- concatMapM for predicate lists
-plConcatMapM :: (Eq b, Monad m) => (a -> m [b]) -> [a] -> m [b]
+plConcatMapM :: (Ord b, Monad m) => (a -> m [b]) -> [a] -> m [b]
 plConcatMapM f = fmap plUnions . mapM f
 
 -- lookup the minimum element of a predicate list. If the list contains a
@@ -727,8 +729,8 @@ predefTypes =
 enumTypeVars :: (Expr a, QuantExpr a) => [Ident] -> a -> Map.Map Ident Int
 enumTypeVars tvs ty = Map.fromList $ zip (tvs ++ tvs') [0..]
   where
-    tvs' = [tv | tv <- nub (fv ty), tv `notElem` tvs] ++
-             [tv | tv <- nub (bv ty), tv `notElem` tvs]
+    tvs' = [tv | tv <- nubOrd (fv ty), tv `notElem` tvs] ++
+             [tv | tv <- nubOrd (bv ty), tv `notElem` tvs]
 
 toType :: [Ident] -> CS.TypeExpr -> Type
 toType tvs ty = toType' (enumTypeVars tvs ty) ty []
@@ -934,11 +936,17 @@ ppTypeScheme m (ForAll _ pty) = ppPredType m pty
 
 type VarIndex = Int
 
-data DetType = VarTy VarIndex
+data DetType = MkVarTy Bool VarIndex
              | Det
-             | DetArrow DetType DetType
              | Any
+             | DetArrow DetType DetType
   deriving (Eq, Ord, Show)
+
+pattern VarTy :: VarIndex -> DetType
+pattern VarTy v = MkVarTy False v
+
+pattern SkolemTy :: VarIndex -> DetType
+pattern SkolemTy v = MkVarTy True v
 
 data DetScheme = Forall [VarIndex] DetType
   deriving (Eq, Ord, Show)
@@ -947,7 +955,7 @@ toDetExpr :: DetScheme -> CS.DetExpr
 toDetExpr (Forall _ ty) = tyToDetExpr ty
 
 tyToDetExpr :: DetType -> CS.DetExpr
-tyToDetExpr (VarTy v) = CS.VarDetExpr NoSpanInfo (identSupply !! v)
+tyToDetExpr (MkVarTy _ v) = CS.VarDetExpr NoSpanInfo (identSupply !! v)
 tyToDetExpr Det = CS.DetDetExpr NoSpanInfo
 tyToDetExpr Any = CS.AnyDetExpr NoSpanInfo
 tyToDetExpr (DetArrow ty1 ty2) = CS.ArrowDetExpr NoSpanInfo (tyToDetExpr ty1) (tyToDetExpr ty2)
@@ -973,7 +981,7 @@ abstractDetScheme :: DetScheme -> DetScheme
 abstractDetScheme (Forall _ ty) =
   Forall [0 .. fromIntegral (Map.size subst) - 1] (ty `substDetTy` subst)
   where
-    vars = nub (detTypeVars ty)
+    vars = detTypeVars ty
     subst = Map.fromList $ zip vars (map VarTy [0..])
 
 monoDetScheme :: DetScheme -> DetScheme
@@ -989,9 +997,11 @@ substDetTy (DetArrow ty1 ty2) subst = DetArrow (substDetTy ty1 subst) (substDetT
 substDetTy ty _ = ty
 
 detTypeVars :: DetType -> [VarIndex]
-detTypeVars (VarTy v) = [v]
-detTypeVars (DetArrow ty1 ty2) = detTypeVars ty1 ++ detTypeVars ty2
-detTypeVars _ = []
+detTypeVars = nubOrd . go
+  where
+    go (VarTy v) = [v]
+    go (DetArrow ty1 ty2) = go ty1 ++ go ty2
+    go _ = []
 
 unapplyDetType :: DetType -> ([DetType], DetType)
 unapplyDetType = first reverse . go []
@@ -1008,7 +1018,7 @@ instance Pretty DetScheme where
   pPrint (Forall vs ty) = text "forall" <+> hsep (map (pPrint . VarTy) vs) <> dot <+> pPrint ty
 
 instance Pretty DetType where
-  pPrintPrec _ (VarTy v) = pPrint $ tyToDetExpr (VarTy v)
+  pPrintPrec _ (MkVarTy _ v) = pPrint $ tyToDetExpr (VarTy v)
   pPrintPrec _ Det = text "Det"
   pPrintPrec _ Any = text "Any"
   pPrintPrec p (DetArrow ty1 ty2) = parenIf (p > 0) $

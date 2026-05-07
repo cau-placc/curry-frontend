@@ -1661,7 +1661,7 @@ instance BothTypesOf a => BothTypesOf (Expression a) where
           _ -> internalError $ "WarnCheck.bothTypesOf.RightSection: " ++ show oty
         dty' = case odty of
           DetArrow dty1 dty2 -> DetArrow dty1 (applyDetType dty2 [edty])
-          VarTy _ -> Det
+          MkVarTy _ _ -> Det
           Det -> Det
           Any -> Any
     in (PredType (plUnion eps ops) ty', dty')

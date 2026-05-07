@@ -242,7 +242,7 @@ trFuncDecl _ _ = return []
 trDetType :: DetType -> CDetType
 trDetType Any = CAny
 trDetType Det = CDet
-trDetType (VarTy i) = CDetVar (i, idName (identSupply !! i))
+trDetType (MkVarTy _ i) = CDetVar (i, idName (identSupply !! i))
 trDetType (DetArrow ty1 ty2) = CDetArrow (trDetType ty1) (trDetType ty2)
 
 trFuncName :: Bool -> Ident -> GAC QName

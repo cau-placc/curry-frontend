@@ -54,8 +54,10 @@ import Prelude hiding ( (<>) )
 import Control.Arrow ( second )
 import Control.Applicative ((<|>))
 import Control.Monad ( void, zipWithM, replicateM, forM_, forM, unless, mapAndUnzipM )
-import Control.Monad.State ( lift, evalStateT, runStateT, modify, get, gets, StateT )
+import Control.Monad.State ( lift, evalState, evalStateT, runStateT, modify, get, gets
+                           , State, StateT )
 import Control.Monad.Reader (Reader, runReader, asks)
+import Data.Equivalence.Monad (EquivT, runEquivT, equivalent, equate)
 import Data.List ( nub, sortOn, (\\), partition )
 import Data.List.Extra ( nubOrd )
 import Data.Map ( Map )
@@ -79,11 +81,6 @@ import Curry.Frontend.Env.Class ( ClassEnv, lookupClassInfo )
 import Curry.Frontend.Env.Determinism
 import Curry.Frontend.Env.TypeConstructor ( TCEnv, TypeInfo (..), qualLookupTypeInfoUnique )
 import Curry.Frontend.Env.Value ( qualLookupValue, qualLookupValueUnique, ValueInfo(..), ValueEnv )
-import System.IO.Unsafe (unsafePerformIO)
--- import Debug.Trace
-
-evalState :: StateT s IO a -> s -> a
-evalState st s = unsafePerformIO (evalStateT st s)
 
 determinismCheck :: ModuleIdent -> TCEnv -> ValueEnv -> ClassEnv -> DetEnv
                  -> [KnownExtension] -> Module PredType
@@ -129,7 +126,7 @@ data DS = DS { detEnv :: TopDetEnv
              , extensions :: Set KnownExtension
              }
 
-type DM = StateT DS IO
+type DM = State DS
 
 freshVar :: DM VarIndex
 freshVar = do
@@ -190,13 +187,11 @@ dataIdents mid = map (QI . qualifyWith mid)
 checkGroup :: [(Decl PredType, Integer)] -> DM [(Decl (PredType, DetType), Integer)]
 checkGroup ds = do
   mid <- gets moduleIdent
-  -- lift $ traceIO (render $ pPrint (map fst ds))
 
   -- class methods without default method impl still need
   -- to be inserted into the environment as their respective signature (or "Any")
   -- we do this before checking the declarations, so that we can use the signatures in the class methods
   let classMap = Map.unions $ map (getClassMethodSigs mid . fst) ds
-  -- trace ("ClassMap: " ++ show (pPrint classMap)) $ return ()
   modify (\s -> s { detEnv = Map.union (detEnv s) classMap })
 
   -- Check each declaration in the group and collect the constraints.
@@ -205,8 +200,7 @@ checkGroup ds = do
   let constraints = Set.unions constraintsList
   lcl <- gets localDetEnv
   solved <- solveConstraints constraints
-  --dE <- gets detEnv
-  let res = {- traceShowWith (pPrint . (, dE ,ds, "GroupRes")) $ -} Map.map abstractDetScheme
+  let res = Map.map abstractDetScheme
                 $ extractTopDetEnv
                 $ mapNestDetEnv (`substDetSchema` solved) lcl
 
@@ -229,15 +223,34 @@ checkGroup ds = do
   -- environment (e.g. the annotation on lists or local functions).
   mapM (\(d, i) -> (,i) <$> fixDecl solved d) ds'
 
-data DetConstraint = DirectedType Direction VarIndex DetType -- v ~[AtLeast/AtMost] alpha
-  deriving (Eq, Ord, Show)
+data DetConstraint = MkC DetType DetType
+  deriving (Eq, Show)
+
+directedType :: Direction -> VarIndex -> DetType -> DetConstraint
+directedType dir v dty2 = if dir == AtLeast
+  then MkC (VarTy v) dty2
+  else MkC dty2 (VarTy v)
+
+-- Atomic constraints should be smallest, so that they are solved last.
+instance Ord DetConstraint where
+  compare c1@(MkC dty1 dty2) c2@(MkC dty1' dty2') =
+    case compare (isAtomic c1) (isAtomic c2) of
+      EQ    -> compare dty2 dty2' `mappend`
+               compare dty1 dty1'
+      LT -> GT
+      GT -> LT
+    where isAtomic (MkC d1 d2) = isAtomicT d1 && isAtomicT d2
+          isAtomicT (VarTy _) = True
+          isAtomicT Any = True
+          isAtomicT Det = True
+          isAtomicT _ = False
 
 data Direction = AtLeast | AtMost
   deriving (Eq, Ord, Show)
 
 instance Pretty DetConstraint where
-  pPrint (DirectedType dir v ty) =
-    pPrint (VarTy v) <+> text "~" <> text (show dir) <+> pPrint ty
+  pPrint (MkC ty1 ty2) =
+    pPrint ty1 <+> text "<:" <+> pPrint ty2
 
 checkSigs :: [Decl a] -> DetEnv -> DM ()
 checkSigs ds' dE = do
@@ -257,12 +270,7 @@ checkSigs ds' dE = do
               Nothing    -> return ()
               Just dty2' -> do
                   let dty2 = toDetType dty2'
-                  infDty <- instantiate dty1
-                  sigDty <- instantiate dty2
-                  -- trace ("SignatureCheck for " ++ what ++ " " ++ idName i) return ()
-                  if infDty `moreSpecificNoInstantiation` sigDty
-                    then return ()
-                    else addMessage (errIncorrectSig sp i what Nothing dty1 dty2)
+                  checkNoMoreGeneral dty1 dty2 $ errIncorrectSig sp i what Nothing dty1 dty2
               where i = unqualify qid
         forM_ (declIdents mid d) $ \i ->
           forM_ (Map.lookup (to i) dE) (act (to i))
@@ -291,17 +299,13 @@ checkMethodImpl spi1 cls tys subst (FunctionDecl spi2 (_, dtyInst) f _) = do
     let qcls = qualQualify mid cls
         fZero = f { idUnique = 0}
         qid = qualifyLike qcls fZero
-        dtyCls = case Map.lookup (CI qcls qid) dEnv of
+        sigDty = case Map.lookup (CI qcls qid) dEnv of
           Nothing -> internalError ("checkMethodImpl: could not find class: " ++ show (pPrint (CI qcls qid)) ++ "\n"
                                      ++ "Available classes: " ++ show (pPrint (Map.keys dEnv)))
           Just dty -> dty
-    infDty <- instantiate $ abstractDetScheme $ toDetSchema (dtyInst `substDetTy` subst)
-    sigDty <- instantiate dtyCls
-    if infDty `moreSpecificNoInstantiation` sigDty
-      then return ()
-      else addMessage (errIncorrectSig spi2 fZero "instance method"
-                        (Just (spi1, cls, tys))
-                        (Forall [] infDty) dtyCls)
+    let infDty = abstractDetScheme $ toDetSchema (dtyInst `substDetTy` subst)
+    checkNoMoreGeneral infDty sigDty $
+      errIncorrectSig spi2 fZero "instance method" (Just (spi1, cls, tys)) infDty sigDty
 checkMethodImpl _ _ _ _ _ = return ()
 
 getClassMethodSigs :: ModuleIdent -> Decl a -> Map IdentInfo DetScheme
@@ -328,8 +332,9 @@ checkDecl d@(FunctionDecl spi pty f eqs) = do
 checkDecl (PatternDecl spi p rhs) = do
   v <- freshVar
   (cs1, _, p') <- checkPat v p
-  (cs2, rhs') <- scoped (checkRhsTy v rhs)
-  return $ return (Set.union cs1 cs2, PatternDecl spi p' rhs')
+  (cs2, rhs', dty) <- scoped (checkRhsTy rhs)
+  let c1 = MkC dty (VarTy v)
+  return $ return (Set.insert c1 (Set.union cs1 cs2), PatternDecl spi p' rhs')
 checkDecl (ClassDecl spi li ctx cls v deps ds) = do
   let (sigs, others) = partition isTypeSig ds
   acts <- mapM (checkClassDecl cls) (sigs ++ others)
@@ -398,8 +403,9 @@ checkLocalDeclsTy ds = do
       v <- freshVar
       (cs, _, p') <- checkPat v p
       return $ do
-        (cs', rhs') <- scoped (checkRhsTy v rhs)
-        return (Set.union cs cs', PatternDecl spi p' rhs')
+        (cs', rhs', dty) <- scoped (checkRhsTy rhs)
+        let c1 = MkC dty (VarTy v)
+        return (Set.insert c1 (Set.union cs cs'), PatternDecl spi p' rhs')
     checkLocalDecl decl@(FunctionDecl spi pty f eqs) = do
       mid <- gets moduleIdent
       let unqualII (QI i) = QI $ qualify $ unqualify i
@@ -488,29 +494,31 @@ checkFun is eqs@(e:_) = do
     c1 <- Set.unions <$> mapM (\dty -> instantiate (toDetType dty)
                                   >>= getSignatureConstraints args res)
                               (mapMaybe snd withSig)
-    let c2 = if ov then Set.singleton (DirectedType AtMost res Any) else Set.empty
+    let c2 = if ov then Set.singleton (directedType AtMost res Any) else Set.empty
     (cs, eqs') <- mapAndUnzipM (checkEquation args res) eqs
     return (Set.unions ([c1, c2] ++ cs), varTyped, eqs')
   where
     getSignatureConstraints (a:args) res (DetArrow d1 d2) = do
       c1 <- getSignatureConstraints args res d2
-      return (Set.insert (DirectedType AtLeast a d1) c1)
+      return (Set.insert (directedType AtMost a d1) c1)
     getSignatureConstraints (a:args) res dty = do
       -- When the user supplied type has less arguments than the function,
       -- the remaining arguments are equated with the result type of the user supplied type.
       -- Checking the signature later on will probably fail (correctly), unless
       -- the "res" is Any.
       c1 <- getSignatureConstraints args res dty
-      return (Set.insert (DirectedType AtLeast a dty) c1)
-    getSignatureConstraints [] res d2 = return (Set.singleton (DirectedType AtMost res d2))
+      return (Set.insert (directedType AtMost a dty) c1)
+    getSignatureConstraints [] res d2 = return (Set.singleton (directedType AtMost res d2))
 
 checkEquation :: [VarIndex] -> VarIndex -> Equation PredType
               -> DM (Set DetConstraint, Equation (PredType, DetType))
 checkEquation args res (Equation spi mbty lhs rhs) = do
   (cs1, is, lhs') <- checkLhs args lhs
-  let demands = foldr (Set.insert . DirectedType AtLeast res . VarTy) Set.empty is
-  (cs2, rhs') <- scoped (checkRhsTy res rhs)
-  return (Set.unions [demands, cs1, cs2], Equation spi ((,VarTy res) <$> mbty) lhs' rhs')
+  let demands = foldr (Set.insert . flip (directedType AtLeast) Det) Set.empty is
+  (cs2, rhs', dty) <- scoped (checkRhsTy rhs)
+  let c = MkC dty (VarTy res)
+      cs = Set.unions [Set.singleton c, demands, cs1, cs2]
+  return (cs, Equation spi ((,VarTy res) <$> mbty) lhs' rhs')
 
 -- Returns a set of constraints and a list of variables that are demanded strictly
 checkLhs ::[VarIndex] -> Lhs PredType -> DM (Set DetConstraint, [VarIndex], Lhs (PredType, DetType))
@@ -532,7 +540,7 @@ checkPat :: VarIndex -> Pattern PredType
          -> DM (Set DetConstraint, Bool, Pattern (PredType, DetType))
 checkPat v (VariablePattern spi pty i) = do
   unless (idName i == "_") $ addLocalType (QI (qualify i { idUnique = 0 })) (toDetSchema (VarTy v))
-  return (Set.singleton (DirectedType AtLeast v (VarTy v)), False, VariablePattern spi (pty, VarTy v) i)
+  return (Set.empty, False, VariablePattern spi (pty, VarTy v) i)
 checkPat v (ConstructorPattern spi pty qid ps) = do
   (css, _, ps') <- unzip3 <$> mapM (checkPat v) ps
   return (Set.unions css, True, ConstructorPattern spi (pty, VarTy v) qid ps')
@@ -555,30 +563,23 @@ checkPat v (ListPattern spi pty ps) = do
 checkPat v (AsPattern spi i p) = do
   addLocalType (QI (qualify i { idUnique = 0})) (toDetSchema (VarTy v))
   (cs, dmd, p') <- checkPat v p
-  return (Set.insert (DirectedType AtLeast v (VarTy v)) cs, dmd, AsPattern spi i p')
+  return (cs, dmd, AsPattern spi i p')
 checkPat v (LazyPattern spi p) = do
   (cs, _, p') <- checkPat v p
-  return (cs, False, LazyPattern spi p')
+  return (cs, True, LazyPattern spi p')
 checkPat v (FunctionPattern spi pty i ps) = do
-  w <- freshVar
-  vs <- replicateM (length ps) freshVar
-  let c1 = DirectedType AtLeast w (foldr (DetArrow . VarTy) (VarTy v) vs)
-  (css, _, ps') <- unzip3 <$> zipWithM checkPat vs ps
-  cs1 <- checkVar w i
+  (cs1, dty) <- checkVar i
+  (css, _, ps') <- unzip3 <$> mapM (checkPat v) ps
   -- return True, because we assume functional pattern to be demanded
-  let p' = FunctionPattern spi (pty, VarTy v) i ps'
-  return (Set.insert c1 (Set.unions (cs1:css)), True, p')
+  let p' = FunctionPattern spi (pty, dty) i ps'
+  return (Set.unions (cs1 : css), True, p')
 checkPat v (InfixFuncPattern spi pty p1 i p2) = do
-  w <- freshVar
-  v1 <- freshVar
-  v2 <- freshVar
-  let c1 = DirectedType AtLeast w (foldr (DetArrow . VarTy) (VarTy v) [v1, v2])
-  (cs1, _, p1') <- checkPat v1 p1
-  (cs2, _, p2') <- checkPat v2 p2
-  cs3 <- checkVar w i
-  let p' = InfixFuncPattern spi (pty, VarTy v) p1' i p2'
+  (cs1, dty) <- checkVar i
+  (cs2, _, p1') <- checkPat v p1
+  (cs3, _, p2') <- checkPat v p2
   -- return True, because we assume functional pattern to be demanded
-  return (Set.insert c1 (Set.unions [cs1, cs2, cs3]), True, p')
+  let p' = InfixFuncPattern spi (pty, dty) p1' i p2'
+  return (Set.unions [cs1, cs2, cs3], True, p')
 checkPat v (LiteralPattern spi pty lit) =
   return (Set.empty, True, LiteralPattern spi (pty, VarTy v) lit)
 checkPat v (NegativePattern spi pty lit) =
@@ -590,235 +591,270 @@ checkPatField v (Field spi qid p) = do
   (cs, _, p') <- checkPat v p
   return (cs, Field spi qid p')
 
-checkRhsTy :: VarIndex -> Rhs PredType
-           -> DM (Set DetConstraint, Rhs (PredType, DetType))
-checkRhsTy v (SimpleRhs spi li e ds) = do
+checkRhsTy :: Rhs PredType
+           -> DM (Set DetConstraint, Rhs (PredType, DetType), DetType)
+checkRhsTy (SimpleRhs spi li e ds) = do
   (cs1, ds') <- checkLocalDeclsTy ds
-  (cs2, e') <- scoped (checkExprTy v e)
-  return (Set.union cs1 cs2, SimpleRhs spi li e' ds')
-checkRhsTy v (GuardedRhs spi li gs ds) = do
+  (cs2, e', dty) <- scoped (checkExprTy e)
+  return (Set.union cs1 cs2, SimpleRhs spi li e' ds', dty)
+checkRhsTy (GuardedRhs spi li gs ds) = do
   (cs1, ds')  <- checkLocalDeclsTy ds
-  (css, gs') <- mapAndUnzipM (scoped . checkCondExprTy v) gs
-  return (Set.unions (cs1:css), GuardedRhs spi li gs' ds')
+  (css, gs', dtys) <- mapAndUnzip3M (scoped . checkCondExprTy) gs
+  v <- freshVar
+  let cs2 = Set.fromList $ map (`MkC` VarTy v) dtys
+  return (Set.unions (cs1:cs2:css), GuardedRhs spi li gs' ds', VarTy v)
 
-checkCondExprTy :: VarIndex -> CondExpr PredType
-                -> DM (Set DetConstraint, CondExpr (PredType, DetType))
-checkCondExprTy v (CondExpr spi e1 e2) = do
-  (cs1, e1') <- checkExprTy v e1
-  (cs2, e2') <- checkExprTy v e2
-  return (Set.union cs1 cs2, CondExpr spi e1' e2')
+checkCondExprTy :: CondExpr PredType
+                -> DM (Set DetConstraint, CondExpr (PredType, DetType), DetType)
+checkCondExprTy (CondExpr spi e1 e2) = do
+  (cs1, e1', dty1) <- checkExprTy e1
+  (cs2, e2', dty2) <- checkExprTy e2
+  let c1 = MkC dty1 Det
+      cs = Set.unions [cs1, cs2, Set.singleton c1]
+  return (cs, CondExpr spi e1' e2', dty2)
 
-checkExprTy :: VarIndex -> Expression PredType
-            -> DM (Set DetConstraint, Expression (PredType, DetType))
-checkExprTy v (Variable spi dty i) = do
-  cs <- checkVar v i
-  return (cs, Variable spi (dty, VarTy v) i)
-checkExprTy v (Typed spi e ty) = do
-  (cs, e') <- checkExprTy v e
-  return (cs, Typed spi e' ty)
-checkExprTy v (Apply spi e1 e2) = do
+checkExprTy :: Expression PredType
+            -> DM (Set DetConstraint, Expression (PredType, DetType), DetType)
+checkExprTy (Variable spi ty i) = do
+  (cs, dty) <- checkVar i
+  return (cs, Variable spi (ty, dty) i, dty)
+checkExprTy (Typed spi e ty) = do
+  (cs, e', dty) <- checkExprTy e
+  return (cs, Typed spi e' ty, dty)
+checkExprTy (Apply spi e1 e2) = do
   v1 <- freshVar
-  (cs1, e1') <- checkExprTy v1 e1
+  (cs1, e1', dty1) <- checkExprTy e1
   v2 <- freshVar
-  (cs2, e2') <- checkExprTy v2 e2
-  let c1 = DirectedType AtLeast v1 (DetArrow (VarTy v2) (VarTy v))
-  return (Set.insert c1 (Set.union cs1 cs2), Apply spi e1' e2')
-checkExprTy v (InfixApply spi e1 op e2) = do
+  (cs2, e2', dty2) <- checkExprTy e2
+  let c1 = MkC dty1 (DetArrow (VarTy v2) (VarTy v1))
+      c2 = MkC dty2 (VarTy v2)
+      cs = Set.unions [Set.fromList [c1, c2], cs1, cs2]
+  return (cs, Apply spi e1' e2', VarTy v1)
+checkExprTy (InfixApply spi e1 op e2) = do
   v1 <- freshVar
-  (cs1, e1') <- checkExprTy v1 e1
+  (cs1, e1', dty1) <- checkExprTy e1
   v2 <- freshVar
-  (cs2, e2') <- checkExprTy v2 e2
+  (cs2, e2', dty2) <- checkExprTy e2
   v3 <- freshVar
-  (cs3, op') <- checkInfixOpTy v3 op
-  let c1 = DirectedType AtLeast v3 (DetArrow (VarTy v1) (DetArrow (VarTy v2) (VarTy v)))
-  return (Set.insert c1 (Set.unions [cs1, cs2, cs3]), InfixApply spi e1' op' e2')
-checkExprTy v (Paren spi e) = do
-  (cs, e') <- checkExprTy v e
-  return (cs, Paren spi e')
-checkExprTy v (Constructor spi pty@(PredType _ ty) qid) = do
+  (cs3, op', dty3) <- checkInfixOpTy op
+  let c1 = MkC dty1 (VarTy v1)
+      c2 = MkC dty2 (VarTy v2)
+      c3 = MkC dty3 (DetArrow (VarTy v1) (DetArrow (VarTy v2) (VarTy v3)))
+      cs = Set.unions [Set.fromList [c1, c2, c3], cs1, cs2, cs3]
+  return (cs, InfixApply spi e1' op' e2', VarTy v3)
+checkExprTy (Paren spi e) = do
+  (cs, e', dty) <- checkExprTy e
+  return (cs, Paren spi e', dty)
+checkExprTy (Constructor spi pty@(PredType _ ty) qid) = do
   let dty = foldr DetArrow Det (replicate (arrowArity ty) Det)
-      c1 = DirectedType AtLeast v dty
-  return (Set.singleton c1, Constructor spi (pty, dty) qid)
-checkExprTy v (Tuple spi es) = do
-  (css, es') <- mapAndUnzipM (checkExprTy v) es
-  let c = DirectedType AtLeast v Det
-  return (Set.unions (Set.singleton c : css), Tuple spi es')
-checkExprTy v (List spi pty es) = do
-  (css, es') <- mapAndUnzipM (checkExprTy v) es
-  let c = DirectedType AtLeast v Det
-  return (Set.unions (Set.singleton c : css), List spi (pty, VarTy v) es')
-checkExprTy v (ListCompr spi e qs) = do
-  (cs, qs', e') <- checkStmts False v e qs
-  let c = DirectedType AtLeast v Det
-  return (Set.insert c cs, ListCompr spi e' qs')
-checkExprTy v (EnumFrom spi e) = do
+  return (Set.empty, Constructor spi (pty, dty) qid, dty)
+checkExprTy (Tuple spi es) = do
+  (css, es', dtys) <- mapAndUnzip3M checkExprTy es
+  let cs1 = Set.fromList $ map (`MkC` Det) dtys
+  v <- freshVar
+  let cs2 = Set.fromList $ map (`MkC` VarTy v) dtys
+  return (Set.unions (cs1 : cs2 : css), Tuple spi es', VarTy v)
+checkExprTy (List spi pty es) = do
+  (css, es', dtys) <- mapAndUnzip3M checkExprTy es
+  let cs1 = Set.fromList $ map (`MkC` Det) dtys
+  v <- freshVar
+  let cs2 = Set.fromList $ map (`MkC` VarTy v) dtys
+  return (Set.unions (cs1 : cs2 : css), List spi (pty, Det) es', VarTy v)
+checkExprTy (ListCompr spi e qs) = do
+  (cs, qs', e', dty) <- checkStmts False e qs
+  let c = MkC dty Det
+  return (Set.insert c cs, ListCompr spi e' qs', Det)
+checkExprTy (EnumFrom spi e) = do
   v1 <- freshVar
-  (cs1, e') <- checkExprTy v1 e
+  (cs1, e', dty1) <- checkExprTy e
   vE <- freshVar
-  cs2 <- checkVar vE qEnumFromId
-  let c = DirectedType AtLeast vE (DetArrow (VarTy v1) (VarTy v))
-  return (Set.insert c (Set.union cs1 cs2), EnumFrom spi e')
-checkExprTy v (EnumFromThen spi e1 e2) = do
+  (cs2, dty2) <- checkVar qEnumFromId
+  let c1 = MkC dty2 (DetArrow (VarTy v1) (VarTy vE))
+      c2 = MkC dty1 (VarTy v1)
+  return (Set.unions [Set.fromList [c1, c2], cs1, cs2], EnumFrom spi e', VarTy vE)
+checkExprTy (EnumFromThen spi e1 e2) = do
   v1 <- freshVar
-  (cs1, e1') <- checkExprTy v1 e1
+  (cs1, e1', dty1) <- checkExprTy e1
   v2 <- freshVar
-  (cs2, e2') <- checkExprTy v2 e2
+  (cs2, e2', dty2) <- checkExprTy e2
   vE <- freshVar
-  cs3 <- checkVar vE qEnumFromThenId
-  let c = DirectedType AtLeast vE (DetArrow (VarTy v1) (DetArrow (VarTy v2) (VarTy v)))
-  return (Set.insert c (Set.union (Set.union cs1 cs2) cs3), EnumFromThen spi e1' e2')
-checkExprTy v (EnumFromTo spi e1 e2) = do
+  (cs3, dty3) <- checkVar qEnumFromThenId
+  let c1 = MkC dty3 (DetArrow (VarTy v1) (DetArrow (VarTy v2) (VarTy vE)))
+      c2 = MkC dty1 (VarTy v1)
+      c3 = MkC dty2 (VarTy v2)
+      cs = Set.unions [Set.fromList [c1, c2, c3], cs1, cs2, cs3]
+  return (cs, EnumFromThen spi e1' e2', VarTy vE)
+checkExprTy (EnumFromTo spi e1 e2) = do
   v1 <- freshVar
-  (cs1, e1') <- checkExprTy v1 e1
+  (cs1, e1', dty1) <- checkExprTy e1
   v2 <- freshVar
-  (cs2, e2') <- checkExprTy v2 e2
+  (cs2, e2', dty2) <- checkExprTy e2
   vE <- freshVar
-  cs3 <- checkVar vE qEnumFromToId
-  let c = DirectedType AtLeast vE (DetArrow (VarTy v1) (DetArrow (VarTy v2) (VarTy v)))
-  return (Set.insert c (Set.union (Set.union cs1 cs2) cs3), EnumFromTo spi e1' e2')
-checkExprTy v (EnumFromThenTo spi e1 e2 e3) = do
+  (cs3, dty3) <- checkVar qEnumFromToId
+  let c1 = MkC dty3 (DetArrow (VarTy v1) (DetArrow (VarTy v2) (VarTy vE)))
+      c2 = MkC dty1 (VarTy v1)
+      c3 = MkC dty2 (VarTy v2)
+      cs = Set.unions [Set.fromList [c1, c2, c3], cs1, cs2, cs3]
+  return (cs, EnumFromTo spi e1' e2', VarTy vE)
+checkExprTy (EnumFromThenTo spi e1 e2 e3) = do
   v1 <- freshVar
-  (cs1, e1') <- checkExprTy v1 e1
+  (cs1, e1', dty1) <- checkExprTy e1
   v2 <- freshVar
-  (cs2, e2') <- checkExprTy v2 e2
+  (cs2, e2', dty2) <- checkExprTy e2
   v3 <- freshVar
-  (cs3, e3') <- checkExprTy v3 e3
+  (cs3, e3', dty3) <- checkExprTy e3
   vE <- freshVar
-  cs4 <- checkVar vE qEnumFromThenToId
-  let c = DirectedType AtLeast vE (DetArrow (VarTy v1) (DetArrow (VarTy v2) (DetArrow (VarTy v3) (VarTy v))))
-  return (Set.insert c (Set.union (Set.union (Set.union cs1 cs2) cs3) cs4), EnumFromThenTo spi e1' e2' e3')
-checkExprTy v (Record spi pty qid fs) = do
-  (css, fs') <- mapAndUnzipM (checkExprField v) fs
-  let c = DirectedType AtLeast v Det
-  return (Set.unions (Set.singleton c : css), Record spi (pty, VarTy v) qid fs')
-checkExprTy v (RecordUpdate spi e fs) = do
-  (cs, e') <- checkExprTy v e
-  (css, fs') <- mapAndUnzipM (checkExprField v) fs
-  let c = DirectedType AtLeast v Det
-  return (Set.unions (Set.singleton c : cs : css), RecordUpdate spi e' fs')
-checkExprTy v (Lambda spi ps e) = scoped $ do
+  (cs4, dty4) <- checkVar qEnumFromThenToId
+  let c = MkC dty4 (DetArrow (VarTy v1) (DetArrow (VarTy v2) (DetArrow (VarTy v3) (VarTy vE))))
+      c1 = MkC dty1 (VarTy v1)
+      c2 = MkC dty2 (VarTy v2)
+      c3 = MkC dty3 (VarTy v3)
+      cs = Set.unions [Set.fromList [c, c1, c2, c3], cs1, cs2, cs3, cs4]
+  return (cs, EnumFromThenTo spi e1' e2' e3', VarTy vE)
+checkExprTy (Record spi pty qid fs) = do
+  (css, fs', dtys) <- mapAndUnzip3M checkExprField fs
+  let cs = Set.fromList $ map (`MkC` Det) dtys
+  return (Set.unions (cs : css), Record spi (pty, Det) qid fs', Det)
+checkExprTy (RecordUpdate spi e fs) = do
+  (cs1, e', dty) <- checkExprTy e
+  (css, fs', dtys) <- mapAndUnzip3M checkExprField fs
+  let cs2 = Set.fromList $ map (`MkC` Det) (dty:dtys)
+  return (Set.unions (cs1 : cs2 : css), RecordUpdate spi e' fs', Det)
+checkExprTy (Lambda spi ps e) = scoped $ do
   vs <- replicateM (length ps) freshVar
   (css, stricts, ps') <- unzip3 <$> zipWithM checkPat vs ps
-  v' <- freshVar
-  (cs1, e') <- checkExprTy v' e
-  let c = DirectedType AtLeast v (foldr (DetArrow . VarTy) (VarTy v') vs)
-      cs' = foldr ((Set.insert . DirectedType AtLeast v' . VarTy) . fst)
-              (Set.insert c (Set.unions (cs1:css)))
-              (filter snd $ zip vs stricts)
-  return (cs', Lambda spi ps' e')
-checkExprTy v (Let spi li ds e) = scoped $ do
+  (cs1, e', dty) <- checkExprTy e
+  let demands = map ((`MkC` Det) . VarTy . snd) $ filter fst $ zip stricts vs
+      cs' = Set.unions (Set.fromList demands : css ++ [cs1])
+      dty' = foldr (DetArrow . VarTy) dty vs
+  return (cs', Lambda spi ps' e', dty')
+checkExprTy (Let spi li ds e) = scoped $ do
   (cs1, ds') <- checkLocalDeclsTy ds
-  (cs2, e') <- checkExprTy v e
-  return (Set.union cs1 cs2, Let spi li ds' e')
-checkExprTy v (Do spi li ss e) = do
+  (cs2, e', dty) <- checkExprTy e
+  return (Set.union cs1 cs2, Let spi li ds' e', dty)
+checkExprTy (Do spi li ss e) = do
   tcE <- gets tcEnv
+  (cs2, ss', e', dty') <- checkStmts True e ss
   cs1 <- if any (stmtCanFail tcE) ss
     then do
       vF <- freshVar
-      cs <- checkVar vF qFailId
-      return (Set.insert (DirectedType AtLeast vF (DetArrow Det (VarTy v))) cs)
+      (cs, dty) <- checkVar qFailId
+      let c1 = MkC dty (DetArrow (VarTy vF) Det)
+          c2 = MkC dty' (VarTy vF)
+      return (Set.insert c1 (Set.insert c2 cs))
     else return Set.empty
-  (cs2, ss', e') <- checkStmts True v e ss
-  return (Set.union cs1 cs2, Do spi li ss' e')
-checkExprTy v (LeftSection spi e op) = do
+  return (Set.union cs1 cs2, Do spi li ss' e', dty')
+checkExprTy (LeftSection spi e op) = do
   v1 <- freshVar
-  (cs1, e') <- checkExprTy v1 e
+  (cs1, e', dty1) <- checkExprTy e
   v2 <- freshVar
   v3 <- freshVar
-  (cs3, op') <- checkInfixOpTy v3 op
-  let c1 = DirectedType AtLeast v3 (DetArrow (VarTy v1) (DetArrow (VarTy v2) (VarTy v)))
-  return (Set.insert c1 (Set.unions [cs1, cs3]), LeftSection spi e' op')
-checkExprTy v (RightSection spi op e) = do
+  (cs3, op', dty3) <- checkInfixOpTy op
+  let c1 = MkC dty3 (DetArrow (VarTy v1) (DetArrow (VarTy v2) (VarTy v3)))
+      c2 = MkC dty1 (VarTy v1)
+      cs = Set.unions [Set.fromList [c1, c2], cs1, cs3]
+  return (cs, LeftSection spi e' op', DetArrow (VarTy v2) (VarTy v3))
+checkExprTy (RightSection spi op e) = do
   v1 <- freshVar
   v2 <- freshVar
-  (cs2, e') <- checkExprTy v2 e
+  (cs2, e', dty2) <- checkExprTy e
   v3 <- freshVar
-  (cs3, op') <- checkInfixOpTy v3 op
-  let c1 = DirectedType AtLeast v3 (DetArrow (VarTy v1) (DetArrow (VarTy v2) (VarTy v)))
-  return (Set.insert c1 (Set.unions [cs2, cs3]), RightSection spi op' e')
-checkExprTy v (IfThenElse spi e1 e2 e3) = do
-  (cs1, e1') <- checkExprTy v e1
-  (cs2, e2') <- checkExprTy v e2
-  (cs3, e3') <- checkExprTy v e3
-  return (Set.unions [cs1, cs2, cs3], IfThenElse spi e1' e2' e3')
-checkExprTy v (Case spi li ct e bs) = do
-  (cs1, e') <- checkExprTy v e
-  (css, bs') <- mapAndUnzipM (scoped . checkAlt v) bs
-  return (Set.unions (cs1:css), Case spi li ct e' bs')
+  (cs3, op', dty3) <- checkInfixOpTy op
+  let c1 = MkC dty3 (DetArrow (VarTy v1) (DetArrow (VarTy v2) (VarTy v3)))
+      c2 = MkC dty2 (VarTy v2)
+      cs = Set.unions [Set.fromList [c1, c2], cs2, cs3]
+  return (cs, RightSection spi op' e', DetArrow (VarTy v1) (VarTy v3))
+checkExprTy (IfThenElse spi e1 e2 e3) = do
+  (cs1, e1', dty1) <- checkExprTy e1
+  (cs2, e2', dty2) <- checkExprTy e2
+  (cs3, e3', dty3) <- checkExprTy e3
+  v <- freshVar
+  let c1 = MkC dty1 Det
+      c2 = MkC (VarTy v) dty2
+      c3 = MkC (VarTy v) dty3
+      cs = Set.unions [Set.fromList [c1, c2, c3], cs1, cs2, cs3]
+  return (cs, IfThenElse spi e1' e2' e3', VarTy v)
+checkExprTy (Case spi li ct e bs) = do
+  (cs1, e', dty) <- checkExprTy e
+  v1 <- freshVar
+  v2 <- freshVar
+  (css, bs', dtys) <- mapAndUnzip3M (scoped . checkAlt v1) bs
+  let cs2 = Set.fromList (MkC (VarTy v1) dty : map (`MkC` VarTy v2) dtys)
+  return (Set.unions (cs1:cs2:css), Case spi li ct e' bs', VarTy v2)
 -- Once again, next two are to be deterministic by design,
 -- since their pattern variants are needed to be deterministic.
 -- Thus we skip adding a dependency on numFreeIdent.
-checkExprTy v (UnaryMinus spi e) = do
-  (cs, e') <- checkExprTy v e
-  return (cs, UnaryMinus spi e')
-checkExprTy v (Literal spi pty l) =
-  return (Set.singleton (DirectedType AtLeast v Det), Literal spi (pty, Det) l)
+checkExprTy (UnaryMinus spi e) = do
+  (cs, e', dty) <- checkExprTy e
+  return (cs, UnaryMinus spi e', dty)
+checkExprTy (Literal spi pty l) =
+  return (Set.empty, Literal spi (pty, Det) l, Det)
 
-checkAlt :: VarIndex -> Alt PredType -> DM (Set DetConstraint, Alt (PredType, DetType))
+checkAlt :: VarIndex -> Alt PredType -> DM (Set DetConstraint, Alt (PredType, DetType), DetType)
 checkAlt v (Alt spi p rhs) = do
-  (cs1, _, p') <- checkPat v p
-  (cs2, rhs') <- scoped (checkRhsTy v rhs)
-  return (Set.union cs1 cs2, Alt spi p' rhs')
+  (cs1, dmd, p') <- checkPat v p
+  (cs2, rhs', dty) <- scoped (checkRhsTy rhs)
+  let cs = if dmd
+              then Set.insert (directedType AtLeast v Det) (Set.union cs1 cs2)
+              else Set.union cs1 cs2
+  return (cs, Alt spi p' rhs', dty)
 
-checkStmts :: Bool -> VarIndex -> Expression PredType -> [Statement PredType]
-           -> DM (Set DetConstraint, [Statement (PredType, DetType)], Expression (PredType, DetType))
-checkStmts _ v e [] = do
-  (cs, e') <- checkExprTy v e
-  return (cs, [], e')
-checkStmts isDo v e (s:ss) = case s of
+checkStmts :: Bool -> Expression PredType -> [Statement PredType]
+           -> DM (Set DetConstraint, [Statement (PredType, DetType)], Expression (PredType, DetType), DetType)
+checkStmts _ e [] = do
+  (cs, e', dty) <- checkExprTy e
+  return (cs, [], e', dty)
+checkStmts isDo e (s:ss) = case s of
   StmtDecl spi li ds -> scoped $ do
     (cs1, ds') <- checkLocalDeclsTy ds
-    (cs2, ss', e') <- checkStmts isDo v e ss
-    return (Set.union cs1 cs2, StmtDecl spi li ds' : ss', e')
+    (cs2, ss', e', dty) <- checkStmts isDo e ss
+    return (Set.union cs1 cs2, StmtDecl spi li ds' : ss', e', dty)
   StmtExpr spi e2 -> do
-    v1 <- freshVar
-    (cs1, e2') <- checkExprTy v1 e2
-    v2 <- freshVar
-    (cs2, ss', e') <- checkStmts isDo v2 e ss
+    (cs1, e2', dty2) <- checkExprTy e2
+    (cs2, ss', e', dty3) <- checkStmts isDo e ss
     cs3 <- if isDo
       then do
-        vM <- freshVar
-        cs <- checkVar vM qSequenceId
-        let c = DirectedType AtLeast vM (DetArrow (VarTy v1) (DetArrow (VarTy v2) (VarTy v)))
-        return (Set.insert c cs)
+        v1 <- freshVar
+        v2 <- freshVar
+        v3 <- freshVar
+        (cs, dtyS) <- checkVar qSequenceId
+        let c1 = MkC dtyS (DetArrow (VarTy v1) (DetArrow (VarTy v2) (VarTy v3)))
+            c2 = MkC dty2 (VarTy v1)
+            c3 = MkC dty3 (VarTy v2)
+        return (Set.unions [Set.fromList [c1, c2, c3], cs])
       else return Set.empty
-    return (Set.unions [cs1, cs2, cs3], StmtExpr spi e2' : ss', e')
+    return (Set.unions [cs1, cs2, cs3], StmtExpr spi e2' : ss', e', dty3)
   StmtBind spi p e2 -> do
-    v1 <- freshVar
-    (cs1, e2') <- checkExprTy v1 e2
+    (cs1, e2', dty2) <- checkExprTy e2
     scoped $ do
       vP <- freshVar
       (cs2, _, p') <- checkPat vP p
-      v2 <- freshVar
-      (cs3, ss', e') <- checkStmts isDo v2 e ss
+      (cs3, ss', e', dty3) <- checkStmts isDo e ss
       cs4 <- if isDo
         then do
-          vL <- freshVar
-          vM <- freshVar
-          cs <- checkVar vM qBindId
-          let c1 = DirectedType AtLeast vM (DetArrow (VarTy v1) (DetArrow (VarTy vL) (VarTy v)))
-          let c2 = DirectedType AtLeast vL (DetArrow (VarTy vP) (VarTy v2))
+          (cs, dtyB) <- checkVar qBindId
+          let c1 = MkC dtyB (DetArrow dty2 (DetArrow (DetArrow (VarTy vP) dty3) dty3))
+              c2 = MkC dty2 (VarTy vP)
           return (Set.insert c1 (Set.insert c2 cs))
         else return Set.empty
-      return (Set.unions [cs1, cs2, cs3, cs4], StmtBind spi p' e2' : ss', e')
+      return (Set.unions [cs1, cs2, cs3, cs4], StmtBind spi p' e2' : ss', e', dty3)
 
-checkExprField :: VarIndex -> Field (Expression PredType)
-               -> DM (Set DetConstraint, Field (Expression (PredType, DetType)))
-checkExprField v (Field spi qid e) = do
-  (cs, e') <- checkExprTy v e
-  return (cs, Field spi qid e')
+checkExprField :: Field (Expression PredType)
+               -> DM (Set DetConstraint, Field (Expression (PredType, DetType)), DetType)
+checkExprField (Field spi qid e) = do
+  (cs, e', dty) <- checkExprTy e
+  return (cs, Field spi qid e', dty)
 
-checkInfixOpTy :: VarIndex -> InfixOp PredType -> DM (Set DetConstraint, InfixOp (PredType, DetType))
-checkInfixOpTy v (InfixOp ty i) = do
-  cs <- checkVar v i
-  return (cs, InfixOp (ty, VarTy v) i)
-checkInfixOpTy v (InfixConstr pty@(PredType _ ty) qid) = do
-  i <- freshVar
-  let dty = foldr DetArrow (VarTy i) (replicate (arrowArity ty) (VarTy i))
-  return (Set.singleton (DirectedType AtLeast v dty), InfixConstr (pty, dty) qid)
+checkInfixOpTy :: InfixOp PredType -> DM (Set DetConstraint, InfixOp (PredType, DetType), DetType)
+checkInfixOpTy (InfixOp ty i) = do
+  (cs, dty) <- checkVar i
+  return (cs, InfixOp (ty, dty) i, dty)
+checkInfixOpTy (InfixConstr pty@(PredType _ ty) qid) = do
+  let dty = foldr DetArrow Det (replicate (arrowArity ty) Det)
+  return (Set.empty, InfixConstr (pty, dty) qid, dty)
 
-checkVar :: HasCallStack => VarIndex -> QualIdent -> DM (Set DetConstraint)
-checkVar v i = do
+checkVar :: HasCallStack => QualIdent -> DM (Set DetConstraint, DetType)
+checkVar i = do
   lcl <- gets localDetEnv
   mid <- gets moduleIdent
   ext <- gets detEnv
@@ -830,11 +866,11 @@ checkVar v i = do
             _                               -> QI (zeroUniqueQual i)
   let ii' = qualifyIdentInfo mid ii
   if idName (unqualify (identInfoFun ii)) == "_"
-    then return (Set.singleton (DirectedType AtMost v Any)) -- AnonFreeVars
+    then return (Set.empty, Any) -- AnonFreeVars
     else do let localLookup = lookupNestDetEnv ii lcl <|> lookupNestDetEnv ii' lcl
                 externalLookup = Map.lookup ii ext <|> Map.lookup ii' ext
             case localLookup <|> externalLookup of
-              Just ty' -> Set.singleton . DirectedType AtMost v <$> instantiate ty'
+              Just ty' -> (Set.empty,) <$> instantiate ty'
               Nothing  -> internalError $ "checkIdentInfo: " ++
                             render (pPrint ii) ++ " not found in \next:" ++
                             render (pPrint (Map.keys ext)) ++ "\nlocal:" ++
@@ -847,95 +883,102 @@ checkVar v i = do
 -- * Solving determinism constraints
 -- -----------------------------------------------------------------------------
 
--- Solve by maintaining equivalence classes of variables using a union-find implementation.
--- We also keep a list that maps the highest element of each eqivalent class
--- to a non-variable determinism type if one is known.
 solveConstraints :: Set DetConstraint -> DM (Map VarIndex DetType)
 solveConstraints constraints = do
-  -- lift $ traceIO ("Solving constraints: " ++ render (pPrint constraints))
   let groups = scc vars vars (Set.toList constraints)
-  res <- Map.unions <$> mapM (solveGroup . Set.fromList) groups
-  -- lift $ traceIO ("Solved constraints: " ++ render (pPrint (Map.toList res)))
-  return res
-
-defs :: DetConstraint -> [VarIndex]
-defs (DirectedType _ v _) = [v]
+  Map.unions <$> mapM (solveGroup . Set.fromList) groups
 
 vars :: DetConstraint -> [VarIndex]
-vars (DirectedType _ v dty) = v : detTypeVars dty
+vars (MkC dty1 dty2) = detTypeVars dty1 ++ detTypeVars dty2
 
-type GM = StateT VarIndex Maybe
+type GM s = EquivT s Int Int (StateT VarIndex Maybe)
 
-freshVarGM :: GM VarIndex
+freshVarGM :: GM s VarIndex
 freshVarGM = do
   v <- get
   modify succ
   return v
 
 solveGroup :: Set DetConstraint -> DM (Map VarIndex DetType)
-solveGroup cs = do
+solveGroup cs =  do
   freshState <- gets freshIdent
-  let stateComp = solveGroupWith Map.empty cs
-  case runStateT stateComp freshState of
+  let stateComp = withNewConstraints Map.empty cs Set.empty
+  case runStateT (runEquivT id max stateComp) freshState of
     -- something failed, set everything to Any
     Nothing     -> return $
-      foldr (`extendSubst` Any) Map.empty (nubOrd $ concatMap defs cs)
+      foldr (`extendSubst` Any) Map.empty (nubOrd $ concatMap vars cs)
     Just (subst', freshState') -> do
       modify $ \s -> s { freshIdent = freshState' }
       return subst'
 
--- instance Pretty (Map VarIndex DetType) where
---   pPrint = pPrint . fmap (first (identSupply!!)) . Map.toList
+-- By using maxView, we ensure that atomic constraints are solved last.
+-- A constraint is atomic if both sides are only variables or Det/Any.
+solveGroupWith :: Map VarIndex DetType -> Set DetConstraint -> GM s (Map VarIndex DetType)
+solveGroupWith subst (Set.maxView -> Nothing) = return subst
+solveGroupWith subst (Set.maxView -> Just (MkC dty1 dty2, cs)) =
+  case (dty1, dty2) of
+    (MkVarTy sk1 v, MkVarTy sk2 w)
+      | v == w     -> solveGroupWith subst cs
+      | sk1 /= sk2 ->
+        let subst' = extendSubst v (MkVarTy (max sk1 sk2) w) subst
+        in solveGroupWith subst' (Set.map (substConstraint subst') cs)
+    (VarTy v, DetArrow arg res) -> do
+        cyclic <- reachable v (detTypeVars dty2)
+        if cyclic
+          then let subst' = extendSubst v Det subst
+                   cs' = Set.insert (MkC Det (DetArrow arg res)) cs
+               in  solveGroupWith subst' (Set.map (substConstraint subst') cs')
+          else do
+            vArg <- freshVarGM
+            vRes <- freshVarGM
+            let cs' = Set.fromList [MkC (VarTy vRes) res, MkC arg (VarTy vArg)]
+                subst' = extendSubst v (DetArrow (VarTy vArg) (VarTy vRes)) subst
+            withNewConstraints subst' cs' (Set.map (substConstraint subst') cs)
+    (DetArrow arg res, VarTy w) -> do
+        cyclic <- reachable w (detTypeVars dty1)
+        if cyclic
+          then let subst' = extendSubst w Det subst
+                   cs' = Set.insert (MkC (DetArrow arg res) Det) cs
+               in  solveGroupWith subst' (Set.map (substConstraint subst') cs')
+          else do
+            wArg <- freshVarGM
+            wRes <- freshVarGM
+            let cs' = Set.fromList [MkC res (VarTy wRes), MkC (VarTy wArg) arg]
+                subst' = extendSubst w (DetArrow (VarTy wArg) (VarTy wRes)) subst
+            withNewConstraints subst' cs' (Set.map (substConstraint subst') cs)
+    (VarTy _, Any) -> solveGroupWith subst cs
+    (Det, VarTy _) -> solveGroupWith subst cs
+    (VarTy v, _) ->
+        let subst' = extendSubst v dty2 subst
+        in solveGroupWith subst' (Set.map (substConstraint subst') cs)
+    (_, VarTy w) ->
+        let subst' = extendSubst w dty1 subst
+        in solveGroupWith subst' (Set.map (substConstraint subst') cs)
+    (SkolemTy _, _) -> lift $ lift Nothing
+    (_, SkolemTy _) -> lift $ lift Nothing
+    _ -> case moreSpecificCs dty1 dty2 of
+        Nothing    -> lift $ lift Nothing
+        Just newCs -> withNewConstraints subst newCs cs
 
-solveGroupWith :: Map VarIndex DetType -> Set DetConstraint -> GM (Map VarIndex DetType)
-solveGroupWith subst (Set.minView -> Nothing) = return subst
-solveGroupWith subst (Set.minView -> Just (DirectedType d v dty2', cs)) = do
-  let specificityCheck = case d of
-        AtLeast -> moreSpecificCs
-        AtMost  -> flip moreSpecificCs
+withNewConstraints :: Map VarIndex DetType -> Set DetConstraint -> Set DetConstraint
+                   -> GM s (Map VarIndex DetType)
+withNewConstraints subst' (Set.minView -> Nothing) oldCs =
+  solveGroupWith subst' oldCs
+withNewConstraints subst' (Set.minView -> Just (c, newCs)) oldCs =
+  case c of
+    MkC (MkVarTy _ v) (MkVarTy _ w) -> do
+      equate v w >> withNewConstraints subst' newCs (Set.insert c oldCs)
+    _            -> withNewConstraints subst' newCs (Set.insert c oldCs)
 
-  let applyRule (VarTy w) (VarTy w')
-        | w == w'   = solveGroupWith subst cs
-        | otherwise = solveGroupWith (extendSubst w (VarTy w') subst) cs
-      applyRule (VarTy w) dty2
-        | w `elem` detTypeVars dty2 =
-          solveGroupWith (extendSubst w Det subst) cs
-      applyRule dty1 (VarTy w)
-        | w `elem` detTypeVars dty1 =
-          solveGroupWith (extendSubst w Det subst) cs
-      applyRule (VarTy w) (DetArrow arg res) = do
-        vArg <- freshVarGM
-        vRes <- freshVarGM
-        let dty = DetArrow (VarTy vArg) (VarTy vRes)
-            c1 = DirectedType (reverseDir d) vArg arg
-            c2 = DirectedType d vRes res
-        solveGroupWith (extendSubst w dty subst) (Set.insert c1 (Set.insert c2 cs))
-      applyRule (DetArrow arg res) (VarTy w) = do
-        vArg <- freshVarGM
-        vRes <- freshVarGM
-        let dty = DetArrow (VarTy vArg) (VarTy vRes)
-            c1 = DirectedType (reverseDir d) vArg arg
-            c2 = DirectedType d vRes res
-        solveGroupWith (extendSubst w dty subst) (Set.insert c1 (Set.insert c2 cs))
-      applyRule (VarTy w) dty2 = solveGroupWith (extendSubst w dty2 subst) cs
-      applyRule dty1 (VarTy w') = solveGroupWith (extendSubst w' dty1 subst) cs
+reachable :: VarIndex -> [VarIndex] -> GM s Bool
+reachable _ []     = return False
+reachable w (v:vs) = do
+  b <- equivalent w v
+  if b then return True else reachable w vs
 
-      applyRule dty1 dty2 = case specificityCheck dty1 dty2 of
-        Nothing    -> -- trace
-          -- ("Failed to solve constraint: " ++ render (pPrint (DirectedType d v dty2')) ++
-          --  "\nCurrent substitution: " ++ render (pPrint subst) ++
-          --  "\nRemaining constraints: " ++ render (pPrint cs)) $
-          lift Nothing
-        Just newCs -> solveGroupWith subst (Set.union newCs cs)
-
-  let dty1Subst = substDetTy (VarTy v) subst
-      dty2Subst = substDetTy dty2' subst
-
-  applyRule dty1Subst dty2Subst
-
-reverseDir :: Direction -> Direction
-reverseDir AtLeast = AtMost
-reverseDir AtMost  = AtLeast
+substConstraint :: Map VarIndex DetType -> DetConstraint -> DetConstraint
+substConstraint subst (MkC dty1 dty2) =
+  MkC (substDetTy dty1 subst) (substDetTy dty2 subst)
 
 extendSubst :: VarIndex -> DetType -> Map VarIndex DetType -> Map VarIndex DetType
 extendSubst v (VarTy w) | v == w = id
@@ -954,7 +997,7 @@ applyDetType (DetArrow ty1 ty2) (ty:rest) =
     Nothing -> Any
 applyDetType Det other =
   applyDetType (DetArrow Det Det) other
-applyDetType (VarTy _) (ty:rest) =
+applyDetType (MkVarTy _ _) (ty:rest) =
   applyDetType (DetArrow Det Det) (ty:rest)
 
 -- A type `ty1` is more specific than `ty2` if `ty1` can be used
@@ -967,38 +1010,31 @@ applyDetType (VarTy _) (ty:rest) =
 moreSpecific :: DetType -> DetType -> Maybe (Map VarIndex DetType)
 moreSpecific ty1 ty2 = do
   cs <- moreSpecificCs ty1 ty2
-  -- trace ("Checking more specific: " ++ render (pPrint ty1) ++ " ~AtLeast " ++ render (pPrint ty2) ++
-  --        "\nConstraints: " ++ render (pPrint cs)) $ return ()
   let maxVar = maximum (detTypeVars ty1 ++ detTypeVars ty2)
-  evalStateT (solveGroupWith Map.empty cs) (maxVar + 1)
+  evalStateT (runEquivT id max (withNewConstraints Map.empty cs Set.empty)) (maxVar + 1)
 
--- This is used in the context of checking signatures.
--- For that reason, it is also imperative that that we cannot map
--- a variable from the signature type (second argument) to a non-variable type.
--- Otherwise, that variable might be instantiated to a type with the wrong
--- specificity at a call site.
-moreSpecificNoInstantiation :: DetType -> DetType -> Bool
-moreSpecificNoInstantiation ty1 ty2 =
-  let isVarOnly (Just (VarTy _)) = True
-      isVarOnly (Just _) = False
-      isVarOnly Nothing = True
-  in case moreSpecific ty1 ty2 of
-    Just subst -> all (isVarOnly . (`Map.lookup` subst)) (detTypeVars ty2)
-    Nothing    -> False
+-- skolem vars (2nd arg, signature) are not allowed to be instantiated,
+-- so we use instantiateSkolem instead of instantiate.
+-- This is the only source of skolems.
+checkNoMoreGeneral :: DetScheme -> DetScheme -> Message -> DM ()
+checkNoMoreGeneral inferred sig msg = do
+  infInst <- instantiate inferred
+  sigInst <- instantiateSkolem sig
+  case moreSpecific infInst sigInst of
+    Nothing -> addMessage msg
+    Just _s -> return ()
 
 moreSpecificCs :: DetType -> DetType -> Maybe (Set DetConstraint)
-moreSpecificCs ty (VarTy v) = Just (Set.singleton (DirectedType AtMost  v ty))
-moreSpecificCs (VarTy v) ty = Just (Set.singleton (DirectedType AtLeast v ty))
+moreSpecificCs _ Any = Just Set.empty
+moreSpecificCs ty (MkVarTy sk v) = Just (Set.singleton (MkC ty (MkVarTy sk v)))
+moreSpecificCs (MkVarTy sk v) ty = Just (Set.singleton (MkC (MkVarTy sk v) ty))
 moreSpecificCs (DetArrow ty1 ty2) (DetArrow ty1' ty2') =
   Set.union <$> ty1' `moreSpecificCs` ty1 <*> ty2 `moreSpecificCs` ty2'
 moreSpecificCs (DetArrow ty1 ty2) Det =
-  Set.union <$> moreSpecificCs ty1 Det <*> moreSpecificCs ty2 Det
+  Set.union <$> moreSpecificCs Det ty1 <*> moreSpecificCs ty2 Det
 moreSpecificCs Det (DetArrow ty1' ty2') =
-  Set.union <$> moreSpecificCs ty1' Det <*> moreSpecificCs ty2' Det
-moreSpecificCs (DetArrow _ _) Any = Just Set.empty
-moreSpecificCs Det Any = Just Set.empty
+  Set.union <$> moreSpecificCs ty1' Det <*> moreSpecificCs Det ty2'
 moreSpecificCs Det Det = Just Set.empty
-moreSpecificCs Any Any = Just Set.empty
 moreSpecificCs Any Det = Nothing
 moreSpecificCs _ _ = Nothing
 
@@ -1605,6 +1641,11 @@ instantiate (Forall vs ty) = do
   vs' <- replicateM (length vs) freshVar
   return (substDetTy ty (Map.fromList (zipWith (\a -> (a,) . VarTy) vs vs')))
 
+instantiateSkolem :: DetScheme -> DM DetType
+instantiateSkolem (Forall vs ty) = do
+  vs' <- replicateM (length vs) freshVar
+  return (substDetTy ty (Map.fromList (zipWith (\a -> (a,) . SkolemTy) vs vs')))
+
 class Constr a where
   conFields :: a -> [Ident]
 
@@ -1659,3 +1700,15 @@ errDeterminismSignatureExt sp = spanInfoMessage sp $ vcat
   [ text "Unexpected determinism signature"
   , text "Enable DeterminismSignatures to allow these"
   ]
+
+-- -----------------------------------------------------------------------------
+-- Helpers
+-- -----------------------------------------------------------------------------
+
+mapAndUnzip3M :: Monad m => (a -> m (b, c, d)) -> [a] -> m ([b], [c], [d])
+mapAndUnzip3M f = foldr go (return ([], [], []))
+  where
+    go x acc = do
+      (y, z, w) <- f x
+      (ys, zs, ws) <- acc
+      return (y:ys, z:zs, w:ws)

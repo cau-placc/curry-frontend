@@ -28,7 +28,7 @@ test2 = const coin coin
 (<>) f g x = f (g x)
 
 not :: Bool -> Bool
-not :? a -> a
+not :? a -> b
 not True = False
 not False = True
 
