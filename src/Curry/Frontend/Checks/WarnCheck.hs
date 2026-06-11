@@ -799,13 +799,15 @@ processCons qs@(q:_) = do
                , IntSet.union used1 used2, nd || nd2)
   where
   -- used constructors (occurring in a pattern)
-  used_cons    = nub $ concatMap (getCon . firstPat) qs
+  (c1, used_cons)    = case nub $ concatMap (getCon . firstPat) qs of
+                    [] -> internalError "Checks.WarnCheck.processCons: no constructor patterns"
+                    (c:cs) -> (c,cs)
   -- default alternatives (variable pattern)
   defaults     = [ shiftPat q' | q' <- qs, isVarPat (firstPat q') ]
   -- Pattern for a non-matched constructors
   defaultPat c = (mkPattern c : replicate (length (snd3 q) - 1) wildPat, [])
   mkPattern  c = ConstructorPattern NoSpanInfo ()
-                  (qualifyLike (fst $ head used_cons) (constrIdent c))
+                  (qualifyLike (fst c1) (constrIdent c))
                   (replicate (length $ constrTypes c) wildPat)
 
 -- |Construct exhaustive patterns starting with the used constructors

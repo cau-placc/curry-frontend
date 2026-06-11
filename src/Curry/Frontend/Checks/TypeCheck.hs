@@ -1096,9 +1096,10 @@ tcInstanceMethodPDecl _ _ _ = internalError "TypeCheck.tcInstanceMethodPDecl"
 
 tcMethodPDecl :: QualIdent -> TypeScheme -> PDecl a
               -> TCM (PredType, TypeScheme, PDecl PredType)
-tcMethodPDecl qcls tySc (i, FunctionDecl p _ f eqs) = withLocalValueEnv $ do
+tcMethodPDecl _ _ (_, FunctionDecl _ _ _ []) = internalError "TypeCheck.tcMethodPDecl: no equations"
+tcMethodPDecl qcls tySc (i, FunctionDecl p _ f eqs@(eq:_)) = withLocalValueEnv $ do
   m <- getModuleIdent
-  modifyValueEnv $ bindFun m f (Just (Visible, qcls)) (eqnArity $ head eqs) tySc
+  modifyValueEnv $ bindFun m f (Just (Visible, qcls)) (eqnArity eq) tySc
   (pls, (ty, pd)) <- tcFunctionPDecl i [] tySc p f eqs
   let what = "implementation of method " ++ escName f
   clsEnv <- getClassEnv
@@ -1760,13 +1761,13 @@ unifyTypes m ty (TypeVariable tv)
 unifyTypes _ (TypeConstrained tys1 tv1) (TypeConstrained tys2 tv2)
   | tv1  == tv2           = Right idSubst
   | tys1 == tys2          = Right (singleSubst tv1 (TypeConstrained tys2 tv2))
-unifyTypes m (TypeConstrained tys tv) ty =
-  foldr (choose . unifyTypes m ty) (Left (errIncompatibleTypes m ty (head tys)))
+unifyTypes m (TypeConstrained tys@(ty' : _) tv) ty =
+  foldr (choose . unifyTypes m ty) (Left (errIncompatibleTypes m ty ty'))
         tys
   where choose (Left _) theta' = theta'
         choose (Right theta) _ = Right (bindSubst tv ty theta)
-unifyTypes m ty (TypeConstrained tys tv) =
-  foldr (choose . unifyTypes m ty) (Left (errIncompatibleTypes m ty (head tys)))
+unifyTypes m ty (TypeConstrained tys@(ty' : _) tv) =
+  foldr (choose . unifyTypes m ty) (Left (errIncompatibleTypes m ty ty'))
         tys
   where choose (Left _) theta' = theta'
         choose (Right theta) _ = Right (bindSubst tv ty theta)
@@ -2109,8 +2110,10 @@ defaultTypeConstrainedDecl s (_, FunctionDecl _ _ _ eqn) =
 defaultTypeConstrainedDecl _ _ = idSubst
 
 defaultTypeConstrained :: Type -> TypeSubst -> TypeSubst
-defaultTypeConstrained (TypeConstrained tyOpts tv) =
-  bindSubst tv (head tyOpts)
+defaultTypeConstrained (TypeConstrained [] _) =
+  internalError "TypeCheck.defaultTypeConstrained: No possible types left for constrained type variable"
+defaultTypeConstrained (TypeConstrained (tyOpt : _) tv) =
+  bindSubst tv tyOpt
 defaultTypeConstrained (TypeApply ty1 ty2) =
   defaultTypeConstrained ty1 . defaultTypeConstrained ty2
 defaultTypeConstrained (TypeArrow ty1 ty2) =

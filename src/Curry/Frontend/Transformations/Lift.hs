@@ -209,7 +209,7 @@ absFunDecls pre lvs (fds:fdss) vds e = do
       -- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       qafv' ty (re, fty) =
         let unifier = matchType fty ty idSubst
-        in  map (\(ty', v) -> (subst unifier ty', v)) $ qafv m re
+        in  map (first (subst unifier)) $ qafv m re
       -- free variables that are local
       fvs     = filter ((`elem` lvs) . snd) (Set.toList fvsRhs)
       -- extended abstraction environment
@@ -239,13 +239,14 @@ absFunDecls pre lvs (fds:fdss) vds e = do
 
 absFunDecl :: String -> [(Type, Ident)] -> [Ident] -> Decl Type
            -> LiftM (Decl Type)
-absFunDecl pre fvs lvs (FunctionDecl p ty f eqs) = do
+absFunDecl _ _ _ (FunctionDecl _ _ _ []) = internalError "Lift.absFunDecl: function declaration without equations"
+absFunDecl pre fvs lvs (FunctionDecl p ty f eqs@(eq : _)) = do
   m <- getModuleIdent
   d <- absDecl pre lvs $ FunctionDecl p ty f' eqs'
   case d of
     FunctionDecl _ _ _ eqs'' -> do
       modifyValueEnv $ bindGlobalInfo
-        (\qf tySc -> Value qf Nothing (eqnArity $ head eqs') tySc) m f' $
+        (\qf tySc -> Value qf Nothing (eqnArity eq + length fvs) tySc) m f' $
                     polyType ty''
       return $ FunctionDecl p ty'' f' eqs''
     _ -> internalError "Lift.absFunDecl: not a function declaration"
@@ -275,7 +276,7 @@ absVar pre (Var ty f) = do
   where f' = liftIdent pre f
 
 absExpr :: String -> [Ident] -> Expression Type -> LiftM (Expression Type)
-absExpr _   _   l@(Literal     _ _ _) = return l
+absExpr _   _   l@Literal {} = return l
 absExpr pre lvs var@(Variable _ ty v)
   | isQualified v = return var
   | otherwise     = do
@@ -294,7 +295,7 @@ absExpr pre lvs var@(Variable _ ty v)
         absType ty' (Apply   spi e1 e2) =
           Apply spi (absType (TypeArrow (typeOf e2) ty') e1) e2
         absType _ _ = internalError "Lift.absExpr.absType"
-absExpr _   _   c@(Constructor _ _ _) = return c
+absExpr _   _   c@Constructor {}        = return c
 absExpr pre lvs (Apply       spi e1 e2) = Apply spi <$> absExpr pre lvs e1
                                                     <*> absExpr pre lvs e2
 absExpr pre lvs (Let          _ _ ds e) = absDeclGroup pre lvs ds e
@@ -341,9 +342,9 @@ liftDeclGroup ds = (vds', concat (map liftFunDecl fds ++ dss'))
         (vds', dss') = unzip $ map liftVarDecl vds
 
 liftExpr :: Eq a => Expression a -> (Expression a, [Decl a])
-liftExpr l@(Literal     _ _ _) = (l, [])
-liftExpr v@(Variable    _ _ _) = (v, [])
-liftExpr c@(Constructor _ _ _) = (c, [])
+liftExpr l@Literal     {} = (l, [])
+liftExpr v@Variable    {} = (v, [])
+liftExpr c@Constructor {} = (c, [])
 liftExpr (Apply       spi e1 e2) = (Apply spi e1' e2', ds1 ++ ds2)
   where (e1', ds1) = liftExpr e1
         (e2', ds2) = liftExpr e2
@@ -398,13 +399,13 @@ renameRhs rm (SimpleRhs p _ e _) = simpleRhs p (renameExpr rm e)
 renameRhs _  _                   = error "Lift.renameRhs"
 
 renameExpr :: Eq a => RenameMap a -> Expression a -> Expression a
-renameExpr _  l@(Literal       _ _ _) = l
+renameExpr _  l@Literal {} = l
 renameExpr rm v@(Variable   spi a v')
   | isQualified v' = v
   | otherwise      = case lookup (a, unqualify v') rm of
                        Just v'' -> Variable spi a (qualify v'')
                        _        -> v
-renameExpr _  c@(Constructor _ _ _) = c
+renameExpr _  c@Constructor {} = c
 renameExpr rm (Typed       spi e ty) = Typed spi (renameExpr rm e) ty
 renameExpr rm (Apply       spi e1 e2) =
   Apply spi (renameExpr rm e1) (renameExpr rm e2)
@@ -426,9 +427,9 @@ renameAlt rm (Alt p t rhs) = Alt p t (renameRhs rm rhs)
 -- ---------------------------------------------------------------------------
 
 isFunDecl :: Decl a -> Bool
-isFunDecl (FunctionDecl _ _ _ _) = True
-isFunDecl (ExternalDecl _ _    ) = True
-isFunDecl _                      = False
+isFunDecl FunctionDecl {} = True
+isFunDecl ExternalDecl {} = True
+isFunDecl _               = False
 
 mkFun :: ModuleIdent -> String -> a -> Ident -> Expression a
 mkFun m pre a = Variable NoSpanInfo a . qualifyWith m . liftIdent pre

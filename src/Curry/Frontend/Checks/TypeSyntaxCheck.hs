@@ -25,7 +25,7 @@ import           Control.Monad              ( filterM, unless, when )
 import qualified Control.Monad.State as S   ( State, runState, gets, modify )
 import           Data.List                  ( nub )
 import           Data.List.NonEmpty         (NonEmpty(..))
-import qualified Data.Map            as Map ( Map, insert, lookup )
+import qualified Data.Map            as Map ( Map, insert, findWithDefault )
 import           Data.Maybe                 ( isNothing, mapMaybe )
 import qualified Data.Set            as Set ( Set, fromList, isSubsetOf, size
                                             , toAscList, union )
@@ -67,9 +67,9 @@ typeSyntaxCheck
   :: [KnownExtension] -> TCEnv -> ClassEnv -> Module a -> (Module a, [Message])
 typeSyntaxCheck exts tcEnv clsEnv mdl@(Module _ _ _ m _ _ ds) =
   case findMultiples $ map getIdent tcds of
-    [] -> if length dfps <= 1
-            then runTSCM (checkModule mdl) state
-            else (mdl, [errMultipleDefaultDeclarations dfps])
+    [] -> case dfps of
+            [] -> runTSCM (checkModule mdl) state
+            (x:xs) -> (mdl, [errMultipleDefaultDeclarations (x :| xs)])
     tss -> (mdl, map errMultipleDeclarations tss)
   where
     tcds = filter isTypeOrClassDecl ds
@@ -237,7 +237,7 @@ checkInstanceType p inst = do
   -- variables or may not be simple types.
   -- inspired by Leif-Erik Krueger
   exts <- getExtensions
-  let flex = elem FlexibleInstances exts
+  let flex = FlexibleInstances `elem` exts
   if any isAnonId (typeVariables inst) || containsForall inst
   then report $ errIllegalFlexibleInstanceType p inst
   else unless (flex || (isSimpleType inst &&
@@ -278,9 +278,9 @@ checkCondExpr :: CondExpr a -> TSCM (CondExpr a)
 checkCondExpr (CondExpr spi g e) = CondExpr spi <$> checkExpr g <*> checkExpr e
 
 checkExpr :: Expression a -> TSCM (Expression a)
-checkExpr l@(Literal             _ _ _) = return l
-checkExpr v@(Variable            _ _ _) = return v
-checkExpr c@(Constructor         _ _ _) = return c
+checkExpr l@Literal     {}              = return l
+checkExpr v@Variable    {}              = return v
+checkExpr c@Constructor {}              = return c
 checkExpr (Paren                 spi e) = Paren spi <$> checkExpr e
 checkExpr (Typed             spi e qty) = Typed spi <$> checkExpr e
                                                     <*> checkQualType qty
@@ -340,7 +340,9 @@ checkFieldExpr (Field spi l e) = Field spi l <$> checkExpr e
 checkQualType :: QualTypeExpr -> TSCM QualTypeExpr
 checkQualType (QualTypeExpr spi cx ty) = do
   (cx', ty') <- checkQualTypes False cx [ty]
-  return $ QualTypeExpr spi cx' (head ty')
+  case ty' of
+    [ty''] -> return $ QualTypeExpr spi cx' ty''
+    _      -> internalError "TypeSyntaxCheck.checkQualType: expected one type"
 
 -- taken from Leif-Erik Krueger
 checkQualTypes :: Bool -> Context -> [TypeExpr] -> TSCM (Context, [TypeExpr])
@@ -429,7 +431,7 @@ checkType c@(ConstructorType spi tc) = do
 checkType (ApplyType spi ty1 ty2) = ApplyType spi <$> checkType ty1
                                                   <*> checkType ty2
 checkType (VariableType spi tv)
-  | isAnonId tv = (VariableType spi . renameIdent tv) <$> newId
+  | isAnonId tv = VariableType spi . renameIdent tv <$> newId
   | otherwise   = checkType $ ConstructorType spi (qualify tv)
 checkType (TupleType     spi tys) = TupleType  spi    <$> mapM checkType tys
 checkType (ListType       spi ty) = ListType   spi    <$> checkType ty
@@ -526,9 +528,7 @@ funDepCoverage m cx tvs = do
 
 
 lookupFunDeps :: QualIdent -> SimpleClassEnv -> [CE.FunDep]
-lookupFunDeps qcls simpleClsEnv = case Map.lookup qcls simpleClsEnv of
-  Nothing  -> []
-  Just fds -> fds
+lookupFunDeps = Map.findWithDefault []
 
 filterIndices :: [a] -> [Int] -> [a]
 filterIndices xs is = filterIndices' xs is 0
@@ -542,18 +542,17 @@ filterIndices xs is = filterIndices' xs is 0
 -- Error messages
 -- ---------------------------------------------------------------------------
 
-errMultipleDefaultDeclarations :: [SpanInfo] -> Message
-errMultipleDefaultDeclarations spis = spanInfoMessage (head spis) $
-  text "More than one default declaration:" $+$
-    nest 2 (vcat $ map showPos spis)
+errMultipleDefaultDeclarations :: NonEmpty SpanInfo -> Message
+errMultipleDefaultDeclarations (spi :| spis) = spanInfoMessage spi $
+    text "More than one default declaration:" $+$
+      nest 2 (vcat $ map showPos (spi : spis))
   where showPos = text . showLine . getPosition
 
 errMultipleDeclarations :: NonEmpty Ident -> Message
 errMultipleDeclarations (i :| is) = spanInfoMessage i $
   text "Multiple declarations of" <+> text (escName i) <+> text "at:" $+$
     nest 2 (vcat $ map showPos (i:is))
-  where i = head is
-        showPos = text . showLine . getPosition
+  where showPos = text . showLine . getPosition
 
 errUndefined :: String -> QualIdent -> Message
 errUndefined what qident = spanInfoMessage qident $ hsep $ map text
@@ -653,7 +652,7 @@ errMultiParamInstanceNoExt spi qcls inst =
      , text "instance declarations with zero or multiple types."]
 
 errFunDepNoExt :: SpanInfo -> Ident -> Message
-errFunDepNoExt spi cls = spanInfoMessage spi $ vcat $
+errFunDepNoExt spi cls = spanInfoMessage spi $ vcat
   [ text "Class" <+> text (escName cls) <+> text "uses functional dependencies."
   , text "Use the FunctionalDependencies extension to enable"
   , text "class declarations with functional dependencies."

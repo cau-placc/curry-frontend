@@ -208,7 +208,9 @@ completeConsAlts addFail ea ce alts = do
               TypeConstructor qid tys
                 -> TypeConstructor qid $ map TypeVariable [0 .. length tys - 1]
               _ -> internalError "CaseCompletion.completeConsAlt: not a type constructor"
-  patTy   = let Alt pat _ = head consAlts in typeOf pat
+  patTy   = case consAlts of
+    Alt pat _ : _ -> typeOf pat
+    []            -> internalError "CaseCompletion.completeConsAlt: empty constructor alternative list"
   tySubst = matchType dataTy patTy idSubst
 
   -- generate a new constructor pattern
@@ -257,7 +259,9 @@ completeLitAlts ea ce alts = do
   x <- freshIdent
   mkBinding x ce <$> nestedCases x alts
   where
-  nestedCases _ []              = return $ failedExpr (typeOf $ head alts)
+  nestedCases _ []              = case alts of
+    alt : _ -> return $ failedExpr (typeOf alt)
+    []      -> internalError "CaseCompletion.completeLitAlts: empty alternative list"
   nestedCases x (Alt p ae : as) = case p of
     LiteralPattern ty l  -> do
       as' <- nestedCases x as
@@ -424,10 +428,11 @@ getComplConstrs (Module mid _ ds) menv tcEnv cs@(c:_)
 -- Find complementary constructors within the declarations of the
 -- current module
 getCCFromDecls :: [QualIdent] -> [Decl] -> [(QualIdent, [Type])]
-getCCFromDecls cs ds = complementary cs cinfos
+getCCFromDecls [] _ = internalError "CaseCompletion.getCCFromDecls: empty constructor list"
+getCCFromDecls cs@(c:_) ds = complementary cs cinfos
   where
   cinfos = map constrInfo
-         $ maybe [] extractConstrDecls (find (`declares` head cs) ds)
+         $ maybe [] extractConstrDecls (find (`declares` c) ds)
 
   decl `declares` qid = case decl of
     DataDecl    _ _ cs' -> any (`declaresConstr` qid) cs'
@@ -443,10 +448,11 @@ getCCFromDecls cs ds = complementary cs cinfos
 -- Find complementary constructors within the module environment
 getCCFromIDecls :: ModuleIdent -> [QualIdent] -> TCEnv -> CS.Interface
                 -> [(QualIdent, [Type])]
-getCCFromIDecls mid cs tcEnv (CS.Interface _ _ ds _) = complementary cs cinfos
+getCCFromIDecls _ [] _ _ = internalError "CaseCompletion.getCCFromIDecls: empty constructor list"
+getCCFromIDecls mid cs@(c:_) tcEnv (CS.Interface _ _ ds _) = complementary cs cinfos
   where
   cinfos = map (uncurry constrInfo)
-         $ maybe [] extractConstrDecls (find (`declares` head cs) ds)
+         $ maybe [] extractConstrDecls (find (`declares` c) ds)
 
   decl `declares` qid = case decl of
     CS.IDataDecl    _ _ _ _ cs' _ _ -> any (`declaresConstr` qid) cs'
