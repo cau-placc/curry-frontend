@@ -13,7 +13,7 @@ packages:
     hackage: set-extra-1.4.2
 snapshots:
 - completed:
-    sha256: 296a7960c37efa382432ab497161a092684191815eb92a608c5d6ea5f894ace3
-    size: 683835
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/23/19.yaml
-  original: lts-23.19
+    sha256: d836e64ec93e8825278b99561f4a7ef24780c9b29bb5338eec2d693ab3a800cd
+    size: 732678
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/24/49.yaml
+  original: lts-24.49
