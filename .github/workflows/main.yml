@@ -13,14 +13,14 @@ jobs:
       STACKROOT: /tmp/stack
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configure Stack root directory
         run: |
           mkdir -p $STACKROOT
 
       - name: Cache Stack dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             /tmp/stack
