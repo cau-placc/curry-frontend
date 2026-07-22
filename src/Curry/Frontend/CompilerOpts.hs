@@ -44,7 +44,7 @@ import Curry.Syntax.Extension
 -- |Compiler options
 data Options = Options
   -- general
-  { optMode          :: FrontendMode          -- ^ modus operandi
+  { optMode          :: FrontendMode        -- ^ modus operandi
   , optVerbosity     :: Verbosity           -- ^ verbosity level
   -- compilation
   , optForce         :: Bool                -- ^ force (re-)compilation of target
@@ -64,7 +64,7 @@ data Options = Options
   , optDebugOpts     :: DebugOpts           -- ^ debug options
   , optCaseMode      :: CaseMode            -- ^ case mode
   , optCppOpts       :: CppOpts             -- ^ C preprocessor options
-  , optOptimizations :: OptimizationOpts -- ^ Optimization options
+  , optOptimizations :: OptimizationOpts    -- ^ Optimization options
   } deriving Show
 
 -- |C preprocessor options
@@ -110,6 +110,8 @@ data OptimizationOpts = OptimizationOpts
   , optInlineDictionaries  :: Bool -- ^ Inline type class dictionaries
   , optRemoveUnusedImports :: Bool -- ^ Remove unused imports in IL
   , optAddFailed           :: Bool -- ^ add failed match for missing constructors in cases
+  , optInlineLet           :: Bool -- ^ Inline single-use and unused variables in 'Let' expressions
+  , optCaseOfKnown         :: Bool -- ^ Optimize case expressions where the scrutinee is of a known constructor
   } deriving Show
 
 -- | Default compiler options
@@ -174,6 +176,8 @@ defaultOptimizationOpts = OptimizationOpts
   , optInlineDictionaries  = True
   , optRemoveUnusedImports = True
   , optAddFailed           = True
+  , optInlineLet           = True
+  , optCaseOfKnown         = True
   }
 
 -- |Modus operandi of the program
@@ -285,6 +289,7 @@ data DumpLevel
   | DumpDerived           -- ^ dump source code after deriving
   | DumpDesugared         -- ^ dump source code after desugaring
   | DumpDictionaries      -- ^ dump source code after dictionary transformation
+  | DumpOptimized         -- ^ dump source code after optimization
   | DumpNewtypes          -- ^ dump source code after removing newtype constructors
   | DumpSimplified        -- ^ dump source code after simplification
   | DumpLifted            -- ^ dump source code after lambda-lifting
@@ -313,6 +318,7 @@ dumpLevel = [ (DumpCondCompiled     , "dump-cond" , "conditional compiling"     
             , (DumpDesugared        , "dump-ds"   , "desugaring"                      )
             , (DumpDictionaries     , "dump-dict" , "dictionary insertion"            )
             , (DumpNewtypes         , "dump-new"  , "removing newtype constructors"   )
+            , (DumpOptimized        , "dump-opt"  , "optimization"                    )
             , (DumpLifted           , "dump-lift" , "lifting"                         )
             , (DumpSimplified       , "dump-simpl", "simplification"                  )
             , (DumpTranslated       , "dump-trans", "pattern matching compilation"    )
@@ -328,9 +334,9 @@ extensions =
     , "enable anonymous free variables"                      )
   , ( CPP                      , "CPP"
     , "run C preprocessor"                                   )
-  , (FlexibleContexts          , "FlexibleContexts"          
+  , (FlexibleContexts          , "FlexibleContexts"
     , "remove syntax restrictions on contexts"               )
-  , (FlexibleInstances         , "FlexibleInstances"         
+  , (FlexibleInstances         , "FlexibleInstances"
     , "remove syntax restrictions on instance declarations"  )
   , ( FunctionalDependencies   , "FunctionalDependencies"
     , "enable functional dependencies"                       )
@@ -637,6 +643,14 @@ optimizeDescriptions =
     , \ opts -> opts { optRemoveUnusedImports = False   })
   , ( "no-add-failed-case"         , "prevents extending incomplete cases with explicit 'failed' in missing branches"
     , \ opts -> opts { optAddFailed           = False    })
+  , ( "inline-let"              , "inlines single-use and unused variables in 'Let' expressions"
+    , \ opts -> opts { optInlineLet           = True    })
+  , ( "no-inline-let"           , "prevents inlining of single-use and unused variables in 'Let' expressions"
+    , \ opts -> opts { optInlineLet           = False   })
+  , ( "case-of-known"           , "optimizes case expressions where the scrutinee is of a known constructor"
+    , \ opts -> opts { optCaseOfKnown         = True    })
+  , ( "no-case-of-known"        , "prevents optimization of case expressions where the scrutinee is of a known constructor"
+    , \ opts -> opts { optCaseOfKnown         = False   })
   ]
 
 addFlag :: Eq a => a -> [a] -> [a]

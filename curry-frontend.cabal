@@ -158,6 +158,7 @@ library
     , Curry.Frontend.Transformations.Dictionary
     , Curry.Frontend.Transformations.Lift
     , Curry.Frontend.Transformations.Newtypes
+    , Curry.Frontend.Transformations.Optimize
     , Curry.Frontend.Transformations.Qual
     , Curry.Frontend.Transformations.Simplify
     , Curry.Syntax
