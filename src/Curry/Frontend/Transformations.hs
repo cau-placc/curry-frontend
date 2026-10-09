@@ -23,6 +23,7 @@ import Curry.Frontend.Transformations.Desugar        as DS (desugar)
 import Curry.Frontend.Transformations.Dictionary     as DI (insertDicts)
 import Curry.Frontend.Transformations.Lift           as L  (lift)
 import Curry.Frontend.Transformations.Newtypes       as NT (removeNewtypes)
+import Curry.Frontend.Transformations.Optimize       as O  (optimize)
 import Curry.Frontend.Transformations.Qual           as Q  (qual)
 import Curry.Frontend.Transformations.Simplify       as S  (simplify)
 
@@ -31,6 +32,7 @@ import Curry.Frontend.Env.TypeConstructor
 import Curry.Frontend.CompilerEnv
 import Curry.Frontend.Imports (qualifyEnv)
 import qualified Curry.Frontend.IL as IL
+import Curry.Frontend.CompilerOpts (OptimizationOpts)
 
 -- |Fully qualify used constructors and functions.
 qual :: CompEnv (Module a) -> CompEnv (Module a)
@@ -87,3 +89,8 @@ transType = IL.transType
 completeCase :: Bool -> CompEnv IL.Module -> CompEnv IL.Module
 completeCase addFailed (env, mdl) =
   (env, CC.completeCase addFailed (interfaceEnv env) (tyConsEnv env) mdl)
+
+-- |Optimize in the intermediate language
+optimize :: OptimizationOpts -> CompEnv IL.Module -> CompEnv IL.Module
+optimize o (env, mdl) = (env, mdl')
+  where mdl' = O.optimize o mdl
