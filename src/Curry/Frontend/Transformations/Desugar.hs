@@ -386,7 +386,8 @@ dsFunctionalPatterns
   :: SpanInfo -> [Pattern PredType]
   -> DsM ([Decl PredType], [Expression PredType], [Pattern PredType])
 dsFunctionalPatterns p ts = do
-  -- Gather all functional patterns (also nested ones)
+  -- Gather all functional patterns and
+  -- re-name anonymous variables inside of functional patterns to fresh variables
   (bss1, ts1) <- mapAndUnzipM funPats ts
   -- Get all pattern variables in functional patterns
   let funPatVars = nub $ concatMap (patternVars . snd) (concat bss1)
@@ -397,9 +398,8 @@ dsFunctionalPatterns p ts = do
       (es, css) = unzip $ map fp2Expr ts'
   -- Create (desugared) functional pattern expression
   let cs = [mkTuple es =:<= mkTuple (map (uncurry mkVar) vs) | not $ null vs]
-  -- Create free variable declarations for non-anonymous funPatVars
-  let ds = map (\ (v, _, PredType _ ty) -> FreeDecl p [Var (PredType [] ty) v]) $
-             filter (not . isAnonId . fst3) funPatVars
+  -- Create free variable declarations for funPatVars
+  let ds = map (\ (v, _, PredType _ ty) -> FreeDecl p [Var (PredType [] ty) v]) funPatVars
   -- Return (declarations, constraints, desugared patterns)
   return (ds, concat (cs : css), ts2)
   where
@@ -424,7 +424,8 @@ dsFunctionalPatternsNonLinear fvs (InfixPattern      spi pty t1 qid t2) = do
   (bs1, t1') <- dsFunctionalPatternsNonLinear fvs t1
   (bs2, t2') <- dsFunctionalPatternsNonLinear fvs t2
   return (bs1 ++ bs2, InfixPattern spi pty t1' qid t2')
-dsFunctionalPatternsNonLinear fvs (ParenPattern              _ t) = dsFunctionalPatternsNonLinear fvs t
+dsFunctionalPatternsNonLinear fvs (ParenPattern              _ t) =
+  dsFunctionalPatternsNonLinear fvs t
 dsFunctionalPatternsNonLinear fvs (RecordPattern  spi pty qid fs) = do
   (bss, fs') <- mapAndUnzipM (\(Field spi' pty' a) -> second (Field spi' pty')
                                   <$> dsFunctionalPatternsNonLinear fvs a) fs
@@ -444,8 +445,10 @@ dsFunctionalPatternsNonLinear fvs p@(AsPattern               spi v t)
     return (bs, AsPattern spi v t')
 dsFunctionalPatternsNonLinear fvs (LazyPattern             spi t) =
   fmap (LazyPattern spi) <$> dsFunctionalPatternsNonLinear fvs t
-dsFunctionalPatternsNonLinear _ p@FunctionPattern {}  = internalError $ "Desugar.dsFunctionalPatternsNonLinear: functional pattern " ++ show p
-dsFunctionalPatternsNonLinear _ p@InfixFuncPattern {} = internalError $ "Desugar.dsFunctionalPatternsNonLinear: functional pattern " ++ show p
+dsFunctionalPatternsNonLinear _ p@FunctionPattern {}  =
+  internalError $ "Desugar.dsFunctionalPatternsNonLinear: functional pattern " ++ show p
+dsFunctionalPatternsNonLinear _ p@InfixFuncPattern {} =
+  internalError $ "Desugar.dsFunctionalPatternsNonLinear: functional pattern " ++ show p
 
 funPats :: Pattern PredType -> DsM ([((PredType, Ident), Pattern PredType)], Pattern PredType)
 funPats p@LiteralPattern {}  = return ([], p)
@@ -474,12 +477,47 @@ funPats (AsPattern             spi v t) = do
   return (bs, AsPattern spi v t')
 funPats (LazyPattern             spi t) =
   fmap (LazyPattern spi) <$> funPats t
-funPats fp@FunctionPattern {}  = do
-  v <- freshVar "#funpat" fp
-  return ([(v, fp)], uncurry (VariablePattern NoSpanInfo) v)
-funPats fp@InfixFuncPattern {} = do
-  v <- freshVar "#funpat" fp
-  return ([(v, fp)], uncurry (VariablePattern NoSpanInfo) v)
+funPats (FunctionPattern spi pty qid ts)  = do
+  v <- freshVar "#funpat" pty
+  ts' <- mapM renameAnonPatVars ts
+  return ([(v, FunctionPattern spi pty qid ts')], uncurry (VariablePattern NoSpanInfo) v)
+funPats (InfixFuncPattern spi pty t1 op t2) = do
+  v <- freshVar "#funpat" pty
+  t1' <- renameAnonPatVars t1
+  t2' <- renameAnonPatVars t2
+  return ([(v, InfixFuncPattern spi pty t1' op t2')], uncurry (VariablePattern NoSpanInfo) v)
+
+renameAnonPatVars :: Pattern PredType -> DsM (Pattern PredType)
+renameAnonPatVars p@(VariablePattern _ _ v)
+  | isAnonId v = do
+    v' <- freshVar "_#anon" p
+    return $ uncurry (VariablePattern NoSpanInfo) v'
+  | otherwise = return p
+renameAnonPatVars (LiteralPattern _ pty l) =
+  return $ LiteralPattern NoSpanInfo pty l
+renameAnonPatVars (NegativePattern _ pty l) =
+  return $ NegativePattern NoSpanInfo pty l
+renameAnonPatVars (ParenPattern _ t) =
+  renameAnonPatVars t
+renameAnonPatVars (ConstructorPattern spi pty qid ts) =
+  ConstructorPattern spi pty qid <$> mapM renameAnonPatVars ts
+renameAnonPatVars (InfixPattern spi pty t1 op t2) =
+  InfixPattern spi pty <$> renameAnonPatVars t1 <*> pure op <*> renameAnonPatVars t2
+renameAnonPatVars (RecordPattern spi pty qid fs) =
+  RecordPattern spi pty qid <$> mapM mapField fs
+  where mapField (Field spi' pty' a) = Field spi' pty' <$> renameAnonPatVars a
+renameAnonPatVars (TuplePattern spi ts) =
+  TuplePattern spi <$> mapM renameAnonPatVars ts
+renameAnonPatVars (ListPattern spi pty ts) =
+  ListPattern spi pty <$> mapM renameAnonPatVars ts
+renameAnonPatVars (AsPattern spi v t) =
+  AsPattern spi v <$> renameAnonPatVars t
+renameAnonPatVars (LazyPattern spi t) =
+  LazyPattern spi <$> renameAnonPatVars t
+renameAnonPatVars (FunctionPattern spi pty qid ts) =
+  FunctionPattern spi pty qid <$> mapM renameAnonPatVars ts
+renameAnonPatVars (InfixFuncPattern spi pty t1 op t2) =
+  InfixFuncPattern spi pty <$> renameAnonPatVars t1 <*> pure op <*> renameAnonPatVars t2
 
 fp2Expr :: Pattern PredType -> (Expression PredType, [Expression PredType])
 fp2Expr (LiteralPattern          _ pty l) = (Literal NoSpanInfo  pty l, [])
